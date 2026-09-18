@@ -140,6 +140,8 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Condition on the step to 4.3.** Devnet and mainnet RPC nodes report 4.3.0-rc.0. The step from 4.2.2 is met on devnet at first deployment (E-08, E-09). If it shows any behavioural difference, that is a decision for the owner, not a fix.
 
+**S9-02 (Codex review, 18 Sep 2026).** `scripts/build-sbf.sh` accepted an override for its private `RUSTUP_HOME`, which could point it at the machine-wide one. The override is gone, and the script refuses to run if the private home resolves to the machine-wide one.
+
 ## D-16 · On-chain test runner
 
 **Date:** 17 Sep 2026 · **Unit:** E-01, reused by E-08 and E-09 · **Class:** cost judgment · **Status:** settled at S1

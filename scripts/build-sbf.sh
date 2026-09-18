@@ -9,7 +9,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 AGAVE_BIN="${POTASH_AGAVE_BIN:-$HOME/.local/share/potash/agave/v4.2.2/solana-release/bin}"
-PRIVATE_RUSTUP_HOME="${POTASH_RUSTUP_HOME:-$HOME/.local/share/potash/rustup}"
+# Always the project-private home. There is deliberately no override (S9-02).
+PRIVATE_RUSTUP_HOME="$HOME/.local/share/potash/rustup"
 
 # Refuse any other toolchain; the version is read from the installed tool itself.
 version="$("$AGAVE_BIN/cargo-build-sbf" --version)"
@@ -18,9 +19,19 @@ if ! grep -qx 'cargo-build-sbf 4.1.0' <<<"$version" || ! grep -qx 'platform-tool
   exit 1
 fi
 
+# Refuse to run if the private home is the machine-wide one, for example because RUSTUP_HOME points
+# at it; every rustup command below would then change the machine-wide home (D-15, S9-02).
+mkdir -p "$PRIVATE_RUSTUP_HOME"
+private_real="$(cd "$PRIVATE_RUSTUP_HOME" && pwd -P)"
+global_home="${RUSTUP_HOME:-$HOME/.rustup}"
+global_real="$(cd "$global_home" 2>/dev/null && pwd -P || printf '%s' "$global_home")"
+if [ "$private_real" = "$global_real" ]; then
+  echo "build-sbf: the private RUSTUP_HOME ($private_real) is the machine-wide one; refusing (D-15)" >&2
+  exit 1
+fi
+
 # The private home borrows the pinned host compiler from rust-toolchain.toml, as "potash-host".
 if ! RUSTUP_HOME="$PRIVATE_RUSTUP_HOME" rustup toolchain list | grep -q '^potash-host'; then
-  mkdir -p "$PRIVATE_RUSTUP_HOME"
   RUSTUP_HOME="$PRIVATE_RUSTUP_HOME" rustup toolchain link potash-host "$(rustc --print sysroot)"
 fi
 
