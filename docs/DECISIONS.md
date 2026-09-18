@@ -38,15 +38,17 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Ground.** 0.10.8 is the implementation Solana's hasher runs off-chain, so the project carries one Keccak implementation, which is worth more than a newer version number (owner, 17 Sep 2026). It is `#![no_std]` and builds with rustc 1.79.
 
+**Premise re-checked after D-15 (17 Sep 2026).** With `solana-keccak-hasher` 3.1.0 the resolved graph still holds exactly one `sha3`, version 0.10.8, shared by the native path and the hasher's off-chain path (`cargo tree -i sha3`).
+
 ## D-07 · On-chain Keccak
 
-**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment, within the crate-root ban on `unsafe` (INV-ERR-01) · **Status:** ruled at S1; its ground depends on D-15, which is open
+**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment, within the crate-root ban on `unsafe` (INV-ERR-01) · **Status:** settled at S1, after D-15
 
-**Decision.** Solana's `solana-keccak-hasher` 2.2.1 with default features, behind `feature = "solana"`. Its optional `sha3` feature stays off.
+**Decision.** Solana's `solana-keccak-hasher` 3.1.0 behind `feature = "solana"`, with the hasher's own `sha3` feature enabled. Without that feature, 3.1.0's `hashv` panics off-chain (`src/lib.rs`, lines 45 to 49), which INV-ERR-01 forbids. On-chain the feature has no effect, because its `sha3` dependency is declared for non-Solana targets only.
 
-**Rejected.** 3.1.0, whose dependencies require rustc 1.81 (`five8_core` 1.0.0) and 1.89 (`solana-hash` 4.6.0), so it does not build with platform-tools v1.43. The full `solana-program` crate, which brings the whole Solana SDK into core, and a direct syscall binding, which needs `unsafe`.
+**Rejected.** 2.2.1, which builds but belongs to the superseded 2.x dependency chain. The full `solana-program` crate, which brings the whole Solana SDK into core, and a direct syscall binding, which needs `unsafe`.
 
-**Ground.** Built with the pinned platform-tools v1.43 (rustc 1.79.0), 2.2.1 produces a working program.
+**Ground.** Built with platform-tools v1.54 (rustc 1.89.0), 3.1.0 produces a working program, and it is the maintained dependency chain (owner's ruling of 17 Sep 2026: take 3.1.0 if the re-pinned compiler builds it).
 
 ## D-08 · KAT-01 covers the on-chain path from E-01
 
@@ -88,9 +90,9 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 ## D-11 · Compiler pins
 
-**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment
+**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment · **Status:** amended at S1 by D-15
 
-**Decision.** `rust-toolchain.toml` pins Rust 1.95.0. Miri runs on nightly-2026-06-15. CI uses the same compilers.
+**Decision.** `rust-toolchain.toml` pins Rust 1.95.0. Miri runs on nightly-2026-06-15. On-chain builds use `cargo-build-sbf` 4.1.0 from Agave 4.2.2, with platform-tools v1.54 (rustc 1.89.0). CI uses the same compilers.
 
 **Ground.** CI and the development machine build with identical compilers.
 
@@ -120,13 +122,36 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 ## D-15 · Solana toolchain line
 
-**Date:** 17 Sep 2026 · **Unit:** E-01 onward · **Status:** open, with the owner
+**Date:** 17 Sep 2026 · **Unit:** E-01 onward · **Class:** cost judgment · **Status:** settled at S1 (re-pin now)
 
-**Question.** Stay on the pinned Solana CLI 2.1.0, platform-tools v1.43 and Anchor 0.31.1, or move to the line the clusters run.
+**Decision.** The Solana toolchain moves from Solana CLI 2.1.0, platform-tools v1.43 and Anchor 0.31.1 to Agave 4.2.2, the current stable release. On-chain builds use its `cargo-build-sbf` 4.1.0 with platform-tools v1.54 (rustc 1.89.0), tests run on the Agave 4.2.2 runtime crates, and Anchor moves to 1.2.0, which E-08's S1 installs and verifies. The toolchain is installed for this project only; the machine-wide Solana install is not changed.
 
-**Facts found at S1.**
-- Devnet and mainnet RPC nodes report `solana-core` 4.3.0-rc.0 (`getVersion`, 17 Sep 2026).
-- Anchor's current release is 1.2.0 (4 Sep 2026, Solana 3.x crates, `rust-version = 1.89`). The current platform-tools release is v1.51.1 (15 Sep 2026).
-- Platform-tools v1.43 compiles with rustc 1.79.0 and emits SBPF v0 programs.
-- `solana-program` 2.1.21 cannot share a dependency graph with `solana-keccak-hasher` 2.2.1: it pins `solana-sanitize` to 2.1.21, and the hasher needs 2.2.1 or later. `solana-program` 2.2.1 fails to build with platform-tools v1.43, whose Cargo cannot parse the manifest of a current transitive dependency (`toml_parser` 1.1.3).
-- A v1.43 program that avoids `solana-program` loads and runs on the Agave 4.2 runtime (D-08 evidence).
+**Ground (owner, 17 Sep 2026).** Nothing is built, so the change will never be cheaper. Deferring would spend E-01 to E-07 against a toolchain known to fail at E-08 and land the migration beside the Anchor program. It is also D-08's logic one level up: a check against something other than the production path proves nothing reliable, and the old pin was about 18 months behind the clusters.
+
+**Facts behind it.** On the old pin, `solana-program` 2.1.21 could not share a dependency graph with the 2.2.1 hasher, because it pins `solana-sanitize` to 2.1.21; `solana-program` 2.2.1 did not build, because platform-tools v1.43's Cargo cannot parse the manifest of a current transitive dependency. Anchor 1.2.0 requires rustc 1.89.
+
+**How it is installed.** `cargo-build-sbf` 4.1.0 uninstalls any other rustup toolchain whose name contains "solana" before linking its own (`src/toolchain.rs`, lines 384 to 411 of the 4.1.0 crate). This project therefore runs it against a project-private `RUSTUP_HOME`. Platform-tools v1.54 sits in its own version directory of the Solana tools cache.
+
+**Evidence.** A harness-shaped program built this way, SBPF v0 with `#![forbid(unsafe_code)]` at its crate root, ran the five KAT-01 cases through `sol_keccak256` on the Agave 4.2.2 runtime and matched all five, at 304 to 362 compute units.
+
+**Open edge.** Devnet and mainnet RPC nodes report 4.3.0-rc.0. The step from 4.2.2 to the clusters' 4.3 line is checked on devnet when the program is first deployed (E-08, E-09).
+
+## D-16 · On-chain test runner
+
+**Date:** 17 Sep 2026 · **Unit:** E-01, reused by E-08 and E-09 · **Class:** cost judgment · **Status:** proposed at S1, awaiting the owner
+
+**Proposal.** `litesvm` 0.16.0, a dev-dependency that runs the harness program in-process on the Agave runtime crates (resolved to 4.2.2).
+
+**Rejected.** `solana-program-test` 4.2.2, the official harness, which is heavier and asynchronous. `mollusk-svm` 0.14 and 0.15 were not evaluated at S1.
+
+**Ground.** Proven at S1: it loaded the harness program and returned its return data and compute units for all five cases. It runs whole transactions, which V-Z-01 at #9 needs, so one runner serves E-01, E-08 and E-09.
+
+## D-17 · Harness program shape
+
+**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** security necessity · **Status:** proposed at S1, awaiting the owner
+
+**Proposal.** The harness program at `programs/core-harness` uses `solana-program-entrypoint` 3.1.1 and the safe `set_return_data` of `solana-cpi` 3.1.0, the same 3.x line as Anchor 1.2.0. It is test infrastructure and is never deployed.
+
+**Rejected.** A raw entrypoint, which needs `unsafe` in the crate, and the full `solana-program` crate.
+
+**Ground.** With these crates the harness keeps `#![forbid(unsafe_code)]` at its crate root, so INV-ERR-01 holds there without exception. Verified at S1: the probe built with the attribute in place and matched all five cases.
