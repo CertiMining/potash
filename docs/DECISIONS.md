@@ -168,10 +168,34 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 ## D-18 · Advisory exceptions for the test runtime
 
-**Date:** 17 Sep 2026 · **Unit:** E-01 · **Status:** proposed at S1, awaiting the owner
+**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment; naming the exceptions one by one is a security necessity · **Status:** settled at S1 (owner, 18 Sep 2026)
 
 **Finding.** Under D-13's policy, `cargo deny check` over E-01's dependency graph as ruled (335 crates) passes licences and sources and fails advisories on five unmaintained crates: `paste` (RUSTSEC-2024-0436), `libsecp256k1` (RUSTSEC-2025-0161), `ansi_term` (RUSTSEC-2021-0139), `derivative` (RUSTSEC-2024-0388) and `bincode` (RUSTSEC-2025-0141). All five are reached only through `litesvm` 0.16.0; no shipped crate reaches any of them (`cargo tree -i <crate> -e normal`). The same run reports no vulnerability, unsound or yanked advisory.
 
-**Proposal.** `deny.toml` lists exactly these five advisory IDs as exceptions, each with the reason that only the test runtime reaches it. Vulnerability, unsound and yanked advisories keep no exceptions, and any advisory not on the list fails CI.
+**Decision.** `deny.toml` lists exactly these five advisory IDs as exceptions, each with the reason that only the test runtime reaches it. Vulnerability, unsound and yanked advisories take no exceptions, and any advisory not on the list fails CI.
 
 **Rejected.** Scoping unmaintained checks to direct dependencies, or excluding dev-dependencies from the check. Either would let the next advisory through unseen.
+
+**Ground.** It keeps the runner chosen in D-16 while the gate still catches the next advisory.
+
+**Revisit if.** Any of the five gains a vulnerability, unsound or yanked advisory. A shipped crate starts to reach one of them (`cargo tree -i <crate> -e normal` shows a path). A new advisory appears anywhere in the tree: CI fails, and the answer is a decision, never a new line added to `deny.toml`. A `litesvm` release drops them, and the exceptions come out. E-16 reviews the list before submission.
+
+## D-19 · Default feature is `native`
+
+**Date:** 18 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment · **Status:** settled at S2
+
+**Decision.** `certimining-core` declares `default = ["native"]`. The harness program, and later any on-chain crate, depends on core with `default-features = false` and turns on only what it needs.
+
+**Ground.** A plain `cargo test` runs off-chain with no extra flags.
+
+**Revisit if.** An on-chain build's dependency tree ever contains `sha3`, which means a crate forgot `default-features = false`; or a consumer needs core with no hasher by default.
+
+## D-20 · Two named hashers
+
+**Date:** 18 Sep 2026 · **Unit:** E-01 · **Class:** security necessity · **Status:** settled at S2
+
+**Decision.** The `native` feature provides `NativeKeccak` and the `solana` feature provides `SolanaKeccak`, two separate types implementing the `Hasher` trait (D-05). Both features may be on at once, and calling code names the hasher it uses. No function picks a hasher at compile time.
+
+**Ground.** D-08 checks both off-chain paths in the same run, which a single compile-time choice cannot reach. If Cargo merged the features in a harness build, a single function could also quietly run the software hash where the on-chain one was meant to be tested.
+
+**Revisit if.** A later unit needs code that chooses a hasher implicitly, or the two types ever disagree on any input (KAT-01, and V-P-08 from E-11, would show it).
