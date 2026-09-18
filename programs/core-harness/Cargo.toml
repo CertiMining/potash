@@ -11,6 +11,8 @@ description = "Test-only Solana program: returns the Keccak-256 of its instructi
 crate-type = ["cdylib", "lib"]
 
 [lints.rust]
+# Forbids unsafe code in every target of this package, tests included (D-21).
+unsafe_code = "forbid"
 # The entrypoint macro checks these names inside this crate: two feature names, and the Solana
 # target, which the host compiler does not know. Declare them as expected rather than adding
 # features that do nothing.

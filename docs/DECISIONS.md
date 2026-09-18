@@ -199,3 +199,15 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Ground.** D-08 checks both off-chain paths in the same run, which a single compile-time choice cannot reach. If Cargo merged the features in a harness build, a single function could also quietly run the software hash where the on-chain one was meant to be tested.
 
 **Revisit if.** A later unit needs code that chooses a hasher implicitly, or the two types ever disagree on any input (KAT-01, and V-P-08 from E-11, would show it).
+
+## D-21 · Where INV-ERR-01's gates apply
+
+**Date:** 18 Sep 2026 · **Unit:** every unit, from E-01 · **Class:** cost judgment; the unsafe addition is a preference · **Status:** settled (owner, 18 Sep 2026)
+
+**Decision.** INV-ERR-01's clippy gates (`unwrap_used`, `expect_used`, `indexing_slicing`, `arithmetic_side_effects`) sit at the crate root of every library and program crate, and so govern shipped code. Test files may assert, unwrap and index. `unsafe` is forbidden in every target, tests included, through `[lints.rust] unsafe_code = "forbid"` in each package's `Cargo.toml`.
+
+**Rejected.** Putting the four clippy gates on tests too, which costs readability in code that never ships. Forbidding panics in tests altogether, which would leave a test able to fail only through error-handling code, where one mistake, such as an early `return Ok(())`, turns a failing check into a silent pass.
+
+**Ground (owner, 18 Sep 2026).** The gates exist to stop shipped code from panicking on bad input. Tests are what catches those problems, and a test is most trustworthy when it fails loudly. No test needs `unsafe`, so forbidding it there costs nothing.
+
+**Revisit if.** A test ever needs `unsafe`, which is a decision rather than a lint exception; or test helper code moves into a shipped crate, where the gates then apply to it.
