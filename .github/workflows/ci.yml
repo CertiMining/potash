@@ -1,0 +1,68 @@
+# CI for CertiMining (S8). Every job calls scripts/ci.sh, so `scripts/ci.sh all` on a laptop is this
+# pipeline verbatim. KAT-01 runs first, off-chain then on-chain, and every other job waits on both
+# (D-09). Actions are pinned to full commit SHAs, and tools are installed with rustup and cargo (D-12).
+name: ci
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kat01-offchain:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci.sh install-rust
+      - run: scripts/ci.sh kat01-offchain
+
+  kat01-onchain:
+    needs: kat01-offchain
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci.sh install-rust
+      - run: scripts/ci.sh install-agave
+      - run: scripts/ci.sh kat01-onchain
+
+  checks:
+    needs: [kat01-offchain, kat01-onchain]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci.sh install-rust
+      - run: scripts/ci.sh checks
+
+  miri:
+    needs: [kat01-offchain, kat01-onchain]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci.sh install-rust
+      - run: scripts/ci.sh install-miri
+      - run: scripts/ci.sh miri
+
+  deny:
+    needs: [kat01-offchain, kat01-onchain]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci.sh install-rust
+      - run: scripts/ci.sh install-cargo-deny
+      - run: scripts/ci.sh deny

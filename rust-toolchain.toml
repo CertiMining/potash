@@ -1,0 +1,7 @@
+# Host compiler for every build except on-chain ones (D-11). On-chain builds use platform-tools v1.54
+# through scripts/build-sbf.sh (D-15). The bare-metal target proves `no_std` (D-14).
+[toolchain]
+channel = "1.95.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["thumbv7em-none-eabihf"]

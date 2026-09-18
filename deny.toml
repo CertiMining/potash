@@ -1,0 +1,33 @@
+# Dependency policy (D-13), checked in CI by `scripts/ci.sh deny`.
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Every advisory class covers the whole graph, transitive crates included (D-18). Without this,
+# cargo-deny 0.20.2 checks unsound advisories in workspace crates only (S9-01). unmaintained already
+# defaults to "all"; it is stated so the policy rests on no implicit scope.
+unmaintained = "all"
+unsound = "all"
+# Exactly these five, and only because the test runtime alone reaches them (D-18). Vulnerability,
+# unsound and yanked advisories take no exceptions, and any advisory not listed here fails CI.
+# Adding a line here is a decision in docs/DECISIONS.md, never a quiet edit.
+ignore = [
+  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
+  { id = "RUSTSEC-2025-0161", reason = "libsecp256k1 is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
+  { id = "RUSTSEC-2021-0139", reason = "ansi_term is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
+  { id = "RUSTSEC-2024-0388", reason = "derivative is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
+  { id = "RUSTSEC-2025-0141", reason = "bincode is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
+]
+
+[licenses]
+version = 2
+allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib", "CC0-1.0"]
+confidence-threshold = 0.9
+# This project's own crates declare no licence until E-15 decides it (D-13).
+private = { ignore = true }
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

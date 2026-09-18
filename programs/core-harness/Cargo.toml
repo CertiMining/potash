@@ -1,0 +1,38 @@
+[package]
+name = "core-harness"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+publish = false
+description = "Test-only Solana program: returns the Keccak-256 of its instruction data, computed through certimining-core's SolanaKeccak, so KAT-01 can check the on-chain path (D-08, D-17). Never deployed."
+
+[lib]
+# cdylib is the Solana program; lib lets the integration test compile against the crate.
+crate-type = ["cdylib", "lib"]
+
+[lints.rust]
+# Forbids unsafe code in every target of this package, tests included (D-21).
+unsafe_code = "forbid"
+# The entrypoint macro checks these names inside this crate: two feature names, and the Solana
+# target, which the host compiler does not know. Declare them as expected rather than adding
+# features that do nothing.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("custom-heap", "custom-panic"))', 'cfg(target_os, values("solana"))'] }
+
+[dependencies]
+# Core with its default hasher off and only the Solana one on (D-19, D-20).
+certimining-core = { path = "../../crates/certimining-core", default-features = false, features = ["solana"] }
+# The entrypoint and the safe return-data call keep `forbid(unsafe_code)` at this crate root (D-17).
+solana-account-info = "=3.1.1"
+solana-cpi = "=3.1.0"
+solana-program-entrypoint = "=3.1.1"
+solana-program-error = "=3.0.1"
+solana-pubkey = "=3.0.0"
+
+[dev-dependencies]
+# Runs the program in-process on the Agave 4.2.2 runtime crates (D-16).
+litesvm = "=0.16.0"
+solana-instruction = "=3.4.1"
+solana-keypair = "=3.1.2"
+solana-message = "=4.4.1"
+solana-signer = "=3.0.1"
+solana-transaction = "=4.1.6"

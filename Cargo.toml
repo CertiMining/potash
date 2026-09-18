@@ -1,0 +1,6 @@
+# Cargo workspace for CertiMining (D-04). Library crates live under crates/, Solana programs under programs/.
+[workspace]
+resolver = "2"
+members = ["crates/certimining-core", "programs/core-harness"]
+# A plain `cargo test` covers the core crate. The harness needs a Solana build first; scripts/ci.sh runs it.
+default-members = ["crates/certimining-core"]
