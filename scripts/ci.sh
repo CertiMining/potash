@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The CI pipeline as one script (S8). Each CI job runs one group. `scripts/ci.sh all` runs every group
-# in CI's order and prints each group's test counts and exit code, so a local run is CI verbatim.
+# in CI's order, stops at a KAT-01 failure as CI does, and prints each group's test counts and exit
+# code, so a local run is CI verbatim.
 #
 #   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | checks | miri | deny | all
 #   scripts/ci.sh install-<tool>    CI only: rust | agave | miri | cargo-deny
@@ -85,7 +86,9 @@ run() {
   esac
 }
 
-# Every group in CI's order. A failing group does not stop the others; the summary names it.
+# Every group in CI's order. KAT-01 gates the rest exactly as in CI (D-09, S9-03): if either KAT
+# group fails, nothing else runs. The other groups are independent, as CI's jobs are, so each of
+# them runs and the summary names any that failed.
 all() {
   local failed=0 summary="" group code log
   for group in kat01-offchain kat01-onchain checks miri deny; do
@@ -95,8 +98,16 @@ all() {
     code=${PIPESTATUS[0]}
     summary+="$group: exit $code"$'\n'
     summary+="$(grep -E '^test result:' "$log" | sed 's/^/    /')"$'\n'
-    [ "$code" -eq 0 ] || failed=1
     rm -f "$log"
+    if [ "$code" -ne 0 ]; then
+      failed=1
+      case "$group" in
+        kat01-*)
+          summary+="KAT-01 failed, so no later group ran, as in CI."$'\n'
+          break
+          ;;
+      esac
+    fi
   done
   echo "===== summary"
   printf '%s' "$summary"

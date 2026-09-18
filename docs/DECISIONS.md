@@ -72,6 +72,8 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Ground.** KAT-01 must check the code that actually runs.
 
+**S9-03 (Codex review, 18 Sep 2026).** `scripts/ci.sh all` ran the remaining groups after a KAT-01 failure, so a local run was not CI verbatim. It now stops at the first KAT-01 failure, as CI does; the later groups stay independent of one another, as CI's jobs are.
+
 ## D-10 · KAT-01 provenance
 
 **Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** security necessity · **Status:** settled at S1
