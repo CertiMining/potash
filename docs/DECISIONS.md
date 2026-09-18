@@ -92,7 +92,9 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment · **Status:** amended at S1 by D-15
 
-**Decision.** `rust-toolchain.toml` pins Rust 1.95.0. Miri runs on nightly-2026-06-15. On-chain builds use `cargo-build-sbf` 4.1.0 from Agave 4.2.2, with platform-tools v1.54 (rustc 1.89.0). CI uses the same compilers.
+**Decision.** `rust-toolchain.toml` pins Rust 1.95.0. Miri runs on nightly-2026-06-15. On-chain builds use `cargo-build-sbf` 4.1.0 from Agave 4.2.2, with platform-tools v1.54. CI uses the same compilers.
+
+**Versions as the installed tools print them (17 Sep 2026).** `rustc 1.95.0 (59807616e 2026-04-14)`; `cargo 1.95.0 (f2d3ce0bd 2026-03-21)`; `rustc 1.98.0-nightly (01dfd7924 2026-06-15)`; `miri 0.1.0 (01dfd79246 2026-06-15)`; `cargo-deny 0.20.2`; `cargo-build-sbf 4.1.0` / `platform-tools v1.54` / `rustc 1.89.0`; the platform-tools compiler itself prints `rustc 1.89.0-dev`. Version facts in this log are read from the installed tool and recorded as printed, never taken from a release page.
 
 **Ground.** CI and the development machine build with identical compilers.
 
@@ -134,24 +136,42 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Evidence.** A harness-shaped program built this way, SBPF v0 with `#![forbid(unsafe_code)]` at its crate root, ran the five KAT-01 cases through `sol_keccak256` on the Agave 4.2.2 runtime and matched all five, at 304 to 362 compute units.
 
-**Open edge.** Devnet and mainnet RPC nodes report 4.3.0-rc.0. The step from 4.2.2 to the clusters' 4.3 line is checked on devnet when the program is first deployed (E-08, E-09).
+**Why 4.2.2 and not the release candidate (owner, 17 Sep 2026).** Matching the runtime crates the tests run on matters more than matching the cluster, and a release candidate can change underneath a pin. The installed CLI prints `solana-cli 4.2.2 (src:c9c6f328; feat:21b0d33a, client:Agave)`.
+
+**Condition on the step to 4.3.** Devnet and mainnet RPC nodes report 4.3.0-rc.0. The step from 4.2.2 is met on devnet at first deployment (E-08, E-09). If it shows any behavioural difference, that is a decision for the owner, not a fix.
 
 ## D-16 · On-chain test runner
 
-**Date:** 17 Sep 2026 · **Unit:** E-01, reused by E-08 and E-09 · **Class:** cost judgment · **Status:** proposed at S1, awaiting the owner
+**Date:** 17 Sep 2026 · **Unit:** E-01, reused by E-08 and E-09 · **Class:** cost judgment · **Status:** settled at S1
 
-**Proposal.** `litesvm` 0.16.0, a dev-dependency that runs the harness program in-process on the Agave runtime crates (resolved to 4.2.2).
+**Decision.** `litesvm` 0.16.0, a dev-dependency that runs programs in-process on the Agave runtime crates (resolved to 4.2.2).
 
-**Rejected.** `solana-program-test` 4.2.2, the official harness, which is heavier and asynchronous. `mollusk-svm` 0.14 and 0.15 were not evaluated at S1.
+**Rejected.** `solana-program-test` 4.2.2, the official harness, which is heavier and asynchronous.
 
-**Ground.** Proven at S1: it loaded the harness program and returned its return data and compute units for all five cases. It runs whole transactions, which V-Z-01 at #9 needs, so one runner serves E-01, E-08 and E-09.
+**Not evaluated.** `mollusk-svm` 0.14 and 0.15. No comparison was made, and none should be read into this entry.
+
+**Ground (owner, 17 Sep 2026).** One runtime serving E-01, E-08 and E-09 is worth more than a marginal comparison. At S1 it loaded the harness program and returned its return data and compute units for all five cases, and it runs whole transactions, which V-Z-01 at #9 needs.
+
+**Dependency check.** Its dependency tree trips D-13's advisory gate; see D-18.
 
 ## D-17 · Harness program shape
 
-**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** security necessity · **Status:** proposed at S1, awaiting the owner
+**Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** security necessity · **Status:** settled at S1
 
-**Proposal.** The harness program at `programs/core-harness` uses `solana-program-entrypoint` 3.1.1 and the safe `set_return_data` of `solana-cpi` 3.1.0, the same 3.x line as Anchor 1.2.0. It is test infrastructure and is never deployed.
+**Decision.** The harness program at `programs/core-harness` uses `solana-program-entrypoint` 3.1.1 and the safe `set_return_data` of `solana-cpi` 3.1.0, the same 3.x line as Anchor 1.2.0. It is test infrastructure and is never deployed.
 
 **Rejected.** A raw entrypoint, which needs `unsafe` in the crate, and the full `solana-program` crate.
 
-**Ground.** With these crates the harness keeps `#![forbid(unsafe_code)]` at its crate root, so INV-ERR-01 holds there without exception. Verified at S1: the probe built with the attribute in place and matched all five cases.
+**Ground.** The harness keeps `#![forbid(unsafe_code)]` at its crate root with no exception. An exception granted once for a harness tends to be cited later for something that is not one (owner, 17 Sep 2026). Verified at S1: the probe built with the attribute in place and matched all five cases.
+
+**Compute.** The five cases cost 304 to 362 compute units through this shape, against a 15,000 unit budget for `publish_checkpoint`. Hashing is nowhere near the constraint; if that budget ever tightens, look first at account writes and constraint checks.
+
+## D-18 · Advisory exceptions for the test runtime
+
+**Date:** 17 Sep 2026 · **Unit:** E-01 · **Status:** proposed at S1, awaiting the owner
+
+**Finding.** Under D-13's policy, `cargo deny check` over E-01's dependency graph as ruled (335 crates) passes licences and sources and fails advisories on five unmaintained crates: `paste` (RUSTSEC-2024-0436), `libsecp256k1` (RUSTSEC-2025-0161), `ansi_term` (RUSTSEC-2021-0139), `derivative` (RUSTSEC-2024-0388) and `bincode` (RUSTSEC-2025-0141). All five are reached only through `litesvm` 0.16.0; no shipped crate reaches any of them (`cargo tree -i <crate> -e normal`). The same run reports no vulnerability, unsound or yanked advisory.
+
+**Proposal.** `deny.toml` lists exactly these five advisory IDs as exceptions, each with the reason that only the test runtime reaches it. Vulnerability, unsound and yanked advisories keep no exceptions, and any advisory not on the list fails CI.
+
+**Rejected.** Scoping unmaintained checks to direct dependencies, or excluding dev-dependencies from the check. Either would let the next advisory through unseen.
