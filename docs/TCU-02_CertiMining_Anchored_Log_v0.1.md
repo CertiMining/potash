@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.1 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.2 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -118,7 +118,7 @@ epoch root     = root of the complete binary tree over all C slots
 
 ### 1.5 Constant-rate anchoring
 
-**INV-ANCH-01 (constant rate).** A checkpoint is published every epoch unconditionally, including epochs with zero real submissions. An empty epoch and a full epoch produce identical on-chain footprints: same instruction, same account size, same transaction byte length, same cadence.
+**INV-ANCH-01 (constant rate).** A checkpoint is published every epoch unconditionally, including epochs with zero real submissions. An empty epoch and a full epoch produce identical on-chain footprints: same instruction, same account size, same transaction byte length, same cadence. Every byte that differs from one checkpoint to the next is fixed by the epoch number, the publication schedule or a pseudorandom digest, never by how many records the epoch held. Publication time does not depend on how long an epoch took to build, and no epoch is skipped or delayed because it is empty. Each epoch has a fixed publication time, set by the schedule alone. The batcher starts building the epoch tree early enough that a full tree finishes before that time, and submits `publish_checkpoint` at that time whether the build took 2 ms or 200 ms.
 
 This is cover traffic applied at Layer 1 rather than Layer 5. It is what removes the "something material just happened at an identified asset" signal that makes public typed registries unusable in this domain, and it is the property most likely to generalize beyond mining.
 
@@ -365,7 +365,7 @@ Twenty-six days to the deadline. The engine is the submission; the ordering belo
 
 **E-13 · Benchmarks + CU profiling (days 19–20).** Per-commit CU recording, criterion benches. **Submission is shippable from here.**
 
-**E-14 · Demo fixture (days 20–23).** Three scenes: (1) the public view — a column of roots, with a control showing that an epoch containing one record and an epoch containing 255 are identical on-chain in field shape, account size, instruction length and cadence, with only the 32 root bytes differing and those indistinguishable from random without the epoch key; (2) a counterparty verifying a disclosure package offline; (3) a tampered record — one byte flipped — failing verification while the root stands unchanged.
+**E-14 · Demo fixture (days 20–23).** Three scenes: (1) the public view — a column of roots, with a control showing that an epoch containing one record and an epoch containing 255 are identical on-chain in field shape, account size, instruction length and cadence, with every differing byte fixed by the epoch number, the publication schedule or a pseudorandom digest (V-Z-01), and the roots indistinguishable from random without the epoch key; (2) a counterparty verifying a disclosure package offline; (3) a tampered record — one byte flipped — failing verification while the root stands unchanged.
 
 **E-15 · README + scope statement (days 23–24).** §0 verbatim, including what the architecture cannot carry. The asset-equivocation limit is stated in the README, not buried in docs.
 
@@ -433,7 +433,7 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 
 | ID | Test | Pass condition |
 |---|---|---|
-| V-Z-01 | **Count-hiding.** Build epochs with 0, 1, 128 and 255 real leaves at H = 8. | On-chain footprints are byte-identical in instruction length, account size, field shapes and cadence. Only the root bytes differ. |
+| V-Z-01 | **Count-hiding.** Publish consecutive epochs holding 0, 1, 128 and 255 real leaves at H = 8, in more than one order, with tree-build time varied deliberately. | Instruction length, transaction length, account size and field layout are identical. A byte may differ between two epochs only if the epoch number, the publication schedule or a pseudorandom digest fixes it: in the checkpoint account, `epoch`, `bump`, `published_slot`, `published_unix`, `root` and `receipt_digest`; in the `publish_checkpoint` transaction, the checkpoint address, the recent blockhash, the signature and the `epoch` and `root` arguments. Every other byte is identical across record counts. This list is exhaustive and closed: any other byte that differs is a failure, and adding a byte to the list requires an amendment to this specification, never an edit to the test. `epoch` advances by exactly one per epoch, empty epochs included, and every epoch is published on schedule however long its build took. |
 | V-Z-02 | **Padding indistinguishability.** Given a root, all `C` leaf digests, and no epoch key, classify each leaf as real or padding. | No test in the suite may distinguish them; the classifier's accuracy must be statistically indistinguishable from 50%. |
 | V-Z-03 | **Proof non-leakage.** Given a valid inclusion proof, recover anything about any sibling. | Siblings are digests only; no preimage is derivable. Asserted structurally by the proof format. |
 | V-Z-04 | **Position non-leakage.** Correlate `slot_index` with submission order, issuer, or time within epoch across 10,000 simulated epochs. | No correlation above noise. |
