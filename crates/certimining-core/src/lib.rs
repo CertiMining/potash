@@ -29,3 +29,8 @@ pub type Digest = [u8; 32];
 
 /// The result of every fallible operation in the engine (§2.2).
 pub type Result<T> = core::result::Result<T, RegistryError>;
+
+// TEMPORARY, reverted in the next commit: proves the INV-ERR-01 clippy gates fail CI (#1 acceptance).
+pub fn lint_gate_probe(v: &[u8], o: Option<u8>) -> u8 {
+    v[0] + o.unwrap() + o.expect("probe")
+}
