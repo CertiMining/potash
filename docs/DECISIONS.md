@@ -180,6 +180,8 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Revisit if.** Any of the five gains a vulnerability, unsound or yanked advisory. A shipped crate starts to reach one of them (`cargo tree -i <crate> -e normal` shows a path). A new advisory appears anywhere in the tree: CI fails, and the answer is a decision, never a new line added to `deny.toml`. A `litesvm` release drops them, and the exceptions come out. E-16 reviews the list before submission.
 
+**S9-01 (Codex review, 18 Sep 2026).** cargo-deny 0.20.2 checks unsound advisories in workspace crates only unless told otherwise (`src/advisories/cfg.rs`, line 282), so a transitive unsound advisory would have passed. `deny.toml` now sets `unsound = "all"`, and states `unmaintained = "all"` explicitly. The five exceptions are unchanged.
+
 ## D-19 · Default feature is `native`
 
 **Date:** 18 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment · **Status:** settled at S2
