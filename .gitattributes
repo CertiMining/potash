@@ -1,0 +1,2 @@
+# KAT-01's file is vendored byte for byte, so git must never rewrite its line endings (D-10).
+crates/certimining-core/tests/data/ShortMsgKAT_256.txt -text
