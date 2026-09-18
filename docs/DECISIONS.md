@@ -92,7 +92,7 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Date:** 17 Sep 2026 · **Unit:** E-01 · **Class:** cost judgment · **Status:** amended at S1 by D-15
 
-**Decision.** `rust-toolchain.toml` pins Rust 1.95.0. Miri runs on nightly-2026-06-15. On-chain builds use `cargo-build-sbf` 4.1.0 from Agave 4.2.2, with platform-tools v1.54. CI uses the same compilers.
+**Decision.** `rust-toolchain.toml` pins Rust 1.95.0. Miri runs on `nightly-2026-06-16`, the dated channel named in the installed toolchain's manifest; its compiler prints `rustc 1.98.0-nightly (01dfd7924 2026-06-15)`. An earlier version of this entry said nightly-2026-06-15, a date taken from that printed string rather than from the manifest; corrected at S3. On-chain builds use `cargo-build-sbf` 4.1.0 from Agave 4.2.2, with platform-tools v1.54. CI uses the same compilers.
 
 **Versions as the installed tools print them (17 Sep 2026).** `rustc 1.95.0 (59807616e 2026-04-14)`; `cargo 1.95.0 (f2d3ce0bd 2026-03-21)`; `rustc 1.98.0-nightly (01dfd7924 2026-06-15)`; `miri 0.1.0 (01dfd79246 2026-06-15)`; `cargo-deny 0.20.2`; `cargo-build-sbf 4.1.0` / `platform-tools v1.54` / `rustc 1.89.0`; the platform-tools compiler itself prints `rustc 1.89.0-dev`. Version facts in this log are read from the installed tool and recorded as printed, never taken from a release page.
 
