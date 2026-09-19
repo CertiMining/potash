@@ -99,6 +99,25 @@ fn d26_commitment_refuses_a_non_canonical_tenure() {
     }
 }
 
+/// D-03 for E-02: a refused tenure comes back as the bare code. Nothing from the input survives
+/// in the error value, so no log or message built from it can carry the tenure.
+#[test]
+fn d03_a_refused_tenure_leaves_no_trace_in_the_error() {
+    let secret = "SECRET-TENURE-7731";
+    let over_limit = format!("{secret}{}", " ".repeat(MAX_RAW_TENURE_LEN));
+    let refused = [
+        Id::canonicalize(&over_limit).err(),
+        Id::canonicalize_bytes(&[b'S', 0xFF]).err(),
+        Id::commitment(b"CABC", b"MTO00001", secret.as_bytes()).err(),
+    ];
+    for e in refused {
+        assert_eq!(
+            e.map(|e| format!("{e:?}")).as_deref(),
+            Some("CanonicalizationFailed")
+        );
+    }
+}
+
 #[cfg(feature = "native")]
 mod with_native_keccak {
     use super::*;
