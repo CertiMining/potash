@@ -121,19 +121,20 @@ fn d03_a_refused_tenure_leaves_no_trace_in_the_error() {
 #[cfg(feature = "native")]
 mod with_native_keccak {
     use super::*;
-    use certimining_core::{NativeKeccak, TAG_ASSET};
+    use certimining_core::NativeKeccak;
 
     type N = AssetId<NativeKeccak>;
     const J: &[u8; 4] = b"CABC";
     const R: &[u8; 8] = b"MTO00001";
 
     /// The commitment is Keccak-256 over TAG_ASSET ‖ J ‖ R ‖ len(T) as a little-endian u16 ‖ T
-    /// (§1.3, INV-ENC-01, INV-ENC-02, INV-ENC-04), built here byte by byte.
+    /// (§1.3, INV-ENC-01, INV-ENC-02, INV-ENC-04), built here byte by byte. The expected tag is
+    /// the literal from §1.2, not the crate's constant, so a wrong TAG_ASSET fails this test.
     #[test]
     fn the_commitment_hashes_the_tagged_preimage() {
         let tenure = b"BCTENURE1043A";
         let mut preimage = Vec::new();
-        preimage.extend_from_slice(&TAG_ASSET);
+        preimage.extend_from_slice(b"CMv1ASST");
         preimage.extend_from_slice(J);
         preimage.extend_from_slice(R);
         preimage.extend_from_slice(&13u16.to_le_bytes());
