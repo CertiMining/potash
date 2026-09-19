@@ -217,3 +217,67 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Ground (owner, 18 Sep 2026).** The gates exist to stop shipped code from panicking on bad input. Tests are what catches those problems, and a test is most trustworthy when it fails loudly. No test needs `unsafe`, so forbidding it there costs nothing.
 
 **Revisit if.** A test ever needs `unsafe`, which is a decision rather than a lint exception; or test helper code moves into a shipped crate, where the gates then apply to it.
+
+## D-22 · Normalization is NFKD
+
+**Date:** 18 Sep 2026 · **Unit:** E-02 · **Class:** security necessity · **Status:** settled at S0 (owner, 18 Sep 2026)
+
+**Decision.** Canonicalization applies Unicode NFKD, not the NFKC that TCU-02 first named. The spec is amended to match (v0.1.3).
+
+**Ground.** With the filter that keeps only A–Z and 0–9, NFKC removes an accented letter entirely: "Mine Élan 12" canonicalizes to `MINELAN12` while "Mine Elan 12" gives `MINEELAN12`, one tenure with two identities, the split RES-06 names. NFKD separates the accent from its letter, so both give `MINEELAN12`.
+
+**Limitation.** Letters with no compatibility decomposition, such as œ, æ and ß, are removed under either form: "Cœur 7" gives `CUR7`, while "Coeur 7" gives `COEUR7`.
+
+**Revisit if.** Real tenure identifiers turn out to carry such letters. A transliteration table then becomes a decision, and a new schema version under INV-FWD-01 if it changes any canonical form.
+
+## D-23 · Uppercase is ASCII-only
+
+**Date:** 18 Sep 2026 · **Unit:** E-02 · **Class:** security necessity · **Status:** settled at S0 (owner, 18 Sep 2026)
+
+**Decision.** Only a to z are uppercased. Every other character reaches the filter unchanged, and the filter removes it.
+
+**Ground.** Full Unicode uppercase follows the compiler's Unicode tables. Rust 1.95.0 reports Unicode 17.0.0 through `char::UNICODE_VERSION`, and the on-chain compiler may carry another version, so two builds could canonicalize one input differently. ASCII-only uppercase depends on nothing but the pinned normalization tables, so the native build, the on-chain build and the TS verifier (E-11) agree.
+
+**Cost.** "straße 3" gives `STRAE3`, not `STRASSE3`.
+
+**Revisit if.** A tenure registry in scope uses letters that Unicode uppercasing would map into A–Z.
+
+## D-24 · A bytes entry point
+
+**Date:** 18 Sep 2026 · **Unit:** E-02 · **Class:** required by the spec's own acceptance (E-02, F-02) · **Status:** settled at S0 (owner, 18 Sep 2026)
+
+**Decision.** `AssetIdentity::canonicalize_bytes(&[u8])` accepts raw bytes and returns `0x11` on invalid UTF-8; `canonicalize(&str)` calls it. §2.2 is amended to list it.
+
+**Ground.** A Rust `&str` cannot hold invalid UTF-8, yet E-02 and F-02 require canonicalization never to panic on it.
+
+**Revisit if.** F-02's fuzzing (E-12) finds any input on which the two entry points disagree.
+
+## D-25 · The raw input is capped at 256 bytes
+
+**Date:** 18 Sep 2026 · **Unit:** E-02 · **Class:** security necessity; the value is a preference · **Status:** settled at S0 (owner, 18 Sep 2026)
+
+**Decision.** `canonicalize_bytes` rejects raw input longer than 256 bytes with `0x11`, before normalizing. §1.8 is amended.
+
+**Ground.** The spec bounded the output at 64 bytes but not the input, and S6 requires limits where input is read. Normalization's work and buffering grow with its input.
+
+**Revisit if.** A real tenure identifier needs more than 256 bytes of raw input.
+
+## D-26 · `commitment` accepts only a canonical tenure
+
+**Date:** 18 Sep 2026 · **Unit:** E-02 · **Class:** security necessity · **Status:** settled at S0 (owner, 18 Sep 2026)
+
+**Decision.** `commitment(J, R, T)` returns `0x11` unless `T` is already canonical: 1 to 64 bytes, each A–Z or 0–9. §1.3 is amended.
+
+**Ground.** A caller who skipped `canonicalize` would otherwise commit a raw spelling and split the identity without any error.
+
+**Revisit if.** The canonical alphabet changes, which is a new schema version under INV-FWD-01.
+
+## D-27 · Three new crates
+
+**Date:** 18 Sep 2026 · **Unit:** E-02 · **Class:** cost judgment · **Status:** settled at S0 (owner, 18 Sep 2026); versions confirmed at S1
+
+**Decision.** `unicode-normalization` 0.1.25 for NFKD. `heapless` 0.9.3 for the fixed-capacity result type that §2.2 names. `proptest` 1.11.0, test-only, for the property tests, reused at E-12.
+
+**Rejected.** `icu_normalizer` 2.3.0, which carries far more data than one normalization form needs; hand-written normalization tables; hand-rolled random testing.
+
+**Revisit if.** `unicode-normalization` lags Unicode in a way that changes the canonical form of any character that decomposes into A–Z or 0–9, or `proptest`'s dependency tree trips D-13's policy.
