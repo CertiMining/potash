@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.3 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.4 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -53,7 +53,7 @@ TAG_CKPT  = b"CMv1CKPT"   TAG_PRF  = b"CMv1PRF0"   TAG_SPI  = b"CMv1SPI0"
 **INV-ENC-01.** Every preimage carries exactly one domain tag, first.
 **INV-ENC-02.** Integers little-endian, fixed width, Borsh. Digests carried as raw `[u8;32]`.
 **INV-ENC-03.** QP and batcher signatures are over Borsh canonical bytes. JSON is display only; a verifier that trusts JSON fields without recomputing from the Borsh preimage is non-conforming.
-**INV-ENC-04.** Variable-length fields are `u16` length-prefixed inside preimages.
+**INV-ENC-04.** Variable-length fields are `u16` length-prefixed inside preimages. Where this differs from Borsh's own framing, which prefixes a byte string with a `u32`, this rule governs; fixed-width integers and fixed-size arrays are encoded exactly as Borsh encodes them.
 
 ### 1.3 Asset chain (off-chain, unchanged from TCU-01 §1.4)
 
@@ -64,6 +64,17 @@ leafₙ₊₁= Keccak256( TAG_LEAF ‖ c ‖ (n+1) ‖ payload_digest ‖ assess
                   ‖ qp_key ‖ category ‖ effective_at ‖ change_identified_at )
 hₙ₊₁   = Keccak256( TAG_HEAD ‖ hₙ ‖ leafₙ₊₁ )
 ```
+
+**Preimage field widths.** Every integer is little-endian and fixed width (INV-ENC-02); digests and keys are raw bytes.
+
+| Preimage | Fields, in order after the tag | Total bytes |
+|---|---|---|
+| `c` | `J` 4, `R` 8, `len(T)` u16, `T` 1–64 | 23–86 |
+| `h₀` | `c` 32, `schema_version` u16 | 42 |
+| `leafₙ₊₁` | `c` 32, `seq` u64, `payload_digest` 32, `assessment_digest` 32, `qp_key` 32, `category` u8, `effective_at` i64, `change_identified_at` i64 | 161 |
+| `hₙ₊₁` | `hₙ` 32, `leafₙ₊₁` 32 | 72 |
+
+`category` is a `u8`, so a value outside 0–4 is representable and returns `0x05` (V-N-07b). `effective_at` and `change_identified_at` are signed 64-bit Unix seconds, matching the on-chain clock. The two preimages under `TAG_HEAD` are unambiguous because their lengths differ.
 
 **Canonical tenure `T`.** `T` is the tenure identifier after canonicalization: Unicode NFKD, then uppercasing of a to z only, then removal of every character other than A–Z and 0–9. `T` is 1 to 64 bytes. Raw input over 256 bytes, invalid UTF-8, or a result that is empty or longer than 64 bytes returns `0x11`. `commitment` refuses any `T` that is not already canonical, with `0x11`, so a raw spelling can never be committed.
 
@@ -145,6 +156,8 @@ SPI = Ed25519_sign( batcher_key,
         Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ promised_epoch ‖ max_merge_delay ) )
 ```
 
+`submission_id` is 16 bytes, `promised_epoch` a `u64` and `max_merge_delay` a `u8`, so the preimage is 65 bytes: `TAG_SPI`, `leaf` 32, `submission_id` 16, `promised_epoch` 8, `max_merge_delay` 1.
+
 **INV-SPI-01.** `max_merge_delay = 2` epochs. If `leaf` is absent from the roots of `promised_epoch .. promised_epoch + max_merge_delay`, the SPI is a self-contained, transferable proof of batcher misbehaviour.
 **INV-SPI-02.** The batcher cannot issue an SPI it can satisfy two ways: the promise binds the exact leaf digest, so satisfying it requires including that leaf.
 **INV-SPI-03.** The log proves what was submitted, not what existed. An issuer who never submits a record leaves no trace of it. No invariant can close this from inside the architecture (RES-05).
@@ -213,10 +226,17 @@ On-chain codes are returned as `6000 + code` (Anchor offset); the client reverse
 pub type Digest = [u8; 32];
 pub type Result<T> = core::result::Result<T, RegistryError>;
 
+/// Collects a preimage's bytes in order. `write` returns `0x0C` if the preimage would exceed
+/// `MAX_PREIMAGE_LEN`, which is 256; the largest preimage in schema 1 is the 161-byte leaf.
+pub trait PreimageSink {
+    fn write(&mut self, bytes: &[u8]) -> Result<()>;
+}
+
 pub trait Preimage {
     const TAG: [u8; 8];
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()>;
-    fn digest(&self) -> Result<Digest>;
+    /// The hasher is named at the call site; nothing picks one implicitly.
+    fn digest<H: Hasher>(&self) -> Result<Digest>;
 }
 
 pub trait ChainState {
@@ -238,6 +258,8 @@ pub trait AssetIdentity {
 ### 2.3 Log traits
 
 ```rust
+pub type SubmissionId = [u8; 16];
+
 pub trait EpochTree {
     /// Height is a deployment parameter, not a constant. Default H = 8 (C = 256).
     /// Valid range 4..=16; fixed at `initialize` and immutable thereafter (INV-TREE-06).
