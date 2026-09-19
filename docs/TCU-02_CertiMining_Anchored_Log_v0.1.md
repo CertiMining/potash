@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.2 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.3 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -64,6 +64,8 @@ leafₙ₊₁= Keccak256( TAG_LEAF ‖ c ‖ (n+1) ‖ payload_digest ‖ assess
                   ‖ qp_key ‖ category ‖ effective_at ‖ change_identified_at )
 hₙ₊₁   = Keccak256( TAG_HEAD ‖ hₙ ‖ leafₙ₊₁ )
 ```
+
+**Canonical tenure `T`.** `T` is the tenure identifier after canonicalization: Unicode NFKD, then uppercasing of a to z only, then removal of every character other than A–Z and 0–9. `T` is 1 to 64 bytes. Raw input over 256 bytes, invalid UTF-8, or a result that is empty or longer than 64 bytes returns `0x11`. `commitment` refuses any `T` that is not already canonical, with `0x11`, so a raw spelling can never be committed.
 
 Transition `S_{n+1} = f(S_n, R_{n+1})` is defined iff:
 
@@ -163,6 +165,7 @@ SPI = Ed25519_sign( batcher_key,
 | Instruction data, `publish_checkpoint` | 48 bytes |
 | `payload_uri` | ≤128 bytes, scheme ∈ {`ipfs://`,`https://`,`ar://`} |
 | Tenure ID post-canonicalization | ≤64 bytes |
+| Tenure ID raw input | ≤256 bytes |
 | Max merge delay | 2 epochs |
 | Compute, `publish_checkpoint` | ≤ 15,000 CU |
 | Compute, `attach_anchor_receipt` | ≤ 12,000 CU |
@@ -226,6 +229,8 @@ pub trait ChainState {
 
 pub trait AssetIdentity {
     fn canonicalize(tenure_raw: &str) -> Result<heapless::Vec<u8, 64>>;
+    /// Raw bytes, which may not be valid UTF-8; invalid input returns 0x11.
+    fn canonicalize_bytes(tenure_raw: &[u8]) -> Result<heapless::Vec<u8, 64>>;
     fn commitment(j: &[u8;4], r: &[u8;8], tenure: &[u8]) -> Result<Digest>;
 }
 ```
@@ -343,7 +348,7 @@ Twenty-six days to the deadline. The engine is the submission; the ordering belo
 
 **E-01 · Core skeleton (day 1).** `certimining-core`, lint gates, `Digest`/`RegistryError`, keccak behind `feature="native"` and `feature="solana"`.
 
-**E-02 · Canonicalization + commitment (days 1–2).** NFKC → uppercase → filter → bounds. Property test: idempotent, total, never panics on invalid UTF-8.
+**E-02 · Canonicalization + commitment (days 1–2).** NFKD → ASCII uppercase → filter to A–Z and 0–9 → bounds (§1.3). Property test: idempotent, total, never panics on invalid UTF-8.
 
 **E-03 · Preimage writers (days 2–3).** Domain-tagged, length-prefixed writers for asset, leaf, head, checkpoint, padding, SPI. No string formatting anywhere in the path.
 
@@ -487,7 +492,7 @@ A PR merges only if: KATs pass; committed vectors match; every negative vector r
 - **RES-03 · Count-hiding rests on batcher key custody.** Whoever holds `k_master` can distinguish padding from real leaves retrospectively. In a single-issuer deployment the issuer holds it and is hiding only from outsiders, which is the intended threat model but should be stated rather than assumed.
 - **RES-04 · The QP key is not credentialed.** Binding a key to a live professional registration is a Layer 6 problem this TCU does not solve.
 - **RES-05 · The log proves submission, not existence.** A record never submitted leaves no trace. No construction inside this architecture closes that; only an obligation to submit, external to the system, does.
-- **RES-06 · Canonicalization is the real identity attack surface.** Two spellings of one tenure produce two commitments. Published rules and a registry-code namespace narrow it; they do not close it.
+- **RES-06 · Canonicalization is the real identity attack surface.** Two spellings of one tenure produce two commitments. Published rules and a registry-code namespace narrow it; they do not close it. Letters with no compatibility decomposition, such as œ, æ and ß, are removed rather than transliterated, so spellings that differ only in them still produce different commitments.
 - **RES-07 · Batcher liveness.** A stalled batcher stalls the integrity claim for everyone in the batch. Gap detection makes the stall visible; it does not prevent it.
 - **RES-08 · The physical-digital boundary.** Sampling fraud, grade misrepresentation at the point of measurement, and sample substitution sit entirely outside what any of this can reach.
 
