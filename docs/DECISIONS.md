@@ -283,3 +283,103 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Revisit if.** `unicode-normalization` lags Unicode in a way that changes the canonical form of any character that decomposes into A–Z or 0–9, or `proptest`'s dependency tree trips D-13's policy.
 
 **Confirmed at S1 (18 Sep 2026).** `Cargo.lock` resolves `unicode-normalization` 0.1.25, `tinyvec` 1.13.3, `heapless` 0.9.3 and `proptest` 1.11.0. `unicode-normalization`'s tables pin Unicode 17.0.0 (`src/tables.rs`, line 18), and it needs an allocator (`extern crate alloc`, `src/lib.rs`, line 48), so core is `no_std` with `alloc`. Both bare-metal builds (D-14) and the Solana build still pass, and the harness program stays at 11,464 bytes because it never calls canonicalization. `cargo deny check` passes with the new graph; no licence had to be added.
+
+## D-28 · Leaf and head field widths
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** In the leaf preimage `category` is a `u8`, and `effective_at` and `change_identified_at` are signed 64-bit Unix seconds. `seq` is the `u64` of §2.2 and `schema_version` the `u16` of §2.4, so the leaf preimage is 161 bytes and the two head preimages are 42 and 72. §1.3 is amended with the table (v0.1.4).
+
+**Ground.** §1.3 fixed each field's order and left three widths unwritten, which S0 forbids guessing. V-N-07b expects a category of 255 to be rejected, so the field has to hold 255. Solana's clock is a signed 64-bit Unix time, and E-04 compares record times against it.
+
+**Rejected.** Unsigned timestamps, which would disagree with the on-chain clock at the one place the two meet.
+
+**Revisit if.** A verifier or an index needs unsigned times, or a category range wider than a byte. Either is a new schema version under INV-FWD-01, never an edit.
+
+## D-29 · The SPI's two unnamed types
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** `SubmissionId` is `[u8; 16]`, and `max_merge_delay` is a `u8` inside the SPI preimage, which is 65 bytes. §1.6 and §2.3 are amended (v0.1.4).
+
+**Ground.** §2.3 used `SubmissionId` without defining it and §1.6 gave the delay no width. Sixteen bytes is the usual width for a unique identifier, and INV-SPI-01 fixes the delay at 2 while §1.8 caps it, so one byte carries it. E-07 widens it for arithmetic against a `u64` epoch.
+
+**Rejected.** A 32-byte identifier, which doubles the field for no property it gains.
+
+**Revisit if.** The batcher has to accept identifiers minted elsewhere, or a deployment needs a merge delay above 255 epochs.
+
+## D-30 · The checkpoint writer waits for its consumer
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** E-03 writes no checkpoint preimage. `TAG_CKPT` stays reserved and unused, the checkpoint entry in issue #3's task list is marked N/A with this reason, and the writer arrives with whatever first reads one, at E-08 or E-10.
+
+**Ground.** §1.2 lists the tag and no section says what the preimage holds. Nothing consumes one: the program stores the root and OpenTimestamps stamps the root. Writing a layout now would freeze a guess into schema 1, and INV-FWD-01 makes changing a schema-1 digest a new schema version.
+
+**Revisit if.** E-08 or E-10 needs a checkpoint digest. Its layout is then a decision with a spec amendment, not a fix.
+
+## D-31 · The Merkle tags are written here
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** E-03 also provides the writers for `TAG_MTL0`, the real leaf, and `TAG_MTN1`, the internal node, whose formulas §1.4 fixes. E-06 builds the tree on them. This widens issue #3's task list, with the owner's ruling.
+
+**Ground.** Both are tagged preimages, which is what this unit closes for every call site. Their formulas are settled, so leaving them out would have E-06 re-deriving preimage code this module already holds.
+
+**Revisit if.** E-06 needs a leaf or node shape §1.4 does not give.
+
+## D-32 · `Preimage::digest` names its hasher
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** `fn digest<H: Hasher>(&self) -> Result<Digest>`. §2.2 is amended (v0.1.4).
+
+**Ground.** The published signature took no hasher, so it would have had to pick one implicitly, which D-20 forbids. A type parameter names the hasher at each call site and keeps the method where §2.2 puts it.
+
+**Rejected.** A free function taking both, which moves the method out of the trait for nothing; a hasher chosen by feature, which is the implicit choice D-20 rules out.
+
+**Revisit if.** A caller needs `dyn Preimage`. A trait with a generic method has no object form, though `write_preimage` keeps the `dyn` sink the spec names.
+
+## D-33 · `PreimageSink` is a fixed-capacity buffer
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** `PreimageSink` has one method, `write(&mut self, bytes: &[u8]) -> Result<()>`. The sink this crate provides collects bytes in a fixed buffer of `MAX_PREIMAGE_LEN`, which is 256, and returns `0x0C` if a preimage would exceed it. `digest` hashes the collected bytes in one call. §2.2 is amended (v0.1.4).
+
+**Ground.** The `Hasher` of D-05 takes its input as a list of slices in one call, because that is what `sol_keccak256` takes; there is no incremental hash on-chain, so a preimage has to be collected before it is hashed. §2.5's disclosure package carries those same bytes. The largest preimage in schema 1 is the 161-byte leaf, and a test holds every writer below the cap.
+
+**Rejected.** A sink collecting slices rather than bytes, which saves a 161-byte copy at the cost of lifetimes through `dyn`; an incremental hasher, which the on-chain syscall does not offer.
+
+**Revisit if.** A schema-1 preimage approaches 256 bytes, or a caller needs to hash something larger than a record.
+
+## D-34 · Borsh is a test oracle, not a dependency
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** The writers are hand-written and `certimining-core` takes no Borsh dependency in the shipped path. `borsh` is a test-only dependency, and KAT-03 asserts that each writer's bytes equal Borsh's encoding of the same fields. Where the two disagree, INV-ENC-04's `u16` prefix governs, which §1.2 now states (v0.1.4).
+
+**Ground.** INV-ENC-02 names Borsh, INV-ENC-04 names a `u16` length prefix, and Borsh frames a byte string with a `u32`, so the rules disagree exactly where E-02 already shipped the `u16` form under §1.3. Keeping Borsh out of the digest path leaves no serialization framework or derive macro in the on-chain build, and the agreement between the two is proven rather than assumed.
+
+**Rejected.** Deriving the preimages with Borsh, which needs a carve-out for the tenure's prefix in any case.
+
+**Revisit if.** A params struct needs a type whose Borsh form is not a fixed-width scalar or a fixed-size array, such as an enum or an option, or E-11's verifier disagrees on any vector.
+
+## D-35 · Where KAT-03's fixtures come from
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** In E-03, KAT-03 builds its expected bytes inside the test from the spec's field order, with each tag written as a literal. The committed fixtures under `vectors/`, with `MANIFEST.sha256`, arrive with the generator at E-05, and KAT-03 then reads them from there. Issue #3 records that its KAT-03 is proven against test-built bytes rather than committed files.
+
+**Ground.** §4.2 forbids hand-authored vectors and E-05 owns the generator, so committing fixtures now would either pre-empt that contract or place hand-made bytes under `vectors/`.
+
+**Revisit if.** E-05 slips behind E-04, which would leave KAT-03 without committed fixtures for longer than one unit.
+
+## D-36 · Reading a tag
+
+**Date:** 19 Sep 2026 · **Unit:** E-03 · **Class:** cost judgment · **Status:** settled at S0 (owner, 19 Sep 2026)
+
+**Decision.** The tag reader returns `0x05` when fewer than eight bytes are present, and `0x0B` when eight bytes are present but are not the expected tag (V-N-09, V-N-18).
+
+**Ground.** V-N-18 fixes `0x05` for a truncated buffer, and `0x0B` is `DomainTagMismatch`, which is exactly the second case. Neither path panics.
+
+**Revisit if.** A caller has to tell a short buffer from a wrong tag in a context where `0x05` is ambiguous.
