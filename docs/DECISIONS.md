@@ -281,3 +281,5 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Rejected.** `icu_normalizer` 2.3.0, which carries far more data than one normalization form needs; hand-written normalization tables; hand-rolled random testing.
 
 **Revisit if.** `unicode-normalization` lags Unicode in a way that changes the canonical form of any character that decomposes into A–Z or 0–9, or `proptest`'s dependency tree trips D-13's policy.
+
+**Confirmed at S1 (18 Sep 2026).** `Cargo.lock` resolves `unicode-normalization` 0.1.25, `tinyvec` 1.13.3, `heapless` 0.9.3 and `proptest` 1.11.0. `unicode-normalization`'s tables pin Unicode 17.0.0 (`src/tables.rs`, line 18), and it needs an allocator (`extern crate alloc`, `src/lib.rs`, line 48), so core is `no_std` with `alloc`. Both bare-metal builds (D-14) and the Solana build still pass, and the harness program stays at 11,464 bytes because it never calls canonicalization. `cargo deny check` passes with the new graph; no licence had to be added.
