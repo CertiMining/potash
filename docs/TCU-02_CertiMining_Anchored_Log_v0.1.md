@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.5 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.6 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -86,8 +86,17 @@ Transition `S_{n+1} = f(S_n, R_{n+1})` is defined iff:
 (c) ed25519_verify(qp_key, preimage(leafₙ₊₁), σ)  else 0x07
 (d) effective_at ≥ last_effective_at        else 0x0A
 (e) category_sequence_ok(kₙ, category)      → sets flag bit 0; never rejects
-(f) payload_uri well-formed, ≤128           else 0x05
+(f) category ∈ 0..=4 and payload_uri well-formed   else 0x05
 ```
+
+**Order of judgement.** A record passes four stages, and the first stage it fails decides its code.
+
+1. **Decode.** A buffer that does not decode is refused there, with `0x05` or the decoder's error, because it has no fields to judge (V-N-18).
+2. **Schema gate.** `schema_version` must be 1, and the record must carry no `ext_commitment`. Under INV-FWD-01 an extension arrives as a new schema version, so a record carrying one is asking for schema 2 and is refused with `0x0F` (V-N-13, V-N-24).
+3. **Conditions (a) to (f)**, in the order above. Condition (e) sets a flag and never rejects.
+4. **Commit.** The head advances, the sequence number increases and the flags are recorded.
+
+A record that fails more than one stage returns the code of the earliest stage it failed, and one that fails more than one condition within stage 3 returns the code of the earliest condition (V-N-23).
 
 **What the QP signs.** `σ` covers the 161-byte leaf preimage, the bytes a disclosure package carries as `preimage_borsh`, not the leaf digest (INV-ENC-03). A signature over any other encoding, JSON included, fails condition (c) and returns `0x07` (V-N-05). An absent signature returns `0x06`. When a record carries an expected QP key and it differs from the record's `qp_key`, the transition returns `0x08` before verification runs (V-N-06).
 
@@ -494,6 +503,8 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-19 | Checkpoint written by a non-authority signer | Anchor constraint violation |
 | V-N-20 | `seq = u64::MAX` | `0x10` |
 | V-N-21 | Tenure ID canonicalizing to empty | `0x11` |
+| V-N-23 | A record failing both (a) and (f) | `0x03`; the earlier condition decides |
+| V-N-24 | A record carrying `ext_commitment`, with a wrong `prev_head` | `0x0F`; the schema gate precedes (a) |
 
 ### 4.4 Privacy acceptance tests — these are the ones that matter
 

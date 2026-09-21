@@ -20,17 +20,23 @@ there because both flags need history rather than just the head.
 let applied = chain.apply(&record)?;   // Applied { leaf, head, flags }
 ```
 
-The conditions run in the order §1.3 lists them, and the chain is not touched until every one has
-passed:
+A record passes four stages, and **the first stage it fails decides its code**. Decoding stands
+before all of them and belongs to whoever reads a record off the wire: a buffer that does not decode
+has no fields to judge. This module takes a decoded record.
 
-| Condition | Rule | Code when it fails |
+| Stage | Rule | Code when it fails |
 |---|---|---|
-| Field shapes | category 0 to 4; `payload_uri` well-formed; no extension commitment | `0x05`, or `0x0F` for the extension |
+| Schema gate | the record carries no `ext_commitment`: under INV-FWD-01 an extension arrives as a new schema version, so a record carrying one is asking for schema 2 | `0x0F` |
 | (a) | `prev_head` equals the current head | `0x03` |
 | (b) | `seq` is the chain's next, computed with checked arithmetic | `0x04`, or `0x10` at the limit |
 | (c) | the QP's signature verifies over the leaf preimage | `0x06`, `0x07` or `0x08` |
 | (d) | `effective_at` is not earlier than the previous record's | `0x0A` |
 | (e) | the category sequence | never rejects; sets a flag |
+| (f) | category in 0 to 4, and `payload_uri` well formed | `0x05` |
+
+So a record with both a wrong head and a broken URI returns `0x03`, and one carrying an extension
+alongside a wrong head returns `0x0F`. The flags of (e) are computed once (f) has passed, because
+they only matter on a record that is accepted.
 
 A refused record leaves the chain exactly as it was, whatever refused it.
 

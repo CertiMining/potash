@@ -501,3 +501,27 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Rejected.** Returning the leaf with a `flags` accessor, which I had recommended; returning the head, which duplicates `head()` and makes the caller hash the record twice to get the leaf.
 
 **Revisit if.** A caller needs only one of the three values in a hot loop and the struct shows a measurable cost.
+
+## D-48 · The first stage a record fails decides its code
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** cost judgment, with an interoperability argument · **Status:** settled at S9 round 1 (owner, 21 Sep 2026)
+
+**Decision.** A record passes four stages, and the earliest one it fails returns its code: decode, then the schema gate, then conditions (a) to (f) in the order §1.3 lists them, then the commit. Condition (f) is rewritten to name what it covers, the category range and the payload URI. A buffer that fails to decode is refused at decode, because it has no fields to judge. §1.3 and §4.3 are amended, with V-N-23 for the precedence within stage 3 (v0.1.6).
+
+**Ground.** The implementation checked field shapes before condition (a), so a record with both a wrong head and a broken URI returned `0x05` where §1.3's order gives `0x03`, and the documentation claimed an order the code did not follow. The list in §1.3 is the published contract, E-11 re-implements from it, and V-P-08 compares the two implementations' accept and reject behaviour, so a precedence difference is exactly the kind of divergence that check exists to catch.
+
+**Cost.** A record with a malformed field is hashed and its signature checked before the cheap range check refuses it. The work is bounded, at 161 fixed bytes, and no state moves either way.
+
+**Revisit if.** A profile shows the ordering costs something real on a path that matters, which would be a spec change rather than a reordering in code.
+
+## D-49 · A record carrying the extension hook is refused at the schema gate
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** security necessity · **Status:** settled at S9 round 1 (owner, 21 Sep 2026)
+
+**Decision.** A record whose `ext_commitment` is set returns `0x0F`, judged at the schema gate before condition (a), not among the field checks of (f). §1.3 and §4.3 are amended, with V-N-24 (v0.1.6).
+
+**Ground.** Under INV-FWD-01 any extension arrives as a new schema version, so a record carrying an `ext_commitment` is asking for schema 2, which this engine does not implement. That is what `0x0F` means, and it is why the check belongs with the schema version rather than with the shape of a field: the field is well formed, and the schema it implies is the part this engine cannot honour. Accepting the record with the field dropped would leave the caller believing an extension had been committed when nothing was, which surfaces only when someone relies on it.
+
+**Rejected.** Ignoring the field, which is the literal reading of "always absent, never hashed" and the smallest change, but moves the risk onto every later caller. Returning `0x05`, which would describe the record as malformed when it is not.
+
+**Revisit if.** TCU-03 lands and schema 2 exists, at which point the gate admits it rather than refusing it.

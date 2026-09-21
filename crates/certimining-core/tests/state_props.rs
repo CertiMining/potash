@@ -63,7 +63,9 @@ prop_compose! {
         category in any::<u8>(),
         effective_at in any::<i64>(),
         change_identified_at in any::<i64>(),
-        uri in prop::collection::vec(any::<u8>(), 0..140),
+        // At most what the type holds: a longer value would be silently replaced by an
+        // empty one, and the 129-byte boundary is checked directly in state.rs instead.
+        uri in prop::collection::vec(any::<u8>(), 0..=128),
         ext in proptest::option::of(any::<[u8; 32]>()),
     ) -> RecordLeafInput {
         RecordLeafInput {
@@ -77,7 +79,7 @@ prop_compose! {
             category,
             effective_at,
             change_identified_at,
-            payload_uri: PayloadUri::from_slice(&uri).unwrap_or_default(),
+            payload_uri: PayloadUri::from_slice(&uri).expect("128 bytes or fewer always fit"),
             ext_commitment: ext,
         }
     }

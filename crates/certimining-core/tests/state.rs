@@ -339,22 +339,47 @@ fn v_n_02_a_sequence_gap_or_replay_is_0x04() {
     assert_eq!(chain.seq(), 1);
 }
 
-/// V-N-03: a URI that is too long, not ASCII, or of an unknown scheme is `0x05` (D-43).
+/// V-N-03's length bound, checked where it actually lives.
+///
+/// A `PayloadUri` holds 128 bytes, so a 129-byte value cannot be built at all: the type refuses it
+/// before a record exists. The rule itself is checked directly, because a record whose URI was
+/// silently replaced by an empty one would pass this test for the wrong reason.
+#[test]
+fn v_n_03_the_128_byte_bound_is_enforced_by_the_type_and_the_rule() {
+    let at_limit = format!("ipfs://{}", "a".repeat(121));
+    assert_eq!(at_limit.len(), 128);
+    assert!(payload_uri_is_well_formed(at_limit.as_bytes()));
+    assert!(PayloadUri::from_slice(at_limit.as_bytes()).is_ok());
+
+    let over = format!("ipfs://{}", "a".repeat(122));
+    assert_eq!(over.len(), 129);
+    assert!(
+        !payload_uri_is_well_formed(over.as_bytes()),
+        "the rule must refuse 129 bytes"
+    );
+    assert!(
+        PayloadUri::from_slice(over.as_bytes()).is_err(),
+        "the type must refuse 129 bytes"
+    );
+}
+
+/// V-N-03: a URI that is not ASCII, of an unknown scheme, or empty after its scheme, is `0x05`
+/// (D-43). Each one fits the type, so each reaches the engine as written.
 #[test]
 fn v_n_03_a_malformed_payload_uri_is_0x05() {
     let mut chain = start();
-    let long = format!("ipfs://{}", "a".repeat(122));
-    assert_eq!(long.len(), 129);
     for bad in [
-        long.as_str(),
         "ipfs://payload\u{00e9}",
         "ftp://example.com/payload",
         "ipfs://",
         "",
         "ipfs://payload with spaces",
+        "https://",
+        "ar://",
     ] {
         let mut r = record(chain.head(), 1, 0, 1_700_000_000);
-        r.payload_uri = PayloadUri::from_slice(bad.as_bytes()).unwrap_or_default();
+        r.payload_uri =
+            PayloadUri::from_slice(bad.as_bytes()).expect("each of these fits the type");
         assert_eq!(
             chain.apply(&r),
             Err(RegistryError::MalformedPayload),
@@ -449,7 +474,60 @@ fn code_0x09_is_never_returned() {
     assert_eq!(RegistryError::CategorySequenceUnsupported.code(), 0x09);
 }
 
-/// D-40: the §2.6 hook carries nothing under schema 1, and a record that sets it is refused rather
+/// V-N-23 and V-N-24: the first stage a record fails decides its code (§1.3, D-48, D-49).
+#[test]
+fn v_n_23_and_v_n_24_the_earliest_failure_decides_the_code() {
+    let mut chain = start();
+    let _ = chain
+        .apply(&record(chain.head(), 1, 2, 1_700_000_000))
+        .expect("accepted");
+    let head = chain.head();
+    let broken_uri = uri("ftp://nope");
+
+    // V-N-23: (a) and (f) both broken gives 0x03, because (a) is judged first.
+    let mut r = record([0xAA; 32], 2, 2, 1_700_000_100);
+    r.payload_uri = broken_uri.clone();
+    assert_eq!(chain.apply(&r), Err(RegistryError::HeadMismatch));
+
+    // V-N-24: the schema gate stands before (a), so an extension outranks a wrong head.
+    let mut r = record([0xAA; 32], 2, 2, 1_700_000_100);
+    r.payload_uri = broken_uri.clone();
+    r.ext_commitment = Some([0x99; 32]);
+    assert_eq!(
+        chain.apply(&r),
+        Err(RegistryError::UnsupportedSchemaVersion)
+    );
+
+    // (b) before (f).
+    let mut r = record(head, 9, 2, 1_700_000_100);
+    r.payload_uri = broken_uri.clone();
+    assert_eq!(chain.apply(&r), Err(RegistryError::SequenceOutOfOrder));
+
+    // (d) before (f).
+    let mut r = record(head, 2, 2, 1_600_000_000);
+    r.payload_uri = broken_uri.clone();
+    assert_eq!(chain.apply(&r), Err(RegistryError::NonMonotonicEffectiveAt));
+
+    // With only (f) broken, (f)'s own code comes back.
+    let mut r = record(head, 2, 2, 1_700_000_100);
+    r.payload_uri = broken_uri;
+    r.category = 200;
+    assert_eq!(chain.apply(&r), Err(RegistryError::MalformedPayload));
+
+    assert_eq!(chain.seq(), 1, "none of these moved the chain");
+}
+
+/// (c) is judged before (f), so a signature that does not verify outranks a field that is out of
+/// range.
+#[test]
+fn a_refused_signature_outranks_a_bad_field() {
+    let mut chain = AssetChain::<MixHash, NeverValid>::start(&C, 1).expect("starts");
+    let mut r = record(chain.head(), 1, 200, 1_700_000_000);
+    r.payload_uri = uri("ftp://nope");
+    assert_eq!(chain.apply(&r), Err(RegistryError::AttestationInvalid));
+}
+
+/// D-49: the §2.6 hook carries nothing under schema 1, and a record that sets it is refused rather
 /// than silently accepted with the field dropped.
 #[test]
 fn a_record_carrying_the_extension_hook_is_refused() {

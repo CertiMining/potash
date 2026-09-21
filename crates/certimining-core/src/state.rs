@@ -199,20 +199,30 @@ impl<H: Hasher, V: Verifier> AssetChain<H, V> {
         Ok((buf, digest))
     }
 
-    /// Field shapes, checked before anything is hashed.
-    fn check_shape(r: &RecordLeafInput) -> Result<()> {
+    /// The schema gate, which stands before condition (a) (§1.3, D-49).
+    ///
+    /// Under INV-FWD-01 an extension arrives as a new schema version, so a record carrying an
+    /// `ext_commitment` is asking for schema 2, which this engine does not implement. It is refused
+    /// with `0x0F` before any condition is judged, rather than accepted with the field dropped,
+    /// which would leave the caller believing the extension had been committed.
+    fn check_schema(r: &RecordLeafInput) -> Result<()> {
+        if r.ext_commitment.is_some() {
+            return Err(RegistryError::UnsupportedSchemaVersion); // V-N-24
+        }
+        Ok(())
+    }
+
+    /// Condition (f): the category is in range and the URI is well formed (D-43, D-48).
+    ///
+    /// It sits where §1.3 puts it, after (a) to (d), so a record that breaks an earlier condition
+    /// returns that condition's code (V-N-23).
+    fn check_fields(r: &RecordLeafInput) -> Result<()> {
         if r.category > MAX_CATEGORY {
             // V-N-07b. The category is recorded, never used to reject on sequence (INV-STATE-06).
             return Err(RegistryError::MalformedPayload);
         }
         if !payload_uri_is_well_formed(&r.payload_uri) {
             return Err(RegistryError::MalformedPayload); // V-N-03
-        }
-        if r.ext_commitment.is_some() {
-            // The §2.6 hook carries nothing under schema 1 (D-40). A record that sets it is not a
-            // schema-1 record, and accepting it silently would leave the caller believing the
-            // extension was committed.
-            return Err(RegistryError::UnsupportedSchemaVersion);
         }
         Ok(())
     }
@@ -258,12 +268,16 @@ impl<H: Hasher, V: Verifier> ChainState for AssetChain<H, V> {
     }
 
     fn leaf(&self, r: &RecordLeafInput) -> Result<Digest> {
-        Self::check_shape(r)?;
+        Self::check_schema(r)?;
+        Self::check_fields(r)?;
         self.leaf_bytes(r).map(|(_, digest)| digest)
     }
 
+    /// The stages of §1.3, in order: the schema gate, then (a) to (f), then the flags of (e), then
+    /// the commit. The first stage a record fails decides its code (D-48). Decoding stands before
+    /// all of this and belongs to whoever reads a record off the wire; this takes a decoded one.
     fn apply(&mut self, r: &RecordLeafInput) -> Result<Applied> {
-        Self::check_shape(r)?;
+        Self::check_schema(r)?; // the schema gate, before (a)
         if r.prev_head != self.head {
             return Err(RegistryError::HeadMismatch); // (a) 0x03
         }
@@ -280,7 +294,8 @@ impl<H: Hasher, V: Verifier> ChainState for AssetChain<H, V> {
         if r.effective_at < self.last_effective_at {
             return Err(RegistryError::NonMonotonicEffectiveAt); // (d) 0x0A
         }
-        let flags = self.flags_for(r); // (e) observations only
+        Self::check_fields(r)?; // (f) 0x05
+        let flags = self.flags_for(r); // (e) observations only, so they are computed once (f) holds
         let head = StepHeadPreimage {
             prev_head: self.head,
             leaf,
