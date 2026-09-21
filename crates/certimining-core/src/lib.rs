@@ -2,8 +2,9 @@
 //!
 //! E-01 provides the error space (§2.1), the digest types (§2.2) and the Keccak-256 hashers (§1.1).
 //! E-02 adds canonical tenure identifiers and the asset commitment (§1.3). E-03 adds the
-//! domain-tagged preimage writers every digest is built from (§1.2). The crate is `no_std` and has
-//! no Solana dependency outside the `solana` feature (§2).
+//! domain-tagged preimage writers every digest is built from (§1.2). E-04 adds the supersession
+//! state machine and its flags (§1.3). The crate is `no_std` and has no Solana dependency outside
+//! the `solana` feature (§2).
 
 // no_std everywhere except the unit-test harness, which needs std.
 #![cfg_attr(not(test), no_std)]
@@ -20,6 +21,8 @@ mod error;
 mod hash;
 mod identity;
 mod preimage;
+mod state;
+mod verify;
 
 pub use error::RegistryError;
 pub use hash::Hasher;
@@ -36,6 +39,14 @@ pub use preimage::{
     StepHeadPreimage, SubmissionId, MAX_PREIMAGE_LEN, TAG_HEAD, TAG_LEAF, TAG_MTL0, TAG_MTN1,
     TAG_PAD, TAG_SPI,
 };
+pub use state::{
+    payload_uri_is_well_formed, Applied, AssetChain, ChainSnapshot, ChainState, PayloadUri,
+    RecordLeafInput, FLAG_CATEGORY_DOWNGRADE, FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
+    MAX_PAYLOAD_URI_LEN, SCHEMA_VERSION,
+};
+#[cfg(feature = "native")]
+pub use verify::DalekVerifier;
+pub use verify::Verifier;
 
 /// A 32-byte digest (§2.2).
 pub type Digest = [u8; 32];
