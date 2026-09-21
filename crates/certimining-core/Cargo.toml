@@ -34,3 +34,7 @@ solana-keccak-hasher = { version = "=3.1.0", optional = true }
 [dev-dependencies]
 # Property tests for canonicalization (D-27); E-12 reuses it.
 proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
+# KAT-03's oracle only (D-34): the tests check each writer's bytes against Borsh's encoding of the
+# same fields. Never a dependency of the digest path, and its derive feature stays off, so no
+# procedural macro enters the build.
+borsh = { version = "=1.8.1", default-features = false, features = ["std"] }

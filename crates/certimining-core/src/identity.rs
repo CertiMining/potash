@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 
 use unicode_normalization::UnicodeNormalization;
 
+use crate::preimage::{AssetPreimage, Preimage};
 use crate::{Digest, Hasher, RegistryError, Result};
 
 /// Domain tag of the asset commitment (§1.2).
@@ -67,19 +68,20 @@ impl<H: Hasher> AssetIdentity for AssetId<H> {
     }
 
     fn commitment(j: &[u8; 4], r: &[u8; 8], tenure: &[u8]) -> Result<Digest> {
-        if !is_canonical(tenure) {
-            return Err(RegistryError::CanonicalizationFailed);
+        // One writer builds this preimage, here and at every other call site (E-03). It refuses a
+        // non-canonical tenure with 0x11, as D-26 requires.
+        AssetPreimage {
+            jurisdiction: j,
+            registry: r,
+            tenure,
         }
-        // len(T) is a u16, little-endian (INV-ENC-02, INV-ENC-04).
-        let len = u16::try_from(tenure.len())
-            .map_err(|_| RegistryError::CanonicalizationFailed)?
-            .to_le_bytes();
-        Ok(H::hashv(&[&TAG_ASSET, j, r, &len, tenure]))
+        .digest::<H>()
     }
 }
 
-/// True when `tenure` is 1 to 64 bytes, each A–Z or 0–9 (D-26).
-fn is_canonical(tenure: &[u8]) -> bool {
+/// True when `tenure` is 1 to 64 bytes, each A–Z or 0–9 (D-26). The asset preimage writer of E-03
+/// applies the same rule, from this one definition.
+pub(crate) fn is_canonical(tenure: &[u8]) -> bool {
     !tenure.is_empty()
         && tenure.len() <= MAX_TENURE_LEN
         && tenure
