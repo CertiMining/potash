@@ -108,6 +108,35 @@ proptest! {
         );
     }
 
+    /// S9-01: whatever is already in the sink, a writer either appends its whole preimage or
+    /// changes nothing at all.
+    #[test]
+    fn a_writer_appends_all_of_its_preimage_or_none_of_it(preload in 0usize..=256) {
+        let mut buf = PreimageBuf::new();
+        buf.write(&vec![0xEE; preload]).expect("the preload fits");
+        let before = buf.as_bytes().to_vec();
+        let p = LeafPreimage {
+            asset_commitment: [0xA1; 32],
+            seq: 1,
+            payload_digest: [0xA2; 32],
+            assessment_digest: [0xA3; 32],
+            qp_key: [0xA4; 32],
+            category: 0,
+            effective_at: 0,
+            change_identified_at: 0,
+        };
+        match p.write_preimage(&mut buf) {
+            Ok(()) => {
+                prop_assert_eq!(buf.len(), preload + 161);
+                prop_assert_eq!(&buf.as_bytes()[..preload], &before[..]);
+            }
+            Err(e) => {
+                prop_assert_eq!(e, RegistryError::RecordTooLarge);
+                prop_assert_eq!(buf.as_bytes(), &before[..]);
+            }
+        }
+    }
+
     /// The sink holds at most 256 bytes and reports `0x0C` rather than growing (D-33).
     #[test]
     fn the_sink_never_exceeds_its_capacity(chunks in prop::collection::vec(0usize..80, 0..12)) {

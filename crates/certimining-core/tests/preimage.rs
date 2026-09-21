@@ -372,6 +372,180 @@ fn d03_a_refused_write_leaves_no_trace_in_the_error() {
     full.write(&[0; 256]).expect("fits");
     let over = full.write(secret).expect_err("over capacity");
     assert_eq!(format!("{over:?}"), "RecordTooLarge");
+
+    // S9-01: a writer that runs out of room part-way must leave nothing of the record behind. The
+    // asset commitment is the field that matters here, because INV-STATE-03 keeps it out of any
+    // artifact the issuer does not choose to release.
+    let secret_commitment = [0xA1; 32];
+    let mut nearly_full = PreimageBuf::new();
+    nearly_full.write(&[0xEE; 200]).expect("fits");
+    let p = LeafPreimage {
+        asset_commitment: secret_commitment,
+        ..leaf()
+    };
+    assert_eq!(
+        p.write_preimage(&mut nearly_full),
+        Err(RegistryError::RecordTooLarge)
+    );
+    assert_eq!(nearly_full.len(), 200, "the refused write added nothing");
+    assert!(
+        !nearly_full
+            .as_bytes()
+            .windows(32)
+            .any(|w| w == secret_commitment),
+        "the asset commitment must not survive a refused write"
+    );
+}
+
+/// Each writer and the exact length it produces, for the tests that exercise the sink's limit.
+type Writer = Box<dyn Fn(&mut dyn PreimageSink) -> Result<(), RegistryError>>;
+
+fn all_writers() -> Vec<(&'static str, usize, Writer)> {
+    vec![
+        (
+            "asset",
+            35,
+            Box::new(|s: &mut dyn PreimageSink| asset().write_preimage(s)),
+        ),
+        (
+            "genesis head",
+            42,
+            Box::new(|s: &mut dyn PreimageSink| {
+                GenesisHeadPreimage {
+                    asset_commitment: C,
+                    schema_version: 1,
+                }
+                .write_preimage(s)
+            }),
+        ),
+        (
+            "leaf",
+            161,
+            Box::new(|s: &mut dyn PreimageSink| leaf().write_preimage(s)),
+        ),
+        (
+            "step head",
+            72,
+            Box::new(|s: &mut dyn PreimageSink| {
+                StepHeadPreimage {
+                    prev_head: PREV,
+                    leaf: LEAF,
+                }
+                .write_preimage(s)
+            }),
+        ),
+        (
+            "real leaf",
+            40,
+            Box::new(|s: &mut dyn PreimageSink| RealLeafPreimage { leaf: LEAF }.write_preimage(s)),
+        ),
+        (
+            "padding",
+            40,
+            Box::new(|s: &mut dyn PreimageSink| {
+                PaddingPreimage {
+                    prf_output: PRF_OUT,
+                }
+                .write_preimage(s)
+            }),
+        ),
+        (
+            "node",
+            72,
+            Box::new(|s: &mut dyn PreimageSink| {
+                NodePreimage {
+                    left: PREV,
+                    right: LEAF,
+                }
+                .write_preimage(s)
+            }),
+        ),
+        (
+            "spi",
+            65,
+            Box::new(|s: &mut dyn PreimageSink| {
+                SpiPreimage {
+                    leaf: LEAF,
+                    submission_id: SUBMISSION,
+                    promised_epoch: 20_361,
+                    max_merge_delay: 2,
+                }
+                .write_preimage(s)
+            }),
+        ),
+    ]
+}
+
+/// S9-01: at every room that is too small, from none to one byte short, a refused write leaves the
+/// sink byte for byte as it was. With exactly enough room, the write succeeds.
+#[test]
+fn a_refused_write_leaves_the_sink_exactly_as_it_was() {
+    for (name, len, write) in all_writers() {
+        for free in 0..len {
+            let preload = 256 - free;
+            let mut buf = PreimageBuf::new();
+            buf.write(&vec![0xEE; preload]).expect("the preload fits");
+            let before = buf.as_bytes().to_vec();
+            assert_eq!(
+                write(&mut buf),
+                Err(RegistryError::RecordTooLarge),
+                "{name} with {free} bytes free"
+            );
+            assert_eq!(buf.len(), preload, "{name} with {free} bytes free");
+            assert_eq!(buf.as_bytes(), &before[..], "{name} with {free} bytes free");
+        }
+        let mut exact = PreimageBuf::new();
+        exact
+            .write(&vec![0xEE; 256 - len])
+            .expect("the preload fits");
+        assert_eq!(write(&mut exact), Ok(()), "{name} with exactly enough room");
+        assert_eq!(exact.len(), 256, "{name}");
+    }
+}
+
+/// A sink outside this crate sees one call per preimage, so it cannot be handed a fragment of one
+/// (S9-01). The count also proves the writers stage rather than writing field by field.
+#[derive(Default)]
+struct CountingSink {
+    calls: usize,
+    bytes: Vec<u8>,
+    capacity: usize,
+}
+
+impl PreimageSink for CountingSink {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RegistryError> {
+        self.calls += 1;
+        if self.bytes.len() + bytes.len() > self.capacity {
+            return Err(RegistryError::RecordTooLarge);
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(())
+    }
+}
+
+#[test]
+fn every_writer_hands_the_sink_one_whole_preimage() {
+    for (name, len, write) in all_writers() {
+        let mut sink = CountingSink {
+            capacity: 256,
+            ..Default::default()
+        };
+        assert_eq!(write(&mut sink), Ok(()), "{name}");
+        assert_eq!(sink.calls, 1, "{name} wrote in more than one call");
+        assert_eq!(sink.bytes.len(), len, "{name}");
+
+        let mut tight = CountingSink {
+            capacity: len - 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            write(&mut tight),
+            Err(RegistryError::RecordTooLarge),
+            "{name}"
+        );
+        assert_eq!(tight.calls, 1, "{name}");
+        assert!(tight.bytes.is_empty(), "{name} left bytes in the sink");
+    }
 }
 
 /// The acceptance criterion of issue #3: nothing under the digest path formats a string.

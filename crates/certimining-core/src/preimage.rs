@@ -34,8 +34,12 @@ pub const TAG_SPI: [u8; 8] = *b"CMv1SPI0";
 pub type SubmissionId = [u8; 16];
 
 /// Collects a preimage's bytes in order (§2.2).
+///
+/// A failed `write` must leave the sink exactly as it was: no implementation may keep part of the
+/// bytes it refused. Every writer here stages its whole preimage first and then calls `write` once,
+/// so a refusal can never leave a fragment of one behind (D-03).
 pub trait PreimageSink {
-    /// Appends `bytes`, or returns `0x0C` if the preimage would outgrow the sink.
+    /// Appends `bytes` in full, or returns `0x0C` and changes nothing.
     fn write(&mut self, bytes: &[u8]) -> Result<()>;
 }
 
@@ -68,10 +72,24 @@ impl PreimageBuf {
 
 impl PreimageSink for PreimageBuf {
     fn write(&mut self, bytes: &[u8]) -> Result<()> {
+        // heapless copies nothing when the bytes do not fit, so a refused write changes nothing.
         self.0
             .extend_from_slice(bytes)
             .map_err(|_| RegistryError::RecordTooLarge)
     }
+}
+
+/// Builds a preimage in a buffer of its own, then hands it to `out` in a single call.
+///
+/// Writing field by field straight into the caller's sink would leave the earlier fields behind
+/// when a later one does not fit, and those fields carry record data such as `c` (D-03).
+fn staged<F>(out: &mut dyn PreimageSink, fill: F) -> Result<()>
+where
+    F: FnOnce(&mut PreimageBuf) -> Result<()>,
+{
+    let mut preimage = PreimageBuf::new();
+    fill(&mut preimage)?;
+    out.write(preimage.as_bytes())
 }
 
 /// A preimage: its domain tag, its bytes and its digest under a named hasher (§2.2).
@@ -116,11 +134,13 @@ impl Preimage for AssetPreimage<'_> {
         let len = u16::try_from(self.tenure.len())
             .map_err(|_| RegistryError::CanonicalizationFailed)?
             .to_le_bytes();
-        out.write(&Self::TAG)?;
-        out.write(self.jurisdiction)?;
-        out.write(self.registry)?;
-        out.write(&len)?;
-        out.write(self.tenure)
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(self.jurisdiction)?;
+            p.write(self.registry)?;
+            p.write(&len)?;
+            p.write(self.tenure)
+        })
     }
 }
 
@@ -137,9 +157,11 @@ impl Preimage for GenesisHeadPreimage {
     const TAG: [u8; 8] = TAG_HEAD;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        out.write(&Self::TAG)?;
-        out.write(&self.asset_commitment)?;
-        out.write(&self.schema_version.to_le_bytes())
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.asset_commitment)?;
+            p.write(&self.schema_version.to_le_bytes())
+        })
     }
 }
 
@@ -172,15 +194,17 @@ impl Preimage for LeafPreimage {
     const TAG: [u8; 8] = TAG_LEAF;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        out.write(&Self::TAG)?;
-        out.write(&self.asset_commitment)?;
-        out.write(&self.seq.to_le_bytes())?;
-        out.write(&self.payload_digest)?;
-        out.write(&self.assessment_digest)?;
-        out.write(&self.qp_key)?;
-        out.write(&[self.category])?;
-        out.write(&self.effective_at.to_le_bytes())?;
-        out.write(&self.change_identified_at.to_le_bytes())
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.asset_commitment)?;
+            p.write(&self.seq.to_le_bytes())?;
+            p.write(&self.payload_digest)?;
+            p.write(&self.assessment_digest)?;
+            p.write(&self.qp_key)?;
+            p.write(&[self.category])?;
+            p.write(&self.effective_at.to_le_bytes())?;
+            p.write(&self.change_identified_at.to_le_bytes())
+        })
     }
 }
 
@@ -198,9 +222,11 @@ impl Preimage for StepHeadPreimage {
     const TAG: [u8; 8] = TAG_HEAD;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        out.write(&Self::TAG)?;
-        out.write(&self.prev_head)?;
-        out.write(&self.leaf)
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.prev_head)?;
+            p.write(&self.leaf)
+        })
     }
 }
 
@@ -215,8 +241,10 @@ impl Preimage for RealLeafPreimage {
     const TAG: [u8; 8] = TAG_MTL0;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        out.write(&Self::TAG)?;
-        out.write(&self.leaf)
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.leaf)
+        })
     }
 }
 
@@ -233,8 +261,10 @@ impl Preimage for PaddingPreimage {
     const TAG: [u8; 8] = TAG_PAD;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        out.write(&Self::TAG)?;
-        out.write(&self.prf_output)
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.prf_output)
+        })
     }
 }
 
@@ -251,9 +281,11 @@ impl Preimage for NodePreimage {
     const TAG: [u8; 8] = TAG_MTN1;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        out.write(&Self::TAG)?;
-        out.write(&self.left)?;
-        out.write(&self.right)
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.left)?;
+            p.write(&self.right)
+        })
     }
 }
 
@@ -276,11 +308,13 @@ impl Preimage for SpiPreimage {
     const TAG: [u8; 8] = TAG_SPI;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        out.write(&Self::TAG)?;
-        out.write(&self.leaf)?;
-        out.write(&self.submission_id)?;
-        out.write(&self.promised_epoch.to_le_bytes())?;
-        out.write(&[self.max_merge_delay])
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.leaf)?;
+            p.write(&self.submission_id)?;
+            p.write(&self.promised_epoch.to_le_bytes())?;
+            p.write(&[self.max_merge_delay])
+        })
     }
 }
 
