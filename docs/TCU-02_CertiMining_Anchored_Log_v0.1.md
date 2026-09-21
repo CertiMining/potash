@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.4 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.5 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -83,11 +83,15 @@ Transition `S_{n+1} = f(S_n, R_{n+1})` is defined iff:
 ```
 (a) prev_head = hₙ                          else 0x03
 (b) seq = n+1                               else 0x04
-(c) ed25519_verify(qp_key, leafₙ₊₁, σ)      else 0x07
+(c) ed25519_verify(qp_key, preimage(leafₙ₊₁), σ)  else 0x07
 (d) effective_at ≥ last_effective_at        else 0x0A
 (e) category_sequence_ok(kₙ, category)      → sets flag bit 0; never rejects
 (f) payload_uri well-formed, ≤128           else 0x05
 ```
+
+**What the QP signs.** `σ` covers the 161-byte leaf preimage, the bytes a disclosure package carries as `preimage_borsh`, not the leaf digest (INV-ENC-03). A signature over any other encoding, JSON included, fails condition (c) and returns `0x07` (V-N-05). An absent signature returns `0x06`. When a record carries an expected QP key and it differs from the record's `qp_key`, the transition returns `0x08` before verification runs (V-N-06).
+
+**Well-formed `payload_uri`.** One to 128 bytes, printable ASCII only, beginning with `ipfs://`, `https://` or `ar://`, with at least one byte after the scheme and no whitespace or control byte. Nothing further is parsed: the engine resolves no URI and checks no host.
 
 **INV-STATE-01.** Append-only. No operation decrements `seq`, rewrites `head`, or removes a record. The engine exposes no delete, no compaction, no rewrite-on-correction.
 **INV-STATE-02.** For `m < n`, `hₙ` is recomputable from `h_m` and leaves `m+1..n`. Insertion, deletion or reordering is detectable by any holder of a later head.
@@ -101,6 +105,8 @@ Rationale: the professional standard governing resource-to-reserve conversion ru
 **INV-STATE-06a (flags are observations, not verdicts).** Flag bits are computed deterministically from chain state, are part of the record account but **excluded from the leaf preimage**, and carry no normative weight. A flag says what the engine noticed, never that a filing is improper. Client copy must render flags as observations; wording that implies non-compliance is a merge blocker (§4.6).
 
 Schema 1 flag bits: `bit 0 = RESERVE_WITHOUT_PRIOR_RESOURCE`, `bit 1 = CATEGORY_DOWNGRADE`, `bits 2–15 reserved (zero)`.
+
+**Bit 1 is set when the record's category is lower than the previous record's category in the same chain**, and is never set on the first record. Categories 0 to 2 are resource confidence levels and 3 to 4 are reserve levels, so a return from Probable to Measured sets the bit, which is the case worth noticing, while a conversion from Measured to Probable does not. Like bit 0, it records an observation and never rejects.
 **INV-STATE-07.** All arithmetic checked; overflow returns `0x10`.
 
 ### 1.4 Epoch tree — fixed capacity, count-hiding
@@ -239,10 +245,41 @@ pub trait Preimage {
     fn digest<H: Hasher>(&self) -> Result<Digest>;
 }
 
+/// Ed25519 verification (RFC 8032). The caller names the implementation, as it names the hasher.
+/// The on-chain build carries none, so the program cannot verify a signature (INV-PRIM-02).
+pub trait Verifier {
+    fn verify(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result<()>;
+}
+
+/// One record as it arrives. `c` is not here: the chain holds it.
+pub struct RecordLeafInput {
+    pub prev_head: Digest,
+    pub seq: u64,
+    pub payload_digest: Digest,
+    pub assessment_digest: Digest,        // zeros when there is no memo (INV-STATE-05)
+    pub qp_key: [u8; 32],
+    pub expected_qp_key: Option<[u8; 32]>, // present: a mismatch is 0x08 (V-N-06)
+    pub signature: Option<[u8; 64]>,       // absent is 0x06 (V-N-04)
+    pub category: u8,
+    pub effective_at: i64,
+    pub change_identified_at: i64,         // zero when there is no memo (INV-STATE-05)
+    pub payload_uri: heapless::Vec<u8, 128>,
+    pub ext_commitment: Option<Digest>,    // §2.6 hook: always None in v0.1, never hashed
+}
+
+/// What one accepted transition produces. A refused transition produces nothing, so no stale
+/// value can be read back afterwards.
+#[must_use]
+pub struct Applied {
+    pub leaf: Digest,     // what the batcher submits and a promise binds
+    pub head: Digest,     // the chain's new head
+    pub flags: u16,       // observations only, excluded from the leaf preimage (INV-STATE-06a)
+}
+
 pub trait ChainState {
     fn genesis(asset_commitment: &Digest, schema_version: u16) -> Result<Digest>;
     fn leaf(&self, r: &RecordLeafInput) -> Result<Digest>;
-    fn apply(&mut self, r: &RecordLeafInput) -> Result<Digest>;
+    fn apply(&mut self, r: &RecordLeafInput) -> Result<Applied>;
     fn head(&self) -> Digest;
     fn seq(&self) -> u64;
 }
