@@ -7,9 +7,9 @@
 //! engine's own hasher and verifier and signs with RFC 8032's keys.
 
 use certimining_core::{
-    payload_uri_is_well_formed, AssetChain, ChainSnapshot, ChainState, Digest, Hasher,
-    LeafPreimage, PayloadUri, Preimage, PreimageBuf, RecordLeafInput, RegistryError, Verifier,
-    FLAG_CATEGORY_DOWNGRADE, FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
+    payload_uri_is_well_formed, AssetChain, ChainSnapshot, ChainState, Digest, Hasher, PayloadUri,
+    RecordLeafInput, RegistryError, Verifier, FLAG_CATEGORY_DOWNGRADE,
+    FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
 };
 
 const C: Digest = [0x11; 32];
@@ -537,7 +537,7 @@ fn v_n_06_an_unexpected_qp_key_is_0x08() {
 #[cfg(feature = "native")]
 mod with_real_crypto {
     use super::*;
-    use certimining_core::{DalekVerifier, NativeKeccak};
+    use certimining_core::{DalekVerifier, LeafPreimage, NativeKeccak, Preimage, PreimageBuf};
     use ed25519_dalek::{Signer, SigningKey};
 
     type RealChain = AssetChain<NativeKeccak, DalekVerifier>;
