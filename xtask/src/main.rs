@@ -7,6 +7,11 @@
 //!
 //! Rules this tool follows:
 //! - Positive and negative vectors alike, for every vector whose inputs exist (D-51).
+//! - **A negative vector's expected code comes from the specification, not from the engine.** The
+//!   code is written here from §4.3's table; the engine is then run and generation fails if it
+//!   disagrees. A generator that recorded whatever the engine returned would enshrine an engine's
+//!   mistake as the correct answer, and E-11 would be forced to reproduce it. The same applies to
+//!   the assertions §4.2 makes about positive vectors: those are checked, not recorded.
 //! - Byte strings as `0x`-prefixed lowercase hex; 64-bit integers as decimal strings, because
 //!   E-11's verifier is JavaScript and a JSON number is a double (D-52).
 //! - Nothing environmental in a file: no timestamps, no toolchain versions, no paths (D-53).
@@ -23,6 +28,7 @@ use certimining_core::{
     AssetChain, AssetId, AssetIdentity, ChainSnapshot, ChainState, Digest, GenesisHeadPreimage,
     Hasher, LeafPreimage, NativeKeccak, NodePreimage, PaddingPreimage, PayloadUri, Preimage,
     PreimageBuf, RealLeafPreimage, RecordLeafInput, RegistryError, SpiPreimage, StepHeadPreimage,
+    FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
 };
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{json, Map, Value};
@@ -136,6 +142,20 @@ fn positives(files: &mut BTreeMap<String, Value>) {
         tenure: &tenure,
     });
 
+    // §4.2's claim is that the two spellings agree. The generator checks it; a disagreement stops
+    // generation rather than being written down as the answer.
+    let tenure_b = AssetId::<NativeKeccak>::canonicalize("BC_TENURE1043A").expect("canonical");
+    assert_eq!(
+        tenure.as_slice(),
+        tenure_b.as_slice(),
+        "V-P-01: §4.2 requires one canonical form from both spellings"
+    );
+    let commitment_b = AssetId::<NativeKeccak>::commitment(J, R, &tenure_b).expect("defined");
+    assert_eq!(
+        commitment, commitment_b,
+        "V-P-01: §4.2 requires one commitment from both spellings"
+    );
+
     files.insert(
         "V-P-01.json".into(),
         vector(
@@ -234,6 +254,12 @@ fn positives(files: &mut BTreeMap<String, Value>) {
         );
         let _ = resumed.apply(&record).expect("accepted");
     }
+    assert_eq!(
+        resumed.head(),
+        final_head,
+        "V-P-04: INV-STATE-02 requires the recomputed head to equal the chain's"
+    );
+
     files.insert(
         "V-P-04.json".into(),
         vector(
@@ -249,7 +275,10 @@ fn positives(files: &mut BTreeMap<String, Value>) {
                     "previous_category": snapshot.previous_category.map(|c| c.to_string()),
                 },
             }),
-            json!({ "head_after_five": hex(&resumed.head()), "equals_v_p_03": resumed.head() == final_head }),
+            json!({
+                "head_after_five": hex(&resumed.head()),
+                "asserted": "INV-STATE-02: the head recomputed from sequence two equals the head of the whole chain",
+            }),
             &[],
         ),
     );
@@ -294,6 +323,21 @@ fn positives(files: &mut BTreeMap<String, Value>) {
     };
     let mut unflagged_chain = Chain::resume(&commitment, 1, unflagged_snapshot).expect("resumes");
     let unflagged = unflagged_chain.apply(&flagged_record).expect("accepted");
+    // §4.2's V-P-11 claims three things: accepted, flag bit 0 set, and a leaf digest identical to
+    // the unflagged case. All three are checked here (INV-STATE-06, INV-STATE-06a).
+    assert_eq!(
+        flagged.flags, FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
+        "V-P-11: a reserve with no earlier resource must set flag bit 0"
+    );
+    assert_eq!(
+        unflagged.flags, 0,
+        "V-P-11: the same record after a resource record must carry no flag"
+    );
+    assert_eq!(
+        flagged.leaf, unflagged.leaf,
+        "V-P-11: INV-STATE-06a keeps flags out of the preimage, so the leaves must be identical"
+    );
+
     files.insert(
         "V-P-11.json".into(),
         vector(
@@ -304,7 +348,7 @@ fn positives(files: &mut BTreeMap<String, Value>) {
             json!({
                 "flagged": { "flags": flagged.flags.to_string(), "leaf": hex(&flagged.leaf) },
                 "unflagged": { "flags": unflagged.flags.to_string(), "leaf": hex(&unflagged.leaf) },
-                "leaves_identical": flagged.leaf == unflagged.leaf,
+                "asserted": "INV-STATE-06a: the flag does not change the leaf digest",
             }),
             &[TEST_KEY_NOTE],
         ),
@@ -324,13 +368,25 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
     let head = chain.head();
     let snapshot = chain.snapshot();
 
+    // §4.3's table is the source of the expected code. The engine is then run, and generation stops
+    // if it disagrees, so a vector records what the specification requires rather than a
+    // self-portrait of the implementation.
     let mut case = |name: &str,
                     spec: &str,
                     description: &str,
+                    spec_code: u16,
+                    spec_name: &str,
                     notes: &[&str],
-                    mutate: &dyn Fn(&mut RecordLeafInput)| {
-        let mut record = signed_record(&chain, 2, 2, FIRST_EFFECTIVE_AT + 10);
-        mutate(&mut record);
+                    mutate: &dyn Fn(&mut RecordLeafInput),
+                    after_signing: Option<&dyn Fn(&mut RecordLeafInput)>| {
+        // The mutation happens *before* signing. A record whose category, sequence or date was
+        // changed after signing would carry a signature over different bytes and be refused at (c)
+        // with 0x07, never reaching the condition the vector is about. Only the vectors that are
+        // themselves about the signature alter it afterwards.
+        let mut record = signed_record_with(&chain, 2, 2, FIRST_EFFECTIVE_AT + 10, |r| mutate(r));
+        if let Some(alter) = after_signing {
+            alter(&mut record);
+        }
         let mut probe = Chain::resume(&commitment, 1, snapshot).expect("resumes");
         let error = probe
             .apply(&record)
@@ -347,7 +403,7 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
                 spec,
                 description,
                 json!({ "chain": { "head": hex(&head), "seq": "1", "last_effective_at": FIRST_EFFECTIVE_AT.to_string() }, "record": record_json(&record) }),
-                json!({ "error": error_hex(error), "error_name": format!("{error:?}") }),
+                spec_expectation(name, error, spec_code, spec_name),
                 notes,
             ),
         );
@@ -357,101 +413,146 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
         "V-N-01",
         "§4.3",
         "A record that does not commit against the current head.",
+        0x03,
+        "HeadMismatch",
         &[],
         &|r| {
             r.prev_head = [0xAB; 32];
         },
+        None,
     );
-    case("V-N-02a", "§4.3", "A gap in the sequence.", &[], &|r| {
-        r.seq = 4
-    });
+    case(
+        "V-N-02a",
+        "§4.3",
+        "A gap in the sequence.",
+        0x04,
+        "SequenceOutOfOrder",
+        &[],
+        &|r| r.seq = 4,
+        None,
+    );
     case(
         "V-N-02b",
         "§4.3",
         "A replay of a sequence already applied.",
+        0x04,
+        "SequenceOutOfOrder",
         &[],
         &|r| r.seq = 1,
+        None,
     );
     case(
         "V-N-03a",
         "§4.3",
         "A payload URI of an unknown scheme.",
+        0x05,
+        "MalformedPayload",
         &[],
         &|r| {
             r.payload_uri = uri("ftp://example.com/payload");
         },
+        None,
     );
     case(
         "V-N-03b",
         "§4.3",
         "A payload URI that is not ASCII.",
+        0x05,
+        "MalformedPayload",
         &[],
         &|r| {
             r.payload_uri = uri("ipfs://payload\u{00e9}");
         },
+        None,
     );
     case(
         "V-N-03c",
         "§4.3",
         "A payload URI with nothing after its scheme.",
+        0x05,
+        "MalformedPayload",
         &[],
         &|r| {
             r.payload_uri = uri("ipfs://");
         },
+        None,
     );
     case(
         "V-N-04",
         "§4.3",
         "A record with no qualified person's signature.",
+        0x06,
+        "AttestationMissing",
         &[],
-        &|r| {
-            r.signature = None;
-        },
+        &|_| {},
+        Some(&|r| r.signature = None),
     );
     case(
         "V-N-05",
         "§4.3",
         "A signature over a JSON rendering of the record rather than over the leaf preimage.",
+        0x07,
+        "AttestationInvalid",
         &[TEST_KEY_NOTE],
-        &|r| {
+        &|_| {},
+        Some(&|r| {
             let key = SigningKey::from_bytes(&RFC8032_SECRET_KEY);
             let json_bytes = br#"{"seq":"2","category":"2","effective_at":"1700000010"}"#;
             r.signature = Some(key.sign(json_bytes).to_bytes());
-        },
+        }),
     );
     case(
         "V-N-06",
         "§4.3",
         "A record whose expected qualified person's key is not the key it claims.",
+        0x08,
+        "AttestationKeyMismatch",
         &[TEST_KEY_NOTE],
         &|r| {
             r.expected_qp_key = Some([0x21; 32]);
         },
+        None,
     );
     case(
         "V-N-07b",
         "§4.3",
         "A category outside the range schema 1 defines.",
+        0x05,
+        "MalformedPayload",
         &[],
         &|r| r.category = 5,
+        None,
     );
     case(
         "V-N-08",
         "§4.3",
         "An effective date earlier than its predecessor's.",
+        0x0A,
+        "NonMonotonicEffectiveAt",
         &[],
         &|r| {
             r.effective_at = FIRST_EFFECTIVE_AT - 1;
         },
+        None,
     );
-    case("V-N-23", "§4.3", "A record failing both (a) and (f): the earlier condition decides, so the answer is the head mismatch.", &[], &|r| {
-        r.prev_head = [0xAB; 32];
-        r.payload_uri = uri("ftp://example.com/payload");
-    });
-    case("V-N-24", "§4.3", "A record carrying the reserved extension commitment alongside a wrong head: the schema gate stands before (a).", &[], &|r| {
-        r.prev_head = [0xAB; 32];
-        r.ext_commitment = Some([0x99; 32]);
-    });
+    case("V-N-23", "§4.3", "A record failing both (a) and (f): the earlier condition decides, so the answer is the head mismatch.", 0x03,
+        "HeadMismatch",
+        &[],
+        &|r| {
+            r.prev_head = [0xAB; 32];
+            r.payload_uri = uri("ftp://example.com/payload");
+        },
+        None,
+    );
+    case("V-N-24", "§4.3", "A record carrying the reserved extension commitment alongside a wrong head: the schema gate stands before (a).", 0x0F,
+        "UnsupportedSchemaVersion",
+        &[],
+        &|r| {
+            r.prev_head = [0xAB; 32];
+            r.ext_commitment = Some([0x99; 32]);
+        },
+        None,
+    );
 
     // V-N-13, V-N-20 and V-N-21 do not fit the shape above: each needs its own starting point.
     let error = Chain::genesis(&commitment, 2).expect_err("schema 2 is refused");
@@ -462,7 +563,7 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
             "§4.3",
             "A schema version this engine does not implement.",
             json!({ "asset_commitment": hex(&commitment), "schema_version": "2" }),
-            json!({ "error": error_hex(error), "error_name": format!("{error:?}") }),
+            spec_expectation("V-N-13", error, 0x0F, "UnsupportedSchemaVersion"),
             &[],
         ),
     );
@@ -486,7 +587,7 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
             "§4.3",
             "A chain whose sequence number has nowhere left to go: the counter is checked, never wrapped.",
             json!({ "chain": { "head": hex(&at_limit.head), "seq": at_limit.seq.to_string() }, "record": record_json(&record) }),
-            json!({ "error": error_hex(error), "error_name": format!("{error:?}") }),
+            spec_expectation("V-N-20", error, 0x10, "ArithmeticOverflow"),
             &[TEST_KEY_NOTE],
         ),
     );
@@ -496,7 +597,7 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
         let error = AssetId::<NativeKeccak>::canonicalize(raw).expect_err("refused");
         refused.insert(
             raw.to_string(),
-            json!({ "error": error_hex(error), "error_name": format!("{error:?}") }),
+            spec_expectation("V-N-21", error, 0x11, "CanonicalizationFailed"),
         );
     }
     files.insert(
@@ -708,8 +809,28 @@ fn hex(bytes: &[u8]) -> String {
     out
 }
 
-fn error_hex(error: RegistryError) -> String {
-    format!("0x{:02X}", error.code())
+/// What §4.3 requires of a vector, checked against what the engine did.
+///
+/// The code and its name are written from the specification. Generation fails if the engine returns
+/// anything else, so an engine with the wrong precedence cannot write that precedence into the
+/// committed set as the correct answer, and E-11 is never forced to reproduce a mistake.
+fn spec_expectation(vector: &str, error: RegistryError, spec_code: u16, spec_name: &str) -> Value {
+    assert_eq!(
+        error.code(),
+        spec_code,
+        "{vector}: the engine returned {error:?} (0x{:02X}) where the specification names {spec_name} (0x{spec_code:02X})",
+        error.code()
+    );
+    assert_eq!(
+        format!("{error:?}"),
+        spec_name,
+        "{vector}: §2.1 calls 0x{spec_code:02X} {spec_name}; the engine calls it {error:?}"
+    );
+    json!({
+        "error": format!("0x{spec_code:02X}"),
+        "error_name": spec_name,
+        "source": "TCU-02 §4.3, checked against the engine at generation time",
+    })
 }
 
 /// SHA-256 for the manifest, from the implementation already in this workspace's graph. The engine

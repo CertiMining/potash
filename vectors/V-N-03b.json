@@ -2,7 +2,8 @@
   "description": "A payload URI that is not ASCII.",
   "expected": {
     "error": "0x05",
-    "error_name": "MalformedPayload"
+    "error_name": "MalformedPayload",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
   "id": "V-N-03b",
   "inputs": {

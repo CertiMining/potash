@@ -2,7 +2,8 @@
   "description": "A record with no qualified person's signature.",
   "expected": {
     "error": "0x06",
-    "error_name": "AttestationMissing"
+    "error_name": "AttestationMissing",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
   "id": "V-N-04",
   "inputs": {

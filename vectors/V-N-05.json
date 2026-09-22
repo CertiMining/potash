@@ -2,7 +2,8 @@
   "description": "A signature over a JSON rendering of the record rather than over the leaf preimage.",
   "expected": {
     "error": "0x07",
-    "error_name": "AttestationInvalid"
+    "error_name": "AttestationInvalid",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
   "id": "V-N-05",
   "inputs": {

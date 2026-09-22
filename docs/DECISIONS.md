@@ -608,7 +608,9 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** cost judgment · **Status:** settled at S0 (owner, 22 Sep 2026)
 
-**Decision.** `serde` and `serde_json` are dependencies of `xtask` only, at exact versions. `certimining-core` takes neither, and E-03's test that reads the digest path's source for string formatting and JSON keeps passing.
+**Decision.** JSON belongs to `xtask` alone. In the build, `serde_json` 1.0.151 is its only direct dependency and `serde` 1.0.229 arrives transitively through it, both at the versions already in `Cargo.lock`. `certimining-core` takes neither, and E-03's test that reads the digest path's source for string formatting and JSON keeps passing. KAT-03's fixtures therefore land in plain text as well, so the core crate's tests read them without a JSON parser.
+
+**Amended 22 Sep 2026.** The decision first named both crates as direct dependencies. Only `serde_json` is needed, so that is what the build has; the substance, that JSON stays in the tool and never reaches the engine, is unchanged.
 
 **Ground.** INV-ENC-03 makes JSON a display format, never a source of truth, and issue #3's criterion keeps it out of the digest path. A generator is display.
 

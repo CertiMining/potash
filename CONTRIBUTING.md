@@ -32,6 +32,15 @@ identical on another machine.
 Every hashing step records its preimage as well as its digest, so an implementation that disagrees
 can tell whether it built the wrong bytes or hashed the right ones wrongly.
 
+**Two kinds of expectation, with different authority.** A positive vector's digests lock the
+engine's output: no document can state a digest, and what stands behind them is KAT-01 and the
+independent re-implementation at E-11. A negative vector's error code, and every assertion §4.2
+makes — that two spellings agree, that a recomputed head matches, that a flag does not move a digest
+— come from the specification. The generator writes those from §4.3's table and §4.2's claims, runs
+the engine, and **fails generation if the engine disagrees**. A generator that recorded whatever the
+engine returned would enshrine an engine's mistake as the correct answer, and the TypeScript verifier
+would then be obliged to reproduce it.
+
 Where a signature is needed, the key is **RFC 8032 §7.1's published specification test key**, named
 as such in every file that shows it. Its private half is public, so anyone can reproduce any
 signature in the set. No generated key and no real key belongs in this repository.

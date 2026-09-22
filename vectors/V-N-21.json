@@ -3,19 +3,23 @@
   "expected": {
     "": {
       "error": "0x11",
-      "error_name": "CanonicalizationFailed"
+      "error_name": "CanonicalizationFailed",
+      "source": "TCU-02 §4.3, checked against the engine at generation time"
     },
     "   ": {
       "error": "0x11",
-      "error_name": "CanonicalizationFailed"
+      "error_name": "CanonicalizationFailed",
+      "source": "TCU-02 §4.3, checked against the engine at generation time"
     },
     "-_./": {
       "error": "0x11",
-      "error_name": "CanonicalizationFailed"
+      "error_name": "CanonicalizationFailed",
+      "source": "TCU-02 §4.3, checked against the engine at generation time"
     },
     "œæß": {
       "error": "0x11",
-      "error_name": "CanonicalizationFailed"
+      "error_name": "CanonicalizationFailed",
+      "source": "TCU-02 §4.3, checked against the engine at generation time"
     }
   },
   "id": "V-N-21",

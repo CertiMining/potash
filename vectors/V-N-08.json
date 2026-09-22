@@ -1,8 +1,9 @@
 {
   "description": "An effective date earlier than its predecessor's.",
   "expected": {
-    "error": "0x07",
-    "error_name": "AttestationInvalid"
+    "error": "0x0A",
+    "error_name": "NonMonotonicEffectiveAt",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
   "id": "V-N-08",
   "inputs": {
@@ -23,7 +24,7 @@
       "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
       "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "seq": "2",
-      "signature": "0x99a501ba44bb95bd74969b060b9a492542752fdbec558832c3a2d5089824b350940a4e09da7319dce8066f13e2fa35d5ce536e40d13f5942b128c5d3e084c801"
+      "signature": "0xaacc2bc971ea5308b3aa7804519eeaaa43b35af672d7d3e6fd4e55689f9b70d7bcf87b3b0bccce748c5541be5141b011f4a7e2b6191720b7f9f8a7e0e9ea150f"
     }
   },
   "notes": [

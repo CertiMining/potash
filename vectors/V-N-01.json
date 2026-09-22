@@ -2,7 +2,8 @@
   "description": "A record that does not commit against the current head.",
   "expected": {
     "error": "0x03",
-    "error_name": "HeadMismatch"
+    "error_name": "HeadMismatch",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
   "id": "V-N-01",
   "inputs": {

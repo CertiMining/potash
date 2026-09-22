@@ -2,7 +2,8 @@
   "description": "A record failing both (a) and (f): the earlier condition decides, so the answer is the head mismatch.",
   "expected": {
     "error": "0x03",
-    "error_name": "HeadMismatch"
+    "error_name": "HeadMismatch",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
   "id": "V-N-23",
   "inputs": {

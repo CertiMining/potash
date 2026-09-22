@@ -2,7 +2,8 @@
   "description": "A record carrying the reserved extension commitment alongside a wrong head: the schema gate stands before (a).",
   "expected": {
     "error": "0x0F",
-    "error_name": "UnsupportedSchemaVersion"
+    "error_name": "UnsupportedSchemaVersion",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
   "id": "V-N-24",
   "inputs": {

@@ -1,11 +1,11 @@
 {
   "description": "A reserve category with no earlier resource record is accepted and flagged. The same record on a chain that has seen a resource is unflagged, and both leaves are identical because flags stay out of the preimage.",
   "expected": {
+    "asserted": "INV-STATE-06a: the flag does not change the leaf digest",
     "flagged": {
       "flags": "1",
       "leaf": "0xfc507647bbc426a9b08375afd6ae5646daced91cb7fa73bf39300c044e096adb"
     },
-    "leaves_identical": true,
     "unflagged": {
       "flags": "0",
       "leaf": "0xfc507647bbc426a9b08375afd6ae5646daced91cb7fa73bf39300c044e096adb"
