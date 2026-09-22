@@ -517,6 +517,54 @@ fn v_n_23_and_v_n_24_the_earliest_failure_decides_the_code() {
     assert_eq!(chain.seq(), 1, "none of these moved the chain");
 }
 
+/// The adjacent boundaries of the order (§1.3, D-48), which the mixed-invalid cases above leave
+/// unpinned: each of them pairs a condition with (f), so swapping two neighbours among (a) to (d)
+/// would go unnoticed. With (a) to (d) each pinned against (f), these three fix the whole sequence.
+#[test]
+fn adjacent_conditions_are_judged_in_order() {
+    // A chain standing at a known head and date, under a verifier that refuses every signature, so
+    // (c) fails whenever it is reached.
+    let head = [0x7C; 32];
+    let snapshot = ChainSnapshot {
+        head,
+        seq: 4,
+        last_effective_at: 1_700_000_000,
+        saw_resource: true,
+        previous_category: Some(2),
+    };
+    let mut chain = AssetChain::<MixHash, NeverValid>::resume(&C, 1, snapshot).expect("resumes");
+
+    // (a) before (b): a wrong head with a wrong sequence gives 0x03.
+    assert_eq!(
+        chain.apply(&record([0xAA; 32], 99, 2, 1_700_000_100)),
+        Err(RegistryError::HeadMismatch)
+    );
+
+    // (b) before (c): the right head, a wrong sequence and a signature that cannot verify give
+    // 0x04.
+    assert_eq!(
+        chain.apply(&record(head, 99, 2, 1_700_000_100)),
+        Err(RegistryError::SequenceOutOfOrder)
+    );
+
+    // (c) before (d): the right head and sequence, a failing signature and a date that goes
+    // backwards give 0x07.
+    assert_eq!(
+        chain.apply(&record(head, 5, 2, 1_600_000_000)),
+        Err(RegistryError::AttestationInvalid)
+    );
+
+    // (c)'s own codes keep their order against (d) as well: an absent signature is 0x06.
+    let mut unsigned = record(head, 5, 2, 1_600_000_000);
+    unsigned.signature = None;
+    assert_eq!(
+        chain.apply(&unsigned),
+        Err(RegistryError::AttestationMissing)
+    );
+
+    assert_eq!(chain.snapshot(), snapshot, "none of these moved the chain");
+}
+
 /// (c) is judged before (f), so a signature that does not verify outranks a field that is out of
 /// range.
 #[test]
