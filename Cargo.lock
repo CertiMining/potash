@@ -584,6 +584,7 @@ name = "certimining-core"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ed25519-dalek",
  "heapless",
  "proptest",
  "sha3",

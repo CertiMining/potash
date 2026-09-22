@@ -383,3 +383,145 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Ground.** V-N-18 fixes `0x05` for a truncated buffer, and `0x0B` is `DomainTagMismatch`, which is exactly the second case. Neither path panics.
 
 **Revisit if.** A caller has to tell a short buffer from a wrong tag in a context where `0x05` is ambiguous.
+
+## D-37 · The QP signature covers the leaf preimage, not the digest
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** security necessity · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** `σ` covers the 161-byte leaf preimage. §1.3's condition (c) is amended to say so (v0.1.5).
+
+**Ground.** The spec contradicted itself. Condition (c) passed `leafₙ₊₁`, the digest, while INV-ENC-03 says signatures are over Borsh canonical bytes and V-N-05 exists to reject a signature over any other encoding. §2.5's disclosure package carries `preimage_borsh` precisely so a verifier can recompute those bytes and check the signature against them.
+
+**Rejected.** Signing the digest, which would verify against bytes no artifact carries and would put E-11's verifier on a different rule from the engine.
+
+**Revisit if.** A QP's signing hardware can only sign a 32-byte value. That is a new schema version under INV-FWD-01, never an edit.
+
+## D-38 · Ed25519 verification is a named trait with no on-chain implementation
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** security necessity · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** A `Verifier` trait, named by the caller exactly as the hasher is (D-20), with one implementation behind `feature = "native"`. The Solana build carries none. §2.2 is amended (v0.1.5).
+
+**Ground.** INV-PRIM-02 keeps signature checks out of the program. A feature-gated implementation makes that true by construction rather than by review, and keeps signature code out of the on-chain binary.
+
+**Rejected.** An unconditional dependency, which would put verification code on-chain against INV-PRIM-02; verification left entirely to the caller, which would leave V-N-04, V-N-05 and V-N-06 with no path through the engine.
+
+**Revisit if.** A deployment needs on-chain verification. That changes INV-PRIM-02 and is a spec decision, not a build flag.
+
+## D-39 · Ed25519 crate
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** cost judgment · **Status:** settled at S0 (owner, 21 Sep 2026); version confirmed at S1
+
+**Decision.** `ed25519-dalek`, behind `feature = "native"`, with default features off. Tests sign with fixed secret keys, so no random number generator enters the build. The exact version is recorded at S1, and if the Solana crates already resolve one, that line is reused rather than adding a second.
+
+**Rejected.** `ed25519-compact`, which is smaller but far less used and less reviewed.
+
+**Revisit if.** An advisory lands on it, which is D-18's process, or the on-chain build ever needs verification (D-38).
+
+## D-40 · What a record input holds
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** cost judgment · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** `RecordLeafInput` carries the leaf fields other than `c`, which the chain holds, plus `prev_head`, an optional signature, an optional expected QP key, `payload_uri` of at most 128 bytes, and `ext_commitment`, the §2.6 hook, which is always absent in v0.1 and never hashed. §2.2 is amended with the struct (v0.1.5).
+
+**Ground.** Three signatures named the type and nothing defined it, which S0 forbids guessing. §2.6 already promises `ext_commitment`, and adding it later would change a struct every caller builds.
+
+**Revisit if.** TCU-03 needs the hook to carry something the field's shape cannot hold.
+
+## D-41 · Where `0x06`, `0x07` and `0x08` divide
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** cost judgment · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** An absent signature is `0x06`. A signature that fails under the record's own `qp_key` is `0x07`. When the record carries an expected QP key and it differs from `qp_key`, the transition returns `0x08` before any verification runs. §1.3 is amended (v0.1.5).
+
+**Ground.** A signature made by the wrong key simply fails to verify, so nothing inside one record distinguishes V-N-06 from V-N-05. The expected key puts the question of which QP was authorized where the caller can answer it, and gives `0x08` a real path rather than leaving a documented code dead.
+
+**Revisit if.** A deployment carries a registry of authorized QP keys, which would move the comparison inside the engine.
+
+## D-42 · When `CATEGORY_DOWNGRADE` fires
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** owner's domain ruling · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** Flag bit 1 is set when the record's category is lower than the previous record's category in the same chain, and never on the first record. §1.3 is amended (v0.1.5).
+
+**Ground.** The spec named the bit and never said what set it. Comparing against the previous record is the rule a reader can check by eye against two filings.
+
+**Limitation.** Categories 0 to 2 are resource confidence levels and 3 to 4 are reserve levels, so a return from Probable to Measured sets the bit, which is the case worth noticing, while a conversion from Measured to Probable does not. Like bit 0 it is an observation and never rejects (INV-STATE-06a).
+
+**Revisit if.** A working QP says the numeric ladder misreads their practice, or the bit fires on a large share of real filings, which would make it noise. The same reopen conditions as D-01.
+
+## D-43 · What "well-formed" means for `payload_uri`
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** security necessity in shape, cost judgment in detail · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** One to 128 bytes, printable ASCII only, beginning with `ipfs://`, `https://` or `ar://`, with at least one byte after the scheme and no whitespace or control byte. Nothing further is parsed. §1.3 is amended (v0.1.5).
+
+**Ground.** Condition (f) said "well-formed" and left it undefined, while V-N-03 expects a 129-byte value, a non-ASCII value and an unknown scheme each to return `0x05`. The engine resolves no URI, so every further parsing rule is a way to reject legitimate work.
+
+**Revisit if.** A submitter needs a scheme outside the three, which is a spec change.
+
+## D-44 · What the chain carries between records
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** cost judgment · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** `c`, the schema version, the head, the sequence number, the last effective date, whether any earlier record carried category 1 or 2, and the previous record's category. Fixed size, no allocation.
+
+**Ground.** Both flag rules need history rather than just the head: bit 0 asks whether a resource record ever preceded, and bit 1 compares against the previous category. Two values answer both, and a growing history would not fit a `no_std` crate.
+
+**Revisit if.** A later flag needs more of the chain's past than these two values carry.
+
+## D-45 · KAT-02's vectors and their provenance
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** security necessity · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** RFC 8032 §7.1's vectors, taken from the RFC text at rfc-editor.org, vendored with a `PROVENANCE.md` recording the source, the retrieval date and the file's SHA-256, as D-10 requires of KAT-01. If the primary source does not cover the cases the tests need, the work stops and comes back rather than using a secondary source.
+
+**Rejected.** Vectors from the crate's own test suite, which would test the crate against itself.
+
+**Revisit if.** RFC 8032 is superseded.
+
+## D-46 · The fixed digests V-P-02, V-P-03 and V-P-04 expect
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** cost judgment · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** E-04's tests prove the relationships: genesis is deterministic for a given `c` and schema version, a five-record chain recomputes from `h₂` forward to the same `h₅` (INV-STATE-02), and a flagged record has the same leaf digest as an unflagged one. The committed values under `vectors/`, with their manifest, arrive with the generator at E-05, under D-35.
+
+**Ground.** §4.2 forbids hand-authored vectors and E-05 owns the generator.
+
+**Revisit if.** E-05 slips behind E-06, leaving two units without committed vectors.
+
+## D-47 · `apply` returns what the transition produced
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** owner's ruling, against my recommendation · **Status:** settled at S0 (owner, 21 Sep 2026)
+
+**Decision.** `apply` returns `Applied { leaf, head, flags }`, marked `#[must_use]`, and there is no `flags` accessor. `head` and `seq` stay as accessors, because those are chain state. §2.2 is amended (v0.1.5).
+
+**Ground (the owner's).** A `flags` accessor would return "the flags of the record just applied", so its answer would depend on call order: before an `apply`, after a refused one, or after a second one, it returns flags belonging to a different record, with nothing in the types to prevent it. It would also make the chain carry a value that is not chain state but a leftover from the last call, and that is the kind of fault that surfaces later as a disclosure package showing the wrong flag against the right record. One transition produces three outputs, so it returns the three together; a refused transition returns nothing, and there is no stale value to read. `#[must_use]` makes the compiler complain if a caller drops the leaf, which is the value the batching path depends on. The published signature was four days old with no implementers, so this was the cheapest moment to change it.
+
+**Rejected.** Returning the leaf with a `flags` accessor, which I had recommended; returning the head, which duplicates `head()` and makes the caller hash the record twice to get the leaf.
+
+**Revisit if.** A caller needs only one of the three values in a hot loop and the struct shows a measurable cost.
+
+## D-48 · The first stage a record fails decides its code
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** cost judgment, with an interoperability argument · **Status:** settled at S9 round 1 (owner, 21 Sep 2026)
+
+**Decision.** A record passes four stages, and the earliest one it fails returns its code: decode, then the schema gate, then conditions (a) to (f) in the order §1.3 lists them, then the commit. Condition (f) is rewritten to name what it covers, the category range and the payload URI. A buffer that fails to decode is refused at decode, because it has no fields to judge. §1.3 and §4.3 are amended, with V-N-23 for the precedence within stage 3 (v0.1.6).
+
+**Ground.** The implementation checked field shapes before condition (a), so a record with both a wrong head and a broken URI returned `0x05` where §1.3's order gives `0x03`, and the documentation claimed an order the code did not follow. The list in §1.3 is the published contract, E-11 re-implements from it, and V-P-08 compares the two implementations' accept and reject behaviour, so a precedence difference is exactly the kind of divergence that check exists to catch.
+
+**Cost.** A record with a malformed field is hashed and its signature checked before the cheap range check refuses it. The work is bounded, at 161 fixed bytes, and no state moves either way.
+
+**Revisit if.** A profile shows the ordering costs something real on a path that matters, which would be a spec change rather than a reordering in code.
+
+## D-49 · A record carrying the extension hook is refused at the schema gate
+
+**Date:** 21 Sep 2026 · **Unit:** E-04 · **Class:** security necessity · **Status:** settled at S9 round 1 (owner, 21 Sep 2026)
+
+**Decision.** A record whose `ext_commitment` is set returns `0x0F`, judged at the schema gate before condition (a), not among the field checks of (f). §1.3 and §4.3 are amended, with V-N-24 (v0.1.6).
+
+**Ground.** Under INV-FWD-01 any extension arrives as a new schema version, so a record carrying an `ext_commitment` is asking for schema 2, which this engine does not implement. That is what `0x0F` means, and it is why the check belongs with the schema version rather than with the shape of a field: the field is well formed, and the schema it implies is the part this engine cannot honour. Accepting the record with the field dropped would leave the caller believing an extension had been committed when nothing was, which surfaces only when someone relies on it.
+
+**Rejected.** Ignoring the field, which is the literal reading of "always absent, never hashed" and the smallest change, but moves the risk onto every later caller. Returning `0x05`, which would describe the record as malformed when it is not.
+
+**Revisit if.** TCU-03 lands and schema 2 exists, at which point the gate admits it rather than refusing it.

@@ -35,6 +35,16 @@ jobs:
       - run: scripts/ci.sh install-agave
       - run: scripts/ci.sh kat01-onchain
 
+  kat02:
+    needs: [kat01-offchain, kat01-onchain]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci.sh install-rust
+      - run: scripts/ci.sh kat02
+
   checks:
     needs: [kat01-offchain, kat01-onchain]
     runs-on: ubuntu-24.04

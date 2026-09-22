@@ -11,8 +11,10 @@ description = "Digests and state rules for the CertiMining anchored log (TCU-02)
 [features]
 # A plain build and `cargo test` use the off-chain hasher (D-19).
 default = ["native"]
-# NativeKeccak: Keccak-256 in software through RustCrypto sha3 (D-06).
-native = ["dep:sha3"]
+# NativeKeccak: Keccak-256 in software through RustCrypto sha3 (D-06). DalekVerifier: Ed25519
+# verification off-chain (D-38). The on-chain build carries no verifier, so the program cannot
+# check a signature (INV-PRIM-02).
+native = ["dep:sha3", "dep:ed25519-dalek"]
 # SolanaKeccak: the sol_keccak256 syscall on-chain (D-07). The hasher's own `sha3` feature gives it a
 # software path off-chain; without it, its hashv panics there, which INV-ERR-01 forbids.
 solana = ["dep:solana-keccak-hasher", "solana-keccak-hasher/sha3"]
@@ -29,6 +31,9 @@ heapless = { version = "=0.9.3", default-features = false }
 # which the no_std crate gets through the alloc crate.
 unicode-normalization = { version = "=0.1.25", default-features = false }
 sha3 = { version = "=0.10.8", default-features = false, optional = true }
+# Ed25519 verification for condition (c) (D-38, D-39). Verification only, no random number
+# generator. 2.2.0 is the line the Solana crates already resolve, so the graph keeps one.
+ed25519-dalek = { version = "=2.2.0", default-features = false, optional = true }
 solana-keccak-hasher = { version = "=3.1.0", optional = true }
 
 [dev-dependencies]
@@ -38,3 +43,6 @@ proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 # same fields. Never a dependency of the digest path, and its derive feature stays off, so no
 # procedural macro enters the build.
 borsh = { version = "=1.8.1", default-features = false, features = ["std"] }
+# KAT-02 reads RFC 8032's vectors and the state tests sign records with them (D-39, D-45). Signing
+# uses the vectors' own secret keys, so no random number generator is involved.
+ed25519-dalek = { version = "=2.2.0", default-features = false }

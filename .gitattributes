@@ -1,2 +1,5 @@
 # KAT-01's file is vendored byte for byte, so git must never rewrite its line endings (D-10).
 crates/certimining-core/tests/data/ShortMsgKAT_256.txt -text
+
+# KAT-02's vectors are the RFC's own bytes, checked by hash before the test runs (D-45).
+crates/certimining-core/tests/data/rfc8032_7.1.txt -text

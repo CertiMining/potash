@@ -3,7 +3,7 @@
 # in CI's order, stops at a KAT-01 failure as CI does, and prints each group's test counts and exit
 # code, so a local run is CI verbatim.
 #
-#   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | checks | miri | deny | all
+#   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | kat02 | checks | miri | deny | all
 #   scripts/ci.sh install-<tool>    CI only: rust | agave | miri | cargo-deny
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -11,6 +11,8 @@ cd "$(dirname "$0")/.."
 # Pins, each recorded in docs/DECISIONS.md.
 KAT_FILE=crates/certimining-core/tests/data/ShortMsgKAT_256.txt
 KAT_SHA256=741862f92342010311504202d7b304955fa28aa03a752633a5e83f971f014851          # D-10
+KAT02_FILE=crates/certimining-core/tests/data/rfc8032_7.1.txt
+KAT02_SHA256=0717d570f83753773c492e9157bb1407754bf16e3cf9b8be317b2f7c71b42d67        # D-45
 MIRI_TOOLCHAIN=nightly-2026-06-16                                                     # D-11
 CARGO_DENY_VERSION=0.20.2                                                             # D-11
 AGAVE_VERSION=v4.2.2                                                                  # D-15
@@ -21,6 +23,12 @@ kat01_offchain() {
   rustc --version && cargo --version &&
     echo "$KAT_SHA256  $KAT_FILE" | shasum -a 256 -c - &&
     cargo test -p certimining-core --features native,solana --test kat01_keccak
+}
+
+# KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).
+kat02() {
+  echo "$KAT02_SHA256  $KAT02_FILE" | shasum -a 256 -c - &&
+    cargo test -p certimining-core --test kat02_ed25519
 }
 
 # KAT-01 inside the Solana runtime, through sol_keccak256 (D-08).
@@ -79,6 +87,7 @@ run() {
   case "$1" in
     kat01-offchain) kat01_offchain ;;
     kat01-onchain) kat01_onchain ;;
+    kat02) kat02 ;;
     checks) checks ;;
     miri) miri ;;
     deny) deny ;;
@@ -91,7 +100,7 @@ run() {
 # them runs and the summary names any that failed.
 all() {
   local failed=0 summary="" group code log
-  for group in kat01-offchain kat01-onchain checks miri deny; do
+  for group in kat01-offchain kat01-onchain kat02 checks miri deny; do
     log="$(mktemp)"
     echo "===== $group"
     run "$group" 2>&1 | tee "$log"
