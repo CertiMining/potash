@@ -1,0 +1,14 @@
+{
+  "description": "A schema version this engine does not implement.",
+  "expected": {
+    "error": "0x0F",
+    "error_name": "UnsupportedSchemaVersion"
+  },
+  "id": "V-N-13",
+  "inputs": {
+    "asset_commitment": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+    "schema_version": "2"
+  },
+  "schema_version": "1",
+  "spec": "§4.3"
+}

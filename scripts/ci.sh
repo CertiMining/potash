@@ -3,7 +3,8 @@
 # in CI's order, stops at a KAT-01 failure as CI does, and prints each group's test counts and exit
 # code, so a local run is CI verbatim.
 #
-#   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | kat02 | checks | miri | deny | all
+#   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | kat02 | vectors | checks | miri |
+#                                   deny | all
 #   scripts/ci.sh install-<tool>    CI only: rust | agave | miri | cargo-deny
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -25,6 +26,22 @@ kat01_offchain() {
     cargo test -p certimining-core --features native,solana --test kat01_keccak
 }
 
+# The committed vectors (D-56): the manifest must match what is committed, and regenerating into a
+# temporary directory must reproduce it byte for byte. The first catches a hand-edited vector; the
+# second catches an edit whose manifest was updated to match, and a generator that has drifted from
+# its own output.
+vectors() {
+  ( cd vectors && shasum -a 256 -c MANIFEST.sha256 ) || return 1
+  local tmp
+  tmp="$(mktemp -d)" || return 1
+  cargo xtask gen-vectors "$tmp" >/dev/null &&
+    diff -r vectors "$tmp" &&
+    echo "vectors: manifest verified, and regeneration is identical"
+  local code=$?
+  rm -rf "$tmp"
+  return $code
+}
+
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).
 kat02() {
   echo "$KAT02_SHA256  $KAT02_FILE" | shasum -a 256 -c - &&
@@ -40,7 +57,9 @@ kat01_onchain() {
 # Format, the INV-ERR-01 lint gates, every feature set, and the bare-metal no_std proof (D-14).
 checks() {
   cargo fmt --all --check &&
+    cargo clippy --workspace --all-targets --no-default-features -- -D warnings &&
     cargo clippy --workspace --all-targets -- -D warnings &&
+    cargo clippy --workspace --all-targets --no-default-features --features solana -- -D warnings &&
     cargo clippy --workspace --all-targets --all-features -- -D warnings &&
     cargo test -p certimining-core --no-default-features &&
     cargo test -p certimining-core &&
@@ -88,6 +107,7 @@ run() {
     kat01-offchain) kat01_offchain ;;
     kat01-onchain) kat01_onchain ;;
     kat02) kat02 ;;
+    vectors) vectors ;;
     checks) checks ;;
     miri) miri ;;
     deny) deny ;;
@@ -100,7 +120,7 @@ run() {
 # them runs and the summary names any that failed.
 all() {
   local failed=0 summary="" group code log
-  for group in kat01-offchain kat01-onchain kat02 checks miri deny; do
+  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny; do
     log="$(mktemp)"
     echo "===== $group"
     run "$group" 2>&1 | tee "$log"

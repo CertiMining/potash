@@ -1,0 +1,34 @@
+{
+  "description": "A record whose expected qualified person's key is not the key it claims.",
+  "expected": {
+    "error": "0x08",
+    "error_name": "AttestationKeyMismatch"
+  },
+  "id": "V-N-06",
+  "inputs": {
+    "chain": {
+      "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+      "last_effective_at": "1700000000",
+      "seq": "1"
+    },
+    "record": {
+      "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "category": "2",
+      "change_identified_at": "1699999910",
+      "effective_at": "1700000010",
+      "expected_qp_key": "0x2121212121212121212121212121212121212121212121212121212121212121",
+      "ext_commitment": null,
+      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_uri": "ipfs://bafyexamplepayload",
+      "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+      "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "seq": "2",
+      "signature": "0x99a501ba44bb95bd74969b060b9a492542752fdbec558832c3a2d5089824b350940a4e09da7319dce8066f13e2fa35d5ce536e40d13f5942b128c5d3e084c801"
+    }
+  },
+  "notes": [
+    "The qualified person's key is RFC 8032 §7.1's published specification test key, not a real identity. Its private half is public, so every signature here is reproducible."
+  ],
+  "schema_version": "1",
+  "spec": "§4.3"
+}

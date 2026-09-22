@@ -1,0 +1,36 @@
+{
+  "description": "A reserve category with no earlier resource record is accepted and flagged. The same record on a chain that has seen a resource is unflagged, and both leaves are identical because flags stay out of the preimage.",
+  "expected": {
+    "flagged": {
+      "flags": "1",
+      "leaf": "0xfc507647bbc426a9b08375afd6ae5646daced91cb7fa73bf39300c044e096adb"
+    },
+    "leaves_identical": true,
+    "unflagged": {
+      "flags": "0",
+      "leaf": "0xfc507647bbc426a9b08375afd6ae5646daced91cb7fa73bf39300c044e096adb"
+    }
+  },
+  "id": "V-P-11",
+  "inputs": {
+    "record": {
+      "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "category": "4",
+      "change_identified_at": "1699999900",
+      "effective_at": "1700000000",
+      "expected_qp_key": null,
+      "ext_commitment": null,
+      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_uri": "ipfs://bafyexamplepayload",
+      "prev_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
+      "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "seq": "1",
+      "signature": "0x816897f5d73a10b30439a1c67894ba19a31fbac5160a551663a2c18680030091285b4718bf0b29bd95d4ea5107ac3a79f83d9ea9c820d138a94ceaba27746504"
+    }
+  },
+  "notes": [
+    "The qualified person's key is RFC 8032 §7.1's published specification test key, not a real identity. Its private half is public, so every signature here is reproducible."
+  ],
+  "schema_version": "1",
+  "spec": "§4.2"
+}

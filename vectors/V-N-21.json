@@ -1,0 +1,35 @@
+{
+  "description": "Tenure identifiers whose canonical form is empty.",
+  "expected": {
+    "": {
+      "error": "0x11",
+      "error_name": "CanonicalizationFailed"
+    },
+    "   ": {
+      "error": "0x11",
+      "error_name": "CanonicalizationFailed"
+    },
+    "-_./": {
+      "error": "0x11",
+      "error_name": "CanonicalizationFailed"
+    },
+    "œæß": {
+      "error": "0x11",
+      "error_name": "CanonicalizationFailed"
+    }
+  },
+  "id": "V-N-21",
+  "inputs": {
+    "raw_tenures": [
+      "",
+      "   ",
+      "-_./",
+      "œæß"
+    ]
+  },
+  "notes": [
+    "œ, æ and ß have no compatibility decomposition, so NFKD leaves nothing the filter keeps."
+  ],
+  "schema_version": "1",
+  "spec": "§4.3"
+}
