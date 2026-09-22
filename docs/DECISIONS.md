@@ -525,3 +525,103 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Rejected.** Ignoring the field, which is the literal reading of "always absent, never hashed" and the smallest change, but moves the risk onto every later caller. Returning `0x05`, which would describe the record as malformed when it is not.
 
 **Revisit if.** TCU-03 lands and schema 2 exists, at which point the gate admits it rather than refusing it.
+
+## D-50 · Clippy runs in every feature set
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** security necessity · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** The `checks` group runs `cargo clippy --workspace --all-targets -- -D warnings` once per feature set, matching the four `cargo test` runs: no default features, default, `solana` alone, and all features.
+
+**Ground.** Code behind a feature gate is only linted when that feature is compiled, so two of the four builds were never linted. E-04 proved the gap with a live example: unused imports sat in the two builds without `native` while clippy, running only on the default and all-features builds, reported nothing. The bare-metal `no_std` build that D-14 made load-bearing is exactly where an unlinted warning or a dead path can hide.
+
+**Cost.** Roughly twenty seconds per CI run.
+
+**Revisit if.** The workspace grows enough that four lint passes dominate the group's time, which would be a scheduling change rather than a coverage one.
+
+## D-51 · The generator emits every vector whose inputs exist, positive and negative
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** security necessity · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** `gen-vectors` emits one file per vector whose inputs exist at the time it runs, on both sides of the contract. Today that is the positive vectors V-P-01, V-P-02, V-P-03, V-P-04, V-P-09 and V-P-11, the negative vectors E-04 implements — V-N-01 to V-N-08, V-N-13, V-N-20, V-N-21 — and the two precedence vectors V-N-23 and V-N-24. A negative vector's expected output is its error code. KAT-03's Borsh fixtures are emitted here too, replacing the bytes E-03's test builds for itself (D-35). Nothing whose inputs belong to a later unit is emitted, and each later unit adds its own; the manifest lists exactly the files present.
+
+**Ground (the owner's).** The committed vector set is what E-11's TypeScript verifier checks itself against, and agreeing on what to accept is only half the contract: the verifier has to refuse the same records with the same codes. That matters most for V-N-23 and V-N-24, which exist so the two implementations must agree on *precedence* rather than only on individual codes. A vector absent from E-05's output is one nothing downstream ever tests.
+
+**Rejected.** Positives only, which was my proposal. Placeholder files for vectors whose inputs do not exist, which CI cannot tell from real ones.
+
+**Revisit if.** A later unit changes an error code, which S2 forbids: a new condition takes a new code.
+
+## D-52 · The vector format, and how 64-bit integers are written
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** security necessity · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** One JSON file per vector id. Byte strings are lowercase hex with a `0x` prefix, as §2.5 renders them. `u64` and `i64` values are written as decimal strings.
+
+**Ground.** E-11's verifier is JavaScript, where a JSON number is a double, so any value above 2^53 reads back wrong. V-N-20 turns on `u64::MAX` exactly, and a vector that cannot express it cannot test it.
+
+**Rejected.** Integers as JSON numbers, which reads more naturally and fails silently at the top of the range.
+
+**Revisit if.** The verifier gains a JSON parser with exact integers, which would make this a preference rather than a requirement.
+
+## D-53 · What makes regeneration deterministic
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** security necessity · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** Keys sorted, two-space indentation, LF endings, a trailing newline, and nothing environmental in any file: no timestamps, no toolchain versions, no paths, no iteration order that depends on a hash map. `MANIFEST.sha256` holds `sha256` lines sorted by path.
+
+**Ground.** The unit's own acceptance criterion is that regeneration is deterministic across two machines. Anything environmental in a file guarantees two machines disagree, and a manifest over unstable files proves nothing.
+
+**Revisit if.** A vector needs a value that cannot be made reproducible, which would be a decision about that vector rather than about the format.
+
+## D-54 · Where `xtask` lives
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** cost judgment · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** A new workspace member, `xtask/`, with a repository-level `.cargo/config.toml` aliasing `xtask` so that `cargo xtask gen-vectors` is the command §3 names. `default-members` is unchanged, so a plain build and the bare-metal builds still compile `certimining-core` alone.
+
+**Ground.** D-04 reserved `xtask/` for this, and the alias is what the specification's command line assumes. The crate is host-only and uses `std`; keeping it out of `default-members` keeps it away from the `no_std` proof.
+
+**Revisit if.** The tool grows enough to deserve its own binary name.
+
+## D-55 · Where the vectors' inputs come from
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** security necessity · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** The specification's own strings for V-P-01, and RFC 8032 §7.1's published test key wherever a signature is needed. Each vector file names that key for what it is, a specification test key. No generated keys and no random values anywhere in the set.
+
+**Ground.** The published key is deterministic by construction, and its private half is public, so anyone can reproduce a signature over any vector. A generated key committed to a public repository is indistinguishable from a real one to a later reader.
+
+**Owner's condition (22 Sep 2026).** The same labelling applies wherever the key is shown in the demo, not only inside the vector files: nothing may read as a real qualified person's identity. Recorded as an acceptance criterion on issue #14.
+
+**Revisit if.** A vector needs a signature the published key cannot produce.
+
+## D-56 · What CI checks about the vectors
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** security necessity · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** Both checks run: the manifest is verified against the committed files, and the generator is re-run into a temporary directory and its output compared byte for byte with what is committed.
+
+**Ground.** The manifest alone passes when someone edits a vector and updates the manifest to match. Only regeneration catches that, and "hand-editing a vector fails CI" is the unit's acceptance criterion.
+
+**Revisit if.** Regeneration becomes slow enough to need its own job rather than a step.
+
+## D-57 · JSON belongs to the tool, never to the engine
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** cost judgment · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** `serde` and `serde_json` are dependencies of `xtask` only, at exact versions. `certimining-core` takes neither, and E-03's test that reads the digest path's source for string formatting and JSON keeps passing.
+
+**Ground.** INV-ENC-03 makes JSON a display format, never a source of truth, and issue #3's criterion keeps it out of the digest path. A generator is display.
+
+**Rejected.** Writing JSON by hand, which avoids a dependency and invites quoting faults in the artifact two implementations compare themselves against.
+
+## D-58 · Vectors carry preimages, not only digests
+
+**Date:** 22 Sep 2026 · **Unit:** E-05 · **Class:** cost judgment · **Status:** settled at S0 (owner, 22 Sep 2026)
+
+**Decision.** Every hashing step in a vector records both the preimage bytes and the digest they produce.
+
+**Ground.** An independent implementation that disagrees needs to know whether it built the wrong bytes or hashed the right ones wrongly, and V-P-08 is exactly that comparison. The digests alone would leave every disagreement ambiguous.
+
+**Cost.** Larger files: a leaf preimage is 161 bytes, so 322 characters of hex per record.
+
+**Revisit if.** The set grows enough for file size to matter, which would argue for splitting rather than for dropping the preimages.
