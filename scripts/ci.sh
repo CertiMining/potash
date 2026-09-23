@@ -30,36 +30,70 @@ kat01_offchain() {
 # temporary directory must reproduce it byte for byte. The first catches a hand-edited vector; the
 # second catches an edit whose manifest was updated to match, and a generator that has drifted from
 # its own output.
+# Reads a file's permission bits on either platform. GNU stat's -f means file system status, so the
+# BSD form must not be tried first: on Linux it succeeds and returns something that is not a mode.
+file_mode() {
+  local m
+  m="$(stat -c '%a' "$1" 2>/dev/null)"
+  case "$m" in '' | *[!0-7]*) m="$(stat -f '%OLp' "$1" 2>/dev/null)" ;; esac
+  case "$m" in
+    '' | *[!0-7]*)
+      echo "cannot read the mode of $1" >&2
+      return 1
+      ;;
+  esac
+  printf '%04o' "$((8#$m))"
+}
+
 vectors() {
   local dir=vectors failed=0 hash mode name actual_hash actual_mode tmp
 
-  # The manifest carries the hash, the file mode and the name, so a vector that was edited, or one
-  # that became executable or unreadable, both fail here.
+  # The manifest carries the hash, the mode and the name. Git preserves only the executable bit, so
+  # a working tree's modes follow the umask of whoever cloned it: here the committed files are
+  # checked for what git actually carries, and the regenerated set is checked against the recorded
+  # mode exactly, where the generator sets it itself.
   while read -r hash mode name; do
     [ -n "$name" ] || continue
     actual_hash="$(shasum -a 256 "$dir/$name" | awk '{print $1}')"
-    actual_mode="$(stat -f '%OLp' "$dir/$name" 2>/dev/null || stat -c '%a' "$dir/$name")"
-    actual_mode="$(printf '%04o' $((8#$actual_mode)))"
     if [ "$hash" != "$actual_hash" ]; then
       echo "vectors: $name does not match its hash" >&2
       failed=1
     fi
-    if [ "$mode" != "$actual_mode" ]; then
-      echo "vectors: $name has mode $actual_mode, and the manifest records $mode" >&2
+    if [ -x "$dir/$name" ]; then
+      echo "vectors: $name is executable, and a vector never is" >&2
+      failed=1
+    fi
+    if [ ! -r "$dir/$name" ]; then
+      echo "vectors: $name is not readable" >&2
       failed=1
     fi
   done < "$dir/MANIFEST.sha256"
   [ "$failed" -eq 0 ] || return 1
 
   # Regeneration into a directory the generator creates for itself. This catches an edit whose
-  # manifest was updated to match, and a generator that has drifted from the output beside it.
+  # manifest was updated to match, a generator that has drifted from the output beside it, and a
+  # mode the generator no longer writes.
   tmp="$(mktemp -d)" || return 1
-  cargo xtask gen-vectors "$tmp/out" >/dev/null &&
-    diff -r "$dir" "$tmp/out" &&
-    echo "vectors: $(grep -c . "$dir/MANIFEST.sha256") files verified by hash and mode, and regeneration is identical"
-  local code=$?
+  if ! cargo xtask gen-vectors "$tmp/out" >/dev/null; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! diff -r "$dir" "$tmp/out"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  while read -r hash mode name; do
+    [ -n "$name" ] || continue
+    actual_mode="$(file_mode "$tmp/out/$name")" || { failed=1; continue; }
+    if [ "$mode" != "$actual_mode" ]; then
+      echo "vectors: regenerated $name has mode $actual_mode, and the manifest records $mode" >&2
+      failed=1
+    fi
+  done < "$dir/MANIFEST.sha256"
   rm -rf "$tmp"
-  return $code
+  [ "$failed" -eq 0 ] || return 1
+
+  echo "vectors: $(grep -c . "$dir/MANIFEST.sha256") files verified by hash, mode and regeneration"
 }
 
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).
