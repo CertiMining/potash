@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.7 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.8 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -34,7 +34,7 @@ This is worth stating precisely, because it is narrower than log equivocation an
 | Use | Primitive |
 |---|---|
 | Record leaf, head chain, Merkle nodes | Keccak-256 (`sol_keccak256` on-chain; native keccak off-chain) |
-| Padding leaves, slot permutation | KMAC-style PRF: `PRF(k, x) = Keccak256(TAG_PRF ‖ k ‖ len(x) ‖ x)`. The tag lives **inside** the PRF construction and is never repeated in `x`; the three PRF uses are separated by a leading use code in `x`: `0x01` epoch-key derivation, `0x02` slot assignment, `0x03` padding. |
+| Padding leaves, slot permutation | KMAC-style PRF: `PRF(k, x) = Keccak256(TAG_PRF ‖ k ‖ len(x) ‖ x)`. The tag lives **inside** the PRF construction and is never repeated in `x`; the three PRF uses are separated by a leading use code in `x`: `0x01` epoch-key derivation, `0x02` slot assignment, `0x03` padding. `len(x)` is a `u16` little-endian, as INV-ENC-04 requires of every length prefix here, and `k` is 32 bytes. Each `x` carries its use code first and then one field: the epoch as a `u64` little-endian under `0x01`, the submission identifier's sixteen bytes under `0x02`, and the slot index as a `u16` little-endian under `0x03`. So `x` is 9, 17 and 3 bytes, and the three preimages are 51, 59 and 45 bytes (D-59). |
 | QP attestation, batcher inclusion promises | Ed25519 (RFC 8032), verified off-chain by the verifier |
 | Anchor B | OpenTimestamps over the epoch root |
 
@@ -133,6 +133,8 @@ padding leaf   = Keccak256( TAG_PAD  ‖ PRF(k_e, 0x03 ‖ slot_index_le) )
 internal node  = Keccak256( TAG_MTN1 ‖ left ‖ right )
 epoch root     = root of the complete binary tree over all C slots
 ```
+
+**How a slot is chosen (D-60).** The PRF output is read as a little-endian integer, as INV-ENC-02 requires of every integer here, and reduced modulo `C`. Because `C` is a power of two this is the low `H` bits, which lie in the digest's first two bytes. Real submissions are assigned in ascending order of submission identifier, so one set of submissions produces one tree whatever order the caller supplies them in. The probe steps upward by one slot and wraps at `C`, taking the first free slot it meets. More real submissions than `C` in one epoch is `0x12` (V-N-14). Two submissions carrying the same identifier in one epoch is `0x05`: the set is malformed, and a proof could be answered for neither of them. A height outside `[4, 16]` is `0x05`, as it is at `initialize` (V-N-22).
 
 **INV-TREE-01 (fixed shape).** Every epoch tree has exactly `C` leaves and height `H`. Proof length is constant at `H` siblings. Nothing about the tree's shape, proof length, or root varies with the number of real records.
 
@@ -313,15 +315,31 @@ pub trait EpochTree {
     /// Valid range 4..=16; fixed at `initialize` and immutable thereafter (INV-TREE-06).
     fn height(&self) -> u8;
     fn capacity(&self) -> usize;      // 1usize << height()
-    fn build(epoch: u64, height: u8, key: &Digest,
-             real: &[(SubmissionId, Digest)]) -> Result<BuiltEpoch>;
+    /// The hasher is named at the call site, as it is for every digest in §2.2.
+    fn build<H: Hasher>(epoch: u64, height: u8, key: &Digest,
+                        real: &[(SubmissionId, Digest)]) -> Result<BuiltEpoch>;
     fn root(&self) -> Digest;
     fn proof(&self, id: &SubmissionId) -> Result<InclusionProof>;
 }
 
+/// What one sealed epoch carries (D-62). Nothing in it marks a slot real or padding. `Vec` here
+/// is `alloc`'s: the log crate is `no_std` with an allocator, because a tree at H = 16 holds 65,536
+/// leaves and no fixed-capacity type carries that (D-61).
+pub struct BuiltEpoch {
+    pub epoch: u64,
+    pub height: u8,
+    pub root: Digest,
+    pub leaves: Vec<Digest>,                     // exactly C entries, in slot order
+    pub assignment: Vec<(SubmissionId, u16)>,    // ascending by identifier
+}
+
 pub trait InclusionVerifier {
     /// Pure. No network, no clock, no storage.
-    fn verify(leaf: &Digest, proof: &InclusionProof, root: &Digest) -> Result<()>;
+    fn verify<H: Hasher>(leaf: &Digest, proof: &InclusionProof, root: &Digest) -> Result<()>;
+    /// The same check for a caller that knows its log's configured height: a proof whose `height`
+    /// disagrees is `0x13` before any hashing (V-N-16b). Pure in the same way.
+    fn verify_for_height<H: Hasher>(leaf: &Digest, proof: &InclusionProof, root: &Digest,
+                                    configured_height: u8) -> Result<()>;
 }
 
 pub trait Batcher {
@@ -514,9 +532,9 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | ID | Test | Pass condition |
 |---|---|---|
 | V-Z-01 | **Count-hiding.** Publish consecutive epochs holding 0, 1, 128 and 255 real leaves at H = 8, in more than one order, with tree-build time varied deliberately. | Instruction length, transaction length, account size and field layout are identical. A byte may differ between two epochs only if the epoch number, the publication schedule or a pseudorandom digest fixes it: in the checkpoint account, `epoch`, `bump`, `published_slot`, `published_unix`, `root` and `receipt_digest`; in the `publish_checkpoint` transaction, the checkpoint address, the recent blockhash, the signature and the `epoch` and `root` arguments. Every other byte is identical across record counts. This list is exhaustive and closed: any other byte that differs is a failure, and adding a byte to the list requires an amendment to this specification, never an edit to the test. `epoch` advances by exactly one per epoch, empty epochs included, and every epoch is submitted at its scheduled time however long its build took. Network delay may move the landing slot, but it must be independent of epoch content: the test measures the correlation of landing delay with record count, and with build time, across many epochs, and fails on any correlation above noise. It bounds no single epoch's delay, because one slow publication proves nothing either way. |
-| V-Z-02 | **Padding indistinguishability.** Given a root, all `C` leaf digests, and no epoch key, classify each leaf as real or padding. | No test in the suite may distinguish them; the classifier's accuracy must be statistically indistinguishable from 50%. |
+| V-Z-02 | **Padding indistinguishability.** Given an epoch's root and all `C` leaf digests in slot order, no epoch key, and unlimited compute, classify each leaf as real or padding. The classifier is specified here rather than left to whoever writes the test, so a reader can judge how hard it tries: per-position byte statistics across the leaf set, and a structural-regularity check over each digest being deviation from the set's per-position byte mean, population count, zero-byte count, leading-zero bits, longest run of equal bytes, distinct byte values, a chi-squared statistic over nibbles, and Hamming distance to the adjacent slots. | The statistic is a distinguishing game, not raw accuracy: each trial presents one real leaf and one padding leaf from a freshly built epoch, the classifier names the real one, and successes must not leave a two-sided binomial test at α = 0.001 against p = 1/2. Accuracy alone cannot carry this test, because an epoch holding one real leaf and 255 padding leaves scores 255/256 for a classifier that answers "padding" every time and learns nothing; the pair game removes the base rate. A balanced epoch, `C/2` real, is also classified leaf by leaf, where accuracy is meaningful and the same band applies. Every feature is scored alone and the combined score as well, and each must pass. CI runs 200 epochs (D-66). |
 | V-Z-03 | **Proof non-leakage.** Given a valid inclusion proof, recover anything about any sibling. | Siblings are digests only; no preimage is derivable. Asserted structurally by the proof format. |
-| V-Z-04 | **Position non-leakage.** Correlate `slot_index` with submission order, issuer, or time within epoch across 10,000 simulated epochs. | No correlation above noise. |
+| V-Z-04 | **Position non-leakage.** Correlate `slot_index` with submission order, issuer, and time within epoch across 10,000 simulated epochs. | The absolute Pearson correlation must stay below 0.05 at the sample size CI runs and below 0.02 over the full 10,000 epochs, for each of the three. Both bounds are conservative: CI's standard error is about 0.006, so the bound sits eight standard errors out, while a real positional leak produces a correlation near 1. CI runs 400 epochs; the full run is ignored by default, is a release gate, and is recorded on issue #16 (D-66). |
 | V-Z-05 | **No asset identifier escapes.** Grep the full on-chain byte history and every disclosure package for `c`, tenure IDs, jurisdiction codes and registry codes. | Zero occurrences on-chain. In the disclosure package, only fields listed in §2.5. |
 | V-Z-06 | **Timing non-leakage.** Compare the on-chain timeline of an issuer who submits daily against one who submits twice a year. | Identical checkpoint cadence and footprint. |
 
