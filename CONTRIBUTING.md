@@ -40,6 +40,14 @@ identical on another machine.
 Every hashing step records its preimage as well as its digest, so an implementation that disagrees
 can tell whether it built the wrong bytes or hashed the right ones wrongly.
 
+**The epoch-tree vectors carry the whole tree where they can.** V-P-05 records every leaf of its
+epoch and every hashing step behind its one proof: the epoch key, the slot seed, the leaf as it enters
+the tree, a padding leaf beside it, and each node up the path. V-P-06 records every leaf, the whole
+assignment and three proofs in full, and verifies all 255 while it is generated. Above 256 slots the
+leaf set is left out and the root, the assignment and the proofs are kept, which is why V-P-06b's
+`H = 12` half is shorter than its `H = 4` half. The master key in these files is a specification test
+key whose bytes spell out what it is; a real `k_master` never appears in this repository.
+
 **Vector identifiers come from §4.3 and §4.2, never from this repository.** Where the specification
 gives one identifier to several inputs, such as V-N-02's gap and replay, the file carries them as
 cases under that one identifier. A new identifier is declared in the specification first, as V-N-25
@@ -72,9 +80,22 @@ signature in the set. No generated key and no real key belongs in this repositor
 | `kat01-offchain`, `kat01-onchain` | Keccak-256 against the published vectors, off-chain then on the Solana runtime. A failure stops the build. |
 | `kat02` | Ed25519 against RFC 8032 §7.1. |
 | `vectors` | The manifest, and regeneration. |
-| `checks` | Formatting, clippy and the tests, in each of the four feature sets. |
-| `miri` | The core crate under Miri. |
+| `checks` | Formatting, clippy and the tests, in each of the four feature sets, for both engine crates, and the bare-metal `no_std` builds. |
+| `miri` | The engine crates under Miri. The statistical privacy tests are ignored there and run in `checks`: Miri is for undefined behaviour, and the structural tests reach the same code paths for a fraction of the cost. |
 | `deny` | Advisories, licences, sources and bans. |
 
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
+
+## The privacy release gate
+
+§4.4's V-Z-02, V-Z-03 and V-Z-04 are release blockers and run in `checks` at the sample sizes D-66
+fixes. V-Z-04's full 10,000-epoch run takes about two seconds in a release build and two and a half
+minutes in the debug build `checks` uses, so it is ignored by default and run before submission:
+
+```sh
+cargo test --release -p certimining-log -- --ignored
+```
+
+Its three correlations are recorded on issue #16. The bound there is 0.02, against 0.05 at the sample
+CI runs.

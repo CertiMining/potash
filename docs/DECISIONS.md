@@ -735,8 +735,11 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **What runs where.** CI runs a reduced sample with the power to catch a leak: 200 epochs for V-Z-02 and 400 for V-Z-04. The full 10,000-epoch run of V-Z-04 is a release gate, ignored by default, run before submission and recorded on issue #16. A post-deadline issue against milestone 5 strengthens the classifier.
 
+**Measured after the fact (23 Sep 2026).** The full run costs 1.96 seconds in a release build and 140.91 seconds in the debug build CI uses, rather than the hours the wording implied when this was settled. It stays a release gate under this decision; whether to promote it into CI at that price is the owner's to take, and the numbers are in the unit's record.
+
 **Ground.** A release blocker whose pass condition is settled after the implementation's numbers are visible is a test written to pass. Naming the adversary in the specification lets a reader judge how hard the test tries, which an accuracy figure alone does not.
 
-**Cost.** Roughly four seconds in the `checks` group.
+**Cost.** About six seconds in the `checks` group, measured rather than estimated: the three tests
+run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Revisit if.** The classifier is strengthened post-deadline and the band needs restating for a larger sample.
