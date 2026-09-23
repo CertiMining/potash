@@ -1,17 +1,16 @@
 //! E-06: §1.1's PRF and the three inputs §1.4 puts it to (§1.1, §1.2, D-59).
 //!
-//! **STUB. This module has no implementation yet (D-65).** Issue #6 requires the §4.4 privacy tests
-//! to be written before the construction they test, and the padding whose indistinguishability
-//! V-Z-02 measures is this PRF's output. Every entry point here refuses until the next commit.
-//!
 //! `PRF(k, x) = Keccak256(TAG_PRF ‖ k ‖ len(x) ‖ x)`. The tag lives inside the construction and is
-//! never repeated in `x`; each `x` carries its use code first. `len(x)` is a `u16` little-endian
-//! (INV-ENC-04, D-59).
+//! never repeated in `x`; each `x` carries its use code first, so the three uses cannot collide
+//! however their fields line up. `len(x)` is a `u16` little-endian, as INV-ENC-04 requires of every
+//! length prefix here, and `k` is 32 bytes (D-59).
+//!
+//! The PRF is here rather than in `certimining-log` because it is a §1.1 primitive with a §1.2 tag
+//! and allocates nothing (D-61). What it is for is in the log crate: slot assignment and padding
+//! leaves, both under an epoch key that INV-TREE-05 keeps off every wire.
 
+use crate::preimage::staged;
 use crate::{Digest, Hasher, Preimage, PreimageSink, RegistryError, Result, SubmissionId};
-
-/// STUB (D-65): what every entry point in this module returns until the implementation lands.
-const STUB_REFUSAL: RegistryError = RegistryError::MalformedPayload;
 
 /// The PRF's own domain tag (§1.2).
 pub const TAG_PRF: [u8; 8] = *b"CMv1PRF0";
@@ -40,30 +39,63 @@ impl Preimage for PrfPreimage<'_> {
     const TAG: [u8; 8] = TAG_PRF;
 
     fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
-        // STUB (D-65).
-        let _ = out;
-        Err(STUB_REFUSAL)
+        // Every `x` in §1.1 begins with a use code, so an empty one is not an input this PRF has.
+        if self.input.is_empty() {
+            return Err(RegistryError::MalformedPayload);
+        }
+        if self.input.len() > MAX_PRF_INPUT_LEN {
+            return Err(RegistryError::RecordTooLarge);
+        }
+        let length = u16::try_from(self.input.len()).map_err(|_| RegistryError::RecordTooLarge)?;
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(self.key)?;
+            p.write(&length.to_le_bytes())?;
+            p.write(self.input)
+        })
     }
 }
 
 /// `k_e = PRF(k_master, 0x01 ‖ e_le)` (INV-TREE-05). The epoch is a `u64` little-endian (D-59).
+///
+/// The epoch key never leaves the batcher: it is not published, not carried in a disclosure package
+/// and not sent to a counterparty. Count-hiding rests on that, which the specification names as a
+/// trust assumption in RES-03 rather than a property of this code.
 pub fn epoch_key<H: Hasher>(k_master: &Digest, epoch: u64) -> Result<Digest> {
-    // STUB (D-65).
-    let _ = (k_master, epoch);
-    Err(STUB_REFUSAL)
+    let mut input = [0u8; 9];
+    let (code, rest) = input.split_at_mut(1);
+    code.copy_from_slice(&[PRF_USE_EPOCH_KEY]);
+    rest.copy_from_slice(&epoch.to_le_bytes());
+    PrfPreimage {
+        key: k_master,
+        input: &input,
+    }
+    .digest::<H>()
 }
 
 /// `PRF(k_e, 0x02 ‖ submission_id)`, the seed a slot is chosen from (§1.4).
 pub fn slot_seed<H: Hasher>(k_e: &Digest, submission_id: &SubmissionId) -> Result<Digest> {
-    // STUB (D-65).
-    let _ = (k_e, submission_id);
-    Err(STUB_REFUSAL)
+    let mut input = [0u8; 17];
+    let (code, rest) = input.split_at_mut(1);
+    code.copy_from_slice(&[PRF_USE_SLOT]);
+    rest.copy_from_slice(submission_id);
+    PrfPreimage {
+        key: k_e,
+        input: &input,
+    }
+    .digest::<H>()
 }
 
 /// `PRF(k_e, 0x03 ‖ slot_index_le)`, what a padding leaf commits to (§1.4). The slot index is a
 /// `u16` little-endian (D-59).
 pub fn padding_prf<H: Hasher>(k_e: &Digest, slot_index: u16) -> Result<Digest> {
-    // STUB (D-65).
-    let _ = (k_e, slot_index);
-    Err(STUB_REFUSAL)
+    let mut input = [0u8; 3];
+    let (code, rest) = input.split_at_mut(1);
+    code.copy_from_slice(&[PRF_USE_PADDING]);
+    rest.copy_from_slice(&slot_index.to_le_bytes());
+    PrfPreimage {
+        key: k_e,
+        input: &input,
+    }
+    .digest::<H>()
 }

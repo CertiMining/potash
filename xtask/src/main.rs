@@ -28,11 +28,13 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use certimining_core::{
-    AssetChain, AssetId, AssetIdentity, ChainSnapshot, ChainState, Digest, GenesisHeadPreimage,
-    Hasher, LeafPreimage, NativeKeccak, NodePreimage, PaddingPreimage, PayloadUri, Preimage,
-    PreimageBuf, RealLeafPreimage, RecordLeafInput, RegistryError, SpiPreimage, StepHeadPreimage,
+    epoch_key, padding_prf, slot_seed, AssetChain, AssetId, AssetIdentity, ChainSnapshot,
+    ChainState, Digest, GenesisHeadPreimage, Hasher, LeafPreimage, NativeKeccak, NodePreimage,
+    PaddingPreimage, PayloadUri, Preimage, PreimageBuf, PrfPreimage, RealLeafPreimage,
+    RecordLeafInput, RegistryError, SpiPreimage, StepHeadPreimage, SubmissionId,
     FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
 };
+use certimining_log::{BuiltEpoch, EpochTree, InclusionProof, InclusionVerifier, ProofVerifier};
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{json, Map, Value};
 
@@ -114,6 +116,7 @@ fn gen_vectors(dir: &Path) {
     let mut files: BTreeMap<String, Value> = BTreeMap::new();
     positives(&mut files);
     negatives(&mut files);
+    trees(&mut files);
     kat03_fixtures(&mut files);
 
     let mut manifest = String::new();
@@ -184,6 +187,44 @@ fn check_spec_agreement() {
             core::str::from_utf8(from_spec).unwrap_or("<not ascii>")
         );
     }
+
+    assert_eq!(
+        certimining_core::TAG_PRF,
+        *spec::TAG_PRF,
+        "TAG_PRF: §1.2's tag for the PRF"
+    );
+    for (name, from_spec, from_engine) in [
+        (
+            "PRF_USE_EPOCH_KEY",
+            spec::PRF_USE_EPOCH_KEY,
+            certimining_core::PRF_USE_EPOCH_KEY,
+        ),
+        (
+            "PRF_USE_SLOT",
+            spec::PRF_USE_SLOT,
+            certimining_core::PRF_USE_SLOT,
+        ),
+        (
+            "PRF_USE_PADDING",
+            spec::PRF_USE_PADDING,
+            certimining_core::PRF_USE_PADDING,
+        ),
+    ] {
+        assert_eq!(
+            from_engine, from_spec,
+            "{name}: §1.1 gives 0x{from_spec:02X} and the engine has 0x{from_engine:02X}"
+        );
+    }
+    assert_eq!(
+        (certimining_log::MIN_HEIGHT, certimining_log::MAX_HEIGHT),
+        (spec::MIN_HEIGHT, spec::MAX_HEIGHT),
+        "§1.8's range for the tree height"
+    );
+    assert_eq!(
+        1usize << spec::DEPLOYED_HEIGHT,
+        spec::DEPLOYED_CAPACITY,
+        "§1.4: C = 2^H, and this deployment ships H = 8"
+    );
 
     let canonical = AssetId::<NativeKeccak>::canonicalize(TENURE_RAW).expect("canonical");
     assert_eq!(
@@ -934,6 +975,26 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
         json!({ "left": hex(&commitment), "right": hex(&leaf_digest) }),
     );
 
+    // The PRF's preimage, under the slot-assignment use, which carries the longest `x` schema 1 has.
+    let prf_key: Digest = [0x99u8; 32];
+    let mut prf_input = vec![spec::PRF_USE_SLOT];
+    prf_input.extend_from_slice(&[0x88u8; 16]);
+    let prf_length = u16::try_from(prf_input.len()).expect("seventeen bytes");
+    add(
+        "prf",
+        preimage_of(&PrfPreimage {
+            key: &prf_key,
+            input: &prf_input,
+        }),
+        &[&prf_key, &prf_length.to_le_bytes(), &prf_input],
+        json!({
+            "k": hex(&prf_key),
+            "use_code": format!("0x{:02X}", spec::PRF_USE_SLOT),
+            "len(x)": prf_length.to_string(),
+            "x": hex(&prf_input),
+        }),
+    );
+
     let submission_id = [0x88u8; 16];
     let promised_epoch = 20_361u64.to_le_bytes();
     let delay = [spec::MAX_MERGE_DELAY];
@@ -993,6 +1054,502 @@ fn kat03_plain(vector: &Value) -> String {
         text.push_str(&format!("{name} {preimage} {digest}\n"));
     }
     text
+}
+
+// ---------------------------------------------------------------- epoch-tree vectors (§4.2, §4.3)
+
+/// The master key every tree vector is built under (D-63). Its bytes spell out what it is, so no
+/// reader can mistake it for a real one, and every epoch key, slot and padding leaf below is
+/// reproducible from it. A real `k_master` never appears in this repository, and INV-TREE-05 keeps a
+/// real epoch key off every wire.
+const TEST_MASTER_KEY: Digest = *b"CMv1 TEST MASTER KEY, NOT SECRET";
+
+const MASTER_KEY_NOTE: &str =
+    "The master key is a specification test key, not a real one: its bytes spell out what it is. \
+     Every epoch key, slot and padding leaf here follows from it, so the whole tree is reproducible. \
+     A real k_master never appears in this repository (INV-TREE-05).";
+
+const LEAF_NOTE: &str =
+    "The chain leaves are arbitrary 32-byte values. The tree never looks inside one, so a vector \
+     needs no record behind them; V-P-02 and V-P-03 carry the leaves a real chain produces.";
+
+const LEAVES_NOTE: &str =
+    "The full leaf set is recorded where capacity allows it, so a disagreement localises to a slot \
+     rather than to the root. Above 256 slots only the root, the assignment and the proofs are kept.";
+
+/// A submission identifier for a vector: a counter, little-endian, in sixteen bytes. Sequential
+/// identifiers are the hard case for INV-TREE-03, and every value is written out in the file.
+fn vector_submission_id(n: u64) -> SubmissionId {
+    let mut id = [0u8; 16];
+    let (low, _) = id.split_at_mut(8);
+    low.copy_from_slice(&n.to_le_bytes());
+    id
+}
+
+/// A stand-in chain leaf.
+fn vector_leaf(n: u64) -> Digest {
+    NativeKeccak::hashv(&[b"CMv1 vector chain leaf", &n.to_le_bytes()])
+}
+
+fn submission_set(count: u64, offset: u64) -> Vec<(SubmissionId, Digest)> {
+    (0..count)
+        .map(|n| {
+            (
+                vector_submission_id(n.wrapping_add(offset)),
+                vector_leaf(n.wrapping_add(offset)),
+            )
+        })
+        .collect()
+}
+
+fn build_epoch(epoch: u64, height: u8, real: &[(SubmissionId, Digest)]) -> BuiltEpoch {
+    BuiltEpoch::build::<NativeKeccak>(epoch, height, &TEST_MASTER_KEY, real)
+        .expect("these inputs are inside capacity")
+}
+
+fn epoch_inputs(epoch: u64, height: u8, real: &[(SubmissionId, Digest)]) -> Value {
+    json!({
+        "epoch": epoch.to_string(),
+        "height": height.to_string(),
+        "capacity": (1usize << height).to_string(),
+        "master_key": hex(&TEST_MASTER_KEY),
+        "real": real
+            .iter()
+            .map(|(id, leaf)| json!({ "submission_id": hex(id), "leaf": hex(leaf) }))
+            .collect::<Vec<Value>>(),
+    })
+}
+
+fn proof_json(proof: &InclusionProof) -> Value {
+    json!({
+        "height": proof.height.to_string(),
+        "slot_index": proof.slot_index.to_string(),
+        "epoch": proof.epoch.to_string(),
+        "siblings": proof.siblings.iter().map(|s| hex(s)).collect::<Vec<String>>(),
+    })
+}
+
+/// One proof, with the submission it is for and the leaf a counterparty would hold. Generation fails
+/// if the proof does not verify or does not carry `H` siblings, which are §4.2's own claims.
+fn checked_proof(vector: &str, built: &BuiltEpoch, id: &SubmissionId, leaf: &Digest) -> Value {
+    let proof = built.proof(id).expect("the epoch holds this submission");
+    assert_eq!(
+        proof.siblings.len(),
+        usize::from(built.height),
+        "{vector}: §4.2 states a proof of exactly H siblings"
+    );
+    assert_eq!(
+        ProofVerifier::verify::<NativeKeccak>(leaf, &proof, &built.root),
+        Ok(()),
+        "{vector}: §4.2 states every proof verifies"
+    );
+    assert_eq!(
+        ProofVerifier::verify_for_height::<NativeKeccak>(leaf, &proof, &built.root, built.height),
+        Ok(()),
+        "{vector}: and verifies against the log's configured height"
+    );
+    let mut entry = Map::new();
+    entry.insert("submission_id".into(), json!(hex(id)));
+    entry.insert("leaf".into(), json!(hex(leaf)));
+    entry.insert("proof".into(), proof_json(&proof));
+    Value::Object(entry)
+}
+
+fn epoch_expected(built: &BuiltEpoch, proofs: Vec<Value>) -> Value {
+    let k_e = epoch_key::<NativeKeccak>(&TEST_MASTER_KEY, built.epoch).expect("derives");
+    let mut map = Map::new();
+    map.insert("epoch_key".into(), json!(hex(&k_e)));
+    map.insert("root".into(), json!(hex(&built.root)));
+    map.insert(
+        "assignment".into(),
+        json!(built
+            .assignment
+            .iter()
+            .map(|(id, slot)| json!({ "submission_id": hex(id), "slot": slot.to_string() }))
+            .collect::<Vec<Value>>()),
+    );
+    if built.leaves.len() <= spec::DEPLOYED_CAPACITY {
+        map.insert(
+            "leaves".into(),
+            json!(built.leaves.iter().map(|l| hex(l)).collect::<Vec<String>>()),
+        );
+    }
+    map.insert("proofs".into(), json!(proofs));
+    Value::Object(map)
+}
+
+/// Every hashing step behind one submission's proof, preimage and digest together (D-58): the epoch
+/// key, the slot seed, the leaf as it enters the tree, one padding leaf for comparison, and each node
+/// up the path. The walk is recomputed here and generation fails if it does not reach the root.
+fn epoch_steps(built: &BuiltEpoch, id: &SubmissionId, leaf: &Digest) -> Value {
+    let k_e_preimage = {
+        let mut x = vec![spec::PRF_USE_EPOCH_KEY];
+        x.extend_from_slice(&built.epoch.to_le_bytes());
+        prf_preimage_bytes(&TEST_MASTER_KEY, &x)
+    };
+    let k_e = epoch_key::<NativeKeccak>(&TEST_MASTER_KEY, built.epoch).expect("derives");
+
+    let slot_preimage = {
+        let mut x = vec![spec::PRF_USE_SLOT];
+        x.extend_from_slice(id);
+        prf_preimage_bytes(&k_e, &x)
+    };
+    let seed = slot_seed::<NativeKeccak>(&k_e, id).expect("derives");
+    let slot = built
+        .assignment
+        .iter()
+        .find(|(candidate, _)| candidate == id)
+        .map(|(_, slot)| *slot)
+        .expect("the epoch holds this submission");
+
+    let real_leaf_preimage = preimage_of(&RealLeafPreimage { leaf: *leaf });
+
+    // One padding slot, whichever is free, so the two leaf forms sit side by side in the file.
+    let padding_slot = (0..built.leaves.len() as u16)
+        .find(|candidate| !built.assignment.iter().any(|(_, taken)| taken == candidate))
+        .expect("an epoch with one real leaf has free slots");
+    let padding_input = {
+        let mut x = vec![spec::PRF_USE_PADDING];
+        x.extend_from_slice(&padding_slot.to_le_bytes());
+        prf_preimage_bytes(&k_e, &x)
+    };
+    let padding_output = padding_prf::<NativeKeccak>(&k_e, padding_slot).expect("derives");
+    let padding_leaf_preimage = preimage_of(&PaddingPreimage {
+        prf_output: padding_output,
+    });
+
+    let proof = built.proof(id).expect("the epoch holds this submission");
+    let mut node = NativeKeccak::hashv(&[&real_leaf_preimage]);
+    let mut index = slot;
+    let mut path: Vec<Value> = Vec::new();
+    for (level, sibling) in proof.siblings.iter().enumerate() {
+        let on_the_left = (index >> level) & 1 == 0;
+        let (left, right) = if on_the_left {
+            (node, *sibling)
+        } else {
+            (*sibling, node)
+        };
+        let bytes = preimage_of(&NodePreimage { left, right });
+        node = NativeKeccak::hashv(&[&bytes]);
+        path.push(json!({
+            "level": level.to_string(),
+            "leaf_on_the_left": on_the_left,
+            "left": hex(&left),
+            "right": hex(&right),
+            "preimage": hex(&bytes),
+            "digest": hex(&node),
+        }));
+    }
+    index = 0;
+    let _ = index;
+    assert_eq!(
+        node, built.root,
+        "the recorded path must reach the root the tree published"
+    );
+
+    json!({
+        "epoch_key": { "preimage": hex(&k_e_preimage), "digest": hex(&k_e) },
+        "slot_seed": { "preimage": hex(&slot_preimage), "digest": hex(&seed), "slot": slot.to_string() },
+        "real_leaf": { "preimage": hex(&real_leaf_preimage), "digest": hex(&NativeKeccak::hashv(&[&real_leaf_preimage])) },
+        "padding_leaf": {
+            "slot": padding_slot.to_string(),
+            "prf": { "preimage": hex(&padding_input), "digest": hex(&padding_output) },
+            "leaf": { "preimage": hex(&padding_leaf_preimage), "digest": hex(&NativeKeccak::hashv(&[&padding_leaf_preimage])) },
+        },
+        "path": path,
+    })
+}
+
+/// `TAG_PRF ‖ k ‖ len(x) ‖ x`, assembled from the specification's own table rather than from the
+/// engine, and checked against the engine before it is written.
+fn prf_preimage_bytes(key: &Digest, x: &[u8]) -> Vec<u8> {
+    let produced = preimage_of(&PrfPreimage { key, input: x });
+    let length = u16::try_from(x.len()).expect("schema 1's inputs are short");
+    spec::check_layout("prf", &produced, &[key, &length.to_le_bytes(), x]);
+    produced
+}
+
+fn trees(files: &mut BTreeMap<String, Value>) {
+    let height = spec::DEPLOYED_HEIGHT;
+
+    // V-P-05: one real leaf at H = 8.
+    let one = submission_set(1, 1);
+    let built = build_epoch(20_400, height, &one);
+    assert_eq!(
+        built.leaves.len(),
+        spec::DEPLOYED_CAPACITY,
+        "V-P-05: §1.4 gives C = 256 at H = 8"
+    );
+    let mut expected = epoch_expected(
+        &built,
+        vec![checked_proof("V-P-05", &built, &one[0].0, &one[0].1)],
+    );
+    if let Some(map) = expected.as_object_mut() {
+        map.insert("steps".into(), epoch_steps(&built, &one[0].0, &one[0].1));
+    }
+    files.insert(
+        "V-P-05.json".into(),
+        vector(
+            "V-P-05",
+            "§4.2",
+            "One real leaf in an epoch at H = 8: a fixed root, an eight-sibling proof that verifies, and every hashing step behind it.",
+            epoch_inputs(built.epoch, height, &one),
+            expected,
+            &[MASTER_KEY_NOTE, LEAF_NOTE, LEAVES_NOTE],
+        ),
+    );
+
+    // V-P-06: 255 real leaves at H = 8, the same key. Three proofs are written in full, the lowest
+    // slot, the highest, and the one in between, and every proof is checked.
+    let many = submission_set(255, 1_000);
+    let full = build_epoch(20_401, height, &many);
+    for (id, leaf) in &many {
+        let proof = full.proof(id).expect("the epoch holds it");
+        assert_eq!(
+            proof.siblings.len(),
+            usize::from(height),
+            "V-P-06: §4.2 states the proof length is still 8"
+        );
+        assert_eq!(
+            ProofVerifier::verify::<NativeKeccak>(leaf, &proof, &full.root),
+            Ok(()),
+            "V-P-06: §4.2 states every proof verifies"
+        );
+    }
+    let mut by_slot: Vec<(u16, SubmissionId)> = full
+        .assignment
+        .iter()
+        .map(|(id, slot)| (*slot, *id))
+        .collect();
+    by_slot.sort_unstable();
+    let chosen: Vec<SubmissionId> = [0usize, by_slot.len() / 2, by_slot.len() - 1]
+        .iter()
+        .map(|index| by_slot[*index].1)
+        .collect();
+    let proofs: Vec<Value> = chosen
+        .iter()
+        .map(|id| {
+            let leaf = many
+                .iter()
+                .find(|(candidate, _)| candidate == id)
+                .map(|(_, leaf)| *leaf)
+                .expect("chosen from the set");
+            checked_proof("V-P-06", &full, id, &leaf)
+        })
+        .collect();
+    files.insert(
+        "V-P-06.json".into(),
+        vector(
+            "V-P-06",
+            "§4.2",
+            "255 real leaves in an epoch at H = 8 under the same key: a fixed root, every proof verified at generation time, and three of them written out in full.",
+            epoch_inputs(full.epoch, height, &many),
+            epoch_expected(&full, proofs),
+            &[
+                MASTER_KEY_NOTE,
+                LEAF_NOTE,
+                LEAVES_NOTE,
+                "Every one of the 255 proofs is verified while this file is generated. Three are recorded: the lowest slot, the highest, and the one in the middle.",
+            ],
+        ),
+    );
+
+    // V-P-06b: the same leaf set at H = 4 and H = 12, where the proof length tracks H exactly.
+    let twelve = submission_set(12, 2_000);
+    let mut heights = Map::new();
+    for other in [spec::MIN_HEIGHT, 12u8] {
+        let tree = build_epoch(20_402, other, &twelve);
+        let proofs: Vec<Value> = twelve
+            .iter()
+            .map(|(id, leaf)| checked_proof("V-P-06b", &tree, id, leaf))
+            .collect();
+        heights.insert(format!("H{other}"), epoch_expected(&tree, proofs));
+    }
+    files.insert(
+        "V-P-06b.json".into(),
+        vector(
+            "V-P-06b",
+            "§4.2",
+            "The same twelve leaves at H = 4 and H = 12: each builds cleanly, and the proof length tracks H exactly.",
+            json!({
+                "epoch": "20402",
+                "heights": [spec::MIN_HEIGHT.to_string(), 12u8.to_string()],
+                "master_key": hex(&TEST_MASTER_KEY),
+                "real": twelve
+                    .iter()
+                    .map(|(id, leaf)| json!({ "submission_id": hex(id), "leaf": hex(leaf) }))
+                    .collect::<Vec<Value>>(),
+            }),
+            Value::Object(heights),
+            &[MASTER_KEY_NOTE, LEAF_NOTE, LEAVES_NOTE],
+        ),
+    );
+
+    tree_negatives(files, height);
+}
+
+/// §4.3's proof vectors. Every expected code is written from §4.3's table and checked against the
+/// engine, so an engine that accepted one of these could not record its acceptance here.
+fn tree_negatives(files: &mut BTreeMap<String, Value>, height: u8) {
+    let real = submission_set(4, 3_000);
+    let built = build_epoch(20_410, height, &real);
+    let (id, leaf) = real[0];
+    let good = built.proof(&id).expect("the epoch holds it");
+    assert_eq!(
+        ProofVerifier::verify::<NativeKeccak>(&leaf, &good, &built.root),
+        Ok(()),
+        "the proof these cases mutate must verify before they mutate it"
+    );
+
+    let refused = |vector: &str, case: &str, proof: &InclusionProof, root: &Digest| -> Value {
+        let error = ProofVerifier::verify::<NativeKeccak>(&leaf, proof, root)
+            .expect_err("this case must be refused");
+        json!({
+            "case": case,
+            "proof": proof_json(proof),
+            "root": hex(root),
+            "expected": spec_expectation(vector, error, 0x13, "InclusionProofInvalid"),
+        })
+    };
+
+    // V-N-15: one sibling altered, at every level.
+    let altered: Vec<Value> = (0..good.siblings.len())
+        .map(|level| {
+            let mut proof = good.clone();
+            let mut siblings: Vec<Digest> = proof.siblings.iter().copied().collect();
+            siblings[level][0] ^= 0x01;
+            proof.siblings = siblings.iter().copied().collect();
+            refused(
+                "V-N-15",
+                &format!("one bit flipped in the sibling at level {level}"),
+                &proof,
+                &built.root,
+            )
+        })
+        .collect();
+    files.insert(
+        "V-N-15.json".into(),
+        vector(
+            "V-N-15",
+            "§4.3",
+            "An inclusion proof with one sibling altered, one case per level.",
+            json!({
+                "epoch": built.epoch.to_string(),
+                "height": height.to_string(),
+                "master_key": hex(&TEST_MASTER_KEY),
+                "submission_id": hex(&id),
+                "leaf": hex(&leaf),
+                "root": hex(&built.root),
+                "valid_proof": proof_json(&good),
+            }),
+            json!({ "cases": altered }),
+            &[MASTER_KEY_NOTE],
+        ),
+    );
+
+    // V-N-16: one sibling too few, and one too many.
+    let mut short = good.clone();
+    let mut siblings: Vec<Digest> = short.siblings.iter().copied().collect();
+    siblings.pop();
+    short.siblings = siblings.iter().copied().collect();
+    let mut long = good.clone();
+    long.siblings
+        .push([0x00; 32])
+        .expect("room below sixteen siblings");
+    files.insert(
+        "V-N-16.json".into(),
+        vector(
+            "V-N-16",
+            "§4.3",
+            "An inclusion proof carrying H − 1 and H + 1 siblings.",
+            json!({
+                "epoch": built.epoch.to_string(),
+                "height": height.to_string(),
+                "master_key": hex(&TEST_MASTER_KEY),
+                "submission_id": hex(&id),
+                "leaf": hex(&leaf),
+                "root": hex(&built.root),
+                "valid_proof": proof_json(&good),
+            }),
+            json!({
+                "cases": [
+                    refused("V-N-16", "H − 1 siblings", &short, &built.root),
+                    refused("V-N-16", "H + 1 siblings", &long, &built.root),
+                ],
+            }),
+            &[MASTER_KEY_NOTE],
+        ),
+    );
+
+    // V-N-16b: the proof's height against a log configured at another.
+    let mismatched: Vec<Value> = [spec::MIN_HEIGHT, 7u8, 9u8, spec::MAX_HEIGHT]
+        .iter()
+        .map(|configured| {
+            let error = ProofVerifier::verify_for_height::<NativeKeccak>(
+                &leaf,
+                &good,
+                &built.root,
+                *configured,
+            )
+            .expect_err("this case must be refused");
+            json!({
+                "case": format!("a proof of height {height} against a log configured at {configured}"),
+                "configured_height": configured.to_string(),
+                "proof": proof_json(&good),
+                "root": hex(&built.root),
+                "expected": spec_expectation("V-N-16b", error, 0x13, "InclusionProofInvalid"),
+            })
+        })
+        .collect();
+    files.insert(
+        "V-N-16b.json".into(),
+        vector(
+            "V-N-16b",
+            "§4.3",
+            "A proof whose height field disagrees with the log's configured H. The check needs the configured height, which the proof cannot carry, so it is a second input to the verifier rather than a field.",
+            json!({
+                "epoch": built.epoch.to_string(),
+                "height": height.to_string(),
+                "master_key": hex(&TEST_MASTER_KEY),
+                "submission_id": hex(&id),
+                "leaf": hex(&leaf),
+                "root": hex(&built.root),
+                "valid_proof": proof_json(&good),
+            }),
+            json!({ "cases": mismatched }),
+            &[MASTER_KEY_NOTE],
+        ),
+    );
+
+    // V-N-17: the proof against another epoch's root.
+    let other = build_epoch(20_411, height, &real);
+    assert_ne!(
+        built.root, other.root,
+        "two epochs of the same submissions must publish different roots"
+    );
+    files.insert(
+        "V-N-17.json".into(),
+        vector(
+            "V-N-17",
+            "§4.3",
+            "A valid proof verified against another epoch's root.",
+            json!({
+                "epoch": built.epoch.to_string(),
+                "other_epoch": other.epoch.to_string(),
+                "height": height.to_string(),
+                "master_key": hex(&TEST_MASTER_KEY),
+                "submission_id": hex(&id),
+                "leaf": hex(&leaf),
+                "root": hex(&built.root),
+                "other_root": hex(&other.root),
+                "valid_proof": proof_json(&good),
+            }),
+            json!({
+                "cases": [refused("V-N-17", "the next epoch's root", &good, &other.root)],
+            }),
+            &[MASTER_KEY_NOTE],
+        ),
+    );
 }
 
 // ---------------------------------------------------------------- helpers
