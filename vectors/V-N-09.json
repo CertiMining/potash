@@ -1,0 +1,16 @@
+{
+  "description": "A preimage read under a domain tag other than its own.",
+  "expected": {
+    "error": "0x0B",
+    "error_name": "DomainTagMismatch",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
+  },
+  "id": "V-N-09",
+  "inputs": {
+    "actual_tag": "CMv1LEAF",
+    "preimage": "0x434d76314c454146b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd010000000000000022222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0200f15365000000009cf0536500000000",
+    "read_as": "CMv1HEAD"
+  },
+  "schema_version": "1",
+  "spec": "§4.3"
+}

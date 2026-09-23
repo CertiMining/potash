@@ -1,11 +1,11 @@
 {
-  "description": "A payload URI that is not ASCII.",
+  "description": "A signature made by a key other than the qp_key the record claims, with no expected key supplied.",
   "expected": {
-    "error": "0x05",
-    "error_name": "MalformedPayload",
+    "error": "0x07",
+    "error_name": "AttestationInvalid",
     "source": "TCU-02 §4.3, checked against the engine at generation time"
   },
-  "id": "V-N-03b",
+  "id": "V-N-25",
   "inputs": {
     "chain": {
       "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
@@ -20,11 +20,11 @@
       "expected_qp_key": null,
       "ext_commitment": null,
       "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
-      "payload_uri": "ipfs://payloadé",
+      "payload_uri": "ipfs://bafyexamplepayload",
       "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
       "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "seq": "2",
-      "signature": "0x99a501ba44bb95bd74969b060b9a492542752fdbec558832c3a2d5089824b350940a4e09da7319dce8066f13e2fa35d5ce536e40d13f5942b128c5d3e084c801"
+      "signature": "0x825e5ec331e224ea6c30d173aa9bb4c18ea929a168936c6958577d53b3ffd1b7d5aba7d06b9d3e81e1895fcde37377cf3177ca24d00b44cd3be4961ca8d30e02"
     }
   },
   "notes": [

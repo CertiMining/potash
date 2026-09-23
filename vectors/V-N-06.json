@@ -1,5 +1,5 @@
 {
-  "description": "A record whose expected qualified person's key is not the key it claims.",
+  "description": "A record whose expected qualified person's key differs from the key it claims. Decided before verification runs.",
   "expected": {
     "error": "0x08",
     "error_name": "AttestationKeyMismatch",

@@ -31,12 +31,32 @@ kat01_offchain() {
 # second catches an edit whose manifest was updated to match, and a generator that has drifted from
 # its own output.
 vectors() {
-  ( cd vectors && shasum -a 256 -c MANIFEST.sha256 ) || return 1
-  local tmp
+  local dir=vectors failed=0 hash mode name actual_hash actual_mode tmp
+
+  # The manifest carries the hash, the file mode and the name, so a vector that was edited, or one
+  # that became executable or unreadable, both fail here.
+  while read -r hash mode name; do
+    [ -n "$name" ] || continue
+    actual_hash="$(shasum -a 256 "$dir/$name" | awk '{print $1}')"
+    actual_mode="$(stat -f '%OLp' "$dir/$name" 2>/dev/null || stat -c '%a' "$dir/$name")"
+    actual_mode="$(printf '%04o' $((8#$actual_mode)))"
+    if [ "$hash" != "$actual_hash" ]; then
+      echo "vectors: $name does not match its hash" >&2
+      failed=1
+    fi
+    if [ "$mode" != "$actual_mode" ]; then
+      echo "vectors: $name has mode $actual_mode, and the manifest records $mode" >&2
+      failed=1
+    fi
+  done < "$dir/MANIFEST.sha256"
+  [ "$failed" -eq 0 ] || return 1
+
+  # Regeneration into a directory the generator creates for itself. This catches an edit whose
+  # manifest was updated to match, and a generator that has drifted from the output beside it.
   tmp="$(mktemp -d)" || return 1
-  cargo xtask gen-vectors "$tmp" >/dev/null &&
-    diff -r vectors "$tmp" &&
-    echo "vectors: manifest verified, and regeneration is identical"
+  cargo xtask gen-vectors "$tmp/out" >/dev/null &&
+    diff -r "$dir" "$tmp/out" &&
+    echo "vectors: $(grep -c . "$dir/MANIFEST.sha256") files verified by hash and mode, and regeneration is identical"
   local code=$?
   rm -rf "$tmp"
   return $code

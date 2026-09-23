@@ -1,9 +1,20 @@
 {
-  "description": "A category outside the range schema 1 defines: 5 and 255. Each is 0x05.",
+  "description": "A payload URI that is too long, not ASCII, or of an unknown scheme. Each is 0x05.",
   "expected": {
     "cases": [
       {
-        "case": "category 5",
+        "case": "129 bytes, one past §1.8's limit",
+        "expected": {
+          "error": "0x05",
+          "error_name": "MalformedPayload",
+          "source": "TCU-02 §4.3"
+        },
+        "note": "The record type holds 128 bytes, so this input is refused before a record exists. It is checked against §1.3's rule, which returns false, and a record carrying it would return 0x05 at condition (f).",
+        "payload_uri": "ipfs://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "payload_uri_len": "129"
+      },
+      {
+        "case": "not ASCII",
         "expected": {
           "error": "0x05",
           "error_name": "MalformedPayload",
@@ -11,21 +22,21 @@
         },
         "record": {
           "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
-          "category": "5",
+          "category": "2",
           "change_identified_at": "1699999910",
           "effective_at": "1700000010",
           "expected_qp_key": null,
           "ext_commitment": null,
           "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
-          "payload_uri": "ipfs://bafyexamplepayload",
+          "payload_uri": "ipfs://payloadé",
           "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
           "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
           "seq": "2",
-          "signature": "0xd93c809655db465b7376fcd75e8eb3d5ec7105a7f9dfdd253a549ff3ed2bd72b8e8950425aad1440409fd52be024f76ee8a7c489d76b5b2ad63f2104b9630b01"
+          "signature": "0x99a501ba44bb95bd74969b060b9a492542752fdbec558832c3a2d5089824b350940a4e09da7319dce8066f13e2fa35d5ce536e40d13f5942b128c5d3e084c801"
         }
       },
       {
-        "case": "category 255",
+        "case": "unknown scheme",
         "expected": {
           "error": "0x05",
           "error_name": "MalformedPayload",
@@ -33,22 +44,22 @@
         },
         "record": {
           "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
-          "category": "255",
+          "category": "2",
           "change_identified_at": "1699999910",
           "effective_at": "1700000010",
           "expected_qp_key": null,
           "ext_commitment": null,
           "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
-          "payload_uri": "ipfs://bafyexamplepayload",
+          "payload_uri": "ftp://example.com/payload",
           "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
           "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
           "seq": "2",
-          "signature": "0xfe73bf112703a76eb597c7cc9c50c513ba4134c8d0731ccefcd9c0cf98c9472b9050b051e4b5177e6ca32d3909e3bbed83df6525a2284dfd0a812738249b5205"
+          "signature": "0x99a501ba44bb95bd74969b060b9a492542752fdbec558832c3a2d5089824b350940a4e09da7319dce8066f13e2fa35d5ce536e40d13f5942b128c5d3e084c801"
         }
       }
     ]
   },
-  "id": "V-N-07b",
+  "id": "V-N-03",
   "inputs": {
     "chain": {
       "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",

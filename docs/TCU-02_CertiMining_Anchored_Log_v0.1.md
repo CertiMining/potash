@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.6 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.7 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -99,6 +99,8 @@ Transition `S_{n+1} = f(S_n, R_{n+1})` is defined iff:
 A record that fails more than one stage returns the code of the earliest stage it failed, and one that fails more than one condition within stage 3 returns the code of the earliest condition (V-N-23).
 
 **What the QP signs.** `σ` covers the 161-byte leaf preimage, the bytes a disclosure package carries as `preimage_borsh`, not the leaf digest (INV-ENC-03). A signature over any other encoding, JSON included, fails condition (c) and returns `0x07` (V-N-05). An absent signature returns `0x06`. When a record carries an expected QP key and it differs from the record's `qp_key`, the transition returns `0x08` before verification runs (V-N-06).
+
+**Why those are two codes and not one.** Ed25519 verification returns one bit. A failure says that the signature does not verify under the key the record claims, and nothing about which key did sign, so "signed by another key" is not distinguishable from "bad signature" without a second input naming the authorized key. `0x08` is therefore reserved for the case where such an input exists and disagrees with the record; a signature made by some other key, with no expected key supplied, is an ordinary verification failure and returns `0x07` (V-N-25).
 
 **Well-formed `payload_uri`.** One to 128 bytes, printable ASCII only, beginning with `ipfs://`, `https://` or `ar://`, with at least one byte after the scheme and no whitespace or control byte. Nothing further is parsed: the engine resolves no URI and checks no host.
 
@@ -484,7 +486,7 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-03 | `payload_uri` 129 bytes / non-ASCII / unknown scheme | `0x05` each |
 | V-N-04 | Missing QP signature | `0x06` |
 | V-N-05 | Signature over JSON instead of Borsh preimage | `0x07` |
-| V-N-06 | Signature by a key other than `qp_key` | `0x08` |
+| V-N-06 | A record whose expected QP key differs from the `qp_key` it claims | `0x08`, decided before verification runs |
 | V-N-07 | Category 4 with no prior 1 or 2 in chain | **Not an error.** Must accept; `0x09` must never be returned under schema 1 |
 | V-N-07b | Category value 5 or 255 | `0x05` |
 | V-N-08 | `effective_at` earlier than predecessor | `0x0A` |
@@ -505,6 +507,7 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-21 | Tenure ID canonicalizing to empty | `0x11` |
 | V-N-23 | A record failing both (a) and (f) | `0x03`; the earlier condition decides |
 | V-N-24 | A record carrying `ext_commitment`, with a wrong `prev_head` | `0x0F`; the schema gate precedes (a) |
+| V-N-25 | A signature made by a key other than the `qp_key` the record claims, with no expected key supplied | `0x07` |
 
 ### 4.4 Privacy acceptance tests — these are the ones that matter
 

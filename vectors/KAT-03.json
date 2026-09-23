@@ -1,5 +1,5 @@
 {
-  "description": "Every preimage writer's bytes and digest, for the Borsh encoding check. The engine's own writers produced these, so a change to any layout changes this file and CI refuses it.",
+  "description": "Every preimage writer's bytes and digest, for the Borsh encoding check. Each one is checked against the layout §1.2, §1.3, §1.4 and §1.6 state before it is written, so a change to any layout stops generation rather than being recorded.",
   "expected": {
     "asset": {
       "digest": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",

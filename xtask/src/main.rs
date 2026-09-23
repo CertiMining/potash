@@ -20,8 +20,11 @@
 //! Being a tool rather than shipped code, this crate may panic: a generator that cannot produce a
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
+mod spec;
+
 use std::collections::BTreeMap;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use certimining_core::{
@@ -51,6 +54,9 @@ const PAYLOAD_DIGEST: Digest = [0x22; 32];
 const ASSESSMENT_DIGEST: Digest = [0x33; 32];
 const PAYLOAD_URI: &str = "ipfs://bafyexamplepayload";
 const FIRST_EFFECTIVE_AT: i64 = 1_700_000_000;
+
+/// Every artifact is written with this mode, and the manifest records it.
+const FILE_MODE: u32 = 0o644;
 
 type Chain = AssetChain<NativeKeccak, certimining_core::DalekVerifier>;
 
@@ -85,15 +91,25 @@ fn repo_root() -> PathBuf {
 }
 
 fn gen_vectors(dir: &Path) {
-    fs::create_dir_all(dir).expect("the vectors directory can be created");
-    for stale in fs::read_dir(dir).expect("the vectors directory can be read") {
-        let path = stale.expect("a directory entry").path();
-        // Only generated artifacts live here, so a file that is no longer generated is removed
-        // rather than left behind to age.
-        if path.is_file() {
-            fs::remove_file(&path).expect("a stale vector can be removed");
+    // The generator never deletes anything. It creates the directory it writes to, and refuses one
+    // that already holds files, so replacing a committed set is a deliberate act by whoever removes
+    // the old one. There is no flag to override this.
+    if dir.exists() {
+        let mut entries = fs::read_dir(dir).expect("the destination can be read");
+        if entries.next().is_some() {
+            eprintln!(
+                "{} already holds files, and this tool never deletes.",
+                dir.display()
+            );
+            eprintln!("Remove the directory yourself, then run the command again:");
+            eprintln!("    rm -rf {} && cargo xtask gen-vectors", dir.display());
+            std::process::exit(2);
         }
+    } else {
+        fs::create_dir_all(dir).expect("the destination can be created");
     }
+
+    check_spec_agreement();
 
     let mut files: BTreeMap<String, Value> = BTreeMap::new();
     positives(&mut files);
@@ -101,33 +117,102 @@ fn gen_vectors(dir: &Path) {
     kat03_fixtures(&mut files);
 
     let mut manifest = String::new();
+    let write = |name: &str, text: &str, manifest: &mut String| {
+        let path = dir.join(name);
+        fs::write(&path, text).expect("a vector can be written");
+        // The mode is set rather than inherited, so a machine with a different umask produces the
+        // same artifact (D-53), and it is recorded, so a file that later became executable or
+        // unreadable is a change the manifest catches.
+        fs::set_permissions(&path, fs::Permissions::from_mode(FILE_MODE))
+            .expect("the mode can be set");
+        manifest.push_str(&format!(
+            "{}  {:04o}  {}\n",
+            sha256_hex(text.as_bytes()),
+            FILE_MODE,
+            name
+        ));
+    };
+
     for (name, value) in &files {
-        let text = to_text(value);
-        fs::write(dir.join(name), &text).expect("a vector can be written");
-        manifest.push_str(&format!("{}  {}\n", sha256_hex(text.as_bytes()), name));
+        write(name, &to_text(value), &mut manifest);
     }
     // KAT-03 also lands as plain text: the core crate's tests read these bytes, and JSON stays in
     // this tool (D-57). Both forms come from the same run, so they cannot drift apart.
-    let kat03_text = kat03_plain(&files["KAT-03.json"]);
-    fs::write(dir.join("KAT-03.txt"), &kat03_text).expect("the fixture can be written");
-    manifest.push_str(&format!(
-        "{}  {}\n",
-        sha256_hex(kat03_text.as_bytes()),
-        "KAT-03.txt"
-    ));
+    write(
+        "KAT-03.txt",
+        &kat03_plain(&files["KAT-03.json"]),
+        &mut manifest,
+    );
+
     let mut lines: Vec<&str> = manifest.lines().collect();
     lines.sort_by_key(|l| l.split_whitespace().last().unwrap_or(""));
     let manifest = lines.join("\n") + "\n";
-    fs::write(dir.join("MANIFEST.sha256"), &manifest).expect("the manifest can be written");
+    let manifest_path = dir.join("MANIFEST.sha256");
+    fs::write(&manifest_path, &manifest).expect("the manifest can be written");
+    fs::set_permissions(&manifest_path, fs::Permissions::from_mode(FILE_MODE))
+        .expect("the mode can be set");
 
     println!(
-        "wrote {} vectors and MANIFEST.sha256 to {}",
+        "wrote {} vectors, KAT-03.txt and MANIFEST.sha256 to {}",
         files.len(),
         dir.display()
     );
     for name in files.keys() {
         println!("  {name}");
     }
+}
+
+/// The engine is checked against the values transcribed from the specification before anything is
+/// written. A disagreement stops generation: the committed set must never record the engine's
+/// opinion of a value the specification states.
+fn check_spec_agreement() {
+    let tags: [(&str, &[u8; 8], [u8; 8]); 7] = [
+        ("TAG_ASSET", spec::TAG_ASSET, certimining_core::TAG_ASSET),
+        ("TAG_LEAF", spec::TAG_LEAF, certimining_core::TAG_LEAF),
+        ("TAG_HEAD", spec::TAG_HEAD, certimining_core::TAG_HEAD),
+        ("TAG_MTL0", spec::TAG_MTL0, certimining_core::TAG_MTL0),
+        ("TAG_MTN1", spec::TAG_MTN1, certimining_core::TAG_MTN1),
+        ("TAG_PAD", spec::TAG_PAD, certimining_core::TAG_PAD),
+        ("TAG_SPI", spec::TAG_SPI, certimining_core::TAG_SPI),
+    ];
+    for (name, from_spec, from_engine) in tags {
+        assert_eq!(
+            &from_engine[..],
+            &from_spec[..],
+            "{name}: the engine has {:?} where §1.2 gives {:?}",
+            core::str::from_utf8(&from_engine).unwrap_or("<not ascii>"),
+            core::str::from_utf8(from_spec).unwrap_or("<not ascii>")
+        );
+    }
+
+    let canonical = AssetId::<NativeKeccak>::canonicalize(TENURE_RAW).expect("canonical");
+    assert_eq!(
+        core::str::from_utf8(&canonical).expect("A-Z and 0-9"),
+        spec::V_P_01_CANONICAL,
+        "V-P-01: §4.2 gives {} as the canonical form of {TENURE_RAW:?}",
+        spec::V_P_01_CANONICAL
+    );
+
+    assert_eq!(
+        certimining_core::MAX_TENURE_LEN,
+        spec::MAX_TENURE_LEN,
+        "§1.8's tenure limit"
+    );
+    assert_eq!(
+        certimining_core::MAX_RAW_TENURE_LEN,
+        spec::MAX_RAW_TENURE_LEN,
+        "§1.8's raw tenure limit"
+    );
+    assert_eq!(
+        certimining_core::MAX_PAYLOAD_URI_LEN,
+        spec::MAX_PAYLOAD_URI_LEN,
+        "§1.8's payload URI limit"
+    );
+    assert_eq!(
+        certimining_core::SCHEMA_VERSION,
+        spec::SCHEMA_VERSION,
+        "§1.3's schema version"
+    );
 }
 
 // ---------------------------------------------------------------- positive vectors (§4.2)
@@ -361,200 +446,308 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
     let tenure = AssetId::<NativeKeccak>::canonicalize(TENURE_RAW).expect("canonical");
     let commitment = AssetId::<NativeKeccak>::commitment(J, R, &tenure).expect("defined");
 
-    // A chain holding one record, so that (a), (b) and (d) all have something to disagree with.
+    // A chain holding one record, so (a), (b) and (d) all have something to disagree with.
     let mut chain = Chain::start(&commitment, 1).expect("starts");
     let first = signed_record(&chain, 1, 2, FIRST_EFFECTIVE_AT);
     let _ = chain.apply(&first).expect("accepted");
     let head = chain.head();
     let snapshot = chain.snapshot();
 
-    // §4.3's table is the source of the expected code. The engine is then run, and generation stops
-    // if it disagrees, so a vector records what the specification requires rather than a
-    // self-portrait of the implementation.
-    let mut case = |name: &str,
-                    spec: &str,
-                    description: &str,
-                    spec_code: u16,
-                    spec_name: &str,
-                    notes: &[&str],
-                    mutate: &dyn Fn(&mut RecordLeafInput),
-                    after_signing: Option<&dyn Fn(&mut RecordLeafInput)>| {
-        // The mutation happens *before* signing. A record whose category, sequence or date was
-        // changed after signing would carry a signature over different bytes and be refused at (c)
-        // with 0x07, never reaching the condition the vector is about. Only the vectors that are
-        // themselves about the signature alter it afterwards.
+    let chain_json = json!({
+        "head": hex(&head),
+        "seq": "1",
+        "last_effective_at": FIRST_EFFECTIVE_AT.to_string(),
+    });
+
+    // One refused record: the engine is run, and the expectation written is the specification's.
+    let refusal = |vector: &str,
+                   case: &str,
+                   mutate: &dyn Fn(&mut RecordLeafInput),
+                   after_signing: Option<&dyn Fn(&mut RecordLeafInput)>,
+                   spec_code: u16,
+                   spec_name: &str| {
+        // The mutation happens before signing, so a record that changes a field inside the leaf
+        // preimage still carries a signature over its own bytes and is refused by the condition the
+        // vector is about, not by (c).
         let mut record = signed_record_with(&chain, 2, 2, FIRST_EFFECTIVE_AT + 10, |r| mutate(r));
         if let Some(alter) = after_signing {
             alter(&mut record);
         }
         let mut probe = Chain::resume(&commitment, 1, snapshot).expect("resumes");
-        let error = probe
-            .apply(&record)
-            .expect_err("this vector must be refused");
+        let error = probe.apply(&record).expect_err("this case must be refused");
         assert_eq!(
             probe.snapshot(),
             snapshot,
-            "{name}: a refusal moved the chain"
+            "{vector}/{case}: a refusal moved the chain"
         );
+        json!({
+            "case": case,
+            "record": record_json(&record),
+            "expected": spec_expectation(vector, error, spec_code, spec_name),
+        })
+    };
+
+    let mut single = |name: &str, description: &str, notes: &[&str], case: Value| {
         files.insert(
             format!("{name}.json"),
             vector(
                 name,
-                spec,
+                "§4.3",
                 description,
-                json!({ "chain": { "head": hex(&head), "seq": "1", "last_effective_at": FIRST_EFFECTIVE_AT.to_string() }, "record": record_json(&record) }),
-                spec_expectation(name, error, spec_code, spec_name),
+                json!({ "chain": chain_json, "record": case["record"] }),
+                case["expected"].clone(),
                 notes,
             ),
         );
     };
 
-    case(
+    single(
         "V-N-01",
-        "§4.3",
         "A record that does not commit against the current head.",
-        0x03,
-        "HeadMismatch",
         &[],
-        &|r| {
-            r.prev_head = [0xAB; 32];
-        },
-        None,
+        refusal(
+            "V-N-01",
+            "wrong prev_head",
+            &|r| r.prev_head = [0xAB; 32],
+            None,
+            0x03,
+            "HeadMismatch",
+        ),
     );
-    case(
-        "V-N-02a",
-        "§4.3",
-        "A gap in the sequence.",
-        0x04,
-        "SequenceOutOfOrder",
-        &[],
-        &|r| r.seq = 4,
-        None,
-    );
-    case(
-        "V-N-02b",
-        "§4.3",
-        "A replay of a sequence already applied.",
-        0x04,
-        "SequenceOutOfOrder",
-        &[],
-        &|r| r.seq = 1,
-        None,
-    );
-    case(
-        "V-N-03a",
-        "§4.3",
-        "A payload URI of an unknown scheme.",
-        0x05,
-        "MalformedPayload",
-        &[],
-        &|r| {
-            r.payload_uri = uri("ftp://example.com/payload");
-        },
-        None,
-    );
-    case(
-        "V-N-03b",
-        "§4.3",
-        "A payload URI that is not ASCII.",
-        0x05,
-        "MalformedPayload",
-        &[],
-        &|r| {
-            r.payload_uri = uri("ipfs://payload\u{00e9}");
-        },
-        None,
-    );
-    case(
-        "V-N-03c",
-        "§4.3",
-        "A payload URI with nothing after its scheme.",
-        0x05,
-        "MalformedPayload",
-        &[],
-        &|r| {
-            r.payload_uri = uri("ipfs://");
-        },
-        None,
-    );
-    case(
+    single(
         "V-N-04",
-        "§4.3",
         "A record with no qualified person's signature.",
-        0x06,
-        "AttestationMissing",
         &[],
-        &|_| {},
-        Some(&|r| r.signature = None),
+        refusal(
+            "V-N-04",
+            "no signature",
+            &|_| {},
+            Some(&|r| r.signature = None),
+            0x06,
+            "AttestationMissing",
+        ),
     );
-    case(
+    single(
         "V-N-05",
-        "§4.3",
         "A signature over a JSON rendering of the record rather than over the leaf preimage.",
-        0x07,
-        "AttestationInvalid",
-        &[TEST_KEY_NOTE],
-        &|_| {},
-        Some(&|r| {
-            let key = SigningKey::from_bytes(&RFC8032_SECRET_KEY);
-            let json_bytes = br#"{"seq":"2","category":"2","effective_at":"1700000010"}"#;
-            r.signature = Some(key.sign(json_bytes).to_bytes());
-        }),
+        &[],
+        refusal(
+            "V-N-05",
+            "signature over JSON",
+            &|_| {},
+            Some(&|r| {
+                let key = SigningKey::from_bytes(&RFC8032_SECRET_KEY);
+                let json_bytes = br#"{"seq":"2","category":"2","effective_at":"1700000010"}"#;
+                r.signature = Some(key.sign(json_bytes).to_bytes());
+            }),
+            0x07,
+            "AttestationInvalid",
+        ),
     );
-    case(
+    single(
         "V-N-06",
-        "§4.3",
-        "A record whose expected qualified person's key is not the key it claims.",
-        0x08,
-        "AttestationKeyMismatch",
-        &[TEST_KEY_NOTE],
-        &|r| {
-            r.expected_qp_key = Some([0x21; 32]);
-        },
-        None,
-    );
-    case(
-        "V-N-07b",
-        "§4.3",
-        "A category outside the range schema 1 defines.",
-        0x05,
-        "MalformedPayload",
+        "A record whose expected qualified person's key differs from the key it claims. Decided before verification runs.",
         &[],
-        &|r| r.category = 5,
-        None,
+        refusal(
+            "V-N-06",
+            "expected key differs from the claimed key",
+            &|r| r.expected_qp_key = Some([0x21; 32]),
+            None,
+            0x08,
+            "AttestationKeyMismatch",
+        ),
     );
-    case(
+    single(
         "V-N-08",
-        "§4.3",
         "An effective date earlier than its predecessor's.",
-        0x0A,
-        "NonMonotonicEffectiveAt",
         &[],
-        &|r| {
-            r.effective_at = FIRST_EFFECTIVE_AT - 1;
-        },
-        None,
+        refusal(
+            "V-N-08",
+            "effective_at goes backwards",
+            &|r| r.effective_at = FIRST_EFFECTIVE_AT - 1,
+            None,
+            0x0A,
+            "NonMonotonicEffectiveAt",
+        ),
     );
-    case("V-N-23", "§4.3", "A record failing both (a) and (f): the earlier condition decides, so the answer is the head mismatch.", 0x03,
-        "HeadMismatch",
+    single(
+        "V-N-23",
+        "A record failing both (a) and (f): the earlier condition decides, so the answer is the head mismatch.",
         &[],
-        &|r| {
-            r.prev_head = [0xAB; 32];
-            r.payload_uri = uri("ftp://example.com/payload");
-        },
-        None,
+        refusal(
+            "V-N-23",
+            "wrong head and a broken URI",
+            &|r| {
+                r.prev_head = [0xAB; 32];
+                r.payload_uri = uri("ftp://example.com/payload");
+            },
+            None,
+            0x03,
+            "HeadMismatch",
+        ),
     );
-    case("V-N-24", "§4.3", "A record carrying the reserved extension commitment alongside a wrong head: the schema gate stands before (a).", 0x0F,
-        "UnsupportedSchemaVersion",
+    single(
+        "V-N-24",
+        "A record carrying the reserved extension commitment alongside a wrong head: the schema gate stands before (a).",
         &[],
-        &|r| {
-            r.prev_head = [0xAB; 32];
-            r.ext_commitment = Some([0x99; 32]);
-        },
-        None,
+        refusal(
+            "V-N-24",
+            "an extension and a wrong head",
+            &|r| {
+                r.prev_head = [0xAB; 32];
+                r.ext_commitment = Some([0x99; 32]);
+            },
+            None,
+            0x0F,
+            "UnsupportedSchemaVersion",
+        ),
     );
 
-    // V-N-13, V-N-20 and V-N-21 do not fit the shape above: each needs its own starting point.
+    // §4.3 gives V-N-25 to a signature made by a key other than the one the record claims, with no
+    // expected key supplied. Ed25519 returns one bit, so that is an ordinary verification failure.
+    single(
+        "V-N-25",
+        "A signature made by a key other than the qp_key the record claims, with no expected key supplied.",
+        &[],
+        refusal(
+            "V-N-25",
+            "signed by another key",
+            &|_| {},
+            Some(&|r| {
+                let bytes = leaf_preimage_bytes(&commitment, r);
+                r.signature = Some(SigningKey::from_bytes(&[0x5A; 32]).sign(&bytes).to_bytes());
+            }),
+            0x07,
+            "AttestationInvalid",
+        ),
+    );
+
+    // §4.3 gives one ID to the sequence gap and the replay, so both live in one file.
+    files.insert(
+        "V-N-02.json".into(),
+        vector(
+            "V-N-02",
+            "§4.3",
+            "A gap in the sequence, and a replay of a sequence already applied. Both are 0x04.",
+            json!({ "chain": chain_json }),
+            json!({
+                "cases": [
+                    refusal("V-N-02", "a gap", &|r| r.seq = 4, None, 0x04, "SequenceOutOfOrder"),
+                    refusal("V-N-02", "a replay", &|r| r.seq = 1, None, 0x04, "SequenceOutOfOrder"),
+                ]
+            }),
+            &[],
+        ),
+    );
+
+    // V-N-03's three inputs. The 129-byte case cannot be built as a record at all, because the type
+    // holds 128 bytes, so it is checked against the rule §1.3 states and recorded as such.
+    let over_limit = format!("ipfs://{}", "a".repeat(122));
+    assert_eq!(over_limit.len(), spec::MAX_PAYLOAD_URI_LEN + 1);
+    assert!(
+        !certimining_core::payload_uri_is_well_formed(over_limit.as_bytes()),
+        "V-N-03: §1.3's rule must refuse a URI of {} bytes",
+        over_limit.len()
+    );
+    files.insert(
+        "V-N-03.json".into(),
+        vector(
+            "V-N-03",
+            "§4.3",
+            "A payload URI that is too long, not ASCII, or of an unknown scheme. Each is 0x05.",
+            json!({ "chain": chain_json }),
+            json!({
+                "cases": [
+                    json!({
+                        "case": "129 bytes, one past §1.8's limit",
+                        "payload_uri": over_limit,
+                        "payload_uri_len": over_limit.len().to_string(),
+                        "note": "The record type holds 128 bytes, so this input is refused before a record exists. It is checked against §1.3's rule, which returns false, and a record carrying it would return 0x05 at condition (f).",
+                        "expected": { "error": "0x05", "error_name": "MalformedPayload", "source": "TCU-02 §4.3" },
+                    }),
+                    refusal("V-N-03", "not ASCII", &|r| r.payload_uri = uri("ipfs://payload\u{00e9}"), None, 0x05, "MalformedPayload"),
+                    refusal("V-N-03", "unknown scheme", &|r| r.payload_uri = uri("ftp://example.com/payload"), None, 0x05, "MalformedPayload"),
+                ]
+            }),
+            &[],
+        ),
+    );
+
+    // V-N-07b names both 5 and 255.
+    files.insert(
+        "V-N-07b.json".into(),
+        vector(
+            "V-N-07b",
+            "§4.3",
+            "A category outside the range schema 1 defines: 5 and 255. Each is 0x05.",
+            json!({ "chain": chain_json }),
+            json!({
+                "cases": [
+                    refusal("V-N-07b", "category 5", &|r| r.category = spec::MAX_CATEGORY + 1, None, 0x05, "MalformedPayload"),
+                    refusal("V-N-07b", "category 255", &|r| r.category = 255, None, 0x05, "MalformedPayload"),
+                ]
+            }),
+            &[],
+        ),
+    );
+
+    // V-N-07 is a negative vector with a positive outcome: the engine must accept, flag, and never
+    // return 0x09 (INV-STATE-06, D-01).
+    // A fresh chain, because the shared one already holds a Measured resource and the whole point
+    // of V-N-07 is a reserve category with no earlier record of category 1 or 2.
+    let mut accepting = Chain::start(&commitment, 1).expect("starts");
+    let reserve = signed_record_with(&accepting, 1, 4, FIRST_EFFECTIVE_AT, |_| {});
+    let applied = accepting
+        .apply(&reserve)
+        .expect("V-N-07: a reserve category with no earlier resource must be accepted");
+    assert_eq!(
+        applied.flags, FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
+        "V-N-07: §4.2's V-P-11 and INV-STATE-06 require flag bit 0"
+    );
+    files.insert(
+        "V-N-07.json".into(),
+        vector(
+            "V-N-07",
+            "§4.3",
+            "Category 4 with no earlier record of category 1 or 2. Not an error: the record is accepted and flagged, and 0x09 is never returned under schema 1.",
+            json!({
+                "chain": { "head": hex(&Chain::genesis(&commitment, 1).expect("schema 1")), "seq": "0" },
+                "record": record_json(&reserve),
+            }),
+            json!({
+                "accepted": true,
+                "error": Value::Null,
+                "flags": applied.flags.to_string(),
+                "flag_bit_0": "RESERVE_WITHOUT_PRIOR_RESOURCE",
+                "leaf": hex(&applied.leaf),
+                "head": hex(&applied.head),
+                "source": "TCU-02 §4.3 and INV-STATE-06, checked against the engine at generation time",
+            }),
+            &[],
+        ),
+    );
+
+    // V-N-09: a preimage read under the wrong domain tag (§4.3, E-03's reader).
+    let leaf_bytes = leaf_preimage_bytes(&commitment, &first);
+    let wrong_tag = certimining_core::check_tag(&leaf_bytes, *spec::TAG_HEAD)
+        .expect_err("a leaf preimage is not a head preimage");
+    files.insert(
+        "V-N-09.json".into(),
+        vector(
+            "V-N-09",
+            "§4.3",
+            "A preimage read under a domain tag other than its own.",
+            json!({
+                "preimage": hex(&leaf_bytes),
+                "actual_tag": core::str::from_utf8(spec::TAG_LEAF).expect("ascii"),
+                "read_as": core::str::from_utf8(spec::TAG_HEAD).expect("ascii"),
+            }),
+            spec_expectation("V-N-09", wrong_tag, 0x0B, "DomainTagMismatch"),
+            &[],
+        ),
+    );
+
+    // V-N-13, V-N-20 and V-N-21 each need their own starting point.
     let error = Chain::genesis(&commitment, 2).expect_err("schema 2 is refused");
     files.insert(
         "V-N-13.json".into(),
@@ -586,9 +779,12 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
             "V-N-20",
             "§4.3",
             "A chain whose sequence number has nowhere left to go: the counter is checked, never wrapped.",
-            json!({ "chain": { "head": hex(&at_limit.head), "seq": at_limit.seq.to_string() }, "record": record_json(&record) }),
+            json!({
+                "chain": { "head": hex(&at_limit.head), "seq": at_limit.seq.to_string() },
+                "record": record_json(&record),
+            }),
             spec_expectation("V-N-20", error, 0x10, "ArithmeticOverflow"),
-            &[TEST_KEY_NOTE],
+            &[],
         ),
     );
 
@@ -622,11 +818,15 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
     let qp_key = key.verifying_key().to_bytes();
 
     let mut writers = Map::new();
-    let mut add = |name: &str, tag: &[u8; 8], bytes: Vec<u8>, fields: Value| {
+    let mut add = |name: &str, bytes: Vec<u8>, values: &[&[u8]], fields: Value| {
+        // Every writer is checked against the layout transcribed from the specification: the tag it
+        // opens with, each field at the width §1.3 gives it, and the total the table states.
+        spec::check_layout(name, &bytes, values);
+        let tag = spec::layout(name).tag;
         writers.insert(
             name.to_string(),
             json!({
-                "tag": String::from_utf8(tag.to_vec()).expect("the tags are ASCII"),
+                "tag": core::str::from_utf8(tag).expect("the tags are ASCII"),
                 "fields": fields,
                 "preimage": hex(&bytes),
                 "preimage_len": bytes.len().to_string(),
@@ -635,25 +835,33 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
         );
     };
 
+    let tenure_len = u16::try_from(tenure.len()).expect("1 to 64").to_le_bytes();
     add(
         "asset",
-        &certimining_core::TAG_ASSET,
         preimage_of(&certimining_core::AssetPreimage {
             jurisdiction: J,
             registry: R,
             tenure: &tenure,
         }),
-        json!({ "jurisdiction": hex(J), "registry": hex(R), "tenure": String::from_utf8(tenure.to_vec()).expect("A-Z and 0-9") }),
+        &[J, R, &tenure_len, &tenure],
+        json!({
+            "jurisdiction": hex(J),
+            "registry": hex(R),
+            "tenure": core::str::from_utf8(&tenure).expect("A-Z and 0-9"),
+        }),
     );
+
+    let schema = spec::SCHEMA_VERSION.to_le_bytes();
     add(
         "genesis_head",
-        &certimining_core::TAG_HEAD,
         preimage_of(&GenesisHeadPreimage {
             asset_commitment: commitment,
-            schema_version: 1,
+            schema_version: spec::SCHEMA_VERSION,
         }),
+        &[&commitment, &schema],
         json!({ "asset_commitment": hex(&commitment), "schema_version": "1" }),
     );
+
     let leaf = LeafPreimage {
         asset_commitment: commitment,
         seq: 7,
@@ -664,10 +872,23 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
         effective_at: FIRST_EFFECTIVE_AT,
         change_identified_at: FIRST_EFFECTIVE_AT - 100,
     };
+    let seq = 7u64.to_le_bytes();
+    let category = [2u8];
+    let effective = FIRST_EFFECTIVE_AT.to_le_bytes();
+    let identified = (FIRST_EFFECTIVE_AT - 100).to_le_bytes();
     add(
         "leaf",
-        &certimining_core::TAG_LEAF,
         preimage_of(&leaf),
+        &[
+            &commitment,
+            &seq,
+            &PAYLOAD_DIGEST,
+            &ASSESSMENT_DIGEST,
+            &qp_key,
+            &category,
+            &effective,
+            &identified,
+        ],
         json!({
             "asset_commitment": hex(&commitment),
             "seq": "7",
@@ -679,54 +900,64 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
             "change_identified_at": (FIRST_EFFECTIVE_AT - 100).to_string(),
         }),
     );
+
     let leaf_digest = leaf.digest::<NativeKeccak>().expect("a digest");
     add(
         "step_head",
-        &certimining_core::TAG_HEAD,
         preimage_of(&StepHeadPreimage {
             prev_head: commitment,
             leaf: leaf_digest,
         }),
+        &[&commitment, &leaf_digest],
         json!({ "prev_head": hex(&commitment), "leaf": hex(&leaf_digest) }),
     );
     add(
         "real_leaf",
-        &certimining_core::TAG_MTL0,
         preimage_of(&RealLeafPreimage { leaf: leaf_digest }),
+        &[&leaf_digest],
         json!({ "leaf": hex(&leaf_digest) }),
     );
+    let prf_output = [0x77u8; 32];
     add(
         "padding",
-        &certimining_core::TAG_PAD,
-        preimage_of(&PaddingPreimage {
-            prf_output: [0x77; 32],
-        }),
-        json!({ "prf_output": hex(&[0x77; 32]) }),
+        preimage_of(&PaddingPreimage { prf_output }),
+        &[&prf_output],
+        json!({ "prf_output": hex(&prf_output) }),
     );
     add(
         "node",
-        &certimining_core::TAG_MTN1,
         preimage_of(&NodePreimage {
             left: commitment,
             right: leaf_digest,
         }),
+        &[&commitment, &leaf_digest],
         json!({ "left": hex(&commitment), "right": hex(&leaf_digest) }),
     );
+
+    let submission_id = [0x88u8; 16];
+    let promised_epoch = 20_361u64.to_le_bytes();
+    let delay = [spec::MAX_MERGE_DELAY];
     add(
         "spi",
-        &certimining_core::TAG_SPI,
         preimage_of(&SpiPreimage {
             leaf: leaf_digest,
-            submission_id: [0x88; 16],
+            submission_id,
             promised_epoch: 20_361,
-            max_merge_delay: 2,
+            max_merge_delay: spec::MAX_MERGE_DELAY,
         }),
+        &[&leaf_digest, &submission_id, &promised_epoch, &delay],
         json!({
             "leaf": hex(&leaf_digest),
-            "submission_id": hex(&[0x88; 16]),
+            "submission_id": hex(&submission_id),
             "promised_epoch": "20361",
-            "max_merge_delay": "2",
+            "max_merge_delay": spec::MAX_MERGE_DELAY.to_string(),
         }),
+    );
+
+    assert_eq!(
+        writers.len(),
+        spec::LAYOUTS.len(),
+        "every layout the specification states must have a fixture"
     );
 
     files.insert(
@@ -734,10 +965,10 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
         vector(
             "KAT-03",
             "§4.1",
-            "Every preimage writer's bytes and digest, for the Borsh encoding check. The engine's own writers produced these, so a change to any layout changes this file and CI refuses it.",
+            "Every preimage writer's bytes and digest, for the Borsh encoding check. Each one is checked against the layout §1.2, §1.3, §1.4 and §1.6 state before it is written, so a change to any layout stops generation rather than being recorded.",
             json!({ "note": "Each writer's fields are listed beside the bytes they produce." }),
             Value::Object(writers),
-            &[TEST_KEY_NOTE],
+            &[],
         ),
     );
 }
@@ -751,7 +982,10 @@ fn kat03_plain(vector: &Value) -> String {
         .expect("KAT-03 carries its writers under expected");
     let mut text = String::from(
         "# KAT-03: every preimage writer's bytes and digest, generated by `cargo xtask gen-vectors`.\n\
-         # Never edited by hand. Columns: name, preimage hex, digest hex.\n",
+         # Never edited by hand. Columns: name, preimage hex, digest hex.\n\
+         # The qualified person's key inside the leaf is RFC 8032 §7.1's published specification\n\
+         # test key, not a real identity. Its private half is public, so any signature over these\n\
+         # bytes is reproducible.\n",
     );
     for (name, entry) in writers {
         let preimage = entry["preimage"].as_str().expect("hex");
@@ -852,6 +1086,19 @@ fn preimage_of<P: Preimage>(p: &P) -> Vec<u8> {
     let mut buf = PreimageBuf::new();
     p.write_preimage(&mut buf).expect("the preimage fits");
     buf.as_bytes().to_vec()
+}
+
+fn leaf_preimage_bytes(commitment: &Digest, r: &RecordLeafInput) -> Vec<u8> {
+    preimage_of(&LeafPreimage {
+        asset_commitment: *commitment,
+        seq: r.seq,
+        payload_digest: r.payload_digest,
+        assessment_digest: r.assessment_digest,
+        qp_key: r.qp_key,
+        category: r.category,
+        effective_at: r.effective_at,
+        change_identified_at: r.change_identified_at,
+    })
 }
 
 fn leaf_preimage_of(chain: &Chain, r: &RecordLeafInput) -> Vec<u8> {

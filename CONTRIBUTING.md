@@ -8,9 +8,17 @@ Everything under `vectors/` is output. It is produced by
 cargo xtask gen-vectors
 ```
 
-and the engine's own code produces every value in it, so a vector is what the engine does rather
-than a second opinion about it. To change a vector, change the engine or the generator and run that
-command again; then commit what it wrote, including `vectors/MANIFEST.sha256`.
+**The generator never deletes.** It writes into a directory it creates, and refuses one that already
+holds files. To replace a committed set you remove it yourself first, which keeps the deletion a
+deliberate act:
+
+```sh
+rm -rf vectors && cargo xtask gen-vectors
+```
+
+Then commit what it wrote, including `vectors/MANIFEST.sha256`. Each manifest line carries the
+SHA-256, the file mode and the name, so a vector that was edited and one that became executable or
+unreadable both fail the check.
 
 **Editing a file under `vectors/` by hand will fail CI.** Two checks stand in the way, and they
 catch different mistakes:
@@ -31,6 +39,16 @@ identical on another machine.
 
 Every hashing step records its preimage as well as its digest, so an implementation that disagrees
 can tell whether it built the wrong bytes or hashed the right ones wrongly.
+
+**Vector identifiers come from §4.3 and §4.2, never from this repository.** Where the specification
+gives one identifier to several inputs, such as V-N-02's gap and replay, the file carries them as
+cases under that one identifier. A new identifier is declared in the specification first, as V-N-25
+was, and never invented here as a suffix.
+
+**The generator holds its own copy of the specification's values.** `xtask/src/spec.rs` carries the
+domain tags, the canonical form of V-P-01, every preimage layout and §1.8's limits, transcribed by
+hand and read from nothing. The generator checks the engine against them and stops if they disagree,
+so an engine that has drifted cannot write its drift into the committed set.
 
 **Two kinds of expectation, with different authority.** A positive vector's digests lock the
 engine's output: no document can state a digest, and what stands behind them is KAT-01 and the
