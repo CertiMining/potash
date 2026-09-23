@@ -108,7 +108,8 @@ kat01_onchain() {
     cargo test -p core-harness --test kat01_onchain -- --nocapture
 }
 
-# Format, the INV-ERR-01 lint gates, every feature set, and the bare-metal no_std proof (D-14).
+# Format, the INV-ERR-01 lint gates, every feature set for both engine crates, and the bare-metal
+# no_std proof (D-14, D-61).
 checks() {
   cargo fmt --all --check &&
     cargo clippy --workspace --all-targets --no-default-features -- -D warnings &&
@@ -119,14 +120,23 @@ checks() {
     cargo test -p certimining-core &&
     cargo test -p certimining-core --no-default-features --features solana &&
     cargo test -p certimining-core --all-features &&
+    cargo test -p certimining-log --no-default-features &&
+    cargo test -p certimining-log &&
+    cargo test -p certimining-log --no-default-features --features solana &&
+    cargo test -p certimining-log --all-features &&
     cargo build -p certimining-core --target thumbv7em-none-eabihf --no-default-features &&
-    cargo build -p certimining-core --target thumbv7em-none-eabihf
+    cargo build -p certimining-core --target thumbv7em-none-eabihf &&
+    cargo build -p certimining-log --target thumbv7em-none-eabihf --no-default-features &&
+    cargo build -p certimining-log --target thumbv7em-none-eabihf
 }
 
-# Miri on the core crate (P-04).
+# Miri on the engine crates (P-04). The statistical privacy tests are ignored here and run in the
+# `checks` group instead: Miri is for undefined behaviour, and it covers the tree's code paths through
+# the structural tests at a fraction of the cost (D-66).
 miri() {
   cargo "+$MIRI_TOOLCHAIN" miri --version &&
-    cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-core --all-features
+    cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-core --all-features &&
+    cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-log --all-features
 }
 
 # Advisories, licences and sources (D-13, D-18). The version is read from the installed tool.

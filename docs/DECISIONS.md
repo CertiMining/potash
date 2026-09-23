@@ -689,6 +689,8 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Ground.** INV-TREE-05 keeps a real `k_e` unpublished, so a published test key is the only honest way to commit a tree vector at all. Deriving through the real path keeps `k_e = PRF(k_master, 0x01 ‖ e_le)` under test rather than bypassed, and a key whose bytes spell out what it is cannot be mistaken for a real one by a later reader.
 
+**Also settled.** `build`'s `key` argument is `k_master`, not `k_e`. The tree already knows which epoch it is for, so deriving inside `build` puts INV-TREE-05's derivation on the only path that produces a tree and makes reusing one epoch's key for another impossible.
+
 **Rejected.** Handing `k_e` to the builder directly, which leaves the derivation untested. Zero bytes, which read as an uninitialised value rather than a deliberate one.
 
 **Revisit if.** A test needs two master keys, which would name the second the same way.
@@ -698,6 +700,8 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** cost judgment · **Status:** settled at S0 (owner, 23 Sep 2026)
 
 **Decision.** Siblings run from the leaf upward, exactly `height` of them, and the path is taken from `slot_index` with bit 0 first: a clear bit means the leaf is the left child at that level. `verify` checks everything a proof can be checked for on its own — `4 ≤ height ≤ 16`, one sibling per level, `slot_index < 2^height`, and the root recomputed from the leaf — and returns `0x13` on any failure. The configured height is a second input rather than a field, so a caller holding its log's `H` calls `verify_for_height`, where a proof whose `height` disagrees is `0x13` before any hashing. That is V-N-16b. Both functions are pure, which is INV-IFACE-01.
+
+**Also settled.** `verify` takes the chain leaf `leafₙ` and applies `TAG_MTL0` itself, rather than taking the tagged leaf the tree holds. A caller cannot then omit the tag, which is the same reason E-03 keeps every preimage out of call sites.
 
 **Ground.** Leaf-first ordering is the convention E-11 will be written against, and §1.8's "exactly `H` siblings" reads in that direction. The height check needs an input `verify` does not have, and adding a log handle to the verifier would break the offline property INV-IFACE-01 exists to protect.
 

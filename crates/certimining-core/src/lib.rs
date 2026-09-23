@@ -3,7 +3,8 @@
 //! E-01 provides the error space (§2.1), the digest types (§2.2) and the Keccak-256 hashers (§1.1).
 //! E-02 adds canonical tenure identifiers and the asset commitment (§1.3). E-03 adds the
 //! domain-tagged preimage writers every digest is built from (§1.2). E-04 adds the supersession
-//! state machine and its flags (§1.3). The crate is `no_std` and has no Solana dependency outside
+//! state machine and its flags (§1.3). E-06 adds §1.1's PRF, which the epoch tree of
+//! `certimining-log` uses for slot assignment and padding (D-61). The crate is `no_std` and has no Solana dependency outside
 //! the `solana` feature (§2).
 
 // no_std everywhere except the unit-test harness, which needs std.
@@ -21,6 +22,7 @@ mod error;
 mod hash;
 mod identity;
 mod preimage;
+mod prf;
 mod state;
 mod verify;
 
@@ -38,6 +40,10 @@ pub use preimage::{
     PaddingPreimage, Preimage, PreimageBuf, PreimageSink, RealLeafPreimage, SpiPreimage,
     StepHeadPreimage, SubmissionId, MAX_PREIMAGE_LEN, TAG_HEAD, TAG_LEAF, TAG_MTL0, TAG_MTN1,
     TAG_PAD, TAG_SPI,
+};
+pub use prf::{
+    epoch_key, padding_prf, slot_seed, PrfPreimage, MAX_PRF_INPUT_LEN, PRF_USE_EPOCH_KEY,
+    PRF_USE_PADDING, PRF_USE_SLOT, TAG_PRF,
 };
 pub use state::{
     payload_uri_is_well_formed, Applied, AssetChain, ChainSnapshot, ChainState, PayloadUri,
