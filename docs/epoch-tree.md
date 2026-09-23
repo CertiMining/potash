@@ -69,8 +69,8 @@ the privacy tests below.
 `BuiltEpoch` carries the epoch, the height, the root, every slot's leaf digest and the assignment
 that proof generation needs. Nothing in it marks a slot real or padding, because that is exactly what
 V-Z-02 tries to recover (D-62). The internal nodes are held privately so a proof costs `H` lookups
-rather than a rebuild; at `H = 16` that is about 6 MB for one epoch, which is a host-side cost the
-batcher pays and the verifier never does.
+rather than a rebuild: 65,535 digests at `H = 16`, which with the leaves beside them is about four
+megabytes for one epoch. That is a host-side cost the batcher pays and the verifier never does.
 
 ## Proofs
 
@@ -95,6 +95,10 @@ a counterparty verifies offline against a root they fetched from Solana themselv
 
 Every failure on this path is `0x13`, including a request for a proof of a submission the epoch does
 not hold: there is no such proof.
+
+The proof's `epoch` field is what tells a caller which root to fetch. `verify` cannot check it,
+because the root it is given is the only thing it has to check against, which is the price of being
+pure. A proof presented against the wrong epoch's root fails on the root instead (V-N-17).
 
 ## What the privacy tests measure
 

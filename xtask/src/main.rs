@@ -1220,7 +1220,7 @@ fn epoch_steps(built: &BuiltEpoch, id: &SubmissionId, leaf: &Digest) -> Value {
 
     let proof = built.proof(id).expect("the epoch holds this submission");
     let mut node = NativeKeccak::hashv(&[&real_leaf_preimage]);
-    let mut index = slot;
+    let index = slot;
     let mut path: Vec<Value> = Vec::new();
     for (level, sibling) in proof.siblings.iter().enumerate() {
         let on_the_left = (index >> level) & 1 == 0;
@@ -1240,8 +1240,6 @@ fn epoch_steps(built: &BuiltEpoch, id: &SubmissionId, leaf: &Digest) -> Value {
             "digest": hex(&node),
         }));
     }
-    index = 0;
-    let _ = index;
     assert_eq!(
         node, built.root,
         "the recorded path must reach the root the tree published"
