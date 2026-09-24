@@ -772,6 +772,8 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Decision.** The leaf, the submission identifier, the promised epoch, the merge delay, the batcher's public key and the 64-byte signature. §2.3 named the type and never defined it.
 
+**Superseded in part, 24 Sep 2026.** D-74 adds a signed `accepted_epoch`, so the promise carries seven fields and encodes to 161 octets. The reasoning in this entry stands; its field list does not.
+
 **Ground.** INV-SPI-01 calls an unsatisfied promise transferable, and a promise a counterparty cannot check without the batcher is not. The public key travels with it so the artifact stands alone.
 
 **Cost, and the trap it sets.** A promise carries the key that signed it, so a counterparty who checks the signature and stops has checked nothing: anyone can sign a promise. `verify_promise` therefore takes the batcher key the counterparty expects and compares it, and the key inside the promise is a convenience for display, never the authority.
@@ -836,9 +838,9 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 ## D-74 · A promise's policy values are checked, not authenticated
 
-**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S9 round one; the open half is the owner's to rule
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled (owner, 24 Sep 2026, across three review rounds)
 
-**Decision.** `verify_promise` refuses a promise whose `max_merge_delay` is not the 2 INV-SPI-01 fixes, however genuine its signature, under `0x05`. A signature proves authorship, not compliance, and a counterparty cannot infer from an artifact that the key holder used an honest implementation.
+**Decision.** `verify_promise` refuses, under `0x17`, a promise whose `max_merge_delay` is not the 2 INV-SPI-01 fixes, whose `promised_epoch` falls outside the window its signed `accepted_epoch` allows, or whose `accepted_epoch` is neither the epoch the counterparty observed at receipt nor exactly one behind it. A signature proves authorship, not compliance, and a counterparty cannot infer from an artifact that the key holder used an honest implementation. The rulings that produced this, and the one error corrected along the way, are recorded below in the order they happened.
 
 **Ground.** The first review's blocking finding. The promise exists to hold the key holder accountable, so anything the key holder chooses freely is policy the verifier must check rather than data the verifier may trust. `max_merge_delay` was checkable against the specification and was not being checked.
 
@@ -875,3 +877,15 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **An owner error, caught in review, recorded at the owner's instruction.** The first ruling asked for a sentence in §1.6 saying that a signed acceptance epoch is checkable against the public checkpoint sequence, so a promise accepted in epoch `e` but satisfied only by a root published after `e + 2` is visibly backdated. That sentence was wrong and the second review falsified it with a probe: a batcher can future-date both epochs together, accepting at 950 while signing acceptance and promise at 1000, meet the promise at 1000, and leave no visible breach at all. The checkpoint sequence maps an epoch to a time and says nothing about when a promise was issued, so signing an assertion prevents its later alteration without making it true. The sentence has been removed rather than softened.
 
 **Deferred to milestone 5, with the design recorded now.** An independently timestamped receipt closes the transfer case: on receiving a promise the counterparty timestamps the artifact itself through the anchor B path of §1.5, and the stamp travels with the promise. A later holder then checks the stamp rather than trusting the batcher's assertion, because the stamp fixes when the promise existed in a third party's hands. That is E-10's machinery and a new field in the disclosure package of §2.5, so it is a post-deadline item and not a claim made now. Appendix A's RES-10 states the gap until then.
+
+## D-77 · Nothing the batcher holds moves until the promise exists
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S9 round three
+
+**Decision.** `submit` derives the identifier a submission would take without consuming it, builds and signs the promise, and only then advances the counter and enqueues the leaf. Every step after the signature is infallible.
+
+**Ground.** The third review found the ordering reversed: the counter advanced before the fallible signer ran, so a signing failure left a gap in the live identifier sequence and `resume` refused the very snapshot the batcher had just produced. The consequence is not a skipped number. A service restarting after a transient signer outage could not resume, and the promises already made in that epoch would miss their publication window unless someone repaired the state by hand, which is the failure a promise exists to make impossible.
+
+**It also made a claim false.** The code and the unit note both said a refusal consumes nothing. That holds only if the signer cannot fail, and a signer holding a key outside this process is precisely the thing that can be unreachable.
+
+**Checked by.** A failing signer, through the public traits: the snapshot is unchanged after the error, `resume` accepts it, and a retry receives the identifier the failure did not consume. Restoring the old ordering fails that case by name.

@@ -12,7 +12,6 @@ mod common;
 use certimining_core::{Digest, RegistryError, Result, Signer, SubmissionId};
 use certimining_log::{
     Batcher, BatcherSnapshot, BuiltEpoch, EpochBatcher, EpochTree, MAX_MERGE_DELAY,
-    PROMISE_ENCODED_LEN,
 };
 use common::{assignment_oracle, leaf_digest, MixHash, TEST_MASTER_KEY};
 
@@ -20,12 +19,6 @@ use common::{assignment_oracle, leaf_digest, MixHash, TEST_MASTER_KEY};
 const RFC8032_SECRET_KEY: [u8; 32] = [
     0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
     0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
-];
-
-/// RFC 8032 §7.1's second secret key, for the case where a counterparty expects another batcher.
-const RFC8032_SECOND_KEY: [u8; 32] = [
-    0x4c, 0xcd, 0x08, 0x9b, 0x28, 0xff, 0x96, 0xda, 0x9d, 0xb6, 0xc3, 0x46, 0xec, 0x11, 0x4e, 0x0f,
-    0x5b, 0x8a, 0x31, 0x9f, 0x35, 0xab, 0xa6, 0x24, 0xda, 0x8c, 0xf6, 0xed, 0x4f, 0xb8, 0xa6, 0xfb,
 ];
 
 /// A published specification test key behind the trait the engine names (D-73).
@@ -45,6 +38,19 @@ impl Signer for SpecTestSigner {
 
     fn public_key(&self) -> [u8; 32] {
         self.0.verifying_key().to_bytes()
+    }
+}
+
+/// A signer that refuses, for the case where the key lives outside this process and is unreachable.
+struct FailingSigner(SpecTestSigner);
+
+impl Signer for FailingSigner {
+    fn sign(&self, _message: &[u8]) -> Result<[u8; 64]> {
+        Err(RegistryError::AttestationInvalid)
+    }
+
+    fn public_key(&self) -> [u8; 32] {
+        self.0.public_key()
     }
 }
 
@@ -90,6 +96,46 @@ fn identifiers_are_an_ordinal_counter_and_never_repeat() {
     let mut unique = seen.clone();
     unique.dedup();
     assert_eq!(seen.len(), unique.len());
+}
+
+#[test]
+fn a_signer_that_fails_leaves_the_batcher_exactly_as_it_was() {
+    // S9 round three, M-01. The signer holds a key outside this process and can be unreachable, so a
+    // refusal must consume nothing: a counter that advanced past a leaf that never arrived would leave
+    // a gap in the live sequence, and the snapshot carrying it would be refused by `resume` — which
+    // would strand the promises already made in that epoch.
+    let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
+    let broken = FailingSigner(SpecTestSigner::from(&RFC8032_SECRET_KEY));
+    let mut batcher = batcher(130);
+    batcher
+        .submit::<MixHash, _>(leaf_digest(1), &signer)
+        .expect("accepted");
+    let before = batcher.snapshot();
+
+    assert_eq!(
+        batcher.submit::<MixHash, _>(leaf_digest(2), &broken).err(),
+        Some(RegistryError::AttestationInvalid),
+        "the signer refused"
+    );
+    assert_eq!(
+        batcher.snapshot(),
+        before,
+        "and the batcher did not move: same counter, same queues"
+    );
+    assert!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, batcher.snapshot()).is_ok(),
+        "so the snapshot it produced is one it can resume from"
+    );
+
+    let retried = batcher
+        .submit::<MixHash, _>(leaf_digest(2), &signer)
+        .expect("accepted on retry");
+    let mut expected = [0u8; 16];
+    expected[..8].copy_from_slice(&1u64.to_le_bytes());
+    assert_eq!(
+        retried.submission_id, expected,
+        "and the retry takes the identifier the failure did not consume"
+    );
 }
 
 #[test]
@@ -355,8 +401,17 @@ mod with_real_crypto {
     };
     use certimining_log::{
         promise_digest, promise_kept, verify_promise, InclusionVerifier, ProofVerifier,
-        PublishedRoot,
+        PublishedRoot, PROMISE_ENCODED_LEN,
     };
+
+    /// RFC 8032 §7.1's second secret key, for the case where a counterparty expects another batcher.
+    /// Only the cases under the real verifier use it, so it lives here rather than at the top, where
+    /// it would be dead in the feature sets without `native` (D-50).
+    const RFC8032_SECOND_KEY: [u8; 32] = [
+        0x4c, 0xcd, 0x08, 0x9b, 0x28, 0xff, 0x96, 0xda, 0x9d, 0xb6, 0xc3, 0x46, 0xec, 0x11, 0x4e,
+        0x0f, 0x5b, 0x8a, 0x31, 0x9f, 0x35, 0xab, 0xa6, 0x24, 0xda, 0x8c, 0xf6, 0xed, 0x4f, 0xb8,
+        0xa6, 0xfb,
+    ];
 
     /// Ed25519 verification for these cases, the implementation the engine offers under `native`.
     struct DalekCheck;

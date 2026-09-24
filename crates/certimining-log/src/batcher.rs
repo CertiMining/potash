@@ -174,15 +174,19 @@ impl EpochBatcher {
             .ok_or(RegistryError::ArithmeticOverflow)
     }
 
-    /// The identifier for the next submission: a counter, little-endian, in sixteen bytes (D-69).
-    fn mint_identifier(&mut self) -> Result<SubmissionId> {
-        let ordinal = self.next_submission;
-        self.next_submission = ordinal
+    /// The identifier the next submission would take: a counter, little-endian, in sixteen bytes
+    /// (D-69). **Nothing is consumed here.** The counter advances only once the submission is accepted,
+    /// because a signer can fail, and a counter that moved without a leaf behind it leaves a gap in the
+    /// live sequence that `resume` would refuse (S9 round three, M-01).
+    fn next_identifier(&self) -> Result<SubmissionId> {
+        // The counter must have room to advance, and finding that out now keeps the failure before
+        // any state moves rather than after.
+        self.next_submission
             .checked_add(1)
             .ok_or(RegistryError::ArithmeticOverflow)?;
         let mut id = [0u8; 16];
         let (low, _) = id.split_at_mut(8);
-        low.copy_from_slice(&ordinal.to_le_bytes());
+        low.copy_from_slice(&self.next_submission.to_le_bytes());
         Ok(id)
     }
 
@@ -229,10 +233,15 @@ fn ordinal_of(id: &SubmissionId) -> Result<u64> {
 
 impl Batcher for EpochBatcher {
     fn submit<H: Hasher, S: Signer>(&mut self, leaf: Digest, signer: &S) -> Result<SignedPromise> {
-        // The epoch is decided before the identifier is minted, so a refusal consumes nothing.
+        // Nothing this batcher holds moves until the promise exists. The epoch is chosen, the
+        // identifier the submission would take is derived without consuming it, and the promise is
+        // signed; a signer that fails therefore leaves the batcher exactly as it was, which is what
+        // "a refusal consumes nothing" has to mean when the signer lives outside this process and can
+        // be unreachable (M-01). A counter that advanced past a leaf that never arrived would leave a
+        // gap in the live sequence, and `resume` would refuse the snapshot that contained it.
         let promised_epoch = self.promised_epoch()?;
         let capacity = self.capacity()?;
-        let submission_id = self.mint_identifier()?;
+        let submission_id = self.next_identifier()?;
 
         let promise = SignedPromise {
             leaf,
@@ -246,6 +255,11 @@ impl Batcher for EpochBatcher {
         let digest = promise_digest::<H>(&promise)?;
         let signature = signer.sign(&digest)?;
 
+        // Signed. Now the batcher moves, and every step below is infallible.
+        self.next_submission = self
+            .next_submission
+            .checked_add(1)
+            .ok_or(RegistryError::ArithmeticOverflow)?;
         if self.pending.len() < capacity {
             self.pending.push((submission_id, leaf));
         } else {
