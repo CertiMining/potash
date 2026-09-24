@@ -9,9 +9,12 @@
 use anchor_lang::prelude::*;
 
 // The address this program deploys to. Its keypair was generated off-repo and lives outside this
-// repository under mode 0600 (S6, D-79); nothing here has ever held the secret half. Every test on
-// this branch therefore verifies the address that actually deploys.
-declare_id!("5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz");
+// repository under mode 0600 (S6, D-79); nothing here has ever held the secret half. It is an
+// address and never a wallet: nobody funds it, it signs once at deploy and never again, and it is
+// not the upgrade authority, which is a separate key (D-88). The only lamports it ever holds are the
+// program account's own rent-exemption, placed there by the loader. Every test on this branch
+// verifies the address that actually deploys.
+declare_id!("HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB");
 
 /// §1.8's range for the tree height, written once at `initialize` (INV-TREE-06, D-78).
 pub const MIN_TREE_HEIGHT: u8 = 4;

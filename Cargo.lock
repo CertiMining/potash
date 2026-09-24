@@ -964,7 +964,6 @@ dependencies = [
  "solana-message",
  "solana-pubkey 3.0.0",
  "solana-rpc-client",
- "solana-rpc-client-api",
  "solana-signer",
  "solana-transaction",
 ]

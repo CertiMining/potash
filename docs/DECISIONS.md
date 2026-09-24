@@ -975,6 +975,10 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Ground.** The owner's instruction is that a behavioural difference between the pinned toolchain and the cluster is a decision rather than a fix. Without a detector, "any difference" is a thing nobody is looking for.
 
+**Where it is recorded (owner's instruction, 24 Sep 2026).** This record was written expecting the first deploy in E-16, and named issue #16. The deploy happened in E-08/E-09 instead, so the two columns are recorded on **issues #8 and #9**.
+
+**Result, 24 Sep 2026.** Devnet (Agave 4.3.0) against LiteSVM (Agave 4.2.2), program `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`: `initialize` 7,504 CU both, `publish_checkpoint` 8,765 CU both, `attach_anchor_receipt` 5,693 CU both, `LogConfig` 68 bytes both, `CheckpointAccount` 106 bytes both, and a republished epoch refused with `Custom(6014)` — `6000 + 0x0E` — on both. No divergence, so nothing went to the owner as a decision. The harness stays in the tree and stays `#[ignore]`d, because the next deploy is the next thing it has to answer for.
+
 ## D-87 · LiteSVM runs the program in CI
 
 **Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
@@ -993,12 +997,17 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **What it costs, stated where a reader meets the claims.** Every invariant this program enforces is enforced by *this* program, and whoever holds the deploy key can replace it. That is a trust assumption of the same kind as RES-03's, and the README says so rather than leaving a reader to infer it.
 
-**The keys, and why there are two (owner's amendment, 24 Sep 2026).** The upgrade authority and the checkpoint authority are **separate keys**, both generated off-repo at S6, mode 0600, outside this repository; nothing here has ever held either secret half.
+**The keys, and why there are three (owner's amendments, 24 Sep 2026).** Three keys, one job each, all generated off-repo at S6, mode 0600, outside this repository; nothing here has ever held any secret half.
 
-- **Upgrade authority and deploy key:** `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz`, which `declare_id!` carries, so every test on this branch verifies the address that actually deploys.
+- **Program address:** `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, which `declare_id!` carries, so every test on this branch verifies the address that actually deploys. It is an address and never a wallet: nobody funds it, and it signs once at the deploy and never again. The only lamports it ever holds are the program account's own rent-exemption, which the loader places there.
+- **Deploy payer and upgrade authority:** `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz`, which pays for the deploy and is the authority disclosed under INV-GOV-01.
 - **Checkpoint authority:** `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB`, written into `LogConfig` at `initialize`.
 
-Two reasons, and both are about what happens when one key is lost rather than about tidiness. **Blast radius:** a compromised checkpoint key can stall the log or publish garbage roots, which INV-GOV-02 already names as a liveness failure and not an integrity one, while a compromised upgrade key can replace the program and with it every invariant this repository claims. Holding them as one key would make the smaller failure carry the larger consequence. **Exposure:** only the checkpoint key runs unattended, signing on the epoch cadence in whatever the service runs on, while the upgrade key is used by a person at a deploy. A key that signs on a schedule is exposed continuously, and that is not the key that should be able to change the program.
+**Why the authority is split from the checkpoint key.** Both reasons are about what happens when one key is lost rather than about tidiness. **Blast radius:** a compromised checkpoint key can stall the log or publish garbage roots, which INV-GOV-02 already names as a liveness failure and not an integrity one, while a compromised upgrade key can replace the program and with it every invariant this repository claims. Holding them as one key would make the smaller failure carry the larger consequence. **Exposure:** only the checkpoint key runs unattended, signing on the epoch cadence in whatever the service runs on, while the upgrade key is used by a person at a deploy. A key that signs on a schedule is exposed continuously, and that is not the key that should be able to change the program.
+
+**Why the address is split from the payer (owner's ruling, 24 Sep 2026).** The first version of this record named one key as both the program id and the upgrade authority. That cannot be built. The loader creates the program account with the system program's `create_account` (`solana-loader-v3-interface-3.0.0`, `instruction.rs:246`), and `create_account` refuses any address that already holds lamports (`solana-system-program-4.2.2`, `system_processor.rs:161-167`), so the program address must be empty at deploy and cannot be the key that pays. Making the payer the authority as well would then leave the address key holding an authority it could only exercise as an executable account — a signing path nothing in the ecosystem exercises and nothing here has tested. The owner ruled the third key: a program address that is **never funded and never signs after the deploy**, enforced by two refusals in `scripts/deploy-devnet.sh` rather than by convention. The first refusal requires a zero balance, which is what "never funded" has to mean before the account exists; afterwards the address holds the program account's rent and the second refusal is what keeps the key closed. The disclosed governance key is unchanged by the split; only the program id moved, and it had never been deployed.
+
+**How each key is exercised.** The payer signs the deploy and any later upgrade. The address key appears in exactly one command, the first deploy; an upgrade names the program by public key and never opens that file, which is what the second refusal checks. The checkpoint key signs `publish_checkpoint` and `attach_anchor_receipt` and nothing else — it cannot upgrade the program, and the program does not let it change `tree_height` or the authority.
 
 **Recorded on issue #16** under INV-GOV-01, at the first devnet deploy.
 

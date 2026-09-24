@@ -80,7 +80,32 @@ the rest.
 ## The upgrade authority is live, and said so
 
 INV-GOV-01 allows two answers and the owner chose disclosure (D-88): the upgrade authority stays with
-the deploy key for this deployment, and the README states that it is live, who holds it and why.
+the deploy payer for this deployment, and the README states that it is live, who holds it and why.
+
+Three keys carry three jobs, and none of them is the same key. The **program address** is the id in
+`declare_id!`: nobody funds it, it signs once at the deploy and never again, and
+`scripts/deploy-devnet.sh` refuses to run if either of those stops being true. After the deploy the
+address holds the program account's rent-exemption and nothing else. The **deploy payer**
+pays for the deploy and is the authority disclosed here. The **checkpoint authority** signs
+`publish_checkpoint` and `attach_anchor_receipt`, and is the only key that runs unattended; it cannot
+upgrade the program.
+
+## Where it is deployed
+
+| | |
+|---|---|
+| Cluster | Solana devnet |
+| Program | `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB` |
+| ProgramData | `HELvWepyztbX9ZkfqPyHxCpReG6dyjVMix4E27btwMF6` |
+| Upgrade authority | `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz` (live, see above) |
+| Checkpoint authority | `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB` |
+| `tree_height` | 8, written once at `initialize` |
+| Deployed in slot | 503659540 |
+
+Devnet runs Agave 4.3.0 while this repository pins 4.2.2, so the suite that proves the program's
+behaviour and the cluster that runs it are not the same version. D-86 makes that a thing to measure
+rather than assume: `crates/certimining-client/tests/devnet.rs` re-runs the LiteSVM assertions against
+the live program, and the two columns are recorded together on issues #8 and #9.
 
 Every invariant this program enforces is enforced by *this* program, and whoever holds that key can
 replace it. That is a trust assumption of the same kind as RES-03's batcher-key custody, and it is
