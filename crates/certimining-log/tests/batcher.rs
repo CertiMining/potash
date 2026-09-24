@@ -9,14 +9,8 @@
 
 mod common;
 
-use certimining_core::{
-    epoch_key, Digest, NativeKeccak, Preimage, RegistryError, Result, Signer, SpiPreimage,
-    SubmissionId, Verifier,
-};
-use certimining_log::{
-    promise_digest, promise_kept, verify_promise, Batcher, BuiltEpoch, EpochBatcher, EpochTree,
-    InclusionVerifier, ProofVerifier, MAX_MERGE_DELAY,
-};
+use certimining_core::{Digest, RegistryError, Result, Signer, SubmissionId};
+use certimining_log::{Batcher, BuiltEpoch, EpochBatcher, EpochTree, MAX_MERGE_DELAY};
 use common::{assignment_oracle, leaf_digest, MixHash, TEST_MASTER_KEY};
 
 /// RFC 8032 §7.1's first secret key, transcribed from the specification.
@@ -48,15 +42,6 @@ impl Signer for SpecTestSigner {
 
     fn public_key(&self) -> [u8; 32] {
         self.0.verifying_key().to_bytes()
-    }
-}
-
-/// Ed25519 verification for the tests, the same implementation the engine offers under `native`.
-struct DalekCheck;
-
-impl Verifier for DalekCheck {
-    fn verify(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result<()> {
-        certimining_core::DalekVerifier::verify(public_key, message, signature)
     }
 }
 
@@ -235,6 +220,21 @@ fn an_empty_epoch_seals_like_any_other() {
 #[cfg(feature = "native")]
 mod with_real_crypto {
     use super::*;
+    use certimining_core::{
+        epoch_key, DalekVerifier, NativeKeccak, Preimage, SpiPreimage, Verifier,
+    };
+    use certimining_log::{
+        promise_digest, promise_kept, verify_promise, InclusionVerifier, ProofVerifier,
+    };
+
+    /// Ed25519 verification for these cases, the implementation the engine offers under `native`.
+    struct DalekCheck;
+
+    impl Verifier for DalekCheck {
+        fn verify(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result<()> {
+            DalekVerifier::verify(public_key, message, signature)
+        }
+    }
 
     fn real_batcher(epoch: u64) -> EpochBatcher {
         EpochBatcher::start(&TEST_MASTER_KEY, HEIGHT, epoch).expect("starts")
