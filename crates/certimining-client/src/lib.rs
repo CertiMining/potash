@@ -24,11 +24,15 @@
     clippy::arithmetic_side_effects
 )]
 
+#[cfg(feature = "cluster")]
+pub mod cluster;
 mod fetch;
+mod publish;
 mod schedule;
 
 pub use fetch::{
-    checkpoint_address, config_address, decode_checkpoint, missing_epochs, root_for_epoch,
-    PublishedCheckpoint, Refused, RootSource,
+    checkpoint_address, config_address, decode_checkpoint, missing_epochs, root_for_epoch, Fetched,
+    PublishedCheckpoint, Refused, RootSource, Unreachable,
 };
+pub use publish::{classify, should_retry, Outcome, CHECKPOINT_ALREADY_WRITTEN};
 pub use schedule::{build_start, publication_time, Schedule, EPOCH_SECONDS};

@@ -44,10 +44,29 @@ pub enum Refused {
     Malformed,
 }
 
+/// The cluster could not be asked. **Distinct from an absent account on purpose:** a gap in the
+/// on-chain sequence is evidence of batcher failure (INV-ANCH-02), and an RPC that is unreachable is
+/// evidence of nothing at all. Collapsing the two would let a network outage accuse the batcher.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unreachable(pub String);
+
+/// What asking the cluster for one epoch produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Fetched {
+    /// An account that passed every check, so it is this epoch's root.
+    Placed(PublishedCheckpoint),
+    /// An account that came back and was refused, with the reason.
+    Refused(Refused),
+    /// The cluster holds nothing at the derived address. For an epoch that should have been
+    /// published, this is a gap.
+    Absent,
+}
+
 /// Where raw accounts come from. A cluster implements this; a test implements it with a map.
 pub trait RootSource {
-    /// The account at `address`, with its owner, or `None` when the cluster holds nothing there.
-    fn account(&self, address: &Pubkey) -> Option<(Pubkey, Vec<u8>)>;
+    /// The account at `address` with its owner, `Ok(None)` when the cluster holds nothing there, and
+    /// an error when the cluster could not be asked.
+    fn account(&self, address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable>;
 }
 
 /// `["cm_ckpt", epoch_le]` against the program id: the address of an epoch's checkpoint, derived
@@ -99,31 +118,40 @@ pub fn decode_checkpoint(
     })
 }
 
-/// The root for an epoch, or the reason it was refused. `None` means the cluster holds nothing at the
-/// derived address, which for an epoch that should have been published is a gap and a batcher failure
-/// (INV-ANCH-02), not an absence to shrug at.
+/// The root for an epoch: placed, refused, or absent, and an error when the cluster could not be
+/// asked at all.
 pub fn root_for_epoch<S: RootSource>(
     source: &S,
     program_id: &Pubkey,
     epoch: u64,
-) -> Option<Result<PublishedCheckpoint, Refused>> {
+) -> Result<Fetched, Unreachable> {
     let address = checkpoint_address(program_id, epoch);
-    let (owner, data) = source.account(&address)?;
-    Some(decode_checkpoint(&owner, program_id, &data, epoch))
+    match source.account(&address)? {
+        None => Ok(Fetched::Absent),
+        Some((owner, data)) => Ok(match decode_checkpoint(&owner, program_id, &data, epoch) {
+            Ok(checkpoint) => Fetched::Placed(checkpoint),
+            Err(refused) => Fetched::Refused(refused),
+        }),
+    }
 }
 
 /// Which epochs in `first..=last` the cluster holds no checkpoint for.
 ///
-/// A gap in the on-chain sequence is evidence of batcher failure and INV-ANCH-02 requires the client
-/// to surface it. Returning the epochs rather than a boolean is deliberate: a caller that has to name
-/// the missing epochs cannot report the gap as a warning and move on.
+/// A gap is evidence of batcher failure and INV-ANCH-02 requires the client to surface it. Returning
+/// the epochs rather than a boolean is deliberate: a caller that has to name the missing epochs cannot
+/// reduce a gap to a warning. **An unreachable cluster returns an error rather than a list**, because
+/// a list of epochs nobody could ask about is an accusation built out of a network fault.
 pub fn missing_epochs<S: RootSource>(
     source: &S,
     program_id: &Pubkey,
     first: u64,
     last: u64,
-) -> Vec<u64> {
-    (first..=last)
-        .filter(|epoch| root_for_epoch(source, program_id, *epoch).is_none())
-        .collect()
+) -> Result<Vec<u64>, Unreachable> {
+    let mut missing = Vec::new();
+    for epoch in first..=last {
+        if root_for_epoch(source, program_id, epoch)? == Fetched::Absent {
+            missing.push(epoch);
+        }
+    }
+    Ok(missing)
 }

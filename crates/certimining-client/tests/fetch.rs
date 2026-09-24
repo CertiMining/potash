@@ -7,7 +7,8 @@ use anchor_lang::prelude::Pubkey;
 use anchor_lang::{AnchorSerialize, Discriminator};
 use certimining_checkpoint::CheckpointAccount;
 use certimining_client::{
-    checkpoint_address, decode_checkpoint, missing_epochs, root_for_epoch, Refused, RootSource,
+    checkpoint_address, decode_checkpoint, missing_epochs, root_for_epoch, Fetched, Refused,
+    RootSource, Unreachable,
 };
 use std::collections::HashMap;
 
@@ -20,8 +21,17 @@ struct Cluster {
 }
 
 impl RootSource for Cluster {
-    fn account(&self, address: &Pubkey) -> Option<(Pubkey, Vec<u8>)> {
-        self.accounts.get(address).cloned()
+    fn account(&self, address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable> {
+        Ok(self.accounts.get(address).cloned())
+    }
+}
+
+/// A cluster nobody can ask, which is a different thing from one holding nothing.
+struct Offline;
+
+impl RootSource for Offline {
+    fn account(&self, _address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable> {
+        Err(Unreachable("the endpoint refused the connection".into()))
     }
 }
 
@@ -75,8 +85,10 @@ fn an_epochs_address_is_derived_and_not_searched_for() {
 fn a_published_root_comes_back_with_what_the_program_wrote() {
     let mut cluster = Cluster::default();
     cluster.publish(7, [0xab; 32]);
-    let found = root_for_epoch(&cluster, &PROGRAM, 7).expect("the cluster holds it");
-    let checkpoint = found.expect("and it is placed");
+    let found = root_for_epoch(&cluster, &PROGRAM, 7).expect("the cluster answered");
+    let Fetched::Placed(checkpoint) = found else {
+        panic!("a published root should be placed, and this was {found:?}")
+    };
     assert_eq!(checkpoint.epoch, 7);
     assert_eq!(checkpoint.root, [0xab; 32]);
     assert_eq!(checkpoint.receipt_digest, [0u8; 32]);
@@ -103,8 +115,8 @@ fn an_account_owned_by_someone_else_is_refused() {
         encode(&account),
     );
     assert_eq!(
-        root_for_epoch(&cluster, &PROGRAM, 7).expect("held"),
-        Err(Refused::NotTheProgram),
+        root_for_epoch(&cluster, &PROGRAM, 7).expect("answered"),
+        Fetched::Refused(Refused::NotTheProgram),
         "D-82: an RPC can return anything, and ownership is the first thing to check"
     );
 }
@@ -126,8 +138,8 @@ fn an_account_for_another_epoch_is_refused_at_the_epoch_it_claims() {
     };
     cluster.put(checkpoint_address(&PROGRAM, 7), PROGRAM, encode(&account));
     assert_eq!(
-        root_for_epoch(&cluster, &PROGRAM, 7).expect("held"),
-        Err(Refused::WrongEpoch),
+        root_for_epoch(&cluster, &PROGRAM, 7).expect("answered"),
+        Fetched::Refused(Refused::WrongEpoch),
         "D-82: the stored epoch must be the epoch asked for"
     );
 }
@@ -148,8 +160,8 @@ fn an_account_under_another_schema_or_discriminator_is_refused() {
     };
     cluster.put(checkpoint_address(&PROGRAM, 7), PROGRAM, encode(&account));
     assert_eq!(
-        root_for_epoch(&cluster, &PROGRAM, 7).expect("held"),
-        Err(Refused::UnsupportedSchema)
+        root_for_epoch(&cluster, &PROGRAM, 7).expect("answered"),
+        Fetched::Refused(Refused::UnsupportedSchema)
     );
 
     let mut wrong_discriminator = encode(&CheckpointAccount {
@@ -163,14 +175,14 @@ fn an_account_under_another_schema_or_discriminator_is_refused() {
         wrong_discriminator,
     );
     assert_eq!(
-        root_for_epoch(&cluster, &PROGRAM, 7).expect("held"),
-        Err(Refused::NotACheckpoint)
+        root_for_epoch(&cluster, &PROGRAM, 7).expect("answered"),
+        Fetched::Refused(Refused::NotACheckpoint)
     );
 
     cluster.put(checkpoint_address(&PROGRAM, 7), PROGRAM, vec![0u8; 20]);
     assert_eq!(
-        root_for_epoch(&cluster, &PROGRAM, 7).expect("held"),
-        Err(Refused::TooShort)
+        root_for_epoch(&cluster, &PROGRAM, 7).expect("answered"),
+        Fetched::Refused(Refused::TooShort)
     );
 }
 
@@ -182,15 +194,35 @@ fn a_gap_is_named_rather_than_noted() {
     for epoch in [1u64, 2, 4, 5, 7] {
         cluster.publish(epoch, [epoch as u8; 32]);
     }
-    assert_eq!(missing_epochs(&cluster, &PROGRAM, 1, 7), vec![3, 6]);
-    assert!(missing_epochs(&cluster, &PROGRAM, 1, 2).is_empty());
+    assert_eq!(
+        missing_epochs(&cluster, &PROGRAM, 1, 7).expect("the cluster answered"),
+        vec![3, 6]
+    );
+    assert!(missing_epochs(&cluster, &PROGRAM, 1, 2)
+        .expect("answered")
+        .is_empty());
+}
+
+#[test]
+fn a_cluster_nobody_can_ask_is_not_a_wall_of_gaps() {
+    // The distinction that matters: a gap accuses the batcher, and an unreachable endpoint accuses
+    // nothing. Collapsing the two would let an outage produce the accusation.
+    assert!(
+        root_for_epoch(&Offline, &PROGRAM, 7).is_err(),
+        "an endpoint that will not answer is not an absent checkpoint"
+    );
+    assert!(
+        missing_epochs(&Offline, &PROGRAM, 1, 100).is_err(),
+        "and a hundred epochs nobody could ask about is not a hundred gaps"
+    );
 }
 
 #[test]
 fn nothing_at_the_address_is_not_the_same_as_a_refusal() {
     let cluster = Cluster::default();
-    assert!(
-        root_for_epoch(&cluster, &PROGRAM, 7).is_none(),
+    assert_eq!(
+        root_for_epoch(&cluster, &PROGRAM, 7).expect("answered"),
+        Fetched::Absent,
         "an unpublished epoch is absence, and absence is a gap rather than a bad root"
     );
     assert_eq!(

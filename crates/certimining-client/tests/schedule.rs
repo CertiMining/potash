@@ -57,3 +57,40 @@ fn an_epoch_at_the_far_end_of_the_calendar_returns_none_rather_than_wrapping() {
         "year 8200 is fine"
     );
 }
+
+/// The retry rule, which is a decision and not a network call (issue #9's publish path).
+mod retry {
+    use certimining_client::{classify, should_retry, Outcome, CHECKPOINT_ALREADY_WRITTEN};
+
+    #[test]
+    fn a_submission_that_never_reached_the_program_may_be_sent_again() {
+        assert_eq!(classify(None), Outcome::Retry);
+        assert!(should_retry(Outcome::Retry, 3));
+        assert!(
+            !should_retry(Outcome::Retry, 0),
+            "and a client that has run out of attempts stops rather than looping"
+        );
+    }
+
+    #[test]
+    fn an_epoch_that_already_has_a_checkpoint_is_success() {
+        // A retry arriving after the first attempt landed sees this. Treating it as a failure would
+        // make a retry look like a fault, and invite a client to try publishing twice.
+        assert_eq!(
+            classify(Some(CHECKPOINT_ALREADY_WRITTEN)),
+            Outcome::AlreadyPublished
+        );
+        assert!(!should_retry(Outcome::AlreadyPublished, 5));
+    }
+
+    #[test]
+    fn a_refusal_is_final_however_many_attempts_remain() {
+        for code in [6000 + 0x0D, 6000 + 0x0F, 6000 + 0x05] {
+            assert_eq!(classify(Some(code)), Outcome::Refused(code));
+            assert!(
+                !should_retry(Outcome::Refused(code), 10),
+                "resending cannot change what the program decided"
+            );
+        }
+    }
+}
