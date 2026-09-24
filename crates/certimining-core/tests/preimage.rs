@@ -161,12 +161,14 @@ fn the_spi_preimage_has_the_layout_of_1_6() {
     want.extend_from_slice(b"CMv1SPI0");
     want.extend_from_slice(&LEAF);
     want.extend_from_slice(&SUBMISSION);
+    want.extend_from_slice(&20_359u64.to_le_bytes());
     want.extend_from_slice(&20_361u64.to_le_bytes());
     want.push(2);
-    assert_eq!(want.len(), 65);
+    assert_eq!(want.len(), 73, "8 + 32 + 16 + 8 + 8 + 1 (§1.6, D-74)");
     let p = SpiPreimage {
         leaf: LEAF,
         submission_id: SUBMISSION,
+        accepted_epoch: 20_359,
         promised_epoch: 20_361,
         max_merge_delay: 2,
     };
@@ -220,6 +222,7 @@ fn every_writer_starts_with_its_spec_tag() {
             bytes_of(&SpiPreimage {
                 leaf: LEAF,
                 submission_id: SUBMISSION,
+                accepted_epoch: 20_359,
                 promised_epoch: 20_361,
                 max_merge_delay: 2,
             }),
@@ -319,6 +322,7 @@ fn the_largest_preimage_is_the_leaf_at_161_bytes() {
         bytes_of(&SpiPreimage {
             leaf: LEAF,
             submission_id: SUBMISSION,
+            accepted_epoch: 20_359,
             promised_epoch: 20_361,
             max_merge_delay: 2,
         })
@@ -462,11 +466,12 @@ fn all_writers() -> Vec<(&'static str, usize, Writer)> {
         ),
         (
             "spi",
-            65,
+            73,
             Box::new(|s: &mut dyn PreimageSink| {
                 SpiPreimage {
                     leaf: LEAF,
                     submission_id: SUBMISSION,
+                    accepted_epoch: 20_359,
                     promised_epoch: 20_361,
                     max_merge_delay: 2,
                 }
@@ -617,6 +622,7 @@ fn both_hashers_give_the_same_digest() {
     let spi = SpiPreimage {
         leaf: LEAF,
         submission_id: SUBMISSION,
+        accepted_epoch: 20_359,
         promised_epoch: 20_361,
         max_merge_delay: 2,
     };

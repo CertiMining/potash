@@ -290,14 +290,20 @@ impl Preimage for NodePreimage {
 }
 
 /// The signed inclusion promise's preimage,
-/// `Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ promised_epoch ‖ max_merge_delay )` (§1.6, D-29).
-/// 65 bytes.
+/// `Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ accepted_epoch ‖ promised_epoch ‖ max_merge_delay )`
+/// (§1.6, D-29, D-74). 73 bytes.
+///
+/// The acceptance epoch is signed because a promise is judged against it: without it a batcher could
+/// name any `promised_epoch` it liked and a reader holding only the artifact could not tell a
+/// permissible choice from an indefinite deferral.
 #[derive(Debug, Clone, Copy)]
 pub struct SpiPreimage {
     /// The exact leaf the promise binds (INV-SPI-02).
     pub leaf: Digest,
     /// The submission's identifier.
     pub submission_id: SubmissionId,
+    /// The epoch the batcher accepted the submission in (D-74).
+    pub accepted_epoch: u64,
     /// The epoch the batcher promises inclusion in.
     pub promised_epoch: u64,
     /// The merge delay in epochs, which INV-SPI-01 fixes at 2.
@@ -312,6 +318,7 @@ impl Preimage for SpiPreimage {
             p.write(&Self::TAG)?;
             p.write(&self.leaf)?;
             p.write(&self.submission_id)?;
+            p.write(&self.accepted_epoch.to_le_bytes())?;
             p.write(&self.promised_epoch.to_le_bytes())?;
             p.write(&[self.max_merge_delay])
         })

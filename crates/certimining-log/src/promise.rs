@@ -18,8 +18,8 @@ use crate::{InclusionProof, InclusionVerifier, ProofVerifier};
 /// §1.8's merge delay: the promised epoch and the two after it.
 pub const MAX_MERGE_DELAY: u8 = 2;
 
-/// The number of octets a promise encodes to (L-01): 32 + 16 + 8 + 1 + 32 + 64.
-pub const PROMISE_ENCODED_LEN: usize = 153;
+/// The number of octets a promise encodes to: 32 + 16 + 8 + 8 + 1 + 32 + 64 (D-74, L-01).
+pub const PROMISE_ENCODED_LEN: usize = 161;
 
 /// An epoch's root as the caller obtained it from a published checkpoint.
 ///
@@ -43,6 +43,9 @@ pub struct SignedPromise {
     pub leaf: Digest,
     /// The submission's ordinal identifier, which travels only inside this promise (D-69).
     pub submission_id: SubmissionId,
+    /// The epoch the batcher accepted the submission in, signed so that `promised_epoch` can be
+    /// judged against something rather than taken on trust (D-74).
+    pub accepted_epoch: u64,
     /// The first epoch whose root may carry the leaf.
     pub promised_epoch: u64,
     /// How many epochs past `promised_epoch` still satisfy it.
@@ -64,6 +67,8 @@ impl SignedPromise {
         leaf.copy_from_slice(&self.leaf);
         let (id, rest) = rest.split_at_mut(16);
         id.copy_from_slice(&self.submission_id);
+        let (accepted, rest) = rest.split_at_mut(8);
+        accepted.copy_from_slice(&self.accepted_epoch.to_le_bytes());
         let (epoch, rest) = rest.split_at_mut(8);
         epoch.copy_from_slice(&self.promised_epoch.to_le_bytes());
         let (delay, rest) = rest.split_at_mut(1);
@@ -76,23 +81,26 @@ impl SignedPromise {
 }
 
 /// The digest §1.6 signs:
-/// `Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ promised_epoch ‖ max_merge_delay )`.
+/// `Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ accepted_epoch ‖ promised_epoch ‖ max_merge_delay )`.
 pub fn promise_digest<H: Hasher>(promise: &SignedPromise) -> Result<Digest> {
     SpiPreimage {
         leaf: promise.leaf,
         submission_id: promise.submission_id,
+        accepted_epoch: promise.accepted_epoch,
         promised_epoch: promise.promised_epoch,
         max_merge_delay: promise.max_merge_delay,
     }
     .digest::<H>()
 }
 
-/// Checks a promise against the batcher key the counterparty expects (D-68).
+/// Checks a promise against the batcher key the counterparty expects (D-68), and against the policy
+/// the specification fixes (D-74).
 ///
 /// The key a promise carries is not the authority: anyone can sign a promise, so the expected key
 /// decides first. A key that is not the expected one is `0x08`, decided before any verification runs,
-/// exactly as §1.3's condition (c) decides a qualified person's key. A signature that does not verify
-/// is `0x07`.
+/// exactly as §1.3's condition (c) decides a qualified person's key. A policy value the specification
+/// does not allow is `0x17`, whether that is a merge delay other than 2 or a promised epoch outside
+/// the window the signed acceptance epoch allows. A signature that does not verify is `0x07`.
 pub fn verify_promise<H: Hasher, V: Verifier>(
     promise: &SignedPromise,
     expected_batcher_key: &[u8; 32],
@@ -100,11 +108,19 @@ pub fn verify_promise<H: Hasher, V: Verifier>(
     if &promise.batcher_key != expected_batcher_key {
         return Err(RegistryError::AttestationKeyMismatch);
     }
-    // A signature proves authorship, not compliance. INV-SPI-01 fixes the merge delay at 2, so a
-    // correctly signed promise carrying any other value is refused rather than authenticated: the key
-    // holder does not get to choose the policy the promise is judged against (H-01).
+    // A signature proves authorship, not compliance: the key holder does not choose the policy its own
+    // promise is judged against (D-74). INV-SPI-01 fixes the merge delay, and the promised epoch is
+    // judged against the acceptance epoch the batcher signed, so a promise deferred past the delay is
+    // refused however genuine its signature.
     if promise.max_merge_delay != MAX_MERGE_DELAY {
-        return Err(RegistryError::MalformedPayload);
+        return Err(RegistryError::PromisePolicyInvalid);
+    }
+    let furthest = promise
+        .accepted_epoch
+        .checked_add(u64::from(MAX_MERGE_DELAY))
+        .ok_or(RegistryError::ArithmeticOverflow)?;
+    if promise.promised_epoch < promise.accepted_epoch || promise.promised_epoch > furthest {
+        return Err(RegistryError::PromisePolicyInvalid);
     }
     let digest = promise_digest::<H>(promise)?;
     V::verify(expected_batcher_key, &digest, &promise.signature)

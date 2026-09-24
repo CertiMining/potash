@@ -142,13 +142,15 @@ fn kat03_the_spi_preimage_is_borsh_of_its_fields() {
         to_vec(b"CMv1SPI0").unwrap(),
         to_vec(&LEAF).unwrap(),
         to_vec(&SUBMISSION).unwrap(),
+        to_vec(&20_359u64).unwrap(),
         to_vec(&20_361u64).unwrap(),
         to_vec(&2u8).unwrap(),
     ]);
-    assert_eq!(want.len(), 65);
+    assert_eq!(want.len(), 73, "8 + 32 + 16 + 8 + 8 + 1 (D-74)");
     let p = SpiPreimage {
         leaf: LEAF,
         submission_id: SUBMISSION,
+        accepted_epoch: 20_359,
         promised_epoch: 20_361,
         max_merge_delay: 2,
     };
@@ -322,6 +324,7 @@ mod committed_fixtures {
                 bytes_of(&SpiPreimage {
                     leaf: leaf_digest,
                     submission_id: [0x88; 16],
+                    accepted_epoch: 20_359,
                     promised_epoch: 20_361,
                     max_merge_delay: 2,
                 }),

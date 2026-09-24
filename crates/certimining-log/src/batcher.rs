@@ -217,6 +217,7 @@ impl Batcher for EpochBatcher {
         let promise = SignedPromise {
             leaf,
             submission_id,
+            accepted_epoch: self.epoch,
             promised_epoch,
             max_merge_delay: MAX_MERGE_DELAY,
             batcher_key: signer.public_key(),

@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.12 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.13 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -172,22 +172,26 @@ On accepting a submission the batcher returns a signed promise:
 
 ```
 SPI = Ed25519_sign( batcher_key,
-        Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ promised_epoch ‖ max_merge_delay ) )
+        Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ accepted_epoch
+                            ‖ promised_epoch ‖ max_merge_delay ) )
 ```
 
-`submission_id` is 16 bytes, `promised_epoch` a `u64` and `max_merge_delay` a `u8`, so the preimage is 65 bytes: `TAG_SPI`, `leaf` 32, `submission_id` 16, `promised_epoch` 8, `max_merge_delay` 1.
+`submission_id` is 16 bytes, `accepted_epoch` and `promised_epoch` are `u64` and `max_merge_delay` is a `u8`, so the preimage is 73 bytes: `TAG_SPI`, `leaf` 32, `submission_id` 16, `accepted_epoch` 8, `promised_epoch` 8, `max_merge_delay` 1.
+
+**Why the acceptance epoch is signed (D-74).** Without it, `max_merge_delay` bounds the end of the window relative to `promised_epoch` and nothing bounds `promised_epoch` relative to acceptance: a batcher holding the expected key could accept a submission, name an epoch arbitrarily far ahead, and never become answerable. With it, `promised_epoch` is judged against something the batcher signed, and `promised_epoch` outside `accepted_epoch .. accepted_epoch + max_merge_delay` is `0x17`.
+
+**And the signed acceptance epoch is itself checkable against the public record.** The checkpoint sequence is on chain, one root per epoch, monotone and gapless (INV-ANCH-01, INV-ANCH-02), so a reader can place any epoch number against a published root and a time. A promise claiming acceptance in epoch `e` while being satisfied only by a root published after `e + max_merge_delay` is visibly backdated: either the acceptance epoch is a lie, or the promise was broken, and the artifact plus the public sequence is enough to say which.
+
+**This construction carries no version field.** It is fixed for this deployment, and changing it after records exist in the wild would need a versioning mechanism §1.6 does not have.
 
 `submission_id` is minted by the batcher, which takes only a leaf, and it is an ordinal counter (D-69). **It therefore reveals the submission's position in the batcher's sequence to anyone shown the promise**, and it travels only inside the promise: it appears in no disclosure package, no checkpoint and nothing on chain. Position in the epoch tree does not follow from it, because §1.4 assigns slots by PRF over it under a key the counterparty does not hold.
 
 **INV-SPI-01.** `max_merge_delay = 2` epochs. If `leaf` is absent from the roots of `promised_epoch .. promised_epoch + max_merge_delay`, the SPI is a self-contained, transferable accusation of batcher misbehaviour.
 
-**A signature proves authorship, not compliance (round one, H-01).** `max_merge_delay` is fixed at 2 by
-INV-SPI-01, so a correctly signed promise carrying any other value is refused rather than
-authenticated: the key holder does not choose the policy its own promise is judged against. What the
-artifact cannot yet settle by itself is `promised_epoch`. A promise carries no acceptance epoch, so a
-batcher holding the expected key could sign one for an epoch arbitrarily far ahead and remain
-answerable to nobody, and a third party reading only the artifact cannot tell a permissible choice from
-a deferred one. That is open, and the transferable claim below is bounded by it until it closes.
+**A signature proves authorship, not compliance.** `max_merge_delay` is fixed at 2 by INV-SPI-01 and
+`promised_epoch` is bounded by the signed `accepted_epoch`, so a correctly signed promise carrying
+either value outside what this section allows is refused with `0x17` rather than authenticated. The key
+holder does not choose the policy its own promise is judged against.
 
 **What that can and cannot be (D-72).** **Absence cannot be proven from a Merkle root.** A counterparty holding a promise and the three roots of the window cannot show the leaf is missing; only the batcher can show it is present. An unsatisfied promise is transferable in the sense that anyone can check its signature and its binding and see which epochs it covers, and the conclusion it supports is rebuttable: the batcher answers with an inclusion proof or it does not answer, and silence is the evidence. **A rebuttal counts only if its inclusion proof resolves to a root published inside the window, `promised_epoch` through `promised_epoch + max_merge_delay`. A proof against any later root confirms the breach rather than rebutting it**, which is what `0x14` reports.
 **INV-SPI-02.** The batcher cannot issue an SPI it can satisfy two ways: the promise binds the exact leaf digest, so satisfying it requires including that leaf.
@@ -245,6 +249,7 @@ pub enum RegistryError {
     MergeDelayExceeded       = 0x14,
     ReceiptAlreadyAttached   = 0x15,
     SubmissionNotInEpoch     = 0x16,
+    PromisePolicyInvalid     = 0x17,
 }
 ```
 
@@ -374,6 +379,7 @@ pub trait InclusionVerifier {
 pub struct SignedPromise {
     pub leaf: Digest,
     pub submission_id: SubmissionId,
+    pub accepted_epoch: u64,
     pub promised_epoch: u64,
     pub max_merge_delay: u8,
     pub batcher_key: [u8; 32],
@@ -391,9 +397,10 @@ pub trait Batcher {
 }
 
 /// Checks a promise's signature over **the SPI digest**, which is what §1.6 signs, against the batcher
-/// key the counterparty expects (D-68). A key mismatch is `0x08`, decided first; a `max_merge_delay`
-/// other than the one INV-SPI-01 fixes is `0x05`, because a signature proves authorship and not
-/// compliance; a signature that does not verify is `0x07`.
+/// key the counterparty expects (D-68), and against the policy §1.6 fixes (D-74). A key mismatch is
+/// `0x08`, decided first. A signature proves authorship and not compliance, so a `max_merge_delay`
+/// other than the one INV-SPI-01 fixes, or a `promised_epoch` outside the window the signed
+/// `accepted_epoch` allows, is `0x17`. A signature that does not verify is `0x07`.
 pub fn verify_promise<H: Hasher, V: Verifier>(
     promise: &SignedPromise,
     expected_batcher_key: &[u8; 32],

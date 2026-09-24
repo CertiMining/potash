@@ -27,6 +27,8 @@ pub enum RegistryError {
     ReceiptAlreadyAttached = 0x15,
     /// An epoch was asked for a proof of a submission it does not hold (D-67).
     SubmissionNotInEpoch = 0x16,
+    /// A signed promise carries a policy value the specification does not allow (D-74).
+    PromisePolicyInvalid = 0x17,
 }
 
 impl RegistryError {

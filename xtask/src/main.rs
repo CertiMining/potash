@@ -1000,6 +1000,7 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
     );
 
     let submission_id = [0x88u8; 16];
+    let accepted_epoch = 20_359u64.to_le_bytes();
     let promised_epoch = 20_361u64.to_le_bytes();
     let delay = [spec::MAX_MERGE_DELAY];
     add(
@@ -1007,13 +1008,21 @@ fn kat03_fixtures(files: &mut BTreeMap<String, Value>) {
         preimage_of(&SpiPreimage {
             leaf: leaf_digest,
             submission_id,
+            accepted_epoch: 20_359,
             promised_epoch: 20_361,
             max_merge_delay: spec::MAX_MERGE_DELAY,
         }),
-        &[&leaf_digest, &submission_id, &promised_epoch, &delay],
+        &[
+            &leaf_digest,
+            &submission_id,
+            &accepted_epoch,
+            &promised_epoch,
+            &delay,
+        ],
         json!({
             "leaf": hex(&leaf_digest),
             "submission_id": hex(&submission_id),
+            "accepted_epoch": "20359",
             "promised_epoch": "20361",
             "max_merge_delay": spec::MAX_MERGE_DELAY.to_string(),
         }),
@@ -1579,6 +1588,7 @@ fn promise_json(promise: &SignedPromise) -> Value {
     json!({
         "leaf": hex(&promise.leaf),
         "submission_id": hex(&promise.submission_id),
+        "accepted_epoch": promise.accepted_epoch.to_string(),
         "promised_epoch": promise.promised_epoch.to_string(),
         "max_merge_delay": promise.max_merge_delay.to_string(),
         "batcher_key": hex(&promise.batcher_key),
@@ -1661,6 +1671,7 @@ fn promises(files: &mut BTreeMap<String, Value>) {
                 "spi_preimage": hex(&preimage_of(&SpiPreimage {
                     leaf: promise.leaf,
                     submission_id: promise.submission_id,
+                    accepted_epoch: promise.accepted_epoch,
                     promised_epoch: promise.promised_epoch,
                     max_merge_delay: promise.max_merge_delay,
                 })),

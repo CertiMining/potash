@@ -63,6 +63,10 @@ fn a_promise_names_the_current_epoch_while_the_epoch_has_room() {
         .submit::<MixHash, _>(leaf_digest(1), &signer)
         .expect("accepted");
     assert_eq!(promise.promised_epoch, 100);
+    assert_eq!(
+        promise.accepted_epoch, 100,
+        "D-74: the epoch it was accepted in, signed"
+    );
     assert_eq!(promise.max_merge_delay, MAX_MERGE_DELAY);
     assert_eq!(promise.leaf, leaf_digest(1), "INV-SPI-02: the exact leaf");
     assert_eq!(promise.batcher_key, signer.public_key());
@@ -310,6 +314,7 @@ mod with_real_crypto {
         let expected = SpiPreimage {
             leaf: promise.leaf,
             submission_id: promise.submission_id,
+            accepted_epoch: promise.accepted_epoch,
             promised_epoch: promise.promised_epoch,
             max_merge_delay: promise.max_merge_delay,
         }
@@ -478,8 +483,59 @@ mod with_real_crypto {
         );
         assert_eq!(
             verify_promise::<NativeKeccak, DalekCheck>(&lax, &signer.public_key()),
-            Err(RegistryError::MalformedPayload),
+            Err(RegistryError::PromisePolicyInvalid),
             "INV-SPI-01 fixes the delay at 2, and a correctly signed 3 is still refused"
+        );
+    }
+
+    #[test]
+    fn a_promise_deferred_past_the_window_its_acceptance_allows_is_refused() {
+        // D-74's second half: without a signed acceptance epoch, a batcher could name any promised
+        // epoch and stay answerable to nobody. With one, the promise is judged against it.
+        let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
+        let mut batcher = real_batcher(950);
+        let honest = batcher
+            .submit::<NativeKeccak, _>(leaf_digest(17), &signer)
+            .expect("accepted");
+        assert_eq!(honest.accepted_epoch, 950);
+
+        for deferred in [951u64, 952] {
+            let mut later = honest.clone();
+            later.promised_epoch = deferred;
+            let digest = promise_digest::<NativeKeccak>(&later).expect("a digest");
+            later.signature = signer.sign(&digest).expect("signs");
+            assert_eq!(
+                verify_promise::<NativeKeccak, DalekCheck>(&later, &signer.public_key()),
+                Ok(()),
+                "a promise inside the delay is what an overflowing batcher issues"
+            );
+        }
+
+        for deferred in [953u64, 1_000, u64::MAX - 2] {
+            let mut far = honest.clone();
+            far.promised_epoch = deferred;
+            let digest = promise_digest::<NativeKeccak>(&far).expect("a digest");
+            far.signature = signer.sign(&digest).expect("signs");
+            assert_eq!(
+                DalekCheck::verify(&far.batcher_key, &digest, &far.signature),
+                Ok(()),
+                "the signature is genuine, which is the point of the case"
+            );
+            assert_eq!(
+                verify_promise::<NativeKeccak, DalekCheck>(&far, &signer.public_key()),
+                Err(RegistryError::PromisePolicyInvalid),
+                "epoch {deferred} is past what acceptance in 950 allows"
+            );
+        }
+
+        let mut backwards = honest.clone();
+        backwards.promised_epoch = 949;
+        let digest = promise_digest::<NativeKeccak>(&backwards).expect("a digest");
+        backwards.signature = signer.sign(&digest).expect("signs");
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&backwards, &signer.public_key()),
+            Err(RegistryError::PromisePolicyInvalid),
+            "a promise cannot be kept by a root published before it was made"
         );
     }
 
@@ -495,10 +551,11 @@ mod with_real_crypto {
         assert_eq!(encoded.len(), PROMISE_ENCODED_LEN);
         assert_eq!(&encoded[..32], &promise.leaf[..]);
         assert_eq!(&encoded[32..48], &promise.submission_id[..]);
-        assert_eq!(&encoded[48..56], &promise.promised_epoch.to_le_bytes()[..]);
-        assert_eq!(encoded[56], promise.max_merge_delay);
-        assert_eq!(&encoded[57..89], &promise.batcher_key[..]);
-        assert_eq!(&encoded[89..], &promise.signature[..]);
+        assert_eq!(&encoded[48..56], &promise.accepted_epoch.to_le_bytes()[..]);
+        assert_eq!(&encoded[56..64], &promise.promised_epoch.to_le_bytes()[..]);
+        assert_eq!(encoded[64], promise.max_merge_delay);
+        assert_eq!(&encoded[65..97], &promise.batcher_key[..]);
+        assert_eq!(&encoded[97..], &promise.signature[..]);
     }
 
     #[test]
@@ -513,7 +570,7 @@ mod with_real_crypto {
         assert_eq!(
             bytes.len(),
             PROMISE_ENCODED_LEN,
-            "32 + 16 + 8 + 1 + 32 + 64 octets, and nothing else"
+            "32 + 16 + 8 + 8 + 1 + 32 + 64 octets, and nothing else"
         );
 
         // Nothing that identifies an asset may appear, and neither may the epoch key the batcher used.

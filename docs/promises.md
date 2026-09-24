@@ -9,7 +9,8 @@ the contract it follows.
 
 ```
 SPI = Ed25519_sign( batcher_key,
-        Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ promised_epoch ‖ max_merge_delay ) )
+        Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ accepted_epoch
+                            ‖ promised_epoch ‖ max_merge_delay ) )
 ```
 
 The signature covers the **digest**, not the preimage. That is the one place this differs from a
@@ -18,18 +19,24 @@ wrong way round would be invisible until an independent implementation disagreed
 against §1.6's field order, and the V-P-10 vector records both the preimage and the digest so a
 disagreement localises.
 
-A `SignedPromise` carries six fields: the leaf, the submission identifier, the promised epoch, the
-merge delay, the batcher's public key and the signature (D-68). Nothing else. `encode` writes them in
-that order as **153 octets**, which is the transferable artifact; the Rust value is not it, because a
-struct carries padding and says nothing about what travels between two parties. A privacy test asserts
-that neither the master key, nor the epoch key, nor a tenure identifier, nor a jurisdiction code, nor a
-payload URI appears anywhere in those octets.
+A `SignedPromise` carries seven fields: the leaf, the submission identifier, the acceptance epoch, the
+promised epoch, the merge delay, the batcher's public key and the signature (D-68, D-74). Nothing else.
+`encode` writes them in that order as **161 octets**, which is the transferable artifact; the Rust value
+is not it, because a struct carries padding and says nothing about what travels between two parties. A
+privacy test asserts that neither the master key, nor the epoch key, nor a tenure identifier, nor a
+jurisdiction code, nor a payload URI appears anywhere in those octets.
 
-**A signature proves authorship, not compliance.** `verify_promise` refuses a promise whose
-`max_merge_delay` is not the 2 that INV-SPI-01 fixes, however genuine its signature. What it cannot yet
-check is `promised_epoch`: the artifact carries no acceptance epoch, so a batcher could sign a promise
-for an epoch far in the future and stay answerable to nobody, and a reader holding only the promise
-cannot tell. That gap is open and §1.6 states it rather than papering over it.
+**A signature proves authorship, not compliance.** `verify_promise` refuses, with `0x17`, a promise
+whose `max_merge_delay` is not the 2 INV-SPI-01 fixes, and one whose `promised_epoch` falls outside
+`accepted_epoch` through `accepted_epoch + max_merge_delay`. Both are genuine signatures over values the
+specification does not allow, and the key holder does not choose the policy its own promise is judged
+against.
+
+**The acceptance epoch is what makes that checkable, and it is itself checkable.** The checkpoint
+sequence is public, one root per epoch, monotone and gapless, so a reader can place any epoch number
+against a published root and a time. A promise claiming acceptance in epoch `e` but satisfied only by a
+root published after `e + 2` is visibly backdated: either the acceptance epoch is a lie or the promise
+was broken, and the artifact beside the public sequence is enough to say which.
 
 **The key a promise carries is not the authority.** Anyone can sign a promise, so `verify_promise`
 takes the batcher key the counterparty expects and compares it first: a key that is not the expected

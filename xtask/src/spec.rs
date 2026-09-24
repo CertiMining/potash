@@ -126,10 +126,11 @@ pub const LAYOUTS: &[Layout] = &[
         fields: &[
             ("leaf", 32),
             ("submission_id", 16),
+            ("accepted_epoch", 8),
             ("promised_epoch", 8),
             ("max_merge_delay", 1),
         ],
-        total: Some(65),
+        total: Some(73),
     },
 ];
 
