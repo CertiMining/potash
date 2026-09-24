@@ -2,18 +2,55 @@
 
 mod common;
 
-use certimining_core::{Digest, NodePreimage, Preimage, RealLeafPreimage, RegistryError};
+use std::sync::OnceLock;
+
+use certimining_core::{
+    Digest, NodePreimage, Preimage, RealLeafPreimage, RegistryError, SubmissionId,
+};
 use certimining_log::{
     BuiltEpoch, EpochTree, InclusionProof, InclusionVerifier, ProofVerifier, MAX_SIBLINGS,
 };
 use common::{epoch, leaf_digest, scattered_id, MixHash, TEST_MASTER_KEY};
 
-/// One epoch and one submission inside it, with the chain leaf the counterparty would hold.
-fn one_proof(height: u8) -> (BuiltEpoch, Digest, InclusionProof) {
-    let real = vec![(scattered_id(11), leaf_digest(11))];
-    let built = BuiltEpoch::build::<MixHash>(30, height, &TEST_MASTER_KEY, &real).expect("builds");
-    let proof = built.proof(&real[0].0).expect("the epoch holds it");
-    (built, real[0].1, proof)
+/// The submission every case below holds a proof for.
+fn fixture_submission() -> (SubmissionId, Digest) {
+    (scattered_id(11), leaf_digest(11))
+}
+
+/// One epoch per height, built once and shared (S9 round 1). Every case here reads its tree and
+/// mutates only its own copy of a proof, so one build serves all of them, and nothing a case does can
+/// reach another: `BuiltEpoch` is handed out by shared reference and has no interior mutability. A
+/// case that ever needed to change a tree would build its own from the same inputs.
+///
+/// Why it is shared at all: Miri interprets a 256-slot build in minutes, and eleven rebuilds were
+/// most of that group's cost.
+fn shared_epoch(height: u8) -> &'static BuiltEpoch {
+    static AT_4: OnceLock<BuiltEpoch> = OnceLock::new();
+    static AT_8: OnceLock<BuiltEpoch> = OnceLock::new();
+    let cell = match height {
+        4 => &AT_4,
+        8 => &AT_8,
+        other => panic!("no shared epoch at H = {other}"),
+    };
+    cell.get_or_init(|| {
+        let real = vec![fixture_submission()];
+        BuiltEpoch::build::<MixHash>(30, height, &TEST_MASTER_KEY, &real).expect("builds")
+    })
+}
+
+/// A second epoch, for the cases that need a root or a submission set that is not the subject's.
+fn other_epoch() -> &'static BuiltEpoch {
+    static OTHER: OnceLock<BuiltEpoch> = OnceLock::new();
+    OTHER.get_or_init(|| epoch::<MixHash>(31, 8, 4))
+}
+
+/// One epoch, the chain leaf a counterparty would hold, and a proof of its own. Generating a proof is
+/// a scan and `H` lookups with no hashing, so every case gets a fresh one to mutate.
+fn one_proof(height: u8) -> (&'static BuiltEpoch, Digest, InclusionProof) {
+    let built = shared_epoch(height);
+    let (id, leaf) = fixture_submission();
+    let proof = built.proof(&id).expect("the epoch holds it");
+    (built, leaf, proof)
 }
 
 #[test]
@@ -133,7 +170,7 @@ fn v_n_16b_a_height_that_disagrees_with_the_log_is_0x13() {
 #[test]
 fn v_n_17_the_wrong_epochs_root_is_0x13() {
     let (built, leaf, proof) = one_proof(8);
-    let other = epoch::<MixHash>(31, 8, 4);
+    let other = other_epoch();
     assert_ne!(built.root, other.root);
     assert_eq!(
         ProofVerifier::verify::<MixHash>(&leaf, &proof, &other.root),
@@ -193,7 +230,7 @@ fn the_verifier_applies_the_leaf_tag_itself() {
 
 #[test]
 fn a_proof_for_a_submission_the_epoch_does_not_hold_is_0x16() {
-    let built = epoch::<MixHash>(32, 8, 4);
+    let built = other_epoch();
     assert_eq!(
         built.proof(&scattered_id(u64::MAX)).err(),
         Some(RegistryError::SubmissionNotInEpoch),
