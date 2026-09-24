@@ -661,7 +661,7 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** cost judgment · **Status:** settled at S0 (owner, 23 Sep 2026)
 
-**Decision.** A new workspace member, `crates/certimining-log`, `no_std` with `alloc`, depending on `certimining-core`. It holds the epoch tree, the inclusion proof and the inclusion verifier, and E-07's batcher joins it. The PRF stays in `certimining-core` beside the other §1.2 tag writers, because it is a §1.1 primitive that allocates nothing. No new external crate enters the build: `heapless` 0.9.3 is already pinned and carries the proof's siblings, and nothing else is needed.
+**Decision.** A new workspace member, `crates/certimining-log`, `no_std` with `alloc`, depending on `certimining-core` and, directly, on `heapless`, which `certimining-core` already pins and which `InclusionProof` exposes in its public type. It holds the epoch tree, the inclusion proof and the inclusion verifier, and E-07's batcher joins it. The PRF stays in `certimining-core` beside the other §1.2 tag writers, because it is a §1.1 primitive that allocates nothing. No new external crate enters the build: `heapless` 0.9.3 is already pinned and carries the proof's siblings, and nothing else is needed.
 
 **Ground.** §2 already draws this line. A tree at `H = 16` holds 65,536 leaves, which `heapless` cannot carry, so the builder needs an allocator; keeping that out of `certimining-core` protects the bare-metal build D-14 made load-bearing. The log crate is built for `thumbv7em-none-eabihf` as well, so the option of verifying an inclusion proof in a constrained environment stays open and is tested rather than asserted.
 
@@ -737,7 +737,9 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Measured after the fact (23 Sep 2026).** The full run costs 1.96 seconds in a release build and 140.91 seconds in the debug build CI uses, rather than the hours the wording implied when this was settled. It stays a release gate under this decision; whether to promote it into CI at that price is the owner's to take, and the numbers are in the unit's record.
 
-**Ground.** A release blocker whose pass condition is settled after the implementation's numbers are visible is a test written to pass. Naming the adversary in the specification lets a reader judge how hard the test tries, which an accuracy figure alone does not.
+**Amended 23 Sep 2026, after the first independent review.** This decision's own wording granted the classifier "unlimited compute", and that was wrong in a way the review named as blocking: INV-TREE-02 claims computational indistinguishability, and an adversary with unlimited compute would search the key space, derive `k_e`, recompute every padding leaf and count exactly. The test could never establish the property the words promised. §4.4 now states that the adversary is computationally bounded, says plainly that what the test establishes is bounded — the named battery does not distinguish, which is not a proof that no distinguisher exists — and Appendix A gains RES-09 for the same reason. No test changed: the defect was the claim, and the remedy is to make the claim true rather than to promise more of the test.
+
+**Ground.** A release blocker whose pass condition is settled after the implementation's numbers are visible is a test written to pass. Naming the adversary in the specification lets a reader judge how hard the test tries, which an accuracy figure alone does not. Naming it accurately is the other half: a battery of statistics is evidence, and only an unfalsifiable claim would call it proof.
 
 **Cost.** About six seconds in the `checks` group, measured rather than estimated: the three tests
 run in 5.6 to 5.9 seconds on the reference laptop in a debug build.

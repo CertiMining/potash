@@ -197,6 +197,37 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
         }
     }
 
+    // A proof's own fields are a count channel, and no other test in §4.4 watches them: V-Z-01
+    // inspects on-chain bytes, and a proof never goes on chain. An engine that folded the record
+    // count into `epoch`, `height` or the sibling count would pass every other case here.
+    let mut shapes: Vec<(u8, usize, u64)> = Vec::new();
+    for real_count in [1usize, 128, 255] {
+        let built = epoch::<NativeKeccak>(4_242, HEIGHT, real_count);
+        for (id, _) in &built.assignment {
+            let proof = built.proof(id).expect("the epoch holds it");
+            assert_eq!(
+                proof.epoch, built.epoch,
+                "V-Z-03: a proof's epoch is its tree's, and nothing else"
+            );
+            assert_eq!(
+                proof.height, built.height,
+                "V-Z-03: a proof's height is the log's, and nothing else"
+            );
+            assert_eq!(
+                proof.siblings.len(),
+                usize::from(built.height),
+                "V-Z-03: the sibling count is the height, whatever the record count"
+            );
+            shapes.push((proof.height, proof.siblings.len(), proof.epoch));
+        }
+    }
+    shapes.dedup();
+    assert_eq!(
+        shapes.len(),
+        1,
+        "V-Z-03: one proof shape across 1, 128 and 255 real leaves, and {shapes:?} is not one"
+    );
+
     assert!(
         pair_trials > 1_000,
         "V-Z-03 needs a sample, and {pair_trials} pairs is not one"

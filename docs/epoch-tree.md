@@ -141,6 +141,9 @@ Its numbers are recorded on issue #16 before submission, and the bound there is 
   itself.
 - **The independent verifier is E-11's**, written from TCU-02 alone and never from this source. The
   committed vectors under `vectors/` are what the two implementations check themselves against.
-- **Count-hiding is not anonymity.** The tree hides how many records an epoch held from anyone
-  without `k_e`. It does not hide that an epoch was published, and it does not hide anything from
-  whoever holds `k_master` (RES-03).
+- **Count-hiding is not anonymity, and it is computational.** The tree hides how many records an
+  epoch held from an adversary who cannot recover `k_e`. It does not hide that an epoch was
+  published, it hides nothing from whoever holds `k_master` (RES-03), and it is not an
+  information-theoretic property: an adversary who could search the key space would recompute every
+  padding leaf and count exactly (RES-09). V-Z-02 bounds a named battery of statistics, which is
+  evidence of no obvious tell rather than proof that no distinguisher exists.
