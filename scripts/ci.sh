@@ -111,6 +111,7 @@ kat01_onchain() {
   check "kat01 on chain" cargo test -p core-harness --test kat01_onchain -- --nocapture
   check "runtime equivalence" cargo test -p core-harness --test runtime_equivalence -- --nocapture
   check "checkpoint program" cargo test -p certimining-checkpoint
+  check "compute limits" cargo test -p certimining-checkpoint --test compute -- --nocapture
   group_result kat01-onchain
 }
 

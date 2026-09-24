@@ -993,6 +993,11 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **What it costs, stated where a reader meets the claims.** Every invariant this program enforces is enforced by *this* program, and whoever holds the deploy key can replace it. That is a trust assumption of the same kind as RES-03's, and the README says so rather than leaving a reader to infer it.
 
-**The key.** Generated off-repo at S6, mode 0600, outside this repository; nothing here has ever held the secret half. The public address is `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz`, which `declare_id!` carries, so every test on this branch verifies the address that actually deploys.
+**The keys, and why there are two (owner's amendment, 24 Sep 2026).** The upgrade authority and the checkpoint authority are **separate keys**, both generated off-repo at S6, mode 0600, outside this repository; nothing here has ever held either secret half.
+
+- **Upgrade authority and deploy key:** `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz`, which `declare_id!` carries, so every test on this branch verifies the address that actually deploys.
+- **Checkpoint authority:** `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB`, written into `LogConfig` at `initialize`.
+
+Two reasons, and both are about what happens when one key is lost rather than about tidiness. **Blast radius:** a compromised checkpoint key can stall the log or publish garbage roots, which INV-GOV-02 already names as a liveness failure and not an integrity one, while a compromised upgrade key can replace the program and with it every invariant this repository claims. Holding them as one key would make the smaller failure carry the larger consequence. **Exposure:** only the checkpoint key runs unattended, signing on the epoch cadence in whatever the service runs on, while the upgrade key is used by a person at a deploy. A key that signs on a schedule is exposed continuously, and that is not the key that should be able to change the program.
 
 **Recorded on issue #16** under INV-GOV-01, at the first devnet deploy.
