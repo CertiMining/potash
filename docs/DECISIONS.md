@@ -763,3 +763,71 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **No vector.** §4.3's rows describe what a verifier must refuse, and proof generation is not on the verifier's path: E-11 checks proofs and never builds a tree. The condition is covered by the log crate's own test, and the batcher at E-07 exercises it where a caller can reach it. A `V-N` identifier would have to be declared in the specification first, and nothing yet needs one.
 
 **Revisit if.** Nothing. A published code is stable.
+
+## D-68 · What `SignedPromise` holds
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The leaf, the submission identifier, the promised epoch, the merge delay, the batcher's public key and the 64-byte signature. §2.3 named the type and never defined it.
+
+**Ground.** INV-SPI-01 calls an unsatisfied promise transferable, and a promise a counterparty cannot check without the batcher is not. The public key travels with it so the artifact stands alone.
+
+**Cost, and the trap it sets.** A promise carries the key that signed it, so a counterparty who checks the signature and stops has checked nothing: anyone can sign a promise. `verify_promise` therefore takes the batcher key the counterparty expects and compares it, and the key inside the promise is a convenience for display, never the authority.
+
+**Rejected.** Leaving the key to the verifier's configuration, which makes the artifact non-transferable, and that is the one property it exists for.
+
+## D-69 · Where the submission identifier comes from
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** A counter, sixteen bytes little-endian, held in the batcher's snapshot so a restart cannot repeat one. `submit` takes only a leaf, so the batcher mints the identifier.
+
+**Owner's condition (24 Sep 2026).** The specification states plainly that the identifier reveals the submission's ordinal position to anyone shown the promise, and that it travels only inside the promise.
+
+**Ground.** Identifiers must be unique within an epoch, because E-06 refuses a duplicate with `0x05`, and must not be derived from record content, because they leave the batcher. Ordinal position does not reach the tree: E-06 assigns slots by PRF over the identifier, and V-Z-04 measures exactly this case with sequential identifiers.
+
+**Rejected.** A digest of the leaf and a counter, which needs a domain tag §1.2 does not have. Random bytes, which need a generator no crate here carries and end reproducible tests.
+
+## D-70 · Which epoch a promise names, and where time lives
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The batcher holds its current epoch, set when it is constructed and advanced only by `seal`. No clock enters the crate: the caller owns the calendar and supplies the epoch.
+
+**Ground.** E-06's verifier purity rests on the same discipline, and a clock is a dependency the bare-metal build cannot carry. It also keeps the epoch a stated input in every test rather than a reading that changes overnight.
+
+**Revisit if.** The service at E-09 needs a scheduler, which is its own decision and lives outside the engine.
+
+## D-71 · What the submission past capacity receives
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `submit` always returns a promise. When the current epoch is full the promise names the next epoch the batcher can meet, the submission waits in the overflow queue, and `overflow_queue_len` reports it. `0x12` stays where E-06 already returns it, in the tree, if anything asks it to build more than `C` leaves into one epoch.
+
+**Owner's condition (24 Sep 2026).** §4.3's V-N-14 row is amended in this unit's pull request to name which layer returns `0x12` and which layer queues.
+
+**Ground.** §4.3 paired `0x12` with "overflow queued, not dropped", and an error alongside a retained side effect is a contradiction in an interface. The property decides it: under the alternative the submitter of the 257th record holds no evidence of having submitted, which is exactly the censorship the promise exists to make provable.
+
+**Rejected.** `submit` returning `0x12` and keeping the submission, so the caller polls for a promise later.
+
+## D-72 · What a transferable proof of misbehaviour can actually be
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** §1.6's claim is qualified rather than repeated. **Absence cannot be proven from a Merkle root:** a counterparty holding a promise and three roots cannot show the leaf is missing, and only the batcher can show it is present. So an unsatisfied promise is a transferable *accusation* that the batcher can rebut by producing an inclusion proof, and silence is the evidence. `verify_promise` checks the signature and the binding; `promise_kept` checks a promise against an inclusion proof and a root.
+
+**Owner's condition (24 Sep 2026).** A rebuttal counts only if its inclusion proof resolves to a root published inside the promised window, from `promised_epoch` through `promised_epoch + max_merge_delay`. A proof against any later root confirms the breach rather than rebutting it. §1.6 states this beside the qualification.
+
+**Ground.** The same class of defect as E-06's first blocking finding: the sentence claimed more than the architecture carries. A Merkle root commits to what is in the tree and says nothing about what is not.
+
+**Revisit if.** A construction is adopted that proves absence, such as a sorted-key accumulator, which would be a schema change rather than a wording one.
+
+## D-73 · How the batcher signs
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** A `Signer` trait mirroring §2.2's `Verifier`, named at the call site as the hasher is. The engine carries no key handling and no new dependency; tests supply RFC 8032 §7.1's published key through it.
+
+**Ground.** S6 keeps the batcher key outside the repository. A trait makes that structural: there is no place in the engine for a key to sit, so none can be committed by accident.
+
+**Rejected.** Depending on `ed25519-dalek` in `certimining-log` and signing directly, which puts a signing key one field away from the engine's own types.

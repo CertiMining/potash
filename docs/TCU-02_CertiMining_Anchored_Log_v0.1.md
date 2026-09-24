@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.11 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.12 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -177,7 +177,11 @@ SPI = Ed25519_sign( batcher_key,
 
 `submission_id` is 16 bytes, `promised_epoch` a `u64` and `max_merge_delay` a `u8`, so the preimage is 65 bytes: `TAG_SPI`, `leaf` 32, `submission_id` 16, `promised_epoch` 8, `max_merge_delay` 1.
 
-**INV-SPI-01.** `max_merge_delay = 2` epochs. If `leaf` is absent from the roots of `promised_epoch .. promised_epoch + max_merge_delay`, the SPI is a self-contained, transferable proof of batcher misbehaviour.
+`submission_id` is minted by the batcher, which takes only a leaf, and it is an ordinal counter (D-69). **It therefore reveals the submission's position in the batcher's sequence to anyone shown the promise**, and it travels only inside the promise: it appears in no disclosure package, no checkpoint and nothing on chain. Position in the epoch tree does not follow from it, because §1.4 assigns slots by PRF over it under a key the counterparty does not hold.
+
+**INV-SPI-01.** `max_merge_delay = 2` epochs. If `leaf` is absent from the roots of `promised_epoch .. promised_epoch + max_merge_delay`, the SPI is a self-contained, transferable accusation of batcher misbehaviour.
+
+**What that can and cannot be (D-72).** **Absence cannot be proven from a Merkle root.** A counterparty holding a promise and the three roots of the window cannot show the leaf is missing; only the batcher can show it is present. An unsatisfied promise is transferable in the sense that anyone can check its signature and its binding and see which epochs it covers, and the conclusion it supports is rebuttable: the batcher answers with an inclusion proof or it does not answer, and silence is the evidence. **A rebuttal counts only if its inclusion proof resolves to a root published inside the window, `promised_epoch` through `promised_epoch + max_merge_delay`. A proof against any later root confirms the breach rather than rebutting it**, which is what `0x14` reports.
 **INV-SPI-02.** The batcher cannot issue an SPI it can satisfy two ways: the promise binds the exact leaf digest, so satisfying it requires including that leaf.
 **INV-SPI-03.** The log proves what was submitted, not what existed. An issuer who never submits a record leaves no trace of it. No invariant can close this from inside the architecture (RES-05).
 
@@ -265,6 +269,14 @@ pub trait Verifier {
     fn verify(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result<()>;
 }
 
+/// Ed25519 signing, for the batcher's promises (§1.6, D-73). The engine holds no key and has nowhere
+/// to put one: an implementation of this trait holds it, outside this repository. The caller names the
+/// implementation, as it names the hasher and the verifier.
+pub trait Signer {
+    fn sign(&self, message: &[u8]) -> Result<[u8; 64]>;
+    fn public_key(&self) -> [u8; 32];
+}
+
 /// One record as it arrives. `c` is not here: the chain holds it.
 pub struct RecordLeafInput {
     pub prev_head: Digest,
@@ -348,11 +360,44 @@ pub trait InclusionVerifier {
                                     configured_height: u8) -> Result<()>;
 }
 
+/// A promise that a leaf will appear in a root inside the merge delay (§1.6, D-68). Self-contained, so
+/// a counterparty checks it without the batcher. `batcher_key` is carried for display and is never the
+/// authority: `verify_promise` takes the key the counterparty expects and compares the two.
+pub struct SignedPromise {
+    pub leaf: Digest,
+    pub submission_id: SubmissionId,
+    pub promised_epoch: u64,
+    pub max_merge_delay: u8,
+    pub batcher_key: [u8; 32],
+    pub signature: [u8; 64],
+}
+
 pub trait Batcher {
-    fn submit(&mut self, leaf: Digest) -> Result<SignedPromise>;
-    fn seal(&mut self, epoch: u64) -> Result<BuiltEpoch>;
+    /// Mints a submission identifier, queues the leaf and returns its promise. A full epoch does not
+    /// refuse: the promise names the next epoch the batcher can meet, the leaf waits in the overflow
+    /// queue, and nothing is dropped (D-71, INV-TREE-04). The hasher and the signer are named at the
+    /// call site; the batcher holds the master key it was constructed with and no key of its own.
+    fn submit<H: Hasher, S: Signer>(&mut self, leaf: Digest, signer: &S) -> Result<SignedPromise>;
+    fn seal<H: Hasher>(&mut self, epoch: u64) -> Result<BuiltEpoch>;
     fn overflow_queue_len(&self) -> usize;
 }
+
+/// Checks a promise's signature over its own preimage, against the batcher key the counterparty
+/// expects (D-68). A key mismatch is `0x08` and a signature that does not verify is `0x07`.
+pub fn verify_promise<H: Hasher, V: Verifier>(
+    promise: &SignedPromise,
+    expected_batcher_key: &[u8; 32],
+) -> Result<()>;
+
+/// Whether a promise was kept. The proof must verify for the promise's leaf against `root`, and
+/// `root_epoch` must fall inside the promised window; outside it, `0x14` (D-72). A proof that does not
+/// verify is `0x13`.
+pub fn promise_kept<H: Hasher>(
+    promise: &SignedPromise,
+    proof: &InclusionProof,
+    root: &Digest,
+    root_epoch: u64,
+) -> Result<()>;
 
 pub trait AnchorClient {
     fn publish(&self, epoch: u64, root: Digest) -> Result<AnchorRef>;       // Solana
@@ -519,7 +564,7 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-11 | Second `publish_checkpoint` for same epoch | `0x0E` |
 | V-N-12 | Second `attach_anchor_receipt` for same epoch | `0x15` |
 | V-N-13 | `schema_version = 2` | `0x0F` |
-| V-N-14 | `C + 1` real submissions in one epoch (257 at default) | `0x12`, overflow queued, not dropped |
+| V-N-14 | `C + 1` real submissions in one epoch (257 at default) | **The tree returns `0x12`** when asked to build more than `C` leaves into one epoch. **The batcher never asks:** it queues the excess, promises it the next epoch it can meet, and reports it through `overflow_queue_len`, so a submission past capacity is queued and never dropped (D-71). |
 | V-N-15 | Inclusion proof with one sibling altered | `0x13` |
 | V-N-16 | Proof with `H − 1` or `H + 1` siblings | `0x13` |
 | V-N-16b | Proof whose `height` field disagrees with the log's configured `H` | `0x13` |
