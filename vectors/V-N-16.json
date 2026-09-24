@@ -1,0 +1,84 @@
+{
+  "description": "An inclusion proof carrying H − 1 and H + 1 siblings.",
+  "expected": {
+    "cases": [
+      {
+        "case": "H − 1 siblings",
+        "expected": {
+          "error": "0x13",
+          "error_name": "InclusionProofInvalid",
+          "source": "TCU-02 §4.3, checked against the engine at generation time"
+        },
+        "proof": {
+          "epoch": "20410",
+          "height": "8",
+          "siblings": [
+            "0x44d2c46a5c4a9c3778fb66b860d7931b1d0f59e770f14ed15405f838f38170f0",
+            "0xb61fc59714e9a687c8ba5196febc9e8bdbf41178478dbf6789c446fa01256608",
+            "0x5f3ebf35234bb0cb54884df2ff619cbfdebe6a1be1e505e105fb1b1b30c3c0df",
+            "0x7bdbc03b6458165f82ffc9555e9dbc5e53d6fed7a23a7717e5312cceb52ca665",
+            "0xeb0d651fee761b4adbbfc637a085f47d212be802def82cdf580e852cd150592c",
+            "0xf17269f29f85ce1ab1af7e7494587de8ea9d3a00d13b9cbde70469f22501ad56",
+            "0x15cb1a0444d6aacbec5e041440b124b581d916f5a86ca490b6e53fafa773873e"
+          ],
+          "slot_index": "166"
+        },
+        "root": "0xca811a8be58d5c62a295956e11f715864254ecbc1733513ae5147081511b6401"
+      },
+      {
+        "case": "H + 1 siblings",
+        "expected": {
+          "error": "0x13",
+          "error_name": "InclusionProofInvalid",
+          "source": "TCU-02 §4.3, checked against the engine at generation time"
+        },
+        "proof": {
+          "epoch": "20410",
+          "height": "8",
+          "siblings": [
+            "0x44d2c46a5c4a9c3778fb66b860d7931b1d0f59e770f14ed15405f838f38170f0",
+            "0xb61fc59714e9a687c8ba5196febc9e8bdbf41178478dbf6789c446fa01256608",
+            "0x5f3ebf35234bb0cb54884df2ff619cbfdebe6a1be1e505e105fb1b1b30c3c0df",
+            "0x7bdbc03b6458165f82ffc9555e9dbc5e53d6fed7a23a7717e5312cceb52ca665",
+            "0xeb0d651fee761b4adbbfc637a085f47d212be802def82cdf580e852cd150592c",
+            "0xf17269f29f85ce1ab1af7e7494587de8ea9d3a00d13b9cbde70469f22501ad56",
+            "0x15cb1a0444d6aacbec5e041440b124b581d916f5a86ca490b6e53fafa773873e",
+            "0x0142906f5a5cefc0fd3ca9262b6409aaac1319f6f304c11433eca552057a1176",
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "slot_index": "166"
+        },
+        "root": "0xca811a8be58d5c62a295956e11f715864254ecbc1733513ae5147081511b6401"
+      }
+    ]
+  },
+  "id": "V-N-16",
+  "inputs": {
+    "epoch": "20410",
+    "height": "8",
+    "leaf": "0x605bd07f19c4ecd73abd58a7b4018938229183aac27f6b8d585ce3d295135a0b",
+    "master_key": "0x434d76312054455354204d4153544552204b45592c204e4f5420534543524554",
+    "root": "0xca811a8be58d5c62a295956e11f715864254ecbc1733513ae5147081511b6401",
+    "submission_id": "0xb80b0000000000000000000000000000",
+    "valid_proof": {
+      "epoch": "20410",
+      "height": "8",
+      "siblings": [
+        "0x44d2c46a5c4a9c3778fb66b860d7931b1d0f59e770f14ed15405f838f38170f0",
+        "0xb61fc59714e9a687c8ba5196febc9e8bdbf41178478dbf6789c446fa01256608",
+        "0x5f3ebf35234bb0cb54884df2ff619cbfdebe6a1be1e505e105fb1b1b30c3c0df",
+        "0x7bdbc03b6458165f82ffc9555e9dbc5e53d6fed7a23a7717e5312cceb52ca665",
+        "0xeb0d651fee761b4adbbfc637a085f47d212be802def82cdf580e852cd150592c",
+        "0xf17269f29f85ce1ab1af7e7494587de8ea9d3a00d13b9cbde70469f22501ad56",
+        "0x15cb1a0444d6aacbec5e041440b124b581d916f5a86ca490b6e53fafa773873e",
+        "0x0142906f5a5cefc0fd3ca9262b6409aaac1319f6f304c11433eca552057a1176"
+      ],
+      "slot_index": "166"
+    }
+  },
+  "notes": [
+    "The master key is a specification test key, not a real one: its bytes spell out what it is. Every epoch key, slot and padding leaf here follows from it, so the whole tree is reproducible. A real k_master never appears in this repository (INV-TREE-05)."
+  ],
+  "schema_version": "1",
+  "spec": "§4.3"
+}

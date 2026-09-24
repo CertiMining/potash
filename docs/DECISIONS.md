@@ -627,3 +627,135 @@ Each entry states the decision, its ground and its class. A security necessity n
 **Cost.** Larger files: a leaf preimage is 161 bytes, so 322 characters of hex per record.
 
 **Revisit if.** The set grows enough for file size to matter, which would argue for splitting rather than for dropping the preimages.
+
+## D-59 · The PRF's input encoding
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** settled at S0 (owner, 23 Sep 2026)
+
+**Decision.** In `PRF(k, x) = Keccak256(TAG_PRF ‖ k ‖ len(x) ‖ x)`, `len(x)` is a `u16` little-endian, as INV-ENC-04 requires of every length prefix in this system. The key is 32 bytes. The three inputs `x` carry their use code first and then one field: the epoch as a `u64` little-endian for `0x01`, the submission identifier's sixteen bytes for `0x02`, and the slot index as a `u16` little-endian for `0x03`. So `x` is 9, 17 and 3 bytes, and the three preimages are 51, 59 and 45 bytes.
+
+**Ground.** §1.1 gave the construction and no widths. E-11's verifier is written from the specification and never reads this engine, so a width left unstated is a divergence that would not surface until V-P-08 compared the two.
+
+**Rejected.** A `u32` prefix, which is Borsh's own framing for a byte string and is exactly what INV-ENC-04 overrides.
+
+**Revisit if.** A fourth PRF use needs an input wider than the `u16` prefix can carry, which would be a decision about that use.
+
+## D-60 · Slot assignment: reduction, order and probing
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** settled at S0 (owner, 23 Sep 2026)
+
+**Decision.** Four rules, and one code assignment noted below.
+
+1. **Reduction.** The PRF output is read as a little-endian integer, which INV-ENC-02 already requires of every integer here, and reduced modulo `C`. Because `C` is a power of two this is the low `H` bits, which lie in the digest's first two bytes.
+2. **Order.** Real submissions are assigned in ascending order of submission identifier. One set of submissions therefore produces one tree, whatever order the caller supplies them in.
+3. **Probing.** The probe steps upward by one slot and wraps at `C`, taking the first free slot it meets.
+4. **Overflow.** More real submissions than `C` in one epoch is `0x12`, which is V-N-14.
+
+**Ground.** Rule 2 is the load-bearing one. Under assignment in the caller's order, the same epoch built by the batcher and by an independent implementation can differ by iteration order alone, and V-P-08 compares those two byte for byte. Rule 1 is INV-ENC-02 applied rather than a new choice, written down because an implementation reading the digest as big-endian would produce a different tree from the same inputs.
+
+**Ruled by the owner (23 Sep 2026): `0x05` stands.** Two submissions carrying the same identifier in one epoch return the generic malformed-input code. §2.1 offers no code for a malformed submission set, the set is malformed, and `proof` could answer for neither of the two.
+
+**Revisit if.** An epoch ever needs to hold two submissions under one identifier, which would be a change to §1.6's promise model rather than to the tree.
+
+## D-61 · Where the tree lives
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** cost judgment · **Status:** settled at S0 (owner, 23 Sep 2026)
+
+**Decision.** A new workspace member, `crates/certimining-log`, `no_std` with `alloc`, depending on `certimining-core` and, directly, on `heapless`, which `certimining-core` already pins and which `InclusionProof` exposes in its public type. It holds the epoch tree, the inclusion proof and the inclusion verifier, and E-07's batcher joins it. The PRF stays in `certimining-core` beside the other §1.2 tag writers, because it is a §1.1 primitive that allocates nothing. No new external crate enters the build: `heapless` 0.9.3 is already pinned and carries the proof's siblings, and nothing else is needed.
+
+**Ground.** §2 already draws this line. A tree at `H = 16` holds 65,536 leaves, which `heapless` cannot carry, so the builder needs an allocator; keeping that out of `certimining-core` protects the bare-metal build D-14 made load-bearing. The log crate is built for `thumbv7em-none-eabihf` as well, so the option of verifying an inclusion proof in a constrained environment stays open and is tested rather than asserted.
+
+**Rejected.** Putting the tree in `certimining-core`, which would bring an allocating builder into the crate whose `no_std` proof is a claim the submission makes.
+
+**Revisit if.** The batcher at E-07 needs `std`, which would put the batcher in a third crate rather than move the tree.
+
+## D-62 · What `BuiltEpoch` holds
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** settled at S0 (owner, 23 Sep 2026)
+
+**Decision.** The epoch number, the height, the root, every slot's leaf digest, and the mapping from submission identifier to slot that proof generation needs. Nothing marks a slot as real or padding. Internal nodes are an implementation detail of the builder, not part of the contract.
+
+**Ground.** §2.3 named the type and never defined it. A real-or-padding marker per slot would put the answer V-Z-02 is trying to guess inside the structure under test, where a later test could reach it by accident.
+
+**Cost.** Proof generation reads the mapping, which does name the slots holding real leaves. That is inherent, because a proof is for a real leaf. V-Z-02's classifier is given a root and a leaf set and never a built epoch, which is a property of the test's signature rather than of its discipline.
+
+**Revisit if.** A caller needs to know how full an epoch was, which is a volume signal and would need INV-TREE-04 revisited first.
+
+## D-63 · How the epoch key is held in tests
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** settled at S0 (owner, 23 Sep 2026)
+
+**Decision.** A published specification test master key, `b"CMv1 TEST MASTER KEY, NOT SECRET"`, declared in the tests and in the generator and labelled for what it is. Every `k_e` in a test or a vector is derived from it through the real `0x01 ‖ e_le` path, and every vector that shows it carries the note D-55 requires.
+
+**Ground.** INV-TREE-05 keeps a real `k_e` unpublished, so a published test key is the only honest way to commit a tree vector at all. Deriving through the real path keeps `k_e = PRF(k_master, 0x01 ‖ e_le)` under test rather than bypassed, and a key whose bytes spell out what it is cannot be mistaken for a real one by a later reader.
+
+**Also settled.** `build`'s `key` argument is `k_master`, not `k_e`. The tree already knows which epoch it is for, so deriving inside `build` puts INV-TREE-05's derivation on the only path that produces a tree and makes reusing one epoch's key for another impossible.
+
+**Rejected.** Handing `k_e` to the builder directly, which leaves the derivation untested. Zero bytes, which read as an uninitialised value rather than a deliberate one.
+
+**Revisit if.** A test needs two master keys, which would name the second the same way.
+
+## D-64 · The proof's shape and how it is checked
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** cost judgment · **Status:** settled at S0 (owner, 23 Sep 2026)
+
+**Decision.** Siblings run from the leaf upward, exactly `height` of them, and the path is taken from `slot_index` with bit 0 first: a clear bit means the leaf is the left child at that level. `verify` checks everything a proof can be checked for on its own — `4 ≤ height ≤ 16`, one sibling per level, `slot_index < 2^height`, and the root recomputed from the leaf — and returns `0x13` on any failure. The configured height is a second input rather than a field, so a caller holding its log's `H` calls `verify_for_height`, where a proof whose `height` disagrees is `0x13` before any hashing. That is V-N-16b. Both functions are pure, which is INV-IFACE-01.
+
+**Also settled.** `verify` takes the chain leaf `leafₙ` and applies `TAG_MTL0` itself, rather than taking the tagged leaf the tree holds. A caller cannot then omit the tag, which is the same reason E-03 keeps every preimage out of call sites.
+
+**Ground.** Leaf-first ordering is the convention E-11 will be written against, and §1.8's "exactly `H` siblings" reads in that direction. The height check needs an input `verify` does not have, and adding a log handle to the verifier would break the offline property INV-IFACE-01 exists to protect.
+
+**Overruled by the owner (23 Sep 2026).** Asking an epoch for a proof of a submission it does not hold returns `0x16`, not `0x13`. See D-67.
+
+**Revisit if.** Nothing else here. The distinction between "not in this epoch" and "proof does not verify" was the open question, and D-67 settles it with a new code.
+
+## D-65 · The privacy tests are committed before the implementation
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** settled at S0 (owner, 23 Sep 2026)
+
+**Decision.** Two commits. The first carries the privacy tests and a stub whose every entry point refuses with one fixed error under a loud marker, so the tests fail and CI is red on that commit by design. The second carries the implementation and turns them green. The unit's record on the issue links both commit identifiers and says the red run was intended.
+
+**Ground.** Issue #6 requires the privacy tests before the implementation, and S4 requires it of anything touching the epoch tree. A claim about commit order that cannot be checked is not evidence; a branch whose history shows the order is. One red run is the price of making the sequence verifiable.
+
+**Cost.** The branch holds one commit that does not build green. The pull request's head is green, and CI on the merge commit runs the whole suite.
+
+**Revisit if.** Nothing. This is how every unit touching the tree or the on-chain surface is built from here.
+
+## D-66 · What the privacy thresholds mean
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** settled at S0 (owner, 23 Sep 2026, with the classifier specified at the owner's instruction)
+
+**Decision.** V-Z-02 and V-Z-04 get stated statistics and a stated adversary, written into §4.4 where a reader can judge them.
+
+**V-Z-02's classifier** is given an epoch's root and all `C` leaf digests in slot order, no key, and unlimited compute. It runs, at minimum, per-position byte statistics across the leaf set and a structural-regularity check over each digest: deviation from the set's per-position byte mean, population count, zero-byte count, leading-zero bits, longest run of equal bytes, distinct byte values, a chi-squared statistic over nibbles, and Hamming distance to the adjacent slots. Every feature is scored on its own and the combined score is scored as well, and each must pass.
+
+**V-Z-02's statistic** is a distinguishing game rather than raw accuracy: each trial presents one real and one padding leaf from a freshly built epoch and the classifier names the real one. Successes must not leave a two-sided binomial test at α = 0.001 against p = 1/2. Raw accuracy over an epoch holding one real leaf and 255 padding leaves is 255/256 for a classifier that answers "padding" every time and learns nothing, so accuracy alone cannot carry this test; the pair game removes the base rate. A balanced epoch, `C/2` real, is classified leaf by leaf as a second form, where accuracy is meaningful and the same band applies.
+
+**V-Z-04's bound** is a number. Pearson correlation of slot index against submission order, against issuer index and against time within epoch must satisfy `|r| < 0.05` at the sample size CI runs, and `|r| < 0.02` over the full 10,000 epochs. Both are conservative: at CI's sample size the standard error is about 0.006, so the bound is eight standard errors out, and a real positional leak produces a correlation near 1.
+
+**What runs where.** CI runs a reduced sample with the power to catch a leak: 200 epochs for V-Z-02 and 400 for V-Z-04. The full 10,000-epoch run of V-Z-04 is a release gate, ignored by default, run before submission and recorded on issue #16. A post-deadline issue against milestone 5 strengthens the classifier.
+
+**Measured after the fact (23 Sep 2026).** The full run costs 1.96 seconds in a release build and 140.91 seconds in the debug build CI uses, rather than the hours the wording implied when this was settled. It stays a release gate under this decision; whether to promote it into CI at that price is the owner's to take, and the numbers are in the unit's record.
+
+**Amended 23 Sep 2026, after the first independent review.** This decision's own wording granted the classifier "unlimited compute", and that was wrong in a way the review named as blocking: INV-TREE-02 claims computational indistinguishability, and an adversary with unlimited compute would search the key space, derive `k_e`, recompute every padding leaf and count exactly. The test could never establish the property the words promised. §4.4 now states that the adversary is computationally bounded, says plainly that what the test establishes is bounded — the named battery does not distinguish, which is not a proof that no distinguisher exists — and Appendix A gains RES-09 for the same reason. No test changed: the defect was the claim, and the remedy is to make the claim true rather than to promise more of the test.
+
+**Ground.** A release blocker whose pass condition is settled after the implementation's numbers are visible is a test written to pass. Naming the adversary in the specification lets a reader judge how hard the test tries, which an accuracy figure alone does not. Naming it accurately is the other half: a battery of statistics is evidence, and only an unfalsifiable claim would call it proof.
+
+**Cost.** About six seconds in the `checks` group, measured rather than estimated: the three tests
+run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
+
+**Revisit if.** The classifier is strengthened post-deadline and the band needs restating for a larger sample.
+
+## D-67 · A submission the epoch does not hold has its own code
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** ruled by the owner, 23 Sep 2026
+
+**Decision.** `SubmissionNotInEpoch = 0x16` joins §2.1. `EpochTree::proof` returns it when the epoch holds no such submission. `0x13` keeps the one meaning it had: a proof that does not reconcile with the root. The same ruling leaves D-60's duplicate-identifier refusal at `0x05`.
+
+**Ground.** §2.1's own rule, applied: codes never change and a new condition takes a new number. This is a new condition, because nothing failed to verify. Sharing `0x13` would have made "I hold no such submission" indistinguishable from "this proof does not stand", and that is exactly the distinction a counterparty acts on: one is a question for the batcher, the other is evidence of tampering.
+
+**Cost.** The error space grows by one code, and TCU-02 goes to v0.1.9 in the same pull request, which is what S0 requires of a decision that changes a contract.
+
+**No vector.** §4.3's rows describe what a verifier must refuse, and proof generation is not on the verifier's path: E-11 checks proofs and never builds a tree. The condition is covered by the log crate's own test, and the batcher at E-07 exercises it where a caller can reach it. A `V-N` identifier would have to be declared in the specification first, and nothing yet needs one.
+
+**Revisit if.** Nothing. A published code is stable.

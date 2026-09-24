@@ -8,9 +8,9 @@
 //! Every constant here carries the section it was copied from. When the specification changes, this
 //! file is edited by hand from the new text, never regenerated.
 
-/// §1.2's domain tags, byte for byte. `TAG_CKPT` and `TAG_PRF` are transcribed for completeness:
-/// no preimage uses them yet, because the checkpoint preimage is undefined (D-30) and the PRF
-/// belongs to E-06. They are here so the table is the whole of §1.2 rather than a convenient part.
+/// §1.2's domain tags, byte for byte. `TAG_CKPT` is transcribed for completeness: no preimage uses
+/// it, because the checkpoint preimage is undefined (D-30). It is here so the table is the whole of
+/// §1.2 rather than a convenient part.
 pub const TAG_ASSET: &[u8; 8] = b"CMv1ASST";
 pub const TAG_LEAF: &[u8; 8] = b"CMv1LEAF";
 pub const TAG_HEAD: &[u8; 8] = b"CMv1HEAD";
@@ -19,7 +19,6 @@ pub const TAG_MTN1: &[u8; 8] = b"CMv1MTN1";
 pub const TAG_PAD: &[u8; 8] = b"CMv1PADD";
 #[allow(dead_code)]
 pub const TAG_CKPT: &[u8; 8] = b"CMv1CKPT";
-#[allow(dead_code)]
 pub const TAG_PRF: &[u8; 8] = b"CMv1PRF0";
 pub const TAG_SPI: &[u8; 8] = b"CMv1SPI0";
 
@@ -31,6 +30,17 @@ pub const MAX_TENURE_LEN: usize = 64;
 pub const MAX_RAW_TENURE_LEN: usize = 256;
 pub const MAX_PAYLOAD_URI_LEN: usize = 128;
 pub const MAX_MERGE_DELAY: u8 = 2;
+
+/// §1.1's use codes, which separate the three things the PRF is used for.
+pub const PRF_USE_EPOCH_KEY: u8 = 0x01;
+pub const PRF_USE_SLOT: u8 = 0x02;
+pub const PRF_USE_PADDING: u8 = 0x03;
+
+/// §1.8's range for the tree height, and the height this deployment ships (D-02).
+pub const MIN_HEIGHT: u8 = 4;
+pub const MAX_HEIGHT: u8 = 16;
+pub const DEPLOYED_HEIGHT: u8 = 8;
+pub const DEPLOYED_CAPACITY: usize = 256;
 
 /// §1.3's schema version for this engine.
 pub const SCHEMA_VERSION: u16 = 1;
@@ -49,8 +59,9 @@ pub struct Layout {
     pub total: Option<usize>,
 }
 
-/// The layouts this unit can check. `c` has no fixed total because `T` varies from 1 to 64 bytes;
-/// its field widths still pin everything else.
+/// The layouts this unit can check. `c` has no fixed total because `T` varies from 1 to 64 bytes,
+/// and the PRF's has none because `x` varies with the use; their field widths still pin everything
+/// else.
 pub const LAYOUTS: &[Layout] = &[
     Layout {
         name: "asset",
@@ -90,6 +101,12 @@ pub const LAYOUTS: &[Layout] = &[
         tag: TAG_MTL0,
         fields: &[("leaf", 32)],
         total: Some(40),
+    },
+    Layout {
+        name: "prf",
+        tag: TAG_PRF,
+        fields: &[("k", 32), ("len(x)", 2), ("x", 0)],
+        total: None,
     },
     Layout {
         name: "padding",

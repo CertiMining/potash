@@ -8,6 +8,8 @@ description = "Repository tasks for CertiMining. Generates the test vectors of �
 [dependencies]
 # The engine itself, so a vector is whatever the engine produces rather than a second opinion.
 certimining-core = { path = "../crates/certimining-core", features = ["native"] }
+# The epoch tree, for §4.2's and §4.3's tree vectors (E-06).
+certimining-log = { path = "../crates/certimining-log", features = ["native"] }
 # JSON belongs to the tool, never to the engine (D-57, INV-ENC-03). serde_json's map is a BTreeMap
 # with its default features, so keys come out sorted, which D-53 requires.
 serde_json = "=1.0.151"

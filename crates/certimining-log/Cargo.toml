@@ -1,0 +1,27 @@
+[package]
+name = "certimining-log"
+version = "0.1.0"
+edition = "2021"
+# The Solana build compiles this crate with platform-tools' rustc 1.89 (D-15).
+rust-version = "1.89"
+# No licence is declared until E-15 decides it (D-13).
+publish = false
+description = "The fixed-capacity epoch tree, its inclusion proofs and the pure inclusion verifier for the CertiMining anchored log (TCU-02)."
+
+[features]
+# The feature names match `certimining-core`'s, so the four clippy and test runs of D-50 cover this
+# crate without a fifth command.
+default = ["native"]
+native = ["certimining-core/native"]
+solana = ["certimining-core/solana"]
+
+[lints.rust]
+# Forbids unsafe code in every target of this package, tests included (D-21). The clippy gates of
+# INV-ERR-01 stay at the crate root in src/lib.rs, so they govern shipped code only.
+unsafe_code = "forbid"
+
+[dependencies]
+# The engine: digests, the PRF, the tag writers and the error space (D-61).
+certimining-core = { path = "../certimining-core", default-features = false }
+# The proof's siblings, at most sixteen of them (§2.3). Already pinned by the core crate.
+heapless = { version = "=0.9.3", default-features = false }

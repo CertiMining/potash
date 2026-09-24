@@ -83,7 +83,7 @@ impl PreimageSink for PreimageBuf {
 ///
 /// Writing field by field straight into the caller's sink would leave the earlier fields behind
 /// when a later one does not fit, and those fields carry record data such as `c` (D-03).
-fn staged<F>(out: &mut dyn PreimageSink, fill: F) -> Result<()>
+pub(crate) fn staged<F>(out: &mut dyn PreimageSink, fill: F) -> Result<()>
 where
     F: FnOnce(&mut PreimageBuf) -> Result<()>,
 {

@@ -108,25 +108,67 @@ kat01_onchain() {
     cargo test -p core-harness --test kat01_onchain -- --nocapture
 }
 
-# Format, the INV-ERR-01 lint gates, every feature set, and the bare-metal no_std proof (D-14).
-checks() {
-  cargo fmt --all --check &&
-    cargo clippy --workspace --all-targets --no-default-features -- -D warnings &&
-    cargo clippy --workspace --all-targets -- -D warnings &&
-    cargo clippy --workspace --all-targets --no-default-features --features solana -- -D warnings &&
-    cargo clippy --workspace --all-targets --all-features -- -D warnings &&
-    cargo test -p certimining-core --no-default-features &&
-    cargo test -p certimining-core &&
-    cargo test -p certimining-core --no-default-features --features solana &&
-    cargo test -p certimining-core --all-features &&
-    cargo build -p certimining-core --target thumbv7em-none-eabihf --no-default-features &&
-    cargo build -p certimining-core --target thumbv7em-none-eabihf
+# One command of a group, run whatever happened before it. A group used to chain with `&&`, which
+# meant a red run stopped at the first failure: E-06's first review found that the run meant to show
+# the privacy tests failing against a stub stopped at the core crate's tests and never reached them,
+# so the run proved the stub refused and not what it was written to prove. Now every command runs and
+# the group names each one that failed.
+GROUP_FAILED=""
+check() {
+  local label="$1"
+  shift
+  echo "----- $label"
+  if ! "$@"; then
+    GROUP_FAILED="$GROUP_FAILED
+    $label"
+  fi
 }
 
-# Miri on the core crate (P-04).
+# Reports whatever the group collected, and fails if anything did.
+group_result() {
+  local group="$1"
+  if [ -n "$GROUP_FAILED" ]; then
+    echo "$group: these commands failed:$GROUP_FAILED" >&2
+    return 1
+  fi
+  echo "$group: every command passed"
+}
+
+# Format, the INV-ERR-01 lint gates, every feature set for both engine crates, and the bare-metal
+# no_std proof (D-14, D-61).
+checks() {
+  GROUP_FAILED=""
+  check "fmt" cargo fmt --all --check
+  check "clippy, no default features" cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+  check "clippy, default" cargo clippy --workspace --all-targets -- -D warnings
+  check "clippy, solana" cargo clippy --workspace --all-targets --no-default-features --features solana -- -D warnings
+  check "clippy, all features" cargo clippy --workspace --all-targets --all-features -- -D warnings
+  check "test core, no default features" cargo test -p certimining-core --no-default-features
+  check "test core, default" cargo test -p certimining-core
+  check "test core, solana" cargo test -p certimining-core --no-default-features --features solana
+  check "test core, all features" cargo test -p certimining-core --all-features
+  check "test log, no default features" cargo test -p certimining-log --no-default-features
+  check "test log, default" cargo test -p certimining-log
+  check "test log, solana" cargo test -p certimining-log --no-default-features --features solana
+  check "test log, all features" cargo test -p certimining-log --all-features
+  check "bare metal core, no default features" cargo build -p certimining-core --target thumbv7em-none-eabihf --no-default-features
+  check "bare metal core, default" cargo build -p certimining-core --target thumbv7em-none-eabihf
+  check "bare metal log, no default features" cargo build -p certimining-log --target thumbv7em-none-eabihf --no-default-features
+  check "bare metal log, default" cargo build -p certimining-log --target thumbv7em-none-eabihf
+  group_result checks
+}
+
+# Miri on the engine crates (P-04). The statistical privacy tests are ignored here and run in the
+# `checks` group instead: Miri is for undefined behaviour, and it covers the tree's code paths through
+# the structural tests at a fraction of the cost (D-66).
 miri() {
-  cargo "+$MIRI_TOOLCHAIN" miri --version &&
-    cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-core --all-features
+  # The toolchain gates the rest: without it there is nothing to run. Both crates then run whatever
+  # the other did, for the same reason the `checks` group does.
+  cargo "+$MIRI_TOOLCHAIN" miri --version || return 1
+  GROUP_FAILED=""
+  check "miri core" cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-core --all-features
+  check "miri log" cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-log --all-features
+  group_result miri
 }
 
 # Advisories, licences and sources (D-13, D-18). The version is read from the installed tool.
