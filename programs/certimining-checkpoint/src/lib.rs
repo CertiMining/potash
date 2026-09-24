@@ -1,9 +1,5 @@
 //! The CertiMining checkpoint program (§2.4).
 //!
-//! **STUB. No instruction is implemented yet (D-65).** Issue #8 requires the negative tests to be
-//! written before the program, so this commit carries the tests and every instruction refuses. CI is
-//! red on this commit by design, and the next commit turns it green.
-//!
 //! Three instructions and nothing else, ever. There is no update, close, revoke, shred or set-state,
 //! and a pull request introducing one is rejected regardless of its guard conditions (§2.4).
 //!
@@ -24,9 +20,6 @@ pub const SCHEMA_VERSION: u16 = 1;
 /// The one anchor-B kind §1.5 has (D-81).
 pub const ANCHOR_KIND_OPENTIMESTAMPS: u8 = 1;
 
-/// STUB (D-65): what every instruction returns until the implementation lands.
-const STUB_REFUSAL: CheckpointError = CheckpointError::MalformedPayload;
-
 #[program]
 pub mod certimining_checkpoint {
     use super::*;
@@ -35,15 +28,85 @@ pub mod certimining_checkpoint {
     /// second call, and whoever calls first owns the log, which is why this belongs to the deploy
     /// procedure (D-79).
     pub fn initialize(ctx: Context<Initialize>, authority: Pubkey, tree_height: u8) -> Result<()> {
-        let _ = (ctx, authority, tree_height);
-        Err(STUB_REFUSAL.into())
+        require!(
+            (MIN_TREE_HEIGHT..=MAX_TREE_HEIGHT).contains(&tree_height),
+            CheckpointError::MalformedPayload
+        );
+        let bump = ctx.bumps.config;
+        let config = &mut ctx.accounts.config;
+        config.schema_version = SCHEMA_VERSION;
+        config.authority = authority;
+        config.last_epoch = 0;
+        config.tree_height = tree_height;
+        config.bump = bump;
+        config.reserved = [0u8; 16];
+        Ok(())
     }
 
     /// Publishes one root for one epoch. Checks in the order §2.4 states: the checkpoint account
     /// already exists is `0x0E`, and only then an epoch that is not `last + 1` is `0x0D` (D-80).
     pub fn publish_checkpoint(ctx: Context<Publish>, epoch: u64, root: [u8; 32]) -> Result<()> {
-        let _ = (ctx, epoch, root);
-        Err(STUB_REFUSAL.into())
+        require!(
+            ctx.accounts.config.schema_version == SCHEMA_VERSION,
+            CheckpointError::UnsupportedSchemaVersion
+        );
+
+        // Existence first, then monotonicity. Both conditions hold when an epoch is republished, and
+        // §2.4 names this order so the two codes stay distinguishable (D-80).
+        let checkpoint = ctx.accounts.checkpoint.to_account_info();
+        require!(
+            checkpoint.data_is_empty() && checkpoint.lamports() == 0,
+            CheckpointError::CheckpointAlreadyWritten
+        );
+        let next = ctx
+            .accounts
+            .config
+            .last_epoch
+            .checked_add(1)
+            .ok_or(CheckpointError::EpochOutOfOrder)?;
+        require!(epoch == next, CheckpointError::EpochOutOfOrder);
+
+        // The account `init` would have created, created here so existence could be read first. Same
+        // system-program call, same rent, same owner.
+        let bump = ctx.bumps.checkpoint;
+        let epoch_le = epoch.to_le_bytes();
+        let seeds: &[&[u8]] = &[CheckpointAccount::SEED, &epoch_le, &[bump]];
+        let rent = Rent::get()?.minimum_balance(CheckpointAccount::LEN);
+        anchor_lang::system_program::create_account(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                anchor_lang::system_program::CreateAccount {
+                    from: ctx.accounts.payer.to_account_info(),
+                    to: checkpoint.clone(),
+                },
+            )
+            .with_signer(&[seeds]),
+            rent,
+            CheckpointAccount::LEN as u64,
+            &crate::ID,
+        )?;
+
+        let clock = Clock::get()?;
+        let written = CheckpointAccount {
+            schema_version: SCHEMA_VERSION,
+            epoch,
+            root,
+            published_slot: clock.slot,
+            published_unix: clock.unix_timestamp,
+            receipt_digest: [0u8; 32],
+            anchor_kind: 0,
+            bump,
+            reserved: [0u8; 6],
+        };
+        let mut data = checkpoint.try_borrow_mut_data()?;
+        let (discriminator, body) = data.split_at_mut(8);
+        discriminator.copy_from_slice(CheckpointAccount::DISCRIMINATOR);
+        let mut cursor = &mut *body;
+        written.serialize(&mut cursor)?;
+        drop(data);
+
+        ctx.accounts.config.last_epoch = epoch;
+        Ok(())
     }
 
     /// Attaches anchor B's receipt digest, once, zero to value (INV-ANCH-03). The authority's alone,
@@ -54,8 +117,24 @@ pub mod certimining_checkpoint {
         receipt_digest: [u8; 32],
         kind: u8,
     ) -> Result<()> {
-        let _ = (ctx, epoch, receipt_digest, kind);
-        Err(STUB_REFUSAL.into())
+        require!(
+            ctx.accounts.config.schema_version == SCHEMA_VERSION,
+            CheckpointError::UnsupportedSchemaVersion
+        );
+        require!(
+            kind == ANCHOR_KIND_OPENTIMESTAMPS,
+            CheckpointError::MalformedPayload
+        );
+        let checkpoint = &mut ctx.accounts.checkpoint;
+        require!(checkpoint.epoch == epoch, CheckpointError::EpochOutOfOrder);
+        // Zero to a value, exactly once (INV-ANCH-03). Nothing here mutates a non-zero field.
+        require!(
+            checkpoint.receipt_digest == [0u8; 32],
+            CheckpointError::ReceiptAlreadyAttached
+        );
+        checkpoint.receipt_digest = receipt_digest;
+        checkpoint.anchor_kind = kind;
+        Ok(())
     }
 }
 
