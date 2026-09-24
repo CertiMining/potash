@@ -210,9 +210,11 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
             .expect("builds");
 
         // `slot_index` is the fourth field a proof carries, and the three checks below cannot see it.
-        // Every slot is compared against D-60's assignment, transcribed independently in the test, so a
-        // slot that followed the record count in any bit fails here. A regenerated vector set cannot
-        // serve this purpose, because the generator runs the engine under test.
+        // Every slot is compared against D-60's assignment, transcribed independently in the test. This
+        // blocker samples three counts under the engine's own hasher; the tree's conformance test runs
+        // the same comparison at every count from 0 to C at H = 4 and H = 8, which is where a mutation
+        // confined to an unvisited count is caught. A regenerated vector set cannot serve either
+        // purpose, because the generator runs the engine under test.
         assert_eq!(
             built.assignment,
             assignment_oracle::<NativeKeccak>(4_242, HEIGHT, &TEST_MASTER_KEY, &real),

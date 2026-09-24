@@ -122,9 +122,13 @@ tree they measure, and their pass conditions were fixed before any of its number
 - **V-Z-03, proof non-leakage.** Nothing a proof carries may be a preimage: every sibling is checked
   against every chain leaf and every PRF output of its epoch. Then the classifier runs over the
   siblings a counterparty collects, which is the only thing about a sibling there is to recover. No
-  field of a proof may vary with the record count either, and `slot_index` is the field that could:
-  every slot is compared against D-60's assignment transcribed independently in the test, at 1, 128
-  and 255 real leaves, so a slot that followed the count in any bit fails the blocker.
+  field of a proof may vary with the record count either, and `slot_index` is the field that could, so
+  every slot is compared against D-60's assignment transcribed independently in the test. **The
+  comparison runs over a stated, finite matrix, not over every possible epoch:** V-Z-03 runs it at 1,
+  128 and 255 real leaves under the real hasher, and the tree's own conformance test runs it at every
+  count from an empty epoch to a full one at `H = 4` and `H = 8` under the stand-in hasher, which is
+  the same assignment code. A mutation that fired only at a count neither visits would pass, which is
+  how the third review falsified an earlier and looser claim here.
 - **V-Z-04, position non-leakage.** The slot index is correlated against submission order, issuer and
   time within epoch, using sequential submission identifiers, which is the hard case: the identifier
   itself carries the order. The absolute correlation must stay below 0.05 at CI's sample size.

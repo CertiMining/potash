@@ -653,6 +653,8 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Ground.** Rule 2 is the load-bearing one. Under assignment in the caller's order, the same epoch built by the batcher and by an independent implementation can differ by iteration order alone, and V-P-08 compares those two byte for byte. Rule 1 is INV-ENC-02 applied rather than a new choice, written down because an implementation reading the digest as big-endian would produce a different tree from the same inputs.
 
+**How far this is checked (24 Sep 2026, after the third review).** The engine's assignment is compared against this rule transcribed independently in the tests: at every count from 0 to `C` at `H = 4` and `H = 8` under the stand-in hasher, and at 1, 128 and 255 under the engine's own. That is a finite matrix and the repository now says so. An earlier draft claimed the blocker caught a count-dependent slot "in any bit", and the review falsified it with a mutation that fired only in a two-record epoch, a count nothing visited. Finite tests are described as finite.
+
 **Ruled by the owner (23 Sep 2026): `0x05` stands.** Two submissions carrying the same identifier in one epoch return the generic malformed-input code. §2.1 offers no code for a malformed submission set, the set is malformed, and `proof` could answer for neither of the two.
 
 **Revisit if.** An epoch ever needs to hold two submissions under one identifier, which would be a change to §1.6's promise model rather than to the tree.

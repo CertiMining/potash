@@ -147,6 +147,31 @@ fn every_slot_is_the_one_the_specification_prescribes() {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "257 builds at H = 8; the sampled counts above cover the same code"
+)]
+fn every_count_from_empty_to_full_assigns_the_slots_the_specification_prescribes() {
+    // The sampled comparison above cannot see a mutation confined to a count it never visits, and the
+    // third review proved it with one that fired only at two records. This visits every count from an
+    // empty epoch to a full one, at both heights these tests use, so the claim the notes make is the
+    // claim the tests support. Finite, and stated as finite: 0 to C at H = 4 and H = 8.
+    for height in [4u8, 8] {
+        let capacity = 1usize << height;
+        for count in 0..=capacity {
+            let real = submissions(count);
+            let built =
+                BuiltEpoch::build::<MixHash>(88, height, &TEST_MASTER_KEY, &real).expect("builds");
+            assert_eq!(
+                built.assignment,
+                assignment_oracle::<MixHash>(88, height, &TEST_MASTER_KEY, &real),
+                "H = {height}, {count} real leaves"
+            );
+        }
+    }
+}
+
+#[test]
 fn the_epoch_key_is_derived_inside_the_build_from_the_epoch() {
     let real = submissions(8);
     let first = BuiltEpoch::build::<MixHash>(100, 8, &TEST_MASTER_KEY, &real).expect("builds");
