@@ -1,0 +1,35 @@
+{
+  "description": "A signature over a JSON rendering of the record rather than over the leaf preimage.",
+  "expected": {
+    "error": "0x07",
+    "error_name": "AttestationInvalid",
+    "source": "TCU-02 §4.3, checked against the engine at generation time"
+  },
+  "id": "V-N-05",
+  "inputs": {
+    "chain": {
+      "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+      "last_effective_at": "1700000000",
+      "seq": "1"
+    },
+    "record": {
+      "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "category": "2",
+      "change_identified_at": "1699999910",
+      "effective_at": "1700000010",
+      "expected_qp_key": null,
+      "ext_commitment": null,
+      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_uri": "ipfs://bafyexamplepayload",
+      "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+      "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "seq": "2",
+      "signature": "0x643456562732a1127013196950b6ffa5f9ab3b38f7e4ace3b46a14005e65e10eeabe523840451916a8105cba3d669b5bf962f0a7f1490ceeca9b5a9fbf901609"
+    }
+  },
+  "notes": [
+    "The qualified person's key is RFC 8032 §7.1's published specification test key, not a real identity. Its private half is public, so every signature here is reproducible."
+  ],
+  "schema_version": "1",
+  "spec": "§4.3"
+}

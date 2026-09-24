@@ -1,0 +1,20 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Repository tasks for CertiMining. Generates the test vectors of §4.2 and §4.3 (E-05)."
+
+[dependencies]
+# The engine itself, so a vector is whatever the engine produces rather than a second opinion.
+certimining-core = { path = "../crates/certimining-core", features = ["native"] }
+# JSON belongs to the tool, never to the engine (D-57, INV-ENC-03). serde_json's map is a BTreeMap
+# with its default features, so keys come out sorted, which D-53 requires.
+serde_json = "=1.0.151"
+# SHA-256 for the manifest, the same implementation ed25519-dalek already pulls in.
+sha2 = "=0.10.9"
+# Signatures for the vectors that carry one, made with RFC 8032 §7.1's published key (D-55).
+ed25519-dalek = { version = "=2.2.0", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"

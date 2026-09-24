@@ -1,0 +1,14 @@
+{
+  "description": "Genesis for a known asset commitment under schema 1.",
+  "expected": {
+    "genesis_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
+    "genesis_preimage": "0x434d763148454144b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd0100"
+  },
+  "id": "V-P-02",
+  "inputs": {
+    "asset_commitment": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+    "schema_version": "1"
+  },
+  "schema_version": "1",
+  "spec": "§4.2"
+}

@@ -1,0 +1,3 @@
+# `cargo xtask <command>` is the command line §3 names for the vector generator (D-54).
+[alias]
+xtask = "run --package xtask --"

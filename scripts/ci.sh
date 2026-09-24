@@ -3,7 +3,8 @@
 # in CI's order, stops at a KAT-01 failure as CI does, and prints each group's test counts and exit
 # code, so a local run is CI verbatim.
 #
-#   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | kat02 | checks | miri | deny | all
+#   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | kat02 | vectors | checks | miri |
+#                                   deny | all
 #   scripts/ci.sh install-<tool>    CI only: rust | agave | miri | cargo-deny
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -25,6 +26,76 @@ kat01_offchain() {
     cargo test -p certimining-core --features native,solana --test kat01_keccak
 }
 
+# The committed vectors (D-56): the manifest must match what is committed, and regenerating into a
+# temporary directory must reproduce it byte for byte. The first catches a hand-edited vector; the
+# second catches an edit whose manifest was updated to match, and a generator that has drifted from
+# its own output.
+# Reads a file's permission bits on either platform. GNU stat's -f means file system status, so the
+# BSD form must not be tried first: on Linux it succeeds and returns something that is not a mode.
+file_mode() {
+  local m
+  m="$(stat -c '%a' "$1" 2>/dev/null)"
+  case "$m" in '' | *[!0-7]*) m="$(stat -f '%OLp' "$1" 2>/dev/null)" ;; esac
+  case "$m" in
+    '' | *[!0-7]*)
+      echo "cannot read the mode of $1" >&2
+      return 1
+      ;;
+  esac
+  printf '%04o' "$((8#$m))"
+}
+
+vectors() {
+  local dir=vectors failed=0 hash mode name actual_hash actual_mode tmp
+
+  # The manifest carries the hash, the mode and the name. Git preserves only the executable bit, so
+  # a working tree's modes follow the umask of whoever cloned it: here the committed files are
+  # checked for what git actually carries, and the regenerated set is checked against the recorded
+  # mode exactly, where the generator sets it itself.
+  while read -r hash mode name; do
+    [ -n "$name" ] || continue
+    actual_hash="$(shasum -a 256 "$dir/$name" | awk '{print $1}')"
+    if [ "$hash" != "$actual_hash" ]; then
+      echo "vectors: $name does not match its hash" >&2
+      failed=1
+    fi
+    if [ -x "$dir/$name" ]; then
+      echo "vectors: $name is executable, and a vector never is" >&2
+      failed=1
+    fi
+    if [ ! -r "$dir/$name" ]; then
+      echo "vectors: $name is not readable" >&2
+      failed=1
+    fi
+  done < "$dir/MANIFEST.sha256"
+  [ "$failed" -eq 0 ] || return 1
+
+  # Regeneration into a directory the generator creates for itself. This catches an edit whose
+  # manifest was updated to match, a generator that has drifted from the output beside it, and a
+  # mode the generator no longer writes.
+  tmp="$(mktemp -d)" || return 1
+  if ! cargo xtask gen-vectors "$tmp/out" >/dev/null; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! diff -r "$dir" "$tmp/out"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  while read -r hash mode name; do
+    [ -n "$name" ] || continue
+    actual_mode="$(file_mode "$tmp/out/$name")" || { failed=1; continue; }
+    if [ "$mode" != "$actual_mode" ]; then
+      echo "vectors: regenerated $name has mode $actual_mode, and the manifest records $mode" >&2
+      failed=1
+    fi
+  done < "$dir/MANIFEST.sha256"
+  rm -rf "$tmp"
+  [ "$failed" -eq 0 ] || return 1
+
+  echo "vectors: $(grep -c . "$dir/MANIFEST.sha256") files verified by hash, mode and regeneration"
+}
+
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).
 kat02() {
   echo "$KAT02_SHA256  $KAT02_FILE" | shasum -a 256 -c - &&
@@ -40,7 +111,9 @@ kat01_onchain() {
 # Format, the INV-ERR-01 lint gates, every feature set, and the bare-metal no_std proof (D-14).
 checks() {
   cargo fmt --all --check &&
+    cargo clippy --workspace --all-targets --no-default-features -- -D warnings &&
     cargo clippy --workspace --all-targets -- -D warnings &&
+    cargo clippy --workspace --all-targets --no-default-features --features solana -- -D warnings &&
     cargo clippy --workspace --all-targets --all-features -- -D warnings &&
     cargo test -p certimining-core --no-default-features &&
     cargo test -p certimining-core &&
@@ -88,6 +161,7 @@ run() {
     kat01-offchain) kat01_offchain ;;
     kat01-onchain) kat01_onchain ;;
     kat02) kat02 ;;
+    vectors) vectors ;;
     checks) checks ;;
     miri) miri ;;
     deny) deny ;;
@@ -100,7 +174,7 @@ run() {
 # them runs and the summary names any that failed.
 all() {
   local failed=0 summary="" group code log
-  for group in kat01-offchain kat01-onchain kat02 checks miri deny; do
+  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny; do
     log="$(mktemp)"
     echo "===== $group"
     run "$group" 2>&1 | tee "$log"

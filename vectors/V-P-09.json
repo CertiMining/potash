@@ -1,0 +1,31 @@
+{
+  "description": "A record with a zero assessment digest and a zero change date is accepted: absence is recorded, not omitted.",
+  "expected": {
+    "flags": "0",
+    "head": "0xd8e565e2b98d530666dd92d23e3b292d6e0888a98e8791c2cdf989cd81fa4552",
+    "leaf": "0x964c7997b7edc750554e78daf535a9aa59219bd7643af5608f8ab8bc74813e27",
+    "leaf_preimage": "0x434d76314c454146b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd010000000000000022222222222222222222222222222222222222222222222222222222222222220000000000000000000000000000000000000000000000000000000000000000d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0200f15365000000000000000000000000"
+  },
+  "id": "V-P-09",
+  "inputs": {
+    "record": {
+      "assessment_digest": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "category": "2",
+      "change_identified_at": "0",
+      "effective_at": "1700000000",
+      "expected_qp_key": null,
+      "ext_commitment": null,
+      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_uri": "ipfs://bafyexamplepayload",
+      "prev_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
+      "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "seq": "1",
+      "signature": "0x76047beb0f9851b189b0228532e972903417661501405ca5588f1625f3e0872b53d23205fac275b192997bfd139b1e9b47d861ea04e434bfe06666c38a8c5300"
+    }
+  },
+  "notes": [
+    "The qualified person's key is RFC 8032 §7.1's published specification test key, not a real identity. Its private half is public, so every signature here is reproducible."
+  ],
+  "schema_version": "1",
+  "spec": "§4.2"
+}

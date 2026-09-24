@@ -1,0 +1,101 @@
+{
+  "description": "Every preimage writer's bytes and digest, for the Borsh encoding check. Each one is checked against the layout §1.2, §1.3, §1.4 and §1.6 state before it is written, so a change to any layout stops generation rather than being recorded.",
+  "expected": {
+    "asset": {
+      "digest": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+      "fields": {
+        "jurisdiction": "0x43414243",
+        "registry": "0x4d544f3030303031",
+        "tenure": "BCTENURE1043A"
+      },
+      "preimage": "0x434d763141535354434142434d544f30303030310d00424354454e5552453130343341",
+      "preimage_len": "35",
+      "tag": "CMv1ASST"
+    },
+    "genesis_head": {
+      "digest": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
+      "fields": {
+        "asset_commitment": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+        "schema_version": "1"
+      },
+      "preimage": "0x434d763148454144b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd0100",
+      "preimage_len": "42",
+      "tag": "CMv1HEAD"
+    },
+    "leaf": {
+      "digest": "0x8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b",
+      "fields": {
+        "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "asset_commitment": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+        "category": "2",
+        "change_identified_at": "1699999900",
+        "effective_at": "1700000000",
+        "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "seq": "7"
+      },
+      "preimage": "0x434d76314c454146b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd070000000000000022222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0200f15365000000009cf0536500000000",
+      "preimage_len": "161",
+      "tag": "CMv1LEAF"
+    },
+    "node": {
+      "digest": "0x12167952f319bdeb86a78fe6323094c9d5424c57cef422aaa8dbc62337ddfa00",
+      "fields": {
+        "left": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+        "right": "0x8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b"
+      },
+      "preimage": "0x434d76314d544e31b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b",
+      "preimage_len": "72",
+      "tag": "CMv1MTN1"
+    },
+    "padding": {
+      "digest": "0x3c02d258dc83cc0b2a69453a497688d2e5793d31390b417abfcf382522d9e398",
+      "fields": {
+        "prf_output": "0x7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "preimage": "0x434d7631504144447777777777777777777777777777777777777777777777777777777777777777",
+      "preimage_len": "40",
+      "tag": "CMv1PADD"
+    },
+    "real_leaf": {
+      "digest": "0x9d1cd440de5347bd9bcf6575068a7fa0a7a1311416df2e7d1fd94a80203c48b5",
+      "fields": {
+        "leaf": "0x8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b"
+      },
+      "preimage": "0x434d76314d544c308334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b",
+      "preimage_len": "40",
+      "tag": "CMv1MTL0"
+    },
+    "spi": {
+      "digest": "0xd625784e28be7691fe30677edaaaef70bcb3dc45715d9d5136302f9df09ae966",
+      "fields": {
+        "leaf": "0x8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b",
+        "max_merge_delay": "2",
+        "promised_epoch": "20361",
+        "submission_id": "0x88888888888888888888888888888888"
+      },
+      "preimage": "0x434d7631535049308334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b88888888888888888888888888888888894f00000000000002",
+      "preimage_len": "65",
+      "tag": "CMv1SPI0"
+    },
+    "step_head": {
+      "digest": "0xf827ab772009bbd6d5f0d0f377772b7cf6b81c26428f8b0c0ee93cdda93e100f",
+      "fields": {
+        "leaf": "0x8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b",
+        "prev_head": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd"
+      },
+      "preimage": "0x434d763148454144b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b",
+      "preimage_len": "72",
+      "tag": "CMv1HEAD"
+    }
+  },
+  "id": "KAT-03",
+  "inputs": {
+    "note": "Each writer's fields are listed beside the bytes they produce."
+  },
+  "notes": [
+    "The qualified person's key is RFC 8032 §7.1's published specification test key, not a real identity. Its private half is public, so every signature here is reproducible."
+  ],
+  "schema_version": "1",
+  "spec": "§4.1"
+}

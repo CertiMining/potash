@@ -1,0 +1,17 @@
+{
+  "description": "Two spellings of one tenure identifier give the same canonical form and the same asset commitment.",
+  "expected": {
+    "asset_commitment": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+    "asset_commitment_preimage": "0x434d763141535354434142434d544f30303030310d00424354454e5552453130343341",
+    "canonical_tenure": "BCTENURE1043A"
+  },
+  "id": "V-P-01",
+  "inputs": {
+    "jurisdiction": "0x43414243",
+    "raw_tenure_a": "bc-tenure 1043-a",
+    "raw_tenure_b": "BC_TENURE1043A",
+    "registry": "0x4d544f3030303031"
+  },
+  "schema_version": "1",
+  "spec": "§4.2"
+}
