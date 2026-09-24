@@ -32,11 +32,18 @@ whose `max_merge_delay` is not the 2 INV-SPI-01 fixes, and one whose `promised_e
 specification does not allow, and the key holder does not choose the policy its own promise is judged
 against.
 
-**The acceptance epoch is what makes that checkable, and it is itself checkable.** The checkpoint
-sequence is public, one root per epoch, monotone and gapless, so a reader can place any epoch number
-against a published root and a time. A promise claiming acceptance in epoch `e` but satisfied only by a
-root published after `e + 2` is visibly backdated: either the acceptance epoch is a lie or the promise
-was broken, and the artifact beside the public sequence is enough to say which.
+**What the acceptance epoch establishes, exactly.** The signature binds the batcher's *assertion* of
+acceptance. The checkpoint sequence establishes when a root was published, not when a promise was
+issued. Acceptance time is supplied only by the counterparty's own observation at receipt. So
+`verify_promise` takes that observation: the signed acceptance epoch must equal the checkpoint epoch the
+counterparty saw when the promise arrived, or be exactly one behind it, and never ahead. An acceptance
+epoch later than observed is the backdating attack, where a batcher defers its own accountability by
+naming a future epoch and then meeting it, leaving no breach to see. One behind is allowed because a
+promise can arrive across an epoch boundary.
+
+**A promise passed on to someone who observed nothing is weaker**, and RES-10 says so: that party holds
+an assertion it cannot check. Closing it needs an independently timestamped receipt, which is designed
+and deferred rather than implied.
 
 **The key a promise carries is not the authority.** Anyone can sign a promise, so `verify_promise`
 takes the batcher key the counterparty expects and compares it first: a key that is not the expected

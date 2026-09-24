@@ -399,7 +399,11 @@ mod with_real_crypto {
             "§1.6: the signature is over the digest"
         );
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&promise, &signer.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &promise,
+                &signer.public_key(),
+                promise.accepted_epoch
+            ),
             Ok(())
         );
     }
@@ -413,7 +417,11 @@ mod with_real_crypto {
             .submit::<NativeKeccak, _>(leaf_digest(8), &signer)
             .expect("accepted");
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&promise, &other.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &promise,
+                &other.public_key(),
+                promise.accepted_epoch
+            ),
             Err(RegistryError::AttestationKeyMismatch),
             "D-68: the key inside a promise is never the authority"
         );
@@ -428,7 +436,11 @@ mod with_real_crypto {
             .expect("accepted");
         promise.promised_epoch += 1;
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&promise, &signer.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &promise,
+                &signer.public_key(),
+                promise.accepted_epoch
+            ),
             Err(RegistryError::AttestationInvalid),
             "the promise binds every field it names"
         );
@@ -438,7 +450,11 @@ mod with_real_crypto {
             .expect("accepted");
         altered.leaf[0] ^= 0x01;
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&altered, &signer.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &altered,
+                &signer.public_key(),
+                altered.accepted_epoch
+            ),
             Err(RegistryError::AttestationInvalid),
             "INV-SPI-02: the promise binds the exact leaf"
         );
@@ -554,7 +570,11 @@ mod with_real_crypto {
             "the signature is genuine, which is the whole point of the case"
         );
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&lax, &signer.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &lax,
+                &signer.public_key(),
+                lax.accepted_epoch
+            ),
             Err(RegistryError::PromisePolicyInvalid),
             "INV-SPI-01 fixes the delay at 2, and a correctly signed 3 is still refused"
         );
@@ -577,7 +597,11 @@ mod with_real_crypto {
             let digest = promise_digest::<NativeKeccak>(&later).expect("a digest");
             later.signature = signer.sign(&digest).expect("signs");
             assert_eq!(
-                verify_promise::<NativeKeccak, DalekCheck>(&later, &signer.public_key()),
+                verify_promise::<NativeKeccak, DalekCheck>(
+                    &later,
+                    &signer.public_key(),
+                    later.accepted_epoch
+                ),
                 Ok(()),
                 "a promise inside the delay is what an overflowing batcher issues"
             );
@@ -594,7 +618,11 @@ mod with_real_crypto {
                 "the signature is genuine, which is the point of the case"
             );
             assert_eq!(
-                verify_promise::<NativeKeccak, DalekCheck>(&far, &signer.public_key()),
+                verify_promise::<NativeKeccak, DalekCheck>(
+                    &far,
+                    &signer.public_key(),
+                    far.accepted_epoch
+                ),
                 Err(RegistryError::PromisePolicyInvalid),
                 "epoch {deferred} is past what acceptance in 950 allows"
             );
@@ -608,7 +636,11 @@ mod with_real_crypto {
         let digest = promise_digest::<NativeKeccak>(&terminal).expect("a digest");
         terminal.signature = signer.sign(&digest).expect("signs");
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&terminal, &signer.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &terminal,
+                &signer.public_key(),
+                terminal.accepted_epoch
+            ),
             Err(RegistryError::PromisePolicyInvalid),
             "a promise pointing backwards from the last epoch is policy, not overflow"
         );
@@ -619,7 +651,11 @@ mod with_real_crypto {
         let digest = promise_digest::<NativeKeccak>(&terminal_ok).expect("a digest");
         terminal_ok.signature = signer.sign(&digest).expect("signs");
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&terminal_ok, &signer.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &terminal_ok,
+                &signer.public_key(),
+                terminal_ok.accepted_epoch
+            ),
             Ok(()),
             "and one accepted and promised at the last epoch is policy-valid"
         );
@@ -629,9 +665,55 @@ mod with_real_crypto {
         let digest = promise_digest::<NativeKeccak>(&backwards).expect("a digest");
         backwards.signature = signer.sign(&digest).expect("signs");
         assert_eq!(
-            verify_promise::<NativeKeccak, DalekCheck>(&backwards, &signer.public_key()),
+            verify_promise::<NativeKeccak, DalekCheck>(
+                &backwards,
+                &signer.public_key(),
+                backwards.accepted_epoch
+            ),
             Err(RegistryError::PromisePolicyInvalid),
             "a promise cannot be kept by a root published before it was made"
+        );
+    }
+
+    #[test]
+    fn an_acceptance_epoch_the_counterparty_did_not_observe_is_refused() {
+        // D-74's second half. A signature binds the batcher's assertion of acceptance and does not make
+        // it true, so the caller supplies what only the caller knows. An acceptance epoch later than
+        // observed is the backdating attack: the batcher defers its own accountability by naming a
+        // future epoch and then meeting it.
+        let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
+        let mut batcher = real_batcher(1_000);
+        let promise = batcher
+            .submit::<NativeKeccak, _>(leaf_digest(18), &signer)
+            .expect("accepted");
+        assert_eq!(promise.accepted_epoch, 1_000);
+
+        // The world was at 950 when this arrived; the promise claims 1000.
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&promise, &signer.public_key(), 950),
+            Err(RegistryError::PromisePolicyInvalid),
+            "never ahead: an acceptance epoch later than observed is backdating"
+        );
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&promise, &signer.public_key(), 999),
+            Err(RegistryError::PromisePolicyInvalid),
+            "one ahead is still ahead"
+        );
+
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&promise, &signer.public_key(), 1_000),
+            Ok(()),
+            "equal is the ordinary case"
+        );
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&promise, &signer.public_key(), 1_001),
+            Ok(()),
+            "one behind is allowed, because a promise can arrive across an epoch boundary"
+        );
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&promise, &signer.public_key(), 1_002),
+            Err(RegistryError::PromisePolicyInvalid),
+            "two behind is stale, and the skew the specification allows is one"
         );
     }
 

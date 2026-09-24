@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.13 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.14 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -180,9 +180,15 @@ SPI = Ed25519_sign( batcher_key,
 
 **Why the acceptance epoch is signed (D-74).** Without it, `max_merge_delay` bounds the end of the window relative to `promised_epoch` and nothing bounds `promised_epoch` relative to acceptance: a batcher holding the expected key could accept a submission, name an epoch arbitrarily far ahead, and never become answerable. With it, `promised_epoch` is judged against something the batcher signed, and `promised_epoch` outside `accepted_epoch .. accepted_epoch + max_merge_delay` is `0x17`.
 
-**And the signed acceptance epoch is itself checkable against the public record.** The checkpoint sequence is on chain, one root per epoch, monotone and gapless (INV-ANCH-01, INV-ANCH-02), so a reader can place any epoch number against a published root and a time. A promise claiming acceptance in epoch `e` while being satisfied only by a root published after `e + max_merge_delay` is visibly backdated: either the acceptance epoch is a lie, or the promise was broken, and the artifact plus the public sequence is enough to say which.
+**What the acceptance epoch does and does not establish (D-74).** Three statements:
 
-**This construction carries no version field.** It is fixed for this deployment, and changing it after records exist in the wild would need a versioning mechanism §1.6 does not have.
+1. The signature binds the batcher's **assertion** of acceptance.
+2. The checkpoint sequence establishes **root publication**, not promise issuance.
+3. Acceptance time is supplied only by **the counterparty's own observation at receipt**.
+
+So verification takes that observation as an input. `accepted_epoch` must equal the checkpoint epoch the counterparty observed when the promise arrived, or be exactly one behind it, and **never ahead**: an acceptance epoch later than observed is the backdating attack, in which a batcher defers its own accountability by naming a future epoch and then meeting it, leaving no visible breach. One epoch behind is allowed because a promise can arrive across an epoch boundary. Anything else is `0x17`.
+
+A promise's later transfer to a party that made no observation of its own is not covered by this. Closing that needs an independently timestamped receipt, which is recorded as a decision and deferred (D-74, Appendix A's RES-10).
 
 `submission_id` is minted by the batcher, which takes only a leaf, and it is an ordinal counter (D-69). **It therefore reveals the submission's position in the batcher's sequence to anyone shown the promise**, and it travels only inside the promise: it appears in no disclosure package, no checkpoint and nothing on chain. Position in the epoch tree does not follow from it, because §1.4 assigns slots by PRF over it under a key the counterparty does not hold.
 
@@ -399,11 +405,16 @@ pub trait Batcher {
 /// Checks a promise's signature over **the SPI digest**, which is what §1.6 signs, against the batcher
 /// key the counterparty expects (D-68), and against the policy §1.6 fixes (D-74). A key mismatch is
 /// `0x08`, decided first. A signature proves authorship and not compliance, so a `max_merge_delay`
-/// other than the one INV-SPI-01 fixes, or a `promised_epoch` outside the window the signed
-/// `accepted_epoch` allows, is `0x17`. A signature that does not verify is `0x07`.
+/// other than the one INV-SPI-01 fixes, a `promised_epoch` outside the window the signed
+/// `accepted_epoch` allows, or an `accepted_epoch` that is not the observed epoch or exactly one behind
+/// it, is `0x17`. A signature that does not verify is `0x07`.
+///
+/// `observed_epoch` is the caller's own reading of the checkpoint sequence when the promise arrived.
+/// It is an input because nothing in the artifact can supply it: see §1.6's three statements.
 pub fn verify_promise<H: Hasher, V: Verifier>(
     promise: &SignedPromise,
     expected_batcher_key: &[u8; 32],
+    observed_epoch: u64,
 ) -> Result<()>;
 
 /// An epoch's root as the caller obtained it from a published checkpoint. The two travel together
@@ -667,6 +678,7 @@ A PR merges only if: KATs pass; committed vectors match; every negative vector r
 - **RES-06 · Canonicalization is the real identity attack surface.** Two spellings of one tenure produce two commitments. Published rules and a registry-code namespace narrow it; they do not close it. Letters with no compatibility decomposition, such as œ, æ and ß, are removed rather than transliterated, so spellings that differ only in them still produce different commitments.
 - **RES-07 · Batcher liveness.** A stalled batcher stalls the integrity claim for everyone in the batch. Gap detection makes the stall visible; it does not prevent it.
 - **RES-08 · The physical-digital boundary.** Sampling fraud, grade misrepresentation at the point of measurement, and sample substitution sit entirely outside what any of this can reach.
+- **RES-10 · A promise establishes acceptance only to the party that observed it, and its construction carries no version.** Verification compares the signed acceptance epoch against the counterparty's own observation at receipt (§1.6), so a promise transferred onward to a party that observed nothing carries an assertion that party cannot check. Closing that needs an independently timestamped receipt, deferred by D-74. Separately, the SPI construction has no version field: it is fixed for this deployment, and changing it once promises exist outside this repository would need a mechanism §1.6 does not have, where the record chain has `schema_version`.
 - **RES-09 · Count-hiding is computational, not information-theoretic.** Padding leaves are PRF outputs under `k_e`, so indistinguishability holds against an adversary who cannot recover that key and fails against one who can. §4.4's V-Z-02 bounds a named battery of statistics, which is evidence that the construction carries no obvious tell; it is not a proof that no distinguisher exists. The claim to make outside this document is that an outside observer cannot tell how many records an epoch holds, never that nobody can.
 
 ---

@@ -98,12 +98,20 @@ pub fn promise_digest<H: Hasher>(promise: &SignedPromise) -> Result<Digest> {
 ///
 /// The key a promise carries is not the authority: anyone can sign a promise, so the expected key
 /// decides first. A key that is not the expected one is `0x08`, decided before any verification runs,
-/// exactly as §1.3's condition (c) decides a qualified person's key. A policy value the specification
-/// does not allow is `0x17`, whether that is a merge delay other than 2 or a promised epoch outside
-/// the window the signed acceptance epoch allows. A signature that does not verify is `0x07`.
+/// exactly as §1.3's condition (c) decides a qualified person's key. A signature that does not verify
+/// is `0x07`. Every policy value the specification does not allow is `0x17`.
+///
+/// `observed_epoch` is **the caller's own observation of the checkpoint sequence when the promise
+/// arrived**, and it is what makes the signed acceptance epoch mean anything. A signature binds the
+/// batcher's assertion of acceptance; it does not make the assertion true, and the checkpoint sequence
+/// establishes when a root was published rather than when a promise was issued. So the caller supplies
+/// what only the caller knows: the acceptance epoch must equal the epoch it observed, or be exactly one
+/// behind it, and never ahead. An acceptance epoch later than observed is the backdating attack, where a
+/// batcher defers its own accountability by naming a future epoch it then meets (D-74).
 pub fn verify_promise<H: Hasher, V: Verifier>(
     promise: &SignedPromise,
     expected_batcher_key: &[u8; 32],
+    observed_epoch: u64,
 ) -> Result<()> {
     if &promise.batcher_key != expected_batcher_key {
         return Err(RegistryError::AttestationKeyMismatch);
@@ -123,6 +131,16 @@ pub fn verify_promise<H: Hasher, V: Verifier>(
         .checked_sub(promise.accepted_epoch)
         .ok_or(RegistryError::PromisePolicyInvalid)?;
     if deferred > u64::from(MAX_MERGE_DELAY) {
+        return Err(RegistryError::PromisePolicyInvalid);
+    }
+
+    // The acceptance epoch against what the caller saw. `None` means the batcher claimed an epoch
+    // later than the caller observed, which is the backdating attack and never legitimate; one behind
+    // is allowed, because a promise can arrive across an epoch boundary.
+    let behind = observed_epoch
+        .checked_sub(promise.accepted_epoch)
+        .ok_or(RegistryError::PromisePolicyInvalid)?;
+    if behind > 1 {
         return Err(RegistryError::PromisePolicyInvalid);
     }
     let digest = promise_digest::<H>(promise)?;

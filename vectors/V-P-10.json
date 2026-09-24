@@ -63,6 +63,7 @@
     "height": "8",
     "leaf": "0xf4ae082296cbeb7ac96b2ebdcffab54b7c39066ea6e8fb2357dab8a948801db0",
     "master_key": "0x434d76312054455354204d4153544552204b45592c204e4f5420534543524554",
+    "observed_checkpoint_epoch_at_receipt": "20500",
     "promise_made_in_epoch": "20500",
     "spi_preimage": "0x434d763153504930f4ae082296cbeb7ac96b2ebdcffab54b7c39066ea6e8fb2357dab8a948801db0000000000000000000000000000000001450000000000000145000000000000002"
   },
@@ -70,6 +71,7 @@
     "The batcher's key is RFC 8032 §7.1's published specification test key, not a real one. Its private half is public, so every promise here is reproducible, and no real batcher key exists anywhere in this repository: the engine has no place to keep one.",
     "The master key is a specification test key, not a real one: its bytes spell out what it is. Every epoch key, slot and padding leaf here follows from it, so the whole tree is reproducible. A real k_master never appears in this repository (INV-TREE-05).",
     "§1.6 signs the SPI digest, not its preimage. Both are recorded so an implementation that disagrees can tell which half it built wrongly.",
+    "Verification needs the epoch the counterparty observed when the promise arrived: the signature binds the batcher's assertion of acceptance and does not make it true. The acceptance epoch must equal that observation or be exactly one behind, never ahead (D-74).",
     "A root published after the window confirms the breach rather than rebutting it, which is why the same proof is accepted at one epoch and refused at the next (D-72)."
   ],
   "schema_version": "1",

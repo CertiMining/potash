@@ -1620,10 +1620,12 @@ fn promises(files: &mut BTreeMap<String, Value>) {
     assert_eq!(
         verify_promise::<NativeKeccak, certimining_core::DalekVerifier>(
             &promise,
-            &signer.public_key()
+            &signer.public_key(),
+            start,
         ),
         Ok(()),
-        "V-P-10: the promise verifies under the key that signed it"
+        "V-P-10: the promise verifies under the key that signed it, against the epoch a counterparty \
+         receiving it would have observed"
     );
 
     let inside = start + u64::from(spec::MAX_MERGE_DELAY);
@@ -1667,6 +1669,7 @@ fn promises(files: &mut BTreeMap<String, Value>) {
                 "capacity": capacity.to_string(),
                 "master_key": hex(&TEST_MASTER_KEY),
                 "promise_made_in_epoch": start.to_string(),
+                "observed_checkpoint_epoch_at_receipt": start.to_string(),
                 "leaf": hex(&leaf),
                 "spi_preimage": hex(&preimage_of(&SpiPreimage {
                     leaf: promise.leaf,
@@ -1696,6 +1699,7 @@ fn promises(files: &mut BTreeMap<String, Value>) {
                 BATCHER_KEY_NOTE,
                 MASTER_KEY_NOTE,
                 "§1.6 signs the SPI digest, not its preimage. Both are recorded so an implementation that disagrees can tell which half it built wrongly.",
+                "Verification needs the epoch the counterparty observed when the promise arrived: the signature binds the batcher's assertion of acceptance and does not make it true. The acceptance epoch must equal that observation or be exactly one behind, never ahead (D-74).",
                 "A root published after the window confirms the breach rather than rebutting it, which is why the same proof is accepted at one epoch and refused at the next (D-72).",
             ],
         ),
