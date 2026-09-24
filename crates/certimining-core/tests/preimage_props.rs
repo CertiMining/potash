@@ -51,16 +51,23 @@ proptest! {
         prop_assert_eq!(bytes_of(&p).map(|b| b.len()), Ok(161));
     }
 
-    /// The same for an inclusion promise: 65 bytes for any values (§1.6, D-29).
+    /// The same for an inclusion promise: 73 bytes for any values (§1.6, D-29).
     #[test]
-    fn an_spi_preimage_is_always_65_bytes(
+    fn an_spi_preimage_is_always_73_bytes(
         leaf in any::<[u8; 32]>(),
         id in any::<[u8; 16]>(),
+        accepted in any::<u64>(),
         epoch in any::<u64>(),
         delay in any::<u8>(),
     ) {
-        let p = SpiPreimage { leaf, submission_id: id, promised_epoch: epoch, max_merge_delay: delay };
-        prop_assert_eq!(bytes_of(&p).map(|b| b.len()), Ok(65));
+        let p = SpiPreimage {
+            leaf,
+            submission_id: id,
+            accepted_epoch: accepted,
+            promised_epoch: epoch,
+            max_merge_delay: delay,
+        };
+        prop_assert_eq!(bytes_of(&p).map(|b| b.len()), Ok(73));
     }
 
     /// The asset writer is total: any tenure bytes give either `0x11` or a preimage whose length

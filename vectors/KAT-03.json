@@ -79,15 +79,16 @@
       "tag": "CMv1MTL0"
     },
     "spi": {
-      "digest": "0xd625784e28be7691fe30677edaaaef70bcb3dc45715d9d5136302f9df09ae966",
+      "digest": "0xa5c386516b01a83510dfae3294c5834dc9c7436c088b708cbabed93e8e51e540",
       "fields": {
+        "accepted_epoch": "20359",
         "leaf": "0x8334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b",
         "max_merge_delay": "2",
         "promised_epoch": "20361",
         "submission_id": "0x88888888888888888888888888888888"
       },
-      "preimage": "0x434d7631535049308334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b88888888888888888888888888888888894f00000000000002",
-      "preimage_len": "65",
+      "preimage": "0x434d7631535049308334616f661c33b986682ddbae3919e7372c7a8ee1355f6b93b3f907103a680b88888888888888888888888888888888874f000000000000894f00000000000002",
+      "preimage_len": "73",
       "tag": "CMv1SPI0"
     },
     "step_head": {

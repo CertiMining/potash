@@ -1,0 +1,40 @@
+{
+  "description": "C + 1 real submissions in one epoch. The tree refuses more than C leaves; the batcher never asks it to, and queues the excess instead.",
+  "expected": {
+    "batcher": {
+      "dropped": "0",
+      "overflow_queue_len": "1",
+      "promised_epoch": "20511",
+      "submission_past_capacity": {
+        "accepted_epoch": "20510",
+        "batcher_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "encoded": "0x35b47a2726ce869182761e48feecec9162e7b236d7fcb9dee6e13bf5be9c5ff8000100000000000000000000000000001e500000000000001f5000000000000002d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a616cfe2ecb65f7f1fc1917228eefce72aebf9e6c6c071e4b4ab4c87f5edcadadb453de0885911d1eeaee857afa4a035dda8858bf634f98ec99088d1693fea806",
+        "leaf": "0x35b47a2726ce869182761e48feecec9162e7b236d7fcb9dee6e13bf5be9c5ff8",
+        "max_merge_delay": "2",
+        "promised_epoch": "20511",
+        "signature": "0x616cfe2ecb65f7f1fc1917228eefce72aebf9e6c6c071e4b4ab4c87f5edcadadb453de0885911d1eeaee857afa4a035dda8858bf634f98ec99088d1693fea806",
+        "submission_id": "0x00010000000000000000000000000000"
+      }
+    },
+    "tree_asked_to_build_c_plus_one": {
+      "error": "0x12",
+      "error_name": "EpochCapacityExceeded",
+      "source": "TCU-02 §4.3, checked against the engine at generation time"
+    }
+  },
+  "id": "V-N-14",
+  "inputs": {
+    "capacity": "256",
+    "epoch": "20510",
+    "height": "8",
+    "master_key": "0x434d76312054455354204d4153544552204b45592c204e4f5420534543524554",
+    "submissions": "257"
+  },
+  "notes": [
+    "The batcher's key is RFC 8032 §7.1's published specification test key, not a real one. Its private half is public, so every promise here is reproducible, and no real batcher key exists anywhere in this repository: the engine has no place to keep one.",
+    "The master key is a specification test key, not a real one: its bytes spell out what it is. Every epoch key, slot and padding leaf here follows from it, so the whole tree is reproducible. A real k_master never appears in this repository (INV-TREE-05).",
+    "Two layers answer this row. The tree returns 0x12 when asked to build past capacity; the batcher queues instead and promises the next epoch it can meet, so nothing is dropped (D-71)."
+  ],
+  "schema_version": "1",
+  "spec": "§4.3"
+}

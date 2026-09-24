@@ -597,6 +597,7 @@ name = "certimining-log"
 version = "0.1.0"
 dependencies = [
  "certimining-core",
+ "ed25519-dalek",
  "heapless",
 ]
 

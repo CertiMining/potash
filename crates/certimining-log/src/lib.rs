@@ -1,7 +1,7 @@
 //! `certimining-log`: the fixed-capacity epoch tree, its inclusion proofs and the pure inclusion
 //! verifier (§1.4, §2.3).
 //!
-//! E-06 provides all three. The crate is `no_std` with an allocator, because a tree at `H = 16`
+//! E-06 provides the tree, the proof and the verifier; E-07 adds the batcher and its promises. The crate is `no_std` with an allocator, because a tree at `H = 16`
 //! holds 65,536 leaves and no fixed-capacity type carries that, while the verifier itself allocates
 //! nothing and builds for a bare-metal target (D-61). The batcher of §1.6 joins at E-07.
 //!
@@ -24,8 +24,15 @@
 
 extern crate alloc;
 
+mod batcher;
+mod promise;
 mod proof;
 mod tree;
 
+pub use batcher::{Batcher, BatcherSnapshot, EpochBatcher};
+pub use promise::{
+    promise_digest, promise_kept, verify_promise, PublishedRoot, SignedPromise, MAX_MERGE_DELAY,
+    PROMISE_ENCODED_LEN,
+};
 pub use proof::{InclusionProof, InclusionVerifier, ProofVerifier, MAX_SIBLINGS};
 pub use tree::{slot_from_seed, BuiltEpoch, EpochTree, MAX_HEIGHT, MIN_HEIGHT};

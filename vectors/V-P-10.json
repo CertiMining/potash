@@ -1,0 +1,79 @@
+{
+  "description": "A signed inclusion promise, satisfied by a root published at the last epoch the merge delay allows, and refused by the same proof one epoch later.",
+  "expected": {
+    "after_the_window": {
+      "epoch": "20503",
+      "expected": {
+        "error": "0x14",
+        "error_name": "MergeDelayExceeded",
+        "source": "TCU-02 §4.3, checked against the engine at generation time"
+      },
+      "proof": {
+        "epoch": "20503",
+        "height": "8",
+        "siblings": [
+          "0xdc28dd36c0917b10d48d1ca9d77d21dc7b6e47da0a59aa075a728cf189fca894",
+          "0x9e403104e9251bf32d98890e2fbf677445a8a9db115cda3434b9620dffa4dd34",
+          "0xeb53289fa4378eabd6796010b628da7ac6f337fe62b5ec8ef0202fd554582502",
+          "0x6874593c20d718c6b697fa9e21442ccb13621ddf49df279e06a5bf081af75d69",
+          "0x6a6179394e35ce1f49db7af4325a2c7251e1b7c627d6ad1db75ed132df024313",
+          "0x620ba400949500f58cbbfdcfac1239a93b7b4f6dcf484b41339eeab5c34e17b9",
+          "0xac88f44f388c2ba4a8f9660585cba52bf018b617af876b53d3fb007d345576f4",
+          "0xeeaeb9c5369d87669d79efeb3897b8db368dd10c8f8b8ab55171a97bbb065716"
+        ],
+        "slot_index": "230"
+      },
+      "root": "0x25d62b50fcd22e499474de2edb4eef47d97146b91b7165cea1c8c5e6f9623187"
+    },
+    "promise": {
+      "accepted_epoch": "20500",
+      "batcher_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "encoded": "0xf4ae082296cbeb7ac96b2ebdcffab54b7c39066ea6e8fb2357dab8a948801db0000000000000000000000000000000001450000000000000145000000000000002d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a7900a852e50d9a051c7b16d5a72a925f166ac4ab5f5c1461be07a9fa6c59f76f9979876a37b4b1b25404960e449f87913d30debec70f5528d6e7803d4dca3b02",
+      "leaf": "0xf4ae082296cbeb7ac96b2ebdcffab54b7c39066ea6e8fb2357dab8a948801db0",
+      "max_merge_delay": "2",
+      "promised_epoch": "20500",
+      "signature": "0x7900a852e50d9a051c7b16d5a72a925f166ac4ab5f5c1461be07a9fa6c59f76f9979876a37b4b1b25404960e449f87913d30debec70f5528d6e7803d4dca3b02",
+      "submission_id": "0x00000000000000000000000000000000"
+    },
+    "satisfied": {
+      "epoch": "20502",
+      "proof": {
+        "epoch": "20502",
+        "height": "8",
+        "siblings": [
+          "0xc57830f5f5f901fd17ee6f0068465a0cc842a3589727f52f113137d02c063638",
+          "0xc78929c5248750e4a02accc474b37272513951c7a9a3bfd978f07ad03d33b704",
+          "0x8684868a0daadde34d8af31d23f69e7a40e20799ebc1bbbdc0ad1b578629913c",
+          "0x0011390ce49949305770e8258813b04268317650fa9a379d2aa91d4b09694514",
+          "0xb027b1f121d686943d865c3016777f2a6dd197a52f54f8c7521baa2c9c93130b",
+          "0x3080052c291a7d6acd2913046ce81966e2fdfa2b3cd7bc1f8056a3b1907379fc",
+          "0xe622d388d217803d2ca7fca83eb79eaf7718777733d96647b94bf36ddee2e41b",
+          "0x6060df7a86add950c8ba352d7fbedd7ee5e840b0f6e72d4624edc99165e31f46"
+        ],
+        "slot_index": "120"
+      },
+      "result": "accepted",
+      "root": "0x18c51aa109eaf42ecd875afae3cbd7df8dce5766d8dd57af41bc646b2e3426c5"
+    },
+    "spi_digest": "0xba4d81f9ebe58b1638b297e7d6cfb8e81c3399975b2fdd25c7bb9b8ef46943c3"
+  },
+  "id": "V-P-10",
+  "inputs": {
+    "capacity": "256",
+    "height": "8",
+    "leaf": "0xf4ae082296cbeb7ac96b2ebdcffab54b7c39066ea6e8fb2357dab8a948801db0",
+    "master_key": "0x434d76312054455354204d4153544552204b45592c204e4f5420534543524554",
+    "observed_checkpoint_epoch_at_receipt": "20500",
+    "promise_made_in_epoch": "20500",
+    "spi_preimage": "0x434d763153504930f4ae082296cbeb7ac96b2ebdcffab54b7c39066ea6e8fb2357dab8a948801db0000000000000000000000000000000001450000000000000145000000000000002"
+  },
+  "notes": [
+    "The batcher's key is RFC 8032 §7.1's published specification test key, not a real one. Its private half is public, so every promise here is reproducible, and no real batcher key exists anywhere in this repository: the engine has no place to keep one.",
+    "The master key is a specification test key, not a real one: its bytes spell out what it is. Every epoch key, slot and padding leaf here follows from it, so the whole tree is reproducible. A real k_master never appears in this repository (INV-TREE-05).",
+    "§1.6 signs the SPI digest, not its preimage. Both are recorded so an implementation that disagrees can tell which half it built wrongly.",
+    "Verification needs the epoch the counterparty observed when the promise arrived: the signature binds the batcher's assertion of acceptance and does not make it true. The acceptance epoch must equal that observation or be exactly one behind, never ahead (D-74).",
+    "A root published after the window confirms the breach rather than rebutting it, which is why the same proof is accepted at one epoch and refused at the next (D-72)."
+  ],
+  "schema_version": "1",
+  "spec": "§4.2"
+}

@@ -52,7 +52,7 @@ pub use state::{
 };
 #[cfg(feature = "native")]
 pub use verify::DalekVerifier;
-pub use verify::Verifier;
+pub use verify::{Signer, Verifier};
 
 /// A 32-byte digest (§2.2).
 pub type Digest = [u8; 32];

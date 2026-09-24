@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.11 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.14 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -172,12 +172,34 @@ On accepting a submission the batcher returns a signed promise:
 
 ```
 SPI = Ed25519_sign( batcher_key,
-        Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ promised_epoch ‖ max_merge_delay ) )
+        Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ accepted_epoch
+                            ‖ promised_epoch ‖ max_merge_delay ) )
 ```
 
-`submission_id` is 16 bytes, `promised_epoch` a `u64` and `max_merge_delay` a `u8`, so the preimage is 65 bytes: `TAG_SPI`, `leaf` 32, `submission_id` 16, `promised_epoch` 8, `max_merge_delay` 1.
+`submission_id` is 16 bytes, `accepted_epoch` and `promised_epoch` are `u64` and `max_merge_delay` is a `u8`, so the preimage is 73 bytes: `TAG_SPI`, `leaf` 32, `submission_id` 16, `accepted_epoch` 8, `promised_epoch` 8, `max_merge_delay` 1.
 
-**INV-SPI-01.** `max_merge_delay = 2` epochs. If `leaf` is absent from the roots of `promised_epoch .. promised_epoch + max_merge_delay`, the SPI is a self-contained, transferable proof of batcher misbehaviour.
+**Why the acceptance epoch is signed (D-74).** Without it, `max_merge_delay` bounds the end of the window relative to `promised_epoch` and nothing bounds `promised_epoch` relative to acceptance: a batcher holding the expected key could accept a submission, name an epoch arbitrarily far ahead, and never become answerable. With it, `promised_epoch` is judged against something the batcher signed, and `promised_epoch` outside `accepted_epoch .. accepted_epoch + max_merge_delay` is `0x17`.
+
+**What the acceptance epoch does and does not establish (D-74).** Three statements:
+
+1. The signature binds the batcher's **assertion** of acceptance.
+2. The checkpoint sequence establishes **root publication**, not promise issuance.
+3. Acceptance time is supplied only by **the counterparty's own observation at receipt**.
+
+So verification takes that observation as an input. `accepted_epoch` must equal the checkpoint epoch the counterparty observed when the promise arrived, or be exactly one behind it, and **never ahead**: an acceptance epoch later than observed is the backdating attack, in which a batcher defers its own accountability by naming a future epoch and then meeting it, leaving no visible breach. One epoch behind is allowed because a promise can arrive across an epoch boundary. Anything else is `0x17`.
+
+A promise's later transfer to a party that made no observation of its own is not covered by this. Closing that needs an independently timestamped receipt, which is recorded as a decision and deferred (D-74, Appendix A's RES-10).
+
+`submission_id` is minted by the batcher, which takes only a leaf, and it is an ordinal counter (D-69). **It therefore reveals the submission's position in the batcher's sequence to anyone shown the promise**, and it travels only inside the promise: it appears in no disclosure package, no checkpoint and nothing on chain. Position in the epoch tree does not follow from it, because §1.4 assigns slots by PRF over it under a key the counterparty does not hold.
+
+**INV-SPI-01.** `max_merge_delay = 2` epochs. If `leaf` is absent from the roots of `promised_epoch .. promised_epoch + max_merge_delay`, the SPI is a self-contained, transferable accusation of batcher misbehaviour.
+
+**A signature proves authorship, not compliance.** `max_merge_delay` is fixed at 2 by INV-SPI-01 and
+`promised_epoch` is bounded by the signed `accepted_epoch`, so a correctly signed promise carrying
+either value outside what this section allows is refused with `0x17` rather than authenticated. The key
+holder does not choose the policy its own promise is judged against.
+
+**What that can and cannot be (D-72).** **Absence cannot be proven from a Merkle root.** A counterparty holding a promise and the three roots of the window cannot show the leaf is missing; only the batcher can show it is present. An unsatisfied promise is transferable in the sense that anyone can check its signature and its binding and see which epochs it covers, and the conclusion it supports is rebuttable: the batcher answers with an inclusion proof or it does not answer, and silence is the evidence. **A rebuttal counts only if its inclusion proof resolves to a root published inside the window, `promised_epoch` through `promised_epoch + max_merge_delay`. A proof against any later root confirms the breach rather than rebutting it**, which is what `0x14` reports.
 **INV-SPI-02.** The batcher cannot issue an SPI it can satisfy two ways: the promise binds the exact leaf digest, so satisfying it requires including that leaf.
 **INV-SPI-03.** The log proves what was submitted, not what existed. An issuer who never submits a record leaves no trace of it. No invariant can close this from inside the architecture (RES-05).
 
@@ -233,6 +255,7 @@ pub enum RegistryError {
     MergeDelayExceeded       = 0x14,
     ReceiptAlreadyAttached   = 0x15,
     SubmissionNotInEpoch     = 0x16,
+    PromisePolicyInvalid     = 0x17,
 }
 ```
 
@@ -263,6 +286,14 @@ pub trait Preimage {
 /// The on-chain build carries none, so the program cannot verify a signature (INV-PRIM-02).
 pub trait Verifier {
     fn verify(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64]) -> Result<()>;
+}
+
+/// Ed25519 signing, for the batcher's promises (§1.6, D-73). The engine holds no key and has nowhere
+/// to put one: an implementation of this trait holds it, outside this repository. The caller names the
+/// implementation, as it names the hasher and the verifier.
+pub trait Signer {
+    fn sign(&self, message: &[u8]) -> Result<[u8; 64]>;
+    fn public_key(&self) -> [u8; 32];
 }
 
 /// One record as it arrives. `c` is not here: the chain holds it.
@@ -348,11 +379,66 @@ pub trait InclusionVerifier {
                                     configured_height: u8) -> Result<()>;
 }
 
+/// A promise that a leaf will appear in a root inside the merge delay (§1.6, D-68). Self-contained, so
+/// a counterparty checks it without the batcher. `batcher_key` is carried for display and is never the
+/// authority: `verify_promise` takes the key the counterparty expects and compares the two.
+pub struct SignedPromise {
+    pub leaf: Digest,
+    pub submission_id: SubmissionId,
+    pub accepted_epoch: u64,
+    pub promised_epoch: u64,
+    pub max_merge_delay: u8,
+    pub batcher_key: [u8; 32],
+    pub signature: [u8; 64],
+}
+
 pub trait Batcher {
-    fn submit(&mut self, leaf: Digest) -> Result<SignedPromise>;
-    fn seal(&mut self, epoch: u64) -> Result<BuiltEpoch>;
+    /// Mints a submission identifier, queues the leaf and returns its promise. A full epoch does not
+    /// refuse: the promise names the next epoch the batcher can meet, the leaf waits in the overflow
+    /// queue, and nothing is dropped (D-71, INV-TREE-04). The hasher and the signer are named at the
+    /// call site; the batcher holds the master key it was constructed with and no key of its own.
+    fn submit<H: Hasher, S: Signer>(&mut self, leaf: Digest, signer: &S) -> Result<SignedPromise>;
+    fn seal<H: Hasher>(&mut self, epoch: u64) -> Result<BuiltEpoch>;
     fn overflow_queue_len(&self) -> usize;
 }
+
+/// Checks a promise's signature over **the SPI digest**, which is what §1.6 signs, against the batcher
+/// key the counterparty expects (D-68), and against the policy §1.6 fixes (D-74). A key mismatch is
+/// `0x08`, decided first. A signature proves authorship and not compliance, so a `max_merge_delay`
+/// other than the one INV-SPI-01 fixes, a `promised_epoch` outside the window the signed
+/// `accepted_epoch` allows, or an `accepted_epoch` that is not the observed epoch or exactly one behind
+/// it, is `0x17`. A signature that does not verify is `0x07`.
+///
+/// `observed_epoch` is the caller's own reading of the checkpoint sequence when the promise arrived.
+/// It is an input because nothing in the artifact can supply it: see §1.6's three statements.
+pub fn verify_promise<H: Hasher, V: Verifier>(
+    promise: &SignedPromise,
+    expected_batcher_key: &[u8; 32],
+    observed_epoch: u64,
+) -> Result<()>;
+
+/// An epoch's root as the caller obtained it from a published checkpoint. The two travel together
+/// because a root without its epoch says nothing about when it was published, and an epoch beside a
+/// root it did not come from says nothing at all.
+pub struct PublishedRoot {
+    pub epoch: u64,
+    pub root: Digest,
+}
+
+/// Whether a promise was kept, as far as this function can tell. The proof must be for the same epoch
+/// as the root it is checked against, that epoch must fall inside the promised window, and the path
+/// must verify for the promise's own leaf. Outside the window in either direction is `0x14` (D-72); an
+/// inconsistent or failing proof is `0x13`.
+///
+/// **It does not establish that the root was published.** D-72's rule is that only a root published
+/// inside the window rebuts the accusation, and publication provenance comes from the checkpoint
+/// account of §2.4, which the client fetches and hands here. This function enforces consistency
+/// between what it is given, and the seam where provenance enters is the caller's.
+pub fn promise_kept<H: Hasher>(
+    promise: &SignedPromise,
+    proof: &InclusionProof,
+    published: &PublishedRoot,
+) -> Result<()>;
 
 pub trait AnchorClient {
     fn publish(&self, epoch: u64, root: Digest) -> Result<AnchorRef>;       // Solana
@@ -519,7 +605,7 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-11 | Second `publish_checkpoint` for same epoch | `0x0E` |
 | V-N-12 | Second `attach_anchor_receipt` for same epoch | `0x15` |
 | V-N-13 | `schema_version = 2` | `0x0F` |
-| V-N-14 | `C + 1` real submissions in one epoch (257 at default) | `0x12`, overflow queued, not dropped |
+| V-N-14 | `C + 1` real submissions in one epoch (257 at default) | **The tree returns `0x12`** when asked to build more than `C` leaves into one epoch. **The batcher never asks:** it queues the excess, promises it the next epoch it can meet, and reports it through `overflow_queue_len`, so a submission past capacity is queued and never dropped (D-71). |
 | V-N-15 | Inclusion proof with one sibling altered | `0x13` |
 | V-N-16 | Proof with `H − 1` or `H + 1` siblings | `0x13` |
 | V-N-16b | Proof whose `height` field disagrees with the log's configured `H` | `0x13` |
@@ -592,6 +678,7 @@ A PR merges only if: KATs pass; committed vectors match; every negative vector r
 - **RES-06 · Canonicalization is the real identity attack surface.** Two spellings of one tenure produce two commitments. Published rules and a registry-code namespace narrow it; they do not close it. Letters with no compatibility decomposition, such as œ, æ and ß, are removed rather than transliterated, so spellings that differ only in them still produce different commitments.
 - **RES-07 · Batcher liveness.** A stalled batcher stalls the integrity claim for everyone in the batch. Gap detection makes the stall visible; it does not prevent it.
 - **RES-08 · The physical-digital boundary.** Sampling fraud, grade misrepresentation at the point of measurement, and sample substitution sit entirely outside what any of this can reach.
+- **RES-10 · A promise establishes acceptance only to the party that observed it, and its construction carries no version.** Verification compares the signed acceptance epoch against the counterparty's own observation at receipt (§1.6), so a promise transferred onward to a party that observed nothing carries an assertion that party cannot check. Closing that needs an independently timestamped receipt, deferred by D-74. Separately, the SPI construction has no version field: it is fixed for this deployment, and changing it once promises exist outside this repository would need a mechanism §1.6 does not have, where the record chain has `schema_version`.
 - **RES-09 · Count-hiding is computational, not information-theoretic.** Padding leaves are PRF outputs under `k_e`, so indistinguishability holds against an adversary who cannot recover that key and fails against one who can. §4.4's V-Z-02 bounds a named battery of statistics, which is evidence that the construction carries no obvious tell; it is not a proof that no distinguisher exists. The claim to make outside this document is that an outside observer cannot tell how many records an epoch holds, never that nobody can.
 
 ---

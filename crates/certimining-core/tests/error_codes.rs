@@ -4,7 +4,7 @@
 use certimining_core::RegistryError::{self, *};
 
 /// Every variant, in code order.
-const ALL: [RegistryError; 20] = [
+const ALL: [RegistryError; 21] = [
     HeadMismatch,
     SequenceOutOfOrder,
     MalformedPayload,
@@ -25,6 +25,7 @@ const ALL: [RegistryError; 20] = [
     MergeDelayExceeded,
     ReceiptAlreadyAttached,
     SubmissionNotInEpoch,
+    PromisePolicyInvalid,
 ];
 
 /// Transcribed from TCU-02 §2.1. The match is exhaustive, so a new variant fails to compile here
@@ -51,6 +52,7 @@ fn spec_code(e: RegistryError) -> u16 {
         MergeDelayExceeded => 0x14,
         ReceiptAlreadyAttached => 0x15,
         SubmissionNotInEpoch => 0x16,
+        PromisePolicyInvalid => 0x17,
     }
 }
 
@@ -62,9 +64,9 @@ fn every_code_matches_the_spec() {
 }
 
 #[test]
-fn the_codes_are_exactly_0x03_to_0x16_including_reserved_0x09() {
+fn the_codes_are_exactly_0x03_to_0x17_including_reserved_0x09() {
     let codes: Vec<u16> = ALL.iter().map(|e| e.code()).collect();
-    assert_eq!(codes, (0x03..=0x16).collect::<Vec<u16>>());
+    assert_eq!(codes, (0x03..=0x17).collect::<Vec<u16>>());
     assert_eq!(CategorySequenceUnsupported.code(), 0x09);
 }
 
