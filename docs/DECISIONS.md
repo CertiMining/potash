@@ -889,3 +889,96 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **It also made a claim false.** The code and the unit note both said a refusal consumes nothing. That holds only if the signer cannot fail, and a signer holding a key outside this process is precisely the thing that can be unreachable.
 
 **Checked by.** A failing signer, through the public traits: the snapshot is unchanged after the error, `resume` accepts it, and a retry receives the identifier the failure did not consume. Restoring the old ordering fails that case by name.
+
+## D-78 · `initialize` takes the height its own prose already gives it
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `initialize(ctx, authority: Pubkey, tree_height: u8)`, refusing anything outside `4..=16` with `0x05` and writing both once. §2.4's code block is amended to match the sentence two lines below it, which already said the instruction takes a height.
+
+**Ground.** D-02 made height a deployment parameter so that a capacity change is a settings decision rather than a rewrite, INV-TREE-06 says it is written at `initialize` and never changed, and V-N-22 already names the refusal. The block was simply missing the parameter.
+
+**Rejected.** Compiling the height in as a constant, which contradicts all three.
+
+## D-79 · `initialize` is part of the deploy procedure, and so is the upgrade authority
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The PDA is the guard: seeds `["cm_cfg"]` with `init`, so a second call fails because the account exists. The payer signs and the `authority` argument does not need to.
+
+**Owner's condition (24 Sep 2026).** The program's upgrade authority is handled in the same step as `initialize`. INV-GOV-01's choice — burn the authority or disclose that it is live and why — is made at the first devnet deploy, not later, and which was chosen is recorded on issue #16.
+
+**What this does not prevent, stated rather than implied.** Whoever calls `initialize` first owns the log. A front-run is visible, because `LogConfig.authority` is not the operator's key, and the remedy is to redeploy to a new program id. The deploy procedure therefore runs `initialize` as part of deployment, and the README says so.
+
+**Rejected.** Requiring the authority to co-sign, which adds a ceremony without changing who wins the race.
+
+## D-80 · When two refusals can overlap, the specification names which check runs first
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision, as a general rule at the owner's instruction.** Where two refusal conditions can hold at once, TCU-02 states which check runs first, and **a code no path can return is a specification defect**, not a spare. Every code in §2.1 is checked against that rule on this branch, and any other unreachable one is reported.
+
+**The instance that produced the rule.** §4.3 gives V-N-10 `0x0D` for `epoch ≠ last + 1` and V-N-11 `0x0E` for a second publish of the same epoch. Under monotone epochs those are one condition: republishing epoch `e` means `last_epoch` is already `e`, so the monotonicity check fires and `0x0E` is unreachable. `publish_checkpoint` therefore creates the checkpoint account explicitly and orders the checks — the account already exists is `0x0E`, and only then `epoch ≠ last + 1` is `0x0D` — so both codes and both vectors survive. The cost is a manual create, which is the same system-program call Anchor's `init` performs.
+
+**Ground.** §2.1 says codes never change and new conditions take new numbers. A code that no path can return is worse than either outcome, because it reads as coverage that does not exist.
+
+## D-81 · The receipt has one writer and one kind
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `attach_anchor_receipt` is the authority's alone, `kind` accepts exactly one value — 1, OpenTimestamps — with anything else `0x05`, and a second attach is `0x15`.
+
+**Ground.** The field is write-once by INV-ANCH-03, so under an open writer a stranger writes one garbage digest and permanently blocks the real receipt. An unconstrained `kind` byte is a field a later version can overload without saying so; INV-ANCH-04's "never parses the receipt" governs the digest, not the tag beside it.
+
+## D-82 · The client refuses an account it cannot place
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `root_for_epoch(e)` derives `["cm_ckpt", e_le]` against the program id, fetches it, and refuses unless the account's owner is the program, its discriminator is the program's, its `schema_version` is 1 and its stored `epoch` equals the epoch asked for.
+
+**Ground.** An RPC node can return anything, and fetching a root independently means nothing if the client believes whatever comes back. INV-ANCH-06 eliminates log equivocation only because every verifier resolves the same root, which holds only if each verifier checks what it resolved.
+
+## D-83 · The publication time is a function of the epoch, not of the build
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `publication_time(epoch)` is the epoch boundary plus a fixed offset. The build starts at a fixed lead before it and the transaction is submitted at that time whatever the build took. The crate holds no clock: the service supplies the time, exactly as the batcher is supplied its epoch (D-70).
+
+**Ground.** INV-ANCH-01. Publishing when the build finishes leaks build time, build time tracks record count, and that correlation is what V-Z-01 measures.
+
+## D-84 · The client is a fourth crate
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `crates/certimining-client`, `std`, depending on core, log and the Agave 4.2.2 client crates, with the RPC behind a trait so the tests run without a network. §2 is amended to name four crates.
+
+**Ground.** `certimining-log` is `no_std` and builds for bare metal, which D-14 and D-61 made load-bearing; an RPC client ends that.
+
+## D-85 · Where V-Z-01 and V-Z-06 run, and at what sample
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** Both venues, split by what each can prove.
+
+- **LiteSVM, in CI:** the byte-exact half of V-Z-01. Epochs of 0, 1, 128 and 255 records, published in more than one order with build time varied deliberately, compared for instruction length, transaction length, account size and field layout against §4.4's closed list. V-Z-06 runs here too, comparing a daily filer's checkpoint stream against a twice-yearly filer's.
+- **Devnet, before submission:** the half a deterministic runtime cannot show, being the correlation of landing delay with record count and with build time.
+
+**Owner's condition (24 Sep 2026), fixed before any epoch is published.** The devnet sample is **200 consecutive epochs**, and the bound is **an absolute Pearson correlation below 0.2** for landing delay against record count and against build time. Both are recorded on issue #9. The bound is looser than V-Z-04's 0.02 because a public network's scheduling noise is not under test here; what is under test is whether epoch content moves the landing slot at all, and a real leak of that kind produces a correlation near 1.
+
+**Ground.** The closed-list comparison is exactly what a deterministic runtime proves. The landing-delay half is exactly what it cannot, and a bound chosen after the numbers are visible is a bound chosen to pass.
+
+## D-86 · A 4.2 against 4.3 difference is detected, not discovered
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** After the first devnet deploy, the assertions the LiteSVM suite makes are run against devnet — the same compute figures, the same account bytes, the same error codes — and both sets are recorded side by side on issue #16. Any divergence stops the unit and goes to the owner as a decision.
+
+**Ground.** The owner's instruction is that a behavioural difference between the pinned toolchain and the cluster is a decision rather than a fix. Without a detector, "any difference" is a thing nobody is looking for.
+
+## D-87 · LiteSVM runs the program in CI
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The program's tests run under LiteSVM in Rust, as `kat01-onchain` already does. `anchor test` stays a local and demo tool. STANDARD-STEPS' S8 wording is amended accordingly.
+
+**Ground.** No validator process, deterministic, and byte-deterministic in the way V-Z-01's closed-list comparison needs. A validator in CI buys none of that and costs a runner dependency.
