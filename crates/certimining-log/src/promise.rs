@@ -18,6 +18,24 @@ use crate::{InclusionProof, InclusionVerifier, ProofVerifier};
 /// §1.8's merge delay: the promised epoch and the two after it.
 pub const MAX_MERGE_DELAY: u8 = 2;
 
+/// The number of octets a promise encodes to (L-01): 32 + 16 + 8 + 1 + 32 + 64.
+pub const PROMISE_ENCODED_LEN: usize = 153;
+
+/// An epoch's root as the caller obtained it from a published checkpoint.
+///
+/// The two travel together because a root without its epoch says nothing about when it was published,
+/// and an epoch beside a root it did not come from says nothing at all. **This type does not establish
+/// provenance and cannot:** nothing inside this crate proves the pair was ever published. The caller
+/// reads it from the checkpoint account E-08 writes and E-09 fetches, and the type exists so the two
+/// halves cannot drift apart between there and here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublishedRoot {
+    /// The epoch the checkpoint was published for.
+    pub epoch: u64,
+    /// The root it published.
+    pub root: Digest,
+}
+
 /// A batcher's promise (§1.6, D-68).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignedPromise {
@@ -33,6 +51,28 @@ pub struct SignedPromise {
     pub batcher_key: [u8; 32],
     /// Ed25519 over the SPI digest, which is what §1.6 signs.
     pub signature: [u8; 64],
+}
+
+impl SignedPromise {
+    /// The promise as octets, in §1.6's field order followed by the key and the signature.
+    ///
+    /// This is the transferable artifact's encoding. The Rust value is not it: `size_of` includes
+    /// padding and says nothing about what travels between two parties (L-01).
+    pub fn encode(&self) -> [u8; PROMISE_ENCODED_LEN] {
+        let mut out = [0u8; PROMISE_ENCODED_LEN];
+        let (leaf, rest) = out.split_at_mut(32);
+        leaf.copy_from_slice(&self.leaf);
+        let (id, rest) = rest.split_at_mut(16);
+        id.copy_from_slice(&self.submission_id);
+        let (epoch, rest) = rest.split_at_mut(8);
+        epoch.copy_from_slice(&self.promised_epoch.to_le_bytes());
+        let (delay, rest) = rest.split_at_mut(1);
+        delay.copy_from_slice(&[self.max_merge_delay]);
+        let (key, signature) = rest.split_at_mut(32);
+        key.copy_from_slice(&self.batcher_key);
+        signature.copy_from_slice(&self.signature);
+        out
+    }
 }
 
 /// The digest §1.6 signs:
@@ -60,28 +100,44 @@ pub fn verify_promise<H: Hasher, V: Verifier>(
     if &promise.batcher_key != expected_batcher_key {
         return Err(RegistryError::AttestationKeyMismatch);
     }
+    // A signature proves authorship, not compliance. INV-SPI-01 fixes the merge delay at 2, so a
+    // correctly signed promise carrying any other value is refused rather than authenticated: the key
+    // holder does not get to choose the policy the promise is judged against (H-01).
+    if promise.max_merge_delay != MAX_MERGE_DELAY {
+        return Err(RegistryError::MalformedPayload);
+    }
     let digest = promise_digest::<H>(promise)?;
     V::verify(expected_batcher_key, &digest, &promise.signature)
 }
 
-/// Whether a promise was kept.
+/// Whether a promise was kept, as far as anything here can tell.
 ///
-/// The proof must verify for the promise's own leaf against `root`, and `root_epoch` must fall inside
-/// the promised window. A root published later than the window confirms the breach rather than
-/// rebutting it, and returns `0x14`; a root earlier than the promise is outside the window too. A proof
-/// that does not verify is `0x13`, which is also what a proof of some other leaf gives.
+/// The proof must be for the same epoch as the root it is checked against, that epoch must fall inside
+/// the promised window, and the path must verify for the promise's own leaf. A root outside the window
+/// in either direction is `0x14`; an inconsistent or failing proof is `0x13`.
+///
+/// **What this does not do.** It does not establish that `published` was ever published. D-72's rule is
+/// that only a root published inside the window rebuts the accusation, and publication provenance comes
+/// from the checkpoint account E-08 writes, which E-09 fetches and hands here. This function enforces
+/// consistency between what it is given; the seam where provenance enters is the caller's, and it is
+/// named rather than implied (H-02).
 pub fn promise_kept<H: Hasher>(
     promise: &SignedPromise,
     proof: &InclusionProof,
-    root: &Digest,
-    root_epoch: u64,
+    published: &PublishedRoot,
 ) -> Result<()> {
+    // The proof must be for the epoch whose root it is being checked against. A proof carries its own
+    // epoch and the Merkle path does not commit to it, so this is a consistency check and not a proof
+    // of anything: what makes `published` trustworthy is where the caller got it (H-02).
+    if proof.epoch != published.epoch {
+        return Err(RegistryError::InclusionProofInvalid);
+    }
     let last = promise
         .promised_epoch
         .checked_add(u64::from(promise.max_merge_delay))
         .ok_or(RegistryError::ArithmeticOverflow)?;
-    if root_epoch < promise.promised_epoch || root_epoch > last {
+    if published.epoch < promise.promised_epoch || published.epoch > last {
         return Err(RegistryError::MergeDelayExceeded);
     }
-    ProofVerifier::verify::<H>(&promise.leaf, proof, root)
+    ProofVerifier::verify::<H>(&promise.leaf, proof, &published.root)
 }

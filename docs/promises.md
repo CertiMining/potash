@@ -18,10 +18,18 @@ wrong way round would be invisible until an independent implementation disagreed
 against §1.6's field order, and the V-P-10 vector records both the preimage and the digest so a
 disagreement localises.
 
-A `SignedPromise` carries six fields and 153 bytes: the leaf, the submission identifier, the promised
-epoch, the merge delay, the batcher's public key and the signature (D-68). Nothing else. A privacy
-test asserts that neither the master key, nor the epoch key, nor a tenure identifier, nor a
-jurisdiction code, nor a payload URI appears anywhere in those bytes.
+A `SignedPromise` carries six fields: the leaf, the submission identifier, the promised epoch, the
+merge delay, the batcher's public key and the signature (D-68). Nothing else. `encode` writes them in
+that order as **153 octets**, which is the transferable artifact; the Rust value is not it, because a
+struct carries padding and says nothing about what travels between two parties. A privacy test asserts
+that neither the master key, nor the epoch key, nor a tenure identifier, nor a jurisdiction code, nor a
+payload URI appears anywhere in those octets.
+
+**A signature proves authorship, not compliance.** `verify_promise` refuses a promise whose
+`max_merge_delay` is not the 2 that INV-SPI-01 fixes, however genuine its signature. What it cannot yet
+check is `promised_epoch`: the artifact carries no acceptance epoch, so a batcher could sign a promise
+for an epoch far in the future and stay answerable to nobody, and a reader holding only the promise
+cannot tell. That gap is open and §1.6 states it rather than papering over it.
 
 **The key a promise carries is not the authority.** Anyone can sign a promise, so `verify_promise`
 takes the batcher key the counterparty expects and compares it first: a key that is not the expected
@@ -37,8 +45,15 @@ checkpoint, nothing on chain. Position in the epoch tree does not follow from it
 assigns slots by a PRF over it under a key the counterparty does not hold, and V-Z-04 measures
 exactly that with sequential identifiers.
 
-The counter lives in the batcher's snapshot, so a restart continues it rather than reissuing one.
-Two submissions under one identifier in an epoch would be refused by the tree with `0x05`.
+The counter lives in the batcher's snapshot, and `resume` checks it rather than trusting it, because a
+snapshot comes from storage and is therefore input. Identifiers must be unique and all below the
+counter, the current epoch no fuller than `C`, and the queue no longer than the merge delay can absorb;
+anything else is `0x05`. Two submissions under one identifier would otherwise fail the seal with `0x05`
+long after the promise went out.
+
+**What no check here can see is a rollback** to an older snapshot that was consistent when it was
+taken, because nothing in the value says which of two snapshots is later. Atomic, rollback-resistant
+persistence is a property of how the service stores this, and it belongs to E-09.
 
 ## What happens when an epoch is full
 
@@ -84,10 +99,17 @@ unsatisfied promise is transferable in the sense that anyone can check its signa
 and see which epochs it covers, and the conclusion it supports is rebuttable: the batcher answers
 with an inclusion proof or it does not, and silence is the evidence.
 
-**A rebuttal counts only inside the window.** `promise_kept` requires the proof to verify for the
-promise's own leaf and the root to belong to an epoch from `promised_epoch` through
-`promised_epoch + max_merge_delay`. A root published later confirms the breach rather than rebutting
-it, and returns `0x14`. A proof that does not verify, including a proof of some other leaf, is `0x13`.
+**A rebuttal counts only inside the window.** `promise_kept` takes a `PublishedRoot`, which carries an
+epoch and the root together, requires the proof to be for that same epoch, requires the epoch to fall
+from `promised_epoch` through `promised_epoch + max_merge_delay`, and requires the path to verify for
+the promise's own leaf. Outside the window in either direction is `0x14`; an inconsistent or failing
+proof is `0x13`.
+
+**What it does not do is establish that the root was published.** A Merkle path commits to leaves and
+not to the epoch label beside it, so an epoch and a root that never appeared together would pass every
+check this function makes. Provenance comes from the checkpoint account E-08 writes and E-09 fetches.
+The pair travels in one type so the two halves cannot drift apart inside a call, and that is the whole
+of what this crate contributes; the seam is named here rather than implied.
 
 ## What lives elsewhere
 

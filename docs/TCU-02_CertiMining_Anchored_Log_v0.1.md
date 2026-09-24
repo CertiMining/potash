@@ -181,6 +181,14 @@ SPI = Ed25519_sign( batcher_key,
 
 **INV-SPI-01.** `max_merge_delay = 2` epochs. If `leaf` is absent from the roots of `promised_epoch .. promised_epoch + max_merge_delay`, the SPI is a self-contained, transferable accusation of batcher misbehaviour.
 
+**A signature proves authorship, not compliance (round one, H-01).** `max_merge_delay` is fixed at 2 by
+INV-SPI-01, so a correctly signed promise carrying any other value is refused rather than
+authenticated: the key holder does not choose the policy its own promise is judged against. What the
+artifact cannot yet settle by itself is `promised_epoch`. A promise carries no acceptance epoch, so a
+batcher holding the expected key could sign one for an epoch arbitrarily far ahead and remain
+answerable to nobody, and a third party reading only the artifact cannot tell a permissible choice from
+a deferred one. That is open, and the transferable claim below is bounded by it until it closes.
+
 **What that can and cannot be (D-72).** **Absence cannot be proven from a Merkle root.** A counterparty holding a promise and the three roots of the window cannot show the leaf is missing; only the batcher can show it is present. An unsatisfied promise is transferable in the sense that anyone can check its signature and its binding and see which epochs it covers, and the conclusion it supports is rebuttable: the batcher answers with an inclusion proof or it does not answer, and silence is the evidence. **A rebuttal counts only if its inclusion proof resolves to a root published inside the window, `promised_epoch` through `promised_epoch + max_merge_delay`. A proof against any later root confirms the breach rather than rebutting it**, which is what `0x14` reports.
 **INV-SPI-02.** The batcher cannot issue an SPI it can satisfy two ways: the promise binds the exact leaf digest, so satisfying it requires including that leaf.
 **INV-SPI-03.** The log proves what was submitted, not what existed. An issuer who never submits a record leaves no trace of it. No invariant can close this from inside the architecture (RES-05).
@@ -382,21 +390,36 @@ pub trait Batcher {
     fn overflow_queue_len(&self) -> usize;
 }
 
-/// Checks a promise's signature over its own preimage, against the batcher key the counterparty
-/// expects (D-68). A key mismatch is `0x08` and a signature that does not verify is `0x07`.
+/// Checks a promise's signature over **the SPI digest**, which is what §1.6 signs, against the batcher
+/// key the counterparty expects (D-68). A key mismatch is `0x08`, decided first; a `max_merge_delay`
+/// other than the one INV-SPI-01 fixes is `0x05`, because a signature proves authorship and not
+/// compliance; a signature that does not verify is `0x07`.
 pub fn verify_promise<H: Hasher, V: Verifier>(
     promise: &SignedPromise,
     expected_batcher_key: &[u8; 32],
 ) -> Result<()>;
 
-/// Whether a promise was kept. The proof must verify for the promise's leaf against `root`, and
-/// `root_epoch` must fall inside the promised window; outside it, `0x14` (D-72). A proof that does not
-/// verify is `0x13`.
+/// An epoch's root as the caller obtained it from a published checkpoint. The two travel together
+/// because a root without its epoch says nothing about when it was published, and an epoch beside a
+/// root it did not come from says nothing at all.
+pub struct PublishedRoot {
+    pub epoch: u64,
+    pub root: Digest,
+}
+
+/// Whether a promise was kept, as far as this function can tell. The proof must be for the same epoch
+/// as the root it is checked against, that epoch must fall inside the promised window, and the path
+/// must verify for the promise's own leaf. Outside the window in either direction is `0x14` (D-72); an
+/// inconsistent or failing proof is `0x13`.
+///
+/// **It does not establish that the root was published.** D-72's rule is that only a root published
+/// inside the window rebuts the accusation, and publication provenance comes from the checkpoint
+/// account of §2.4, which the client fetches and hands here. This function enforces consistency
+/// between what it is given, and the seam where provenance enters is the caller's.
 pub fn promise_kept<H: Hasher>(
     promise: &SignedPromise,
     proof: &InclusionProof,
-    root: &Digest,
-    root_epoch: u64,
+    published: &PublishedRoot,
 ) -> Result<()>;
 
 pub trait AnchorClient {

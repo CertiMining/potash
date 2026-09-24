@@ -36,7 +36,7 @@ use certimining_core::{
 };
 use certimining_log::{
     promise_digest, promise_kept, verify_promise, Batcher, BuiltEpoch, EpochBatcher, EpochTree,
-    InclusionProof, InclusionVerifier, ProofVerifier, SignedPromise,
+    InclusionProof, InclusionVerifier, ProofVerifier, PublishedRoot, SignedPromise,
 };
 use ed25519_dalek::{Signer as _, SigningKey};
 use serde_json::{json, Map, Value};
@@ -1583,6 +1583,7 @@ fn promise_json(promise: &SignedPromise) -> Value {
         "max_merge_delay": promise.max_merge_delay.to_string(),
         "batcher_key": hex(&promise.batcher_key),
         "signature": hex(&promise.signature),
+        "encoded": hex(&promise.encode()),
     })
 }
 
@@ -1620,7 +1621,14 @@ fn promises(files: &mut BTreeMap<String, Value>) {
     let kept = build_epoch(inside, height, &real);
     let kept_proof = kept.proof(&promise.submission_id).expect("holds it");
     assert_eq!(
-        promise_kept::<NativeKeccak>(&promise, &kept_proof, &kept.root, inside),
+        promise_kept::<NativeKeccak>(
+            &promise,
+            &kept_proof,
+            &PublishedRoot {
+                epoch: inside,
+                root: kept.root,
+            },
+        ),
         Ok(()),
         "V-P-10: §4.2 states the promise is satisfied at promised_epoch + 2"
     );
@@ -1628,8 +1636,15 @@ fn promises(files: &mut BTreeMap<String, Value>) {
     let outside = inside + 1;
     let late = build_epoch(outside, height, &real);
     let late_proof = late.proof(&promise.submission_id).expect("holds it");
-    let refused = promise_kept::<NativeKeccak>(&promise, &late_proof, &late.root, outside)
-        .expect_err("V-P-10: §4.2 states 0x14 at promised_epoch + 3");
+    let refused = promise_kept::<NativeKeccak>(
+        &promise,
+        &late_proof,
+        &PublishedRoot {
+            epoch: outside,
+            root: late.root,
+        },
+    )
+    .expect_err("V-P-10: §4.2 states 0x14 at promised_epoch + 3");
 
     files.insert(
         "V-P-10.json".into(),

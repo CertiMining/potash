@@ -30,6 +30,9 @@ mod proof;
 mod tree;
 
 pub use batcher::{Batcher, BatcherSnapshot, EpochBatcher};
-pub use promise::{promise_digest, promise_kept, verify_promise, SignedPromise, MAX_MERGE_DELAY};
+pub use promise::{
+    promise_digest, promise_kept, verify_promise, PublishedRoot, SignedPromise, MAX_MERGE_DELAY,
+    PROMISE_ENCODED_LEN,
+};
 pub use proof::{InclusionProof, InclusionVerifier, ProofVerifier, MAX_SIBLINGS};
 pub use tree::{slot_from_seed, BuiltEpoch, EpochTree, MAX_HEIGHT, MIN_HEIGHT};

@@ -831,3 +831,35 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **Ground.** S6 keeps the batcher key outside the repository. A trait makes that structural: there is no place in the engine for a key to sit, so none can be committed by accident.
 
 **Rejected.** Depending on `ed25519-dalek` in `certimining-log` and signing directly, which puts a signing key one field away from the engine's own types.
+
+## D-74 · A promise's policy values are checked, not authenticated
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S9 round one; the open half is the owner's to rule
+
+**Decision.** `verify_promise` refuses a promise whose `max_merge_delay` is not the 2 INV-SPI-01 fixes, however genuine its signature, under `0x05`. A signature proves authorship, not compliance, and a counterparty cannot infer from an artifact that the key holder used an honest implementation.
+
+**Ground.** The first review's blocking finding. The promise exists to hold the key holder accountable, so anything the key holder chooses freely is policy the verifier must check rather than data the verifier may trust. `max_merge_delay` was checkable against the specification and was not being checked.
+
+**Open, and put to the owner.** `promised_epoch` cannot be checked the same way, because the artifact carries no acceptance epoch: a batcher could sign a promise for an epoch arbitrarily far ahead and remain answerable to nobody. §1.6 and `docs/promises.md` state the gap. Closing it is a contract choice with three shapes, and it is the owner's: sign the acceptance epoch as a seventh field, take an observed epoch as a second input to verification, or narrow the transferability claim and name what the counterparty must know independently.
+
+**Also open.** `0x05` is the nearest existing code for a promise carrying a value the specification does not allow. §2.1's rule is that a new condition takes a new number, and the owner assigned `0x16` on the same reasoning at E-06, so this may deserve one too.
+
+## D-75 · An epoch and a root travel together, and neither proves publication
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S9 round one
+
+**Decision.** `promise_kept` takes a `PublishedRoot`, carrying the epoch and the root as one value, and requires the proof's own epoch to match it. The window is then checked against that epoch and the path against that root. **The function does not establish that the pair was ever published, and says so.** Publication provenance comes from the checkpoint account E-08 writes and E-09 fetches.
+
+**Ground.** The first review's second blocking finding. The two were separate arguments, so a proof and root from epoch 103 passed while the caller labelled them 100: the helper proved inclusion under a digest and separately checked an unbound assertion about time, which is not the condition D-72 names. A Merkle path commits to leaves and not to an epoch label, so no check inside this crate can close the gap; the type keeps the halves together and the seam is named.
+
+**Cost.** A caller must hold a checkpoint rather than an integer, which is the point.
+
+## D-76 · A snapshot is input, not state
+
+**Date:** 24 Sep 2026 · **Unit:** E-07 · **Class:** security necessity · **Status:** settled at S9 round one
+
+**Decision.** `resume` validates every invariant one snapshot can be checked against — identifiers unique and all below the counter, the epoch no fuller than `C`, the queue inside what the merge delay can absorb — and refuses anything else with `0x05`.
+
+**Ground.** The first review rolled the counter back behind a queued identifier and watched the batcher reissue it, which would fail the seal with `0x05` long after the promise went out. A snapshot arrives from storage with public fields, so it is input.
+
+**Bounded, and stated as such.** No check here can detect a rollback to an older snapshot that was internally consistent when taken, because nothing in the value says which of two is later. Atomic, rollback-resistant persistence belongs to E-09, and `docs/promises.md` says so rather than claiming the counter alone prevents reuse.

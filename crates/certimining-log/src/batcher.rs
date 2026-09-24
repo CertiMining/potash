@@ -32,7 +32,14 @@ pub trait Batcher {
     fn overflow_queue_len(&self) -> usize;
 }
 
-/// What a batcher must carry across a restart, so no identifier is ever issued twice (D-69).
+/// What a batcher must carry across a restart (D-69).
+///
+/// **What carrying the counter here does and does not buy.** `resume` checks every invariant a single
+/// snapshot can be checked against: identifiers unique and all below the counter, the current epoch no
+/// fuller than `C`, and the queue no longer than the merge delay can absorb. It cannot detect a
+/// complete rollback to an older snapshot that was internally consistent when it was taken, because
+/// nothing in the value says which of two snapshots is later. Rollback resistance is a property of how
+/// the service persists this, atomically and without reverting, and that belongs to E-09 (M-01).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatcherSnapshot {
     /// The epoch the batcher is filling.
@@ -73,9 +80,47 @@ impl EpochBatcher {
         })
     }
 
-    /// A batcher continuing from a snapshot.
+    /// A batcher continuing from a snapshot, which is checked before it is trusted.
+    ///
+    /// A snapshot arrives from storage and its fields are public, so it is input rather than state:
+    /// every invariant one snapshot can be checked against is checked here, and a snapshot that fails
+    /// is `0x05`. What no check can see is a rollback to an older consistent snapshot (M-01).
     pub fn resume(master_key: &Digest, height: u8, snapshot: BatcherSnapshot) -> Result<Self> {
         let mut batcher = Self::start(master_key, height, snapshot.epoch)?;
+        let capacity = batcher.capacity()?;
+        if snapshot.pending.len() > capacity {
+            return Err(RegistryError::MalformedPayload);
+        }
+        let queue_bound = capacity
+            .checked_mul(usize::from(MAX_MERGE_DELAY))
+            .ok_or(RegistryError::ArithmeticOverflow)?;
+        if snapshot.overflow.len() > queue_bound {
+            return Err(RegistryError::MalformedPayload);
+        }
+
+        // Every identifier must be one this batcher already minted, and no two may be the same: a
+        // counter rolled back behind a queued identifier would reissue it, and the tree would refuse
+        // the epoch with 0x05 long after the promise went out.
+        let mut identifiers: Vec<SubmissionId> = snapshot
+            .pending
+            .iter()
+            .chain(snapshot.overflow.iter())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &identifiers {
+            let ordinal = ordinal_of(id)?;
+            if ordinal >= snapshot.next_submission {
+                return Err(RegistryError::MalformedPayload);
+            }
+        }
+        identifiers.sort_unstable();
+        if identifiers
+            .windows(2)
+            .any(|pair| matches!(pair, [left, right] if left == right))
+        {
+            return Err(RegistryError::MalformedPayload);
+        }
+
         batcher.next_submission = snapshot.next_submission;
         batcher.pending = snapshot.pending;
         batcher.overflow = snapshot.overflow;
@@ -146,6 +191,20 @@ impl EpochBatcher {
             .checked_add(ahead)
             .ok_or(RegistryError::ArithmeticOverflow)
     }
+}
+
+/// The counter an identifier was minted from (D-69): the low eight bytes, little-endian.
+fn ordinal_of(id: &SubmissionId) -> Result<u64> {
+    let low: [u8; 8] = id
+        .get(..8)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or(RegistryError::MalformedPayload)?;
+    // The high half is zero in every identifier this batcher mints, and a snapshot carrying anything
+    // else did not come from one.
+    if id.get(8..).is_some_and(|rest| rest.iter().any(|b| *b != 0)) {
+        return Err(RegistryError::MalformedPayload);
+    }
+    Ok(u64::from_le_bytes(low))
 }
 
 impl Batcher for EpochBatcher {

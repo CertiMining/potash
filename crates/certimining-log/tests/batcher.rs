@@ -10,7 +10,10 @@
 mod common;
 
 use certimining_core::{Digest, RegistryError, Result, Signer, SubmissionId};
-use certimining_log::{Batcher, BuiltEpoch, EpochBatcher, EpochTree, MAX_MERGE_DELAY};
+use certimining_log::{
+    Batcher, BatcherSnapshot, BuiltEpoch, EpochBatcher, EpochTree, MAX_MERGE_DELAY,
+    PROMISE_ENCODED_LEN,
+};
 use common::{assignment_oracle, leaf_digest, MixHash, TEST_MASTER_KEY};
 
 /// RFC 8032 §7.1's first secret key, transcribed from the specification.
@@ -83,6 +86,58 @@ fn identifiers_are_an_ordinal_counter_and_never_repeat() {
     let mut unique = seen.clone();
     unique.dedup();
     assert_eq!(seen.len(), unique.len());
+}
+
+#[test]
+fn a_rolled_back_counter_is_refused_rather_than_reissuing_an_identifier() {
+    // M-01: a snapshot comes from storage, so it is input and not state. This is the review's probe.
+    let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
+    let mut honest = batcher(110);
+    honest
+        .submit::<MixHash, _>(leaf_digest(1), &signer)
+        .expect("accepted");
+    let taken = honest.snapshot();
+    assert_eq!(taken.next_submission, 1);
+
+    let mut rolled_back = taken.clone();
+    rolled_back.next_submission = 0;
+    assert_eq!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, rolled_back).err(),
+        Some(RegistryError::MalformedPayload),
+        "a counter behind a queued identifier would reissue it"
+    );
+
+    let mut doubled = taken.clone();
+    doubled.pending.push(taken.pending[0]);
+    doubled.next_submission = 2;
+    assert_eq!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, doubled).err(),
+        Some(RegistryError::MalformedPayload),
+        "two submissions under one identifier would fail the seal with 0x05"
+    );
+
+    let overfull = BatcherSnapshot {
+        epoch: 110,
+        next_submission: 999,
+        pending: (0..=CAPACITY as u64)
+            .map(|n| {
+                let mut id = [0u8; 16];
+                id[..8].copy_from_slice(&n.to_le_bytes());
+                (id, leaf_digest(n))
+            })
+            .collect(),
+        overflow: Vec::new(),
+    };
+    assert_eq!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, overfull).err(),
+        Some(RegistryError::MalformedPayload),
+        "an epoch fuller than C never came from a batcher"
+    );
+
+    assert!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, taken).is_ok(),
+        "and the honest snapshot still resumes"
+    );
 }
 
 #[test]
@@ -225,6 +280,7 @@ mod with_real_crypto {
     };
     use certimining_log::{
         promise_digest, promise_kept, verify_promise, InclusionVerifier, ProofVerifier,
+        PublishedRoot,
     };
 
     /// Ed25519 verification for these cases, the implementation the engine offers under `native`.
@@ -330,7 +386,14 @@ mod with_real_crypto {
             Ok(())
         );
         assert_eq!(
-            promise_kept::<NativeKeccak>(&promise, &proof, &epoch.root, late),
+            promise_kept::<NativeKeccak>(
+                &promise,
+                &proof,
+                &PublishedRoot {
+                    epoch: late,
+                    root: epoch.root
+                }
+            ),
             Ok(()),
             "V-P-10: satisfied at promised_epoch + 2"
         );
@@ -341,9 +404,31 @@ mod with_real_crypto {
             .expect("builds");
         let proof = epoch.proof(&promise.submission_id).expect("holds it");
         assert_eq!(
-            promise_kept::<NativeKeccak>(&promise, &proof, &epoch.root, after),
+            promise_kept::<NativeKeccak>(
+                &promise,
+                &proof,
+                &PublishedRoot {
+                    epoch: after,
+                    root: epoch.root
+                }
+            ),
             Err(RegistryError::MergeDelayExceeded),
             "V-P-10, and D-72: a root published after the window confirms the breach"
+        );
+
+        // The review's H-02 probe: the same late proof and root, relabelled with an epoch inside the
+        // window. A label beside a root is not the authority, and a proof carries its own epoch.
+        assert_eq!(
+            promise_kept::<NativeKeccak>(
+                &promise,
+                &proof,
+                &PublishedRoot {
+                    epoch: 900,
+                    root: epoch.root
+                }
+            ),
+            Err(RegistryError::InclusionProofInvalid),
+            "H-02: a proof for one epoch presented beside another epoch's label"
         );
     }
 
@@ -359,10 +444,61 @@ mod with_real_crypto {
             .expect("builds");
         let proof = epoch.proof(&promise.submission_id).expect("holds it");
         assert_eq!(
-            promise_kept::<NativeKeccak>(&promise, &proof, &epoch.root, 910),
+            promise_kept::<NativeKeccak>(
+                &promise,
+                &proof,
+                &PublishedRoot {
+                    epoch: 910,
+                    root: epoch.root
+                }
+            ),
             Err(RegistryError::InclusionProofInvalid),
             "a proof of some other leaf rebuts nothing"
         );
+    }
+
+    #[test]
+    fn a_promise_carrying_a_merge_delay_the_specification_does_not_allow_is_refused() {
+        // H-01: a signature proves authorship, not compliance. The key holder does not choose the
+        // policy its own promise is judged against.
+        let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
+        let mut batcher = real_batcher(930);
+        let honest = batcher
+            .submit::<NativeKeccak, _>(leaf_digest(15), &signer)
+            .expect("accepted");
+
+        let mut lax = honest.clone();
+        lax.max_merge_delay = MAX_MERGE_DELAY + 1;
+        let digest = promise_digest::<NativeKeccak>(&lax).expect("a digest");
+        lax.signature = signer.sign(&digest).expect("signs");
+        assert_eq!(
+            DalekCheck::verify(&lax.batcher_key, &digest, &lax.signature),
+            Ok(()),
+            "the signature is genuine, which is the whole point of the case"
+        );
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&lax, &signer.public_key()),
+            Err(RegistryError::MalformedPayload),
+            "INV-SPI-01 fixes the delay at 2, and a correctly signed 3 is still refused"
+        );
+    }
+
+    #[test]
+    fn a_promise_encodes_to_the_octets_the_notes_claim() {
+        // L-01: the Rust value carries padding and says nothing about what travels between parties.
+        let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
+        let mut batcher = real_batcher(940);
+        let promise = batcher
+            .submit::<NativeKeccak, _>(leaf_digest(16), &signer)
+            .expect("accepted");
+        let encoded = promise.encode();
+        assert_eq!(encoded.len(), PROMISE_ENCODED_LEN);
+        assert_eq!(&encoded[..32], &promise.leaf[..]);
+        assert_eq!(&encoded[32..48], &promise.submission_id[..]);
+        assert_eq!(&encoded[48..56], &promise.promised_epoch.to_le_bytes()[..]);
+        assert_eq!(encoded[56], promise.max_merge_delay);
+        assert_eq!(&encoded[57..89], &promise.batcher_key[..]);
+        assert_eq!(&encoded[89..], &promise.signature[..]);
     }
 
     #[test]
@@ -373,17 +509,11 @@ mod with_real_crypto {
             .submit::<NativeKeccak, _>(leaf_digest(14), &signer)
             .expect("accepted");
 
-        let mut bytes: Vec<u8> = Vec::new();
-        bytes.extend_from_slice(&promise.leaf);
-        bytes.extend_from_slice(&promise.submission_id);
-        bytes.extend_from_slice(&promise.promised_epoch.to_le_bytes());
-        bytes.push(promise.max_merge_delay);
-        bytes.extend_from_slice(&promise.batcher_key);
-        bytes.extend_from_slice(&promise.signature);
+        let bytes = promise.encode();
         assert_eq!(
             bytes.len(),
-            153,
-            "32 + 16 + 8 + 1 + 32 + 64, and nothing else"
+            PROMISE_ENCODED_LEN,
+            "32 + 16 + 8 + 1 + 32 + 64 octets, and nothing else"
         );
 
         // Nothing that identifies an asset may appear, and neither may the epoch key the batcher used.
