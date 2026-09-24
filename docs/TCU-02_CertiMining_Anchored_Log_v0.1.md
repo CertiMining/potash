@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.8 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.9 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -232,6 +232,7 @@ pub enum RegistryError {
     InclusionProofInvalid    = 0x13,
     MergeDelayExceeded       = 0x14,
     ReceiptAlreadyAttached   = 0x15,
+    SubmissionNotInEpoch     = 0x16,
 }
 ```
 
@@ -321,6 +322,8 @@ pub trait EpochTree {
     fn build<H: Hasher>(epoch: u64, height: u8, key: &Digest,
                         real: &[(SubmissionId, Digest)]) -> Result<BuiltEpoch>;
     fn root(&self) -> Digest;
+    /// A submission this epoch does not hold is `0x16`. It is its own condition, not a proof that
+    /// failed to verify, so it takes its own code rather than sharing `0x13` (D-67).
     fn proof(&self, id: &SubmissionId) -> Result<InclusionProof>;
 }
 

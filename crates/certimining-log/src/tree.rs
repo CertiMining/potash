@@ -63,7 +63,7 @@ pub trait EpochTree {
     /// The epoch root.
     fn root(&self) -> Digest;
     /// The inclusion proof for a submission this epoch holds. A submission it does not hold is
-    /// `0x13`: there is no such proof (D-64).
+    /// `0x16`, which is its own condition and so takes its own code (D-67).
     fn proof(&self, id: &SubmissionId) -> Result<InclusionProof>;
 }
 
@@ -151,7 +151,7 @@ impl EpochTree for BuiltEpoch {
             .iter()
             .find(|(candidate, _)| candidate == id)
             .map(|(_, slot)| *slot)
-            .ok_or(RegistryError::InclusionProofInvalid)?;
+            .ok_or(RegistryError::SubmissionNotInEpoch)?;
         let capacity = self.leaves.len();
         let mut siblings: heapless::Vec<Digest, MAX_SIBLINGS> = heapless::Vec::new();
         let mut index = usize::from(slot);

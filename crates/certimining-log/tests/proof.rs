@@ -192,12 +192,23 @@ fn the_verifier_applies_the_leaf_tag_itself() {
 }
 
 #[test]
-fn a_proof_for_a_submission_the_epoch_does_not_hold_is_0x13() {
+fn a_proof_for_a_submission_the_epoch_does_not_hold_is_0x16() {
     let built = epoch::<MixHash>(32, 8, 4);
     assert_eq!(
         built.proof(&scattered_id(u64::MAX)).err(),
-        Some(RegistryError::InclusionProofInvalid),
-        "D-64: there is no such inclusion proof"
+        Some(RegistryError::SubmissionNotInEpoch),
+        "D-67: its own condition, and so its own code, not 0x13"
+    );
+    // The distinction is the point of the new code: a proof that does not verify is still 0x13.
+    let (built, leaf, proof) = one_proof(8);
+    let mut altered = proof.clone();
+    let mut siblings: Vec<Digest> = altered.siblings.iter().copied().collect();
+    siblings[0][0] ^= 0x01;
+    altered.siblings = siblings.iter().copied().collect();
+    assert_eq!(
+        ProofVerifier::verify::<MixHash>(&leaf, &altered, &built.root),
+        Err(RegistryError::InclusionProofInvalid),
+        "0x13 still means a proof that does not reconcile"
     );
 }
 

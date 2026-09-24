@@ -25,6 +25,8 @@ pub enum RegistryError {
     InclusionProofInvalid = 0x13,
     MergeDelayExceeded = 0x14,
     ReceiptAlreadyAttached = 0x15,
+    /// An epoch was asked for a proof of a submission it does not hold (D-67).
+    SubmissionNotInEpoch = 0x16,
 }
 
 impl RegistryError {

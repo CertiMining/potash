@@ -93,8 +93,9 @@ caller holding its log's `H` uses: a proof claiming another height is `0x13` bef
 (V-N-16b). Both functions are pure. They take no log handle, read no clock and touch no storage, so
 a counterparty verifies offline against a root they fetched from Solana themselves (INV-IFACE-01).
 
-Every failure on this path is `0x13`, including a request for a proof of a submission the epoch does
-not hold: there is no such proof.
+Every failure on the verification path is `0x13`. Asking an epoch for a proof of a submission it does
+not hold is a different condition and takes its own code, `0x16`: nothing failed to verify, the
+epoch simply does not hold that submission (D-67).
 
 The proof's `epoch` field is what tells a caller which root to fetch. `verify` cannot check it,
 because the root it is given is the only thing it has to check against, which is the price of being

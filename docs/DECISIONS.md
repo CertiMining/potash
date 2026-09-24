@@ -653,7 +653,7 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Ground.** Rule 2 is the load-bearing one. Under assignment in the caller's order, the same epoch built by the batcher and by an independent implementation can differ by iteration order alone, and V-P-08 compares those two byte for byte. Rule 1 is INV-ENC-02 applied rather than a new choice, written down because an implementation reading the digest as big-endian would produce a different tree from the same inputs.
 
-**Owner's attention (23 Sep 2026).** Two submissions carrying the same identifier in one epoch return `0x05`. §2.1 offers no code for a malformed submission set, and INV-ERR-01's discipline forbids inventing one, so the generic malformed-input code carries it: the set is malformed, and `proof` could answer for neither of the two. This is the one judgement in this entry the owner has not ruled on. Overruling it changes one line of §1.4 and one test.
+**Ruled by the owner (23 Sep 2026): `0x05` stands.** Two submissions carrying the same identifier in one epoch return the generic malformed-input code. §2.1 offers no code for a malformed submission set, the set is malformed, and `proof` could answer for neither of the two.
 
 **Revisit if.** An epoch ever needs to hold two submissions under one identifier, which would be a change to §1.6's promise model rather than to the tree.
 
@@ -705,9 +705,9 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Ground.** Leaf-first ordering is the convention E-11 will be written against, and §1.8's "exactly `H` siblings" reads in that direction. The height check needs an input `verify` does not have, and adding a log handle to the verifier would break the offline property INV-IFACE-01 exists to protect.
 
-**Owner's attention (23 Sep 2026).** Asking an epoch for a proof of a submission it does not hold returns `0x13`. There is no such inclusion proof, so the proof-path code carries it. This is the second judgement of the two noted in this unit.
+**Overruled by the owner (23 Sep 2026).** Asking an epoch for a proof of a submission it does not hold returns `0x16`, not `0x13`. See D-67.
 
-**Revisit if.** A caller needs to distinguish "not in this epoch" from "proof does not verify", which would need a new code under §2.1's rule that new conditions take new numbers.
+**Revisit if.** Nothing else here. The distinction between "not in this epoch" and "proof does not verify" was the open question, and D-67 settles it with a new code.
 
 ## D-65 · The privacy tests are committed before the implementation
 
@@ -743,3 +743,17 @@ Each entry states the decision, its ground and its class. A security necessity n
 run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Revisit if.** The classifier is strengthened post-deadline and the band needs restating for a larger sample.
+
+## D-67 · A submission the epoch does not hold has its own code
+
+**Date:** 23 Sep 2026 · **Unit:** E-06 · **Class:** security necessity · **Status:** ruled by the owner, 23 Sep 2026
+
+**Decision.** `SubmissionNotInEpoch = 0x16` joins §2.1. `EpochTree::proof` returns it when the epoch holds no such submission. `0x13` keeps the one meaning it had: a proof that does not reconcile with the root. The same ruling leaves D-60's duplicate-identifier refusal at `0x05`.
+
+**Ground.** §2.1's own rule, applied: codes never change and a new condition takes a new number. This is a new condition, because nothing failed to verify. Sharing `0x13` would have made "I hold no such submission" indistinguishable from "this proof does not stand", and that is exactly the distinction a counterparty acts on: one is a question for the batcher, the other is evidence of tampering.
+
+**Cost.** The error space grows by one code, and TCU-02 goes to v0.1.9 in the same pull request, which is what S0 requires of a decision that changes a contract.
+
+**No vector.** §4.3's rows describe what a verifier must refuse, and proof generation is not on the verifier's path: E-11 checks proofs and never builds a tree. The condition is covered by the log crate's own test, and the batcher at E-07 exercises it where a caller can reach it. A `V-N` identifier would have to be declared in the specification first, and nothing yet needs one.
+
+**Revisit if.** Nothing. A published code is stable.
