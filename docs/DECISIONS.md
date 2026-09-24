@@ -1001,3 +1001,19 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 Two reasons, and both are about what happens when one key is lost rather than about tidiness. **Blast radius:** a compromised checkpoint key can stall the log or publish garbage roots, which INV-GOV-02 already names as a liveness failure and not an integrity one, while a compromised upgrade key can replace the program and with it every invariant this repository claims. Holding them as one key would make the smaller failure carry the larger consequence. **Exposure:** only the checkpoint key runs unattended, signing on the epoch cadence in whatever the service runs on, while the upgrade key is used by a person at a deploy. A key that signs on a schedule is exposed continuously, and that is not the key that should be able to change the program.
 
 **Recorded on issue #16** under INV-GOV-01, at the first devnet deploy.
+
+## D-89 · One licence exception, scoped to one crate
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** cost judgment · **Status:** settled at S9 (owner, 24 Sep 2026)
+
+**Decision.** `CDLA-Permissive-2.0` is allowed **for `webpki-roots` alone**, through a `[[licenses.exceptions]]` entry, not by adding it to the global allow list.
+
+**The chain, in full.** `certimining-client` → `solana-rpc-client` 4.2.2 → `reqwest` → `hyper-rustls` → `webpki-roots` 1.0.9. The dependency is not optional inside `solana-rpc-client`, so `default-features = false` does not remove it, and an optional feature of ours does not keep it out of `Cargo.lock`, which is what `cargo deny` reads.
+
+**What is licensed that way.** Mozilla's CA root certificate **data**, which the crate bundles. The crate's own code is MIT. The Community Data License Agreement Permissive 2.0 is permissive, has no copyleft term and places no attribution burden on a binary.
+
+**Why scoped rather than global (owner's condition).** A global allow would silently accept the next crate arriving under the same licence. Scoping means that crate still fails the gate and reaches a person, which is the behaviour that produced this entry.
+
+**The gate worked.** `cargo deny check` failed CI on the first push that introduced the dependency, before anything reached a cluster, which is what D-18 put it there to do. It is recorded that way rather than as an obstacle that was removed.
+
+**Rejected.** Hand-writing the four JSON-RPC calls the client needs over an HTTP stack of our own choosing, to avoid a permissive data licence on a root-certificate bundle. Days of work, eighteen days from the deadline, and hand-written RPC against a live network is likelier to be wrong than the crate the cluster's own client uses.
