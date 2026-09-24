@@ -108,7 +108,10 @@ tree they measure, and their pass conditions were fixed before any of its number
 (D-65, D-66). Every input is deterministic, so a failure is a finding rather than an unlucky draw.
 
 - **V-Z-02, padding indistinguishability.** A classifier is given an epoch's root and all `C` leaf
-  digests in slot order, no key, and unlimited compute. It scores nine features — per-position byte
+  digests in slot order and no key. It is computationally bounded, specifically the named battery
+  below: an adversary who could search the key space would derive `k_e` and count exactly, so this
+  test shows that these statistics do not distinguish, never that none can (RES-09). It scores nine
+  features — per-position byte
   deviation, population count, zero bytes, leading zero bits, longest equal run, distinct byte
   values, a chi-squared statistic over nibbles, Hamming distance to the adjacent slots, and Hamming
   distance to the root — each alone and combined. The statistic is a distinguishing game rather than
@@ -118,7 +121,14 @@ tree they measure, and their pass conditions were fixed before any of its number
   nothing. Every statistic must stay inside a two-sided binomial band at α = 0.001.
 - **V-Z-03, proof non-leakage.** Nothing a proof carries may be a preimage: every sibling is checked
   against every chain leaf and every PRF output of its epoch. Then the classifier runs over the
-  siblings a counterparty collects, which is the only thing about a sibling there is to recover.
+  siblings a counterparty collects, which is the only thing about a sibling there is to recover. No
+  field of a proof may vary with the record count either, and `slot_index` is the field that could, so
+  every slot is compared against D-60's assignment transcribed independently in the test. **The
+  comparison runs over a stated, finite matrix, not over every possible epoch:** V-Z-03 runs it at 1,
+  128 and 255 real leaves under the real hasher, and the tree's own conformance test runs it at every
+  count from an empty epoch to a full one at `H = 4` and `H = 8` under the stand-in hasher, which is
+  the same assignment code. A mutation that fired only at a count neither visits would pass, which is
+  how the third review falsified an earlier and looser claim here.
 - **V-Z-04, position non-leakage.** The slot index is correlated against submission order, issuer and
   time within epoch, using sequential submission identifiers, which is the hard case: the identifier
   itself carries the order. The absolute correlation must stay below 0.05 at CI's sample size.

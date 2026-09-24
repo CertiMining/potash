@@ -201,8 +201,10 @@ fn nibble_chi_squared(d: &Digest) -> f64 {
         .sum()
 }
 
-/// The classifier §4.4 specifies: given the root and every leaf digest in slot order, and no key, it
-/// scores each slot on each feature. Unlimited compute is allowed and none of it has a key.
+/// The classifier §4.4 specifies: given the root and every leaf digest in slot order and no key, it
+/// scores each slot on each feature. The adversary is computationally bounded, specifically the named
+/// battery below: an adversary who could search the key space would derive `k_e` and answer exactly,
+/// so what this establishes is that these statistics do not distinguish, never that none can (RES-09).
 pub fn feature_matrix(leaves: &[Digest], root: &Digest) -> Vec<[f64; FEATURE_COUNT]> {
     let n = leaves.len();
     let mut mean = [0f64; 32];
@@ -274,6 +276,59 @@ pub fn combined_scores(matrix: &[[f64; FEATURE_COUNT]]) -> Vec<f64> {
                 .sum()
         })
         .collect()
+}
+
+/// D-60's assignment, transcribed from §1.4 into the test rather than called from the engine: the tag
+/// as a literal, the PRF's preimage assembled here, its output read as a little-endian integer and
+/// reduced to the low `H` bits, then the first free slot upward with wrapping, over submissions taken
+/// in ascending identifier order.
+///
+/// This is what closes a count channel through `slot_index`, which the second review found V-Z-03's
+/// field checks could not see: if any slot depends on how many records an epoch holds, the engine's
+/// assignment cannot equal this one. Regenerated vectors cannot serve here, because the generator runs
+/// the engine under test.
+pub fn assignment_oracle<H: Hasher>(
+    epoch_number: u64,
+    height: u8,
+    k_master: &Digest,
+    real: &[(SubmissionId, Digest)],
+) -> Vec<(SubmissionId, u16)> {
+    /// §1.2's tag, written out rather than read from the crate.
+    const SPEC_TAG_PRF: [u8; 8] = *b"CMv1PRF0";
+
+    // `PRF(k, x) = Keccak256(TAG_PRF ‖ k ‖ len(x) ‖ x)` with a `u16` length (§1.1, D-59).
+    let prf = |key: &Digest, input: &[u8]| -> Digest {
+        let mut preimage = Vec::new();
+        preimage.extend_from_slice(&SPEC_TAG_PRF);
+        preimage.extend_from_slice(key);
+        preimage.extend_from_slice(&(input.len() as u16).to_le_bytes());
+        preimage.extend_from_slice(input);
+        H::hashv(&[&preimage])
+    };
+
+    let mut epoch_input = vec![0x01u8];
+    epoch_input.extend_from_slice(&epoch_number.to_le_bytes());
+    let k_e = prf(k_master, &epoch_input);
+
+    let capacity = 1usize << height;
+    let mut taken = vec![false; capacity];
+    let mut ordered: Vec<(SubmissionId, Digest)> = real.to_vec();
+    ordered.sort_unstable_by_key(|entry| entry.0);
+
+    let mut assignment: Vec<(SubmissionId, u16)> = Vec::new();
+    for (id, _) in &ordered {
+        let mut slot_input = vec![0x02u8];
+        slot_input.extend_from_slice(id);
+        let seed = prf(&k_e, &slot_input);
+        let start = usize::from(u16::from_le_bytes([seed[0], seed[1]])) & (capacity - 1);
+        let slot = (0..capacity)
+            .map(|step| (start + step) % capacity)
+            .find(|candidate| !taken[*candidate])
+            .expect("a set inside capacity always finds a slot");
+        taken[slot] = true;
+        assignment.push((*id, slot as u16));
+    }
+    assignment
 }
 
 // ------------------------------------------------------------------ statistics
