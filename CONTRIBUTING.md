@@ -48,6 +48,14 @@ leaf set is left out and the root, the assignment and the proofs are kept, which
 `H = 12` half is shorter than its `H = 4` half. The master key in these files is a specification test
 key whose bytes spell out what it is; a real `k_master` never appears in this repository.
 
+**The promise vectors carry both halves of what §1.6 signs.** V-P-10 records the SPI preimage and the
+digest, because the signature covers the digest and an implementation that signed the preimage instead
+would look correct until it met this file. It also records one promise accepted at the last epoch the
+merge delay allows and the same proof refused one epoch later, which is the rebuttal window. V-N-14 is
+answered by two layers and says which: the tree returns `0x12`, and the batcher queues instead. The
+batcher's key in these files is RFC 8032 §7.1's published test key, and no real batcher key exists
+anywhere here, because the engine has no place to keep one.
+
 **Vector identifiers come from §4.3 and §4.2, never from this repository.** Where the specification
 gives one identifier to several inputs, such as V-N-02's gap and replay, the file carries them as
 cases under that one identifier. A new identifier is declared in the specification first, as V-N-25

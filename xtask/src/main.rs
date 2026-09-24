@@ -31,11 +31,14 @@ use certimining_core::{
     epoch_key, padding_prf, slot_seed, AssetChain, AssetId, AssetIdentity, ChainSnapshot,
     ChainState, Digest, GenesisHeadPreimage, Hasher, LeafPreimage, NativeKeccak, NodePreimage,
     PaddingPreimage, PayloadUri, Preimage, PreimageBuf, PrfPreimage, RealLeafPreimage,
-    RecordLeafInput, RegistryError, SpiPreimage, StepHeadPreimage, SubmissionId,
+    RecordLeafInput, RegistryError, Signer, SpiPreimage, StepHeadPreimage, SubmissionId,
     FLAG_RESERVE_WITHOUT_PRIOR_RESOURCE,
 };
-use certimining_log::{BuiltEpoch, EpochTree, InclusionProof, InclusionVerifier, ProofVerifier};
-use ed25519_dalek::{Signer, SigningKey};
+use certimining_log::{
+    promise_digest, promise_kept, verify_promise, Batcher, BuiltEpoch, EpochBatcher, EpochTree,
+    InclusionProof, InclusionVerifier, ProofVerifier, SignedPromise,
+};
+use ed25519_dalek::{Signer as _, SigningKey};
 use serde_json::{json, Map, Value};
 
 /// RFC 8032 §7.1's first secret key. Its private half is published, so anyone can reproduce every
@@ -117,6 +120,7 @@ fn gen_vectors(dir: &Path) {
     positives(&mut files);
     negatives(&mut files);
     trees(&mut files);
+    promises(&mut files);
     kat03_fixtures(&mut files);
 
     let mut manifest = String::new();
@@ -1546,6 +1550,189 @@ fn tree_negatives(files: &mut BTreeMap<String, Value>, height: u8) {
                 "cases": [refused("V-N-17", "the next epoch's root", &good, &other.root)],
             }),
             &[MASTER_KEY_NOTE],
+        ),
+    );
+}
+
+// ---------------------------------------------------------------- promise vectors (§4.2, §4.3)
+
+/// RFC 8032 §7.1's published key behind §2.2's `Signer` (D-55, D-73). The engine carries no signer, so
+/// the generator supplies one, and its private half is public: every signature below is reproducible.
+struct SpecTestSigner(SigningKey);
+
+impl Signer for SpecTestSigner {
+    fn sign(&self, message: &[u8]) -> Result<[u8; 64], RegistryError> {
+        Ok(self.0.sign(message).to_bytes())
+    }
+
+    fn public_key(&self) -> [u8; 32] {
+        self.0.verifying_key().to_bytes()
+    }
+}
+
+const BATCHER_KEY_NOTE: &str =
+    "The batcher's key is RFC 8032 §7.1's published specification test key, not a real one. Its \
+     private half is public, so every promise here is reproducible, and no real batcher key exists \
+     anywhere in this repository: the engine has no place to keep one.";
+
+fn promise_json(promise: &SignedPromise) -> Value {
+    json!({
+        "leaf": hex(&promise.leaf),
+        "submission_id": hex(&promise.submission_id),
+        "promised_epoch": promise.promised_epoch.to_string(),
+        "max_merge_delay": promise.max_merge_delay.to_string(),
+        "batcher_key": hex(&promise.batcher_key),
+        "signature": hex(&promise.signature),
+    })
+}
+
+/// §4.2's V-P-10 and §4.3's V-N-14: one promise kept at the far edge of the window, the same promise
+/// refused one epoch later, and what a submission past capacity receives.
+fn promises(files: &mut BTreeMap<String, Value>) {
+    let height = spec::DEPLOYED_HEIGHT;
+    let capacity = 1usize << height;
+    let signer = SpecTestSigner(SigningKey::from_bytes(&RFC8032_SECRET_KEY));
+
+    // V-P-10. The promise is made in epoch 20_500 and the leaf lands at the last epoch the delay
+    // allows.
+    let start = 20_500u64;
+    let mut batcher = EpochBatcher::start(&TEST_MASTER_KEY, height, start).expect("starts");
+    let leaf = vector_leaf(50);
+    let promise = batcher
+        .submit::<NativeKeccak, _>(leaf, &signer)
+        .expect("accepted");
+    assert_eq!(
+        promise.max_merge_delay,
+        spec::MAX_MERGE_DELAY,
+        "V-P-10: §1.8 gives the merge delay, and the engine must agree"
+    );
+    assert_eq!(
+        verify_promise::<NativeKeccak, certimining_core::DalekVerifier>(
+            &promise,
+            &signer.public_key()
+        ),
+        Ok(()),
+        "V-P-10: the promise verifies under the key that signed it"
+    );
+
+    let inside = start + u64::from(spec::MAX_MERGE_DELAY);
+    let real = vec![(promise.submission_id, promise.leaf)];
+    let kept = build_epoch(inside, height, &real);
+    let kept_proof = kept.proof(&promise.submission_id).expect("holds it");
+    assert_eq!(
+        promise_kept::<NativeKeccak>(&promise, &kept_proof, &kept.root, inside),
+        Ok(()),
+        "V-P-10: §4.2 states the promise is satisfied at promised_epoch + 2"
+    );
+
+    let outside = inside + 1;
+    let late = build_epoch(outside, height, &real);
+    let late_proof = late.proof(&promise.submission_id).expect("holds it");
+    let refused = promise_kept::<NativeKeccak>(&promise, &late_proof, &late.root, outside)
+        .expect_err("V-P-10: §4.2 states 0x14 at promised_epoch + 3");
+
+    files.insert(
+        "V-P-10.json".into(),
+        vector(
+            "V-P-10",
+            "§4.2",
+            "A signed inclusion promise, satisfied by a root published at the last epoch the merge delay allows, and refused by the same proof one epoch later.",
+            json!({
+                "height": height.to_string(),
+                "capacity": capacity.to_string(),
+                "master_key": hex(&TEST_MASTER_KEY),
+                "promise_made_in_epoch": start.to_string(),
+                "leaf": hex(&leaf),
+                "spi_preimage": hex(&preimage_of(&SpiPreimage {
+                    leaf: promise.leaf,
+                    submission_id: promise.submission_id,
+                    promised_epoch: promise.promised_epoch,
+                    max_merge_delay: promise.max_merge_delay,
+                })),
+            }),
+            json!({
+                "promise": promise_json(&promise),
+                "spi_digest": hex(&promise_digest::<NativeKeccak>(&promise).expect("a digest")),
+                "satisfied": {
+                    "epoch": inside.to_string(),
+                    "root": hex(&kept.root),
+                    "proof": proof_json(&kept_proof),
+                    "result": "accepted",
+                },
+                "after_the_window": {
+                    "epoch": outside.to_string(),
+                    "root": hex(&late.root),
+                    "proof": proof_json(&late_proof),
+                    "expected": spec_expectation("V-P-10", refused, 0x14, "MergeDelayExceeded"),
+                },
+            }),
+            &[
+                BATCHER_KEY_NOTE,
+                MASTER_KEY_NOTE,
+                "§1.6 signs the SPI digest, not its preimage. Both are recorded so an implementation that disagrees can tell which half it built wrongly.",
+                "A root published after the window confirms the breach rather than rebutting it, which is why the same proof is accepted at one epoch and refused at the next (D-72).",
+            ],
+        ),
+    );
+
+    // V-N-14. The tree refuses more than `C` leaves; the batcher never asks it to.
+    let over: Vec<(SubmissionId, Digest)> = (0..=capacity as u64)
+        .map(|n| (vector_submission_id(n), vector_leaf(n)))
+        .collect();
+    let tree_refusal = BuiltEpoch::build::<NativeKeccak>(20_510, height, &TEST_MASTER_KEY, &over)
+        .expect_err("V-N-14: the tree refuses C + 1 leaves");
+
+    let mut full = EpochBatcher::start(&TEST_MASTER_KEY, height, 20_510).expect("starts");
+    for n in 0..capacity as u64 {
+        let promise = full
+            .submit::<NativeKeccak, _>(vector_leaf(n), &signer)
+            .expect("accepted");
+        assert_eq!(
+            promise.promised_epoch, 20_510,
+            "V-N-14: while the epoch has room, it is the promised one"
+        );
+    }
+    let spilled = full
+        .submit::<NativeKeccak, _>(vector_leaf(capacity as u64), &signer)
+        .expect("V-N-14: queued, not dropped");
+    assert_eq!(
+        spilled.promised_epoch, 20_511,
+        "V-N-14: the next epoch the batcher can meet"
+    );
+    assert_eq!(full.overflow_queue_len(), 1, "V-N-14: queued, not dropped");
+
+    files.insert(
+        "V-N-14.json".into(),
+        vector(
+            "V-N-14",
+            "§4.3",
+            "C + 1 real submissions in one epoch. The tree refuses more than C leaves; the batcher never asks it to, and queues the excess instead.",
+            json!({
+                "height": height.to_string(),
+                "capacity": capacity.to_string(),
+                "master_key": hex(&TEST_MASTER_KEY),
+                "epoch": "20510",
+                "submissions": (capacity + 1).to_string(),
+            }),
+            json!({
+                "tree_asked_to_build_c_plus_one": spec_expectation(
+                    "V-N-14",
+                    tree_refusal,
+                    0x12,
+                    "EpochCapacityExceeded",
+                ),
+                "batcher": {
+                    "submission_past_capacity": promise_json(&spilled),
+                    "promised_epoch": spilled.promised_epoch.to_string(),
+                    "overflow_queue_len": full.overflow_queue_len().to_string(),
+                    "dropped": "0",
+                },
+            }),
+            &[
+                BATCHER_KEY_NOTE,
+                MASTER_KEY_NOTE,
+                "Two layers answer this row. The tree returns 0x12 when asked to build past capacity; the batcher queues instead and promises the next epoch it can meet, so nothing is dropped (D-71).",
+            ],
         ),
     );
 }
