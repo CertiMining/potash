@@ -115,11 +115,14 @@ pub fn verify_promise<H: Hasher, V: Verifier>(
     if promise.max_merge_delay != MAX_MERGE_DELAY {
         return Err(RegistryError::PromisePolicyInvalid);
     }
-    let furthest = promise
-        .accepted_epoch
-        .checked_add(u64::from(MAX_MERGE_DELAY))
-        .ok_or(RegistryError::ArithmeticOverflow)?;
-    if promise.promised_epoch < promise.accepted_epoch || promise.promised_epoch > furthest {
+    // By subtraction rather than addition: a promise accepted at the last representable epoch is a
+    // policy question, not an arithmetic accident, so the terminal case reports `0x17` like every
+    // other policy case. `None` here means the promise points backwards.
+    let deferred = promise
+        .promised_epoch
+        .checked_sub(promise.accepted_epoch)
+        .ok_or(RegistryError::PromisePolicyInvalid)?;
+    if deferred > u64::from(MAX_MERGE_DELAY) {
         return Err(RegistryError::PromisePolicyInvalid);
     }
     let digest = promise_digest::<H>(promise)?;
@@ -148,11 +151,13 @@ pub fn promise_kept<H: Hasher>(
     if proof.epoch != published.epoch {
         return Err(RegistryError::InclusionProofInvalid);
     }
-    let last = promise
-        .promised_epoch
-        .checked_add(u64::from(promise.max_merge_delay))
-        .ok_or(RegistryError::ArithmeticOverflow)?;
-    if published.epoch < promise.promised_epoch || published.epoch > last {
+    // The same discipline as above: the window is measured by subtraction, so a promise at the last
+    // representable epoch reports `0x14` rather than an overflow.
+    let elapsed = published
+        .epoch
+        .checked_sub(promise.promised_epoch)
+        .ok_or(RegistryError::MergeDelayExceeded)?;
+    if elapsed > u64::from(promise.max_merge_delay) {
         return Err(RegistryError::MergeDelayExceeded);
     }
     ProofVerifier::verify::<H>(&promise.leaf, proof, &published.root)

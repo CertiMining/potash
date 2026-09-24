@@ -145,6 +145,77 @@ fn a_rolled_back_counter_is_refused_rather_than_reissuing_an_identifier() {
 }
 
 #[test]
+fn a_snapshot_that_lost_a_live_submission_is_refused_rather_than_resumed() {
+    // M-01, round two: three states a batcher cannot reach, each visible inside the value. The first
+    // is the one that matters: the snapshot proves a minted submission was lost, and resuming would
+    // seal an epoch without a leaf the batcher had already promised.
+    let entry = |n: u64| {
+        let mut id = [0u8; 16];
+        id[..8].copy_from_slice(&n.to_le_bytes());
+        (id, leaf_digest(n))
+    };
+
+    let gap = BatcherSnapshot {
+        epoch: 120,
+        next_submission: 3,
+        pending: vec![entry(0), entry(2)],
+        overflow: Vec::new(),
+    };
+    assert_eq!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, gap).err(),
+        Some(RegistryError::MalformedPayload),
+        "identifier 1 was minted and is gone"
+    );
+
+    let reordered = BatcherSnapshot {
+        epoch: 120,
+        next_submission: 3,
+        pending: vec![entry(1), entry(0)],
+        overflow: vec![entry(2)],
+    };
+    assert_eq!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, reordered).err(),
+        Some(RegistryError::MalformedPayload),
+        "arrival order is the order a batcher queues in"
+    );
+
+    let premature_queue = BatcherSnapshot {
+        epoch: 120,
+        next_submission: 1,
+        pending: Vec::new(),
+        overflow: vec![entry(0)],
+    };
+    assert_eq!(
+        EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, premature_queue).err(),
+        Some(RegistryError::MalformedPayload),
+        "a queue beside a half-empty epoch never came from a batcher"
+    );
+
+    // And the shape a real batcher does reach: a full epoch with a queue behind it.
+    let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
+    let mut real = batcher(120);
+    for n in 0..(CAPACITY as u64 + 2) {
+        real.submit::<MixHash, _>(leaf_digest(n), &signer)
+            .expect("accepted");
+    }
+    let honest = real.snapshot();
+    assert_eq!(honest.overflow.len(), 2);
+    assert!(EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, honest).is_ok());
+
+    // As does a sealed one, whose live identifiers are the queue that survived.
+    let mut sealed = batcher(121);
+    for n in 0..(CAPACITY as u64 + 2) {
+        sealed
+            .submit::<MixHash, _>(leaf_digest(n), &signer)
+            .expect("accepted");
+    }
+    sealed.seal::<MixHash>(121).expect("seals");
+    let after = sealed.snapshot();
+    assert_eq!(after.pending.len(), 2);
+    assert!(EpochBatcher::resume(&TEST_MASTER_KEY, HEIGHT, after).is_ok());
+}
+
+#[test]
 fn a_snapshot_resumes_without_reissuing_an_identifier() {
     let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
     let mut before = batcher(100);
@@ -308,7 +379,8 @@ mod with_real_crypto {
             .submit::<NativeKeccak, _>(leaf_digest(7), &signer)
             .expect("accepted");
 
-        // §1.6 signs Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ promised_epoch ‖ max_merge_delay ),
+        // §1.6 signs Keccak256( TAG_SPI ‖ leaf ‖ submission_id ‖ accepted_epoch ‖ promised_epoch
+        // ‖ max_merge_delay ),
         // so the message is the digest and not the preimage. Built here from the specification's own
         // field order rather than read back from the promise's own helper.
         let expected = SpiPreimage {
@@ -528,6 +600,30 @@ mod with_real_crypto {
             );
         }
 
+        // L-01: the boundary is a policy question, so it reports the policy code rather than an
+        // arithmetic one. The window is measured by subtraction for exactly this case.
+        let mut terminal = honest.clone();
+        terminal.accepted_epoch = u64::MAX;
+        terminal.promised_epoch = 0;
+        let digest = promise_digest::<NativeKeccak>(&terminal).expect("a digest");
+        terminal.signature = signer.sign(&digest).expect("signs");
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&terminal, &signer.public_key()),
+            Err(RegistryError::PromisePolicyInvalid),
+            "a promise pointing backwards from the last epoch is policy, not overflow"
+        );
+
+        let mut terminal_ok = honest.clone();
+        terminal_ok.accepted_epoch = u64::MAX;
+        terminal_ok.promised_epoch = u64::MAX;
+        let digest = promise_digest::<NativeKeccak>(&terminal_ok).expect("a digest");
+        terminal_ok.signature = signer.sign(&digest).expect("signs");
+        assert_eq!(
+            verify_promise::<NativeKeccak, DalekCheck>(&terminal_ok, &signer.public_key()),
+            Ok(()),
+            "and one accepted and promised at the last epoch is policy-valid"
+        );
+
         let mut backwards = honest.clone();
         backwards.promised_epoch = 949;
         let digest = promise_digest::<NativeKeccak>(&backwards).expect("a digest");
@@ -559,7 +655,7 @@ mod with_real_crypto {
     }
 
     #[test]
-    fn a_promise_carries_nothing_but_the_six_fields_the_specification_names() {
+    fn a_promise_carries_nothing_but_the_seven_fields_the_specification_names() {
         let signer = SpecTestSigner::from(&RFC8032_SECRET_KEY);
         let mut batcher = real_batcher(920);
         let promise = batcher

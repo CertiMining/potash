@@ -98,26 +98,46 @@ impl EpochBatcher {
             return Err(RegistryError::MalformedPayload);
         }
 
-        // Every identifier must be one this batcher already minted, and no two may be the same: a
-        // counter rolled back behind a queued identifier would reissue it, and the tree would refuse
-        // the epoch with 0x05 long after the promise went out.
-        let mut identifiers: Vec<SubmissionId> = snapshot
+        // Overflow begins only once the current epoch is full, so a queue beside a half-empty epoch
+        // never came from a batcher.
+        if !snapshot.overflow.is_empty() && snapshot.pending.len() != capacity {
+            return Err(RegistryError::MalformedPayload);
+        }
+
+        // The live submissions are the identifiers this batcher minted and has not yet sealed, so they
+        // are a strictly increasing, contiguous run ending at `next_submission - 1`, with the current
+        // epoch's ahead of the queue's. Checked in arrival order, before sorting could hide it: a gap
+        // means a minted submission was lost, and losing one silently is worse than refusing to
+        // resume, because the batcher would seal an epoch without a leaf it had promised.
+        let ordinals: Vec<u64> = snapshot
             .pending
             .iter()
             .chain(snapshot.overflow.iter())
-            .map(|(id, _)| *id)
-            .collect();
-        for id in &identifiers {
-            let ordinal = ordinal_of(id)?;
-            if ordinal >= snapshot.next_submission {
+            .map(|(id, _)| ordinal_of(id))
+            .collect::<Result<Vec<u64>>>()?;
+        if let Some(first) = ordinals.first() {
+            let last = ordinals.last().ok_or(RegistryError::MalformedPayload)?;
+            let expected_last = snapshot
+                .next_submission
+                .checked_sub(1)
+                .ok_or(RegistryError::MalformedPayload)?;
+            if *last != expected_last {
                 return Err(RegistryError::MalformedPayload);
             }
-        }
-        identifiers.sort_unstable();
-        if identifiers
-            .windows(2)
-            .any(|pair| matches!(pair, [left, right] if left == right))
-        {
+            let span = last
+                .checked_sub(*first)
+                .and_then(|span| span.checked_add(1))
+                .ok_or(RegistryError::MalformedPayload)?;
+            if span != ordinals.len() as u64 {
+                return Err(RegistryError::MalformedPayload);
+            }
+            if ordinals.windows(2).any(|pair| match pair {
+                [left, right] => right.checked_sub(*left) != Some(1),
+                _ => true,
+            }) {
+                return Err(RegistryError::MalformedPayload);
+            }
+        } else if !snapshot.overflow.is_empty() {
             return Err(RegistryError::MalformedPayload);
         }
 

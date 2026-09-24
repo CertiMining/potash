@@ -302,6 +302,8 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **Decision.** `SubmissionId` is `[u8; 16]`, and `max_merge_delay` is a `u8` inside the SPI preimage, which is 65 bytes. §1.6 and §2.3 are amended (v0.1.4).
 
+**Superseded in part, 24 Sep 2026.** D-74 adds a signed `accepted_epoch`, so the SPI preimage is 73 bytes. The widths this entry fixed are unchanged.
+
 **Ground.** §2.3 used `SubmissionId` without defining it and §1.6 gave the delay no width. Sixteen bytes is the usual width for a unique identifier, and INV-SPI-01 fixes the delay at 2 while §1.8 caps it, so one byte carries it. E-07 widens it for arithmetic against a `u64` epoch.
 
 **Rejected.** A 32-byte identifier, which doubles the field for no property it gains.

@@ -51,7 +51,7 @@ proptest! {
         prop_assert_eq!(bytes_of(&p).map(|b| b.len()), Ok(161));
     }
 
-    /// The same for an inclusion promise: 65 bytes for any values (§1.6, D-29).
+    /// The same for an inclusion promise: 73 bytes for any values (§1.6, D-29).
     #[test]
     fn an_spi_preimage_is_always_73_bytes(
         leaf in any::<[u8; 32]>(),

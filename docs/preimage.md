@@ -27,7 +27,7 @@ concatenation as a collision path. This file describes what those writers produc
 | `RealLeafPreimage` | `CMv1MTL0` | `leafₙ` 32 | 40 |
 | `PaddingPreimage` | `CMv1PADD` | the slot's PRF output 32 | 40 |
 | `NodePreimage` | `CMv1MTN1` | `left` 32, `right` 32 | 72 |
-| `SpiPreimage` | `CMv1SPI0` | `leaf` 32, `submission_id` 16, `promised_epoch` u64, `max_merge_delay` u8 | 65 |
+| `SpiPreimage` | `CMv1SPI0` | `leaf` 32, `submission_id` 16, `accepted_epoch` u64, `promised_epoch` u64, `max_merge_delay` u8 | 73 |
 
 Two preimages share `CMv1HEAD`, the genesis head and each step. They cannot be confused, because one
 is 42 bytes and the other 72.
