@@ -922,6 +922,8 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Ground.** §2.1 says codes never change and new conditions take new numbers. A code that no path can return is worse than either outcome, because it reads as coverage that does not exist.
 
+**The audit the rule requires, 24 Sep 2026.** Every code in §2.1 was traced to the paths that return it and to the tests that reach it. **`0x09` `CategorySequenceUnsupported` is the only code with no returning path anywhere in the workspace**, which is what §2.1 and INV-STATE-06 already declare it to be: reserved, never returned under schema 1. Every other code from `0x03` to `0x17` has at least one returning path in `crates/certimining-core`, `crates/certimining-log` or `programs/certimining-checkpoint`, and at least one test that reaches it. `0x0E`, the instance that produced this rule, is now reached twice over: under LiteSVM in `tests/checkpoint.rs`, and on devnet as `Custom(6014)` in D-86's comparison. No other unreachable code was found.
+
 ## D-81 · The receipt has one writer and one kind
 
 **Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
