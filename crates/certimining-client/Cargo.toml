@@ -1,0 +1,31 @@
+[package]
+name = "certimining-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+# No licence is declared until E-15 decides it (D-13).
+publish = false
+description = "Publishes checkpoints on the epoch cadence and fetches a root by epoch without an indexer (TCU-02 §2.3, §1.5). The only crate here that speaks to a cluster."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+# The engine: digests, the tree and the promise types (D-84).
+certimining-core = { path = "../certimining-core", features = ["native"] }
+certimining-log = { path = "../certimining-log", features = ["native"] }
+# The program's account layouts and address, so the client derives what the program writes rather
+# than a second opinion about it. `no-entrypoint` keeps the program's entrypoint out of this build.
+certimining-checkpoint = { path = "../../programs/certimining-checkpoint", features = ["no-entrypoint"] }
+# Anchor's account types for deserialising what the program wrote, and its Pubkey/PDA derivation.
+anchor-lang = "=1.2.0"
+
+[dev-dependencies]
+# The cluster stand-in for tests that need one; the RPC itself is behind a trait (D-84).
+litesvm = "=0.16.0"
+solana-instruction = "=3.4.1"
+solana-keypair = "=3.1.2"
+solana-message = "=4.4.1"
+solana-pubkey = "=3.0.0"
+solana-signer = "=3.0.1"
+solana-transaction = "=4.1.6"

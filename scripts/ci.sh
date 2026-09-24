@@ -157,6 +157,7 @@ checks() {
   check "test log, default" cargo test -p certimining-log
   check "test log, solana" cargo test -p certimining-log --no-default-features --features solana
   check "test log, all features" cargo test -p certimining-log --all-features
+  check "test client" cargo test -p certimining-client
   check "bare metal core, no default features" cargo build -p certimining-core --target thumbv7em-none-eabihf --no-default-features
   check "bare metal core, default" cargo build -p certimining-core --target thumbv7em-none-eabihf
   check "bare metal log, no default features" cargo build -p certimining-log --target thumbv7em-none-eabihf --no-default-features

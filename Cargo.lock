@@ -833,6 +833,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "certimining-client"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "certimining-checkpoint",
+ "certimining-core",
+ "certimining-log",
+ "litesvm",
+ "solana-instruction",
+ "solana-keypair",
+ "solana-message",
+ "solana-pubkey 3.0.0",
+ "solana-signer",
+ "solana-transaction",
+]
+
+[[package]]
 name = "certimining-core"
 version = "0.1.0"
 dependencies = [
