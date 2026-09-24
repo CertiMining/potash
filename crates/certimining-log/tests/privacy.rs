@@ -14,8 +14,9 @@ mod common;
 use certimining_core::{epoch_key, padding_prf, Digest, NativeKeccak, SubmissionId};
 use certimining_log::{BuiltEpoch, EpochTree};
 use common::{
-    assert_indistinguishable, combined_scores, epoch, feature_matrix, leaf_digest, padding_slots,
-    pearson, real_slots, sequential_id, SplitMix, FEATURE_COUNT, FEATURE_NAMES, TEST_MASTER_KEY,
+    assert_indistinguishable, assignment_oracle, combined_scores, epoch, feature_matrix,
+    leaf_digest, padding_slots, pearson, real_slots, scattered_id, sequential_id, SplitMix,
+    FEATURE_COUNT, FEATURE_NAMES, TEST_MASTER_KEY,
 };
 
 /// The deployment's height (D-02).
@@ -202,7 +203,22 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
     // count into `epoch`, `height` or the sibling count would pass every other case here.
     let mut shapes: Vec<(u8, usize, u64)> = Vec::new();
     for real_count in [1usize, 128, 255] {
-        let built = epoch::<NativeKeccak>(4_242, HEIGHT, real_count);
+        let real: Vec<(SubmissionId, Digest)> = (0..real_count as u64)
+            .map(|n| (scattered_id(90_000 + n), leaf_digest(90_000 + n)))
+            .collect();
+        let built = BuiltEpoch::build::<NativeKeccak>(4_242, HEIGHT, &TEST_MASTER_KEY, &real)
+            .expect("builds");
+
+        // `slot_index` is the fourth field a proof carries, and the three checks below cannot see it.
+        // Every slot is compared against D-60's assignment, transcribed independently in the test, so a
+        // slot that followed the record count in any bit fails here. A regenerated vector set cannot
+        // serve this purpose, because the generator runs the engine under test.
+        assert_eq!(
+            built.assignment,
+            assignment_oracle::<NativeKeccak>(4_242, HEIGHT, &TEST_MASTER_KEY, &real),
+            "V-Z-03: at {real_count} real leaves, every slot must be the one §1.4 prescribes"
+        );
+
         for (id, _) in &built.assignment {
             let proof = built.proof(id).expect("the epoch holds it");
             assert_eq!(

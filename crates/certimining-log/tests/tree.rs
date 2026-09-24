@@ -16,8 +16,8 @@ use certimining_core::{
 };
 use certimining_log::{slot_from_seed, BuiltEpoch, EpochTree, MAX_HEIGHT, MIN_HEIGHT};
 use common::{
-    epoch, leaf_digest, padding_slots, real_slots, sequential_id, submissions, MixHash, SplitMix,
-    TEST_MASTER_KEY,
+    assignment_oracle, epoch, leaf_digest, padding_slots, real_slots, sequential_id, submissions,
+    MixHash, SplitMix, TEST_MASTER_KEY,
 };
 
 #[test]
@@ -123,6 +123,26 @@ fn every_other_slot_holds_the_padding_of_its_own_index() {
                 .expect("digest"),
             "§1.4: padding leaf = Keccak256(TAG_PAD ‖ PRF(k_e, 0x03 ‖ slot_index_le)), slot {slot}"
         );
+    }
+}
+
+#[test]
+fn every_slot_is_the_one_the_specification_prescribes() {
+    // D-60's assignment, transcribed independently in the test: the PRF's own preimage, the
+    // little-endian reduction to the low H bits, the upward wrapping probe, ascending by identifier.
+    // Comparing the engine against the rule rather than against itself is what catches a slot that
+    // depends on anything the rule does not name, the record count included.
+    for (height, counts) in [(4u8, vec![1usize, 8, 16]), (8u8, vec![1, 128, 255, 256])] {
+        for count in counts {
+            let real = submissions(count);
+            let built =
+                BuiltEpoch::build::<MixHash>(77, height, &TEST_MASTER_KEY, &real).expect("builds");
+            assert_eq!(
+                built.assignment,
+                assignment_oracle::<MixHash>(77, height, &TEST_MASTER_KEY, &real),
+                "H = {height}, {count} real leaves"
+            );
+        }
     }
 }
 
