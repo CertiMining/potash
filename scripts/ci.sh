@@ -102,10 +102,16 @@ kat02() {
     cargo test -p certimining-core --test kat02_ed25519
 }
 
-# KAT-01 inside the Solana runtime, through sol_keccak256 (D-08).
+# Inside the Solana runtime (D-08, D-87): KAT-01 through `sol_keccak256`, the engine's own committed
+# preimages for §2's runtime-equivalence claim, and the checkpoint program's own cases. Both programs
+# are built with the pinned toolchain first.
 kat01_onchain() {
-  scripts/build-sbf.sh &&
-    cargo test -p core-harness --test kat01_onchain -- --nocapture
+  scripts/build-sbf.sh || return 1
+  GROUP_FAILED=""
+  check "kat01 on chain" cargo test -p core-harness --test kat01_onchain -- --nocapture
+  check "runtime equivalence" cargo test -p core-harness --test runtime_equivalence -- --nocapture
+  check "checkpoint program" cargo test -p certimining-checkpoint
+  group_result kat01-onchain
 }
 
 # One command of a group, run whatever happened before it. A group used to chain with `&&`, which

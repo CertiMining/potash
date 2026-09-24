@@ -982,3 +982,17 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **Decision.** The program's tests run under LiteSVM in Rust, as `kat01-onchain` already does. `anchor test` stays a local and demo tool. STANDARD-STEPS' S8 wording is amended accordingly.
 
 **Ground.** No validator process, deterministic, and byte-deterministic in the way V-Z-01's closed-list comparison needs. A validator in CI buys none of that and costs a runner dependency.
+
+## D-88 · The upgrade authority is disclosed, not burned, for this deployment
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** owner's ruling · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** INV-GOV-01 offers two ways to satisfy it, and the owner ruled **disclose**. The program's upgrade authority stays with the deploy key for the hackathon deployment, and the README states plainly that it is live, who holds it, and why. Burning the authority is a decision for a deployment that claims permanence, and it goes to milestone 5 rather than being taken now by default.
+
+**Ground.** INV-GOV-01's own words: a live upgrade authority makes every invariant conditional on the current deployment, so the honest options are to remove it or to say it is there. A submission deployment that may need a fix is not a deployment claiming permanence, and pretending otherwise would be the overstatement the shipping posture forbids.
+
+**What it costs, stated where a reader meets the claims.** Every invariant this program enforces is enforced by *this* program, and whoever holds the deploy key can replace it. That is a trust assumption of the same kind as RES-03's, and the README says so rather than leaving a reader to infer it.
+
+**The key.** Generated off-repo at S6, mode 0600, outside this repository; nothing here has ever held the secret half. The public address is `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz`, which `declare_id!` carries, so every test on this branch verifies the address that actually deploys.
+
+**Recorded on issue #16** under INV-GOV-01, at the first devnet deploy.

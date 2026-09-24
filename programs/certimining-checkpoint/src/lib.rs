@@ -8,7 +8,10 @@
 
 use anchor_lang::prelude::*;
 
-declare_id!("CMcKPT1111111111111111111111111111111111111");
+// The address this program deploys to. Its keypair was generated off-repo and lives outside this
+// repository under mode 0600 (S6, D-79); nothing here has ever held the secret half. Every test on
+// this branch therefore verifies the address that actually deploys.
+declare_id!("5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz");
 
 /// §1.8's range for the tree height, written once at `initialize` (INV-TREE-06, D-78).
 pub const MIN_TREE_HEIGHT: u8 = 4;
