@@ -2,6 +2,11 @@
 //!
 //! The structural cases run in every feature set against a stand-in hasher. The cases §4.2 names run
 //! under the engine's own Keccak-256, because a vector is only a vector under the real primitive.
+//!
+//! **Under Miri, only the trees at `H = 4` and `H = 8` are built.** Miri interprets a hash in about a
+//! tenth of a second, so a tree at `H = 12` costs minutes and one at `H = 16`, being 196,607 hashes,
+//! costs hours. Every test that builds a taller tree is ignored there and runs everywhere else: Miri
+//! is looking for undefined behaviour, and the taller trees execute the same code with a longer loop.
 
 mod common;
 
@@ -16,6 +21,10 @@ use common::{
 };
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "H = 12 is 4,096 slots; the same code runs at H = 4 and H = 8 above"
+)]
 fn a_built_epoch_has_c_leaves_at_every_height() {
     for height in [4u8, 8, 12] {
         let built = epoch::<MixHash>(1, height, 3);
@@ -172,12 +181,27 @@ fn a_height_outside_the_range_is_0x05() {
             "§1.8: H is in [4, 16], and {height} is not"
         );
     }
-    for height in [MIN_HEIGHT, 8, MAX_HEIGHT] {
+    for height in [MIN_HEIGHT, 8] {
         assert!(
             BuiltEpoch::build::<MixHash>(1, height, &TEST_MASTER_KEY, &[]).is_ok(),
             "H = {height} is inside §1.8's range"
         );
     }
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "H = 16 is 65,536 slots, which Miri would interpret for hours"
+)]
+fn the_deepest_tree_the_specification_allows_builds() {
+    let built = BuiltEpoch::build::<MixHash>(1, MAX_HEIGHT, &TEST_MASTER_KEY, &[]).expect("builds");
+    assert_eq!(
+        built.leaves.len(),
+        1usize << MAX_HEIGHT,
+        "§1.8: H = 16 is the top of the range, and it is 65,536 slots"
+    );
+    assert_eq!(built.height, MAX_HEIGHT);
 }
 
 #[test]
@@ -337,6 +361,10 @@ mod with_real_keccak {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "H = 12 under the real hasher; the H = 4 half of this case is enough there"
+    )]
     fn v_p_06b_the_same_leaves_at_h4_and_h12() {
         let real: Vec<_> = (0..12u64)
             .map(|n| (scattered_id(n + 900), leaf_digest(n + 900)))
