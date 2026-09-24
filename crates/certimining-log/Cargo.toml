@@ -20,6 +20,11 @@ solana = ["certimining-core/solana"]
 # INV-ERR-01 stay at the crate root in src/lib.rs, so they govern shipped code only.
 unsafe_code = "forbid"
 
+[dev-dependencies]
+# The tests implement §2.2's `Signer` with RFC 8032 §7.1's published key (D-55, D-73). The engine
+# carries no signer, so the signing half of Ed25519 is a test dependency and nothing more.
+ed25519-dalek = { version = "=2.2.0", default-features = false }
+
 [dependencies]
 # The engine: digests, the PRF, the tag writers and the error space (D-61).
 certimining-core = { path = "../certimining-core", default-features = false }
