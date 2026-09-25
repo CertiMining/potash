@@ -48,7 +48,10 @@ This is worth stating precisely, because it is narrower than log equivocation an
 TAG_ASSET = b"CMv1ASST"   TAG_LEAF = b"CMv1LEAF"   TAG_HEAD = b"CMv1HEAD"
 TAG_MTL0  = b"CMv1MTL0"   TAG_MTN1 = b"CMv1MTN1"   TAG_PAD  = b"CMv1PADD"
 TAG_CKPT  = b"CMv1CKPT"   TAG_PRF  = b"CMv1PRF0"   TAG_SPI  = b"CMv1SPI0"
+TAG_RCPT  = b"CMv1RCPT"
 ```
+
+`TAG_RCPT` is anchor B's receipt digest (§2.4, D-113), added in v0.1.18. **`TAG_CKPT` is declared and consumed by nothing**, which E-11's independent implementation recorded as a defect by the same reasoning D-80 applies to unreachable error codes. It stays declared, and whether it gains a checkpoint preimage or is retired is filed for after the deadline; it was deliberately not spent on the receipt digest, because reusing a reserved tag for the first thing that needs one is how a tag stops meaning anything.
 
 **INV-ENC-01.** Every preimage carries exactly one domain tag, first.
 **INV-ENC-02.** Integers little-endian, fixed width, Borsh. Digests carried as raw `[u8;32]`.
@@ -167,6 +170,8 @@ This is cover traffic applied at Layer 1 rather than Layer 5. It is what removes
 **INV-ANCH-04 (anchor B is opaque).** The program stores the OTS receipt digest and never parses the receipt. Bitcoin confirmation latency (hours) sits inside the operational envelope for this event frequency.
 
 **INV-ANCH-05 (honest degradation).** Until anchor B is attached, the client reports `anchorStatus: "single"`; after, `"dual"`. Silent degradation is a merge blocker.
+
+**`single` before Bitcoin confirms is the budgeted latency, not degradation (v0.1.18, D-112).** An OpenTimestamps receipt is issued with calendar attestations only and is replaced by `ots upgrade` once a Bitcoin block confirms it. `receipt_digest` is write-once (INV-ANCH-03), so there is one opportunity to commit to a receipt, and it is spent on the upgraded one that carries the Bitcoin attestation. An epoch therefore reads `single` for the hours between publication and confirmation. That is the latency INV-ANCH-04 declares to be inside the operational envelope for this event frequency, arriving as designed rather than as a fault, and a client reporting `single` in that window is reporting the truth: no Bitcoin-anchored receipt exists yet for that epoch. What INV-ANCH-05 forbids is the opposite — reporting `dual` on the strength of a calendar's promise, which commits to nothing a counterparty can check.
 
 **INV-ANCH-06 (log equivocation eliminated).** Because the root is on a public chain, all verifiers resolve the same root for epoch `e`. The batcher cannot show different logs to different verifiers. Asset equivocation (§0) is a separate and unsolved property.
 
@@ -448,7 +453,8 @@ pub fn promise_kept<H: Hasher>(
 
 pub trait AnchorClient {
     fn publish(&self, epoch: u64, root: Digest) -> Result<AnchorRef>;       // Solana
-    fn timestamp(&self, root: Digest) -> Result<ReceiptDigest>;             // OTS
+    fn submit(&self, root: Digest) -> Result<PendingReceipt>;               // OTS, returns at once
+    fn upgrade(&self, p: &PendingReceipt) -> Result<Option<ReceiptDigest>>; // None until Bitcoin
     fn status(&self, epoch: u64) -> AnchorStatus;                           // Pending|Single|Dual
 }
 
@@ -479,7 +485,9 @@ pub mod certimining_checkpoint {
 
 **`publish_checkpoint` checks in this order** (D-80): the checkpoint account already exists is `0x0E`, and only then `epoch ≠ last_epoch + 1` is `0x0D`. Both conditions can hold at once — republishing epoch `e` is also an epoch that is not `last + 1` — so the order is stated here rather than left to an implementation, and the account is created explicitly so existence can be seen before it is refused.
 
-**`attach_anchor_receipt` is the authority's alone**, `kind` accepts exactly one value, `1` for OpenTimestamps, with anything else `0x05`, and a second attach is `0x15` (D-81). The field is write-once, so an open writer could block the real receipt for ever with one garbage digest.
+**`attach_anchor_receipt` is the authority's alone**, `kind` accepts exactly one value, `1` for OpenTimestamps, with anything else `0x05`, and a second attach is `0x15` (D-81). The field is write-once, so an open writer could block the real receipt for ever with one garbage digest. An all-zero digest is `0x05`: zero is the sentinel that means *not yet attached*, so writing it would leave the field looking unwritten and let a second attachment through (D-105).
+
+**What `receipt_digest` is (v0.1.18, D-113).** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)`, where `receipt` is the bytes of the **upgraded** OTS receipt — the one carrying a Bitcoin attestation — `len` is a `u16` as INV-ENC-04 requires of every variable-length field, and the tag is first as INV-ENC-01 requires of every preimage. Through v0.1.17 this document named the field, fixed its width and said the program never parses it, and never said what function produced the 32 bytes, so two conforming implementations could disagree about every receipt. The program still parses nothing: it stores what it is given, and the digest is the counterparty's means of checking that the receipt they were handed is the one the epoch committed to (INV-ANCH-04).
 
 **There is no other instruction, and none may be added.** No update, close, revoke, shred, or set-state. A pull request introducing one is rejected regardless of its guard conditions.
 

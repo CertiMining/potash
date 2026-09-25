@@ -39,7 +39,7 @@ pub use preimage::{
     check_tag, read_tag, AssetPreimage, GenesisHeadPreimage, LeafPreimage, NodePreimage,
     PaddingPreimage, Preimage, PreimageBuf, PreimageSink, RealLeafPreimage, SpiPreimage,
     StepHeadPreimage, SubmissionId, MAX_PREIMAGE_LEN, TAG_HEAD, TAG_LEAF, TAG_MTL0, TAG_MTN1,
-    TAG_PAD, TAG_SPI,
+    TAG_PAD, TAG_RCPT, TAG_SPI,
 };
 pub use prf::{
     epoch_key, padding_prf, slot_seed, PrfPreimage, MAX_PRF_INPUT_LEN, PRF_USE_EPOCH_KEY,

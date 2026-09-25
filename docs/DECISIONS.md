@@ -1116,3 +1116,83 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **Why compression is honest here, and where it is not.** INV-ANCH-01's cadence is a day because a day is what hides filing rhythm from an observer. What this row measures is narrower: whether an epoch's *content* moves the slot its checkpoint lands in. That question is about the network's scheduling between submission and inclusion, which is seconds, not days, so a minute between epochs leaves it intact while a day would add 199 days of unrelated drift to the same measurement. What compression does cost is the diurnal variation a day-long cadence would sample — devnet is busier at some hours than others — so a 200-minute run sees one slice of that and a 200-day run would see all of it. A leak of the kind this row exists to catch produces a correlation near 1, far above either sampling regime's noise, which is why the bound is 0.2 and not something tighter.
 
 **What the run therefore establishes, and what it does not.** It establishes that over 200 consecutive epochs at one-minute spacing on one endpoint, landing delay did not follow record count or build time above the stated bound. It does not establish the same across a day's worth of network conditions, which is milestone 5's run, and it is not a proof that no content-dependent scheduling exists.
+
+## D-112 · Anchor B commits to the upgraded receipt, and `single` until then is the budget
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**The interaction that forces this.** An OpenTimestamps receipt changes: it is issued with calendar attestations and replaced by `ots upgrade` once a Bitcoin block confirms it. `receipt_digest` is write-once (INV-ANCH-03). There is one opportunity to commit to a receipt, and it is spent on the upgraded one.
+
+**Decision.** `attach_anchor_receipt` carries the digest of the **upgraded, Bitcoin-carrying receipt**, and nothing else is ever attached. An epoch reads `single` for the hours between publication and confirmation. §1.5 now says in its own words that this window is INV-ANCH-04's budgeted latency arriving as designed, not degradation: a client reporting `single` there is reporting that no Bitcoin-anchored receipt exists yet, which is true. What INV-ANCH-05 forbids is `dual` on the strength of a calendar's promise.
+
+**Rejected.** Attaching the pending receipt's digest, which would make the stored artefact stop matching the chain the moment it is upgraded — breaking the one thing the digest is for. Keeping both and attaching the pending one, which would make `dual` mean "a calendar promised to timestamp this".
+
+## D-113 · `TAG_RCPT`, and a reserved tag left reserved
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026, amending the proposal)
+
+**The gap.** §2.4 fixed `receipt_digest` at 32 bytes and said the program never parses the receipt, and no version of this document ever said what function produced those bytes. Two conforming implementations could disagree about every receipt — the same class of gap E-11 found in §2.4's account discriminator.
+
+**Decision.** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)`, with `TAG_RCPT = b"CMv1RCPT"` **new in v0.1.18**, `len` a `u16` (INV-ENC-04) and the tag first (INV-ENC-01).
+
+**The owner's amendment, and why it is the better answer.** The proposal was to spend `TAG_CKPT` here — declared in §1.2, required of a writer by E-03, and consumed by nothing, which E-11 recorded as a defect. The owner ruled a new tag instead. `TAG_CKPT` stays declared and unconsumed, and its resolution — a checkpoint preimage, or retirement — is filed for after the deadline. Reusing a reserved tag for the first construction that needs one is how a tag stops naming anything in particular, and the cost of a new eight-byte constant is nothing.
+
+## D-114 · `timestamp` is split, because it cannot return what it promises
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**The defect.** §2.3 declared `fn timestamp(&self, root: Digest) -> Result<ReceiptDigest>`, synchronous. Under D-112 that digest does not exist for hours, so a conforming implementation would block on a Bitcoin confirmation.
+
+**Decision.** `submit(root) -> PendingReceipt` returns at once; `upgrade(&PendingReceipt) -> Option<ReceiptDigest>` returns `None` until Bitcoin has confirmed. The worker submits on the epoch cadence and sweeps pending receipts on its own timer. §2.3 is amended.
+
+**Ground.** A blocking `timestamp` would couple anchor B's latency to the publication schedule, and INV-ANCH-01 says publication time depends on nothing but the schedule. Two anchors whose timing is coupled are less independent than two anchors, which is the property the second one exists to provide.
+
+## D-116 · Receipts are written outside the repository and committed by a person
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**Decision.** The worker writes `anchors/epochs/<epoch>.ots` into a working directory outside the repository. A person commits them, which is how the spec's own stamp under `anchors/` got there.
+
+**Ground.** Issue #10 requires receipts stored and retrievable, and a public repository is the retrievable store this project already has. What it does not require is an unattended process holding write access to the public record: that is a governance change, and the one key that runs unattended is the one D-88 deliberately kept away from anything structural.
+
+## D-117 · The worker refuses to start on a key it should not read
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**Decision.** The checkpoint authority is read at start from `~/.config/certimining/checkpoint-authority.json` at mode 0600, outside the repository, never logged and never printed. **The worker refuses to start if the mode is anything else**, as `scripts/deploy-devnet.sh` already refuses.
+
+**Ground.** D-88 makes this the only key that runs unattended and separates it from the upgrade authority for exactly that reason. A requirement that is documented and not enforced is a requirement until the first hurried afternoon.
+
+**What production would need, recorded so no text implies this is the end state.** An OS keychain removes the file; a remote signer removes the key from the host altogether. Both are out of scope before 12 October and neither is pretended to be present.
+
+## D-118 · Silent degradation is a test, not a sentence
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**Decision.** `status` reads the checkpoint account and nothing else (D-110). E-10 adds the transitions under LiteSVM: an epoch with no receipt is `Single` however old it is, an epoch whose worker failed is `Single`, and only a non-zero attached digest is `Dual`. **A mutation that makes a missing receipt report `Dual` must fail the suite**, which is what turns issue #10's "silent degradation fails review" into something a reviewer can check.
+
+**The rule underneath it.** The worker never surfaces its own submission state as chain state. `Single` is a fact about the checkpoint account, not about what the worker believes it has sent, and the two diverge exactly when something has gone wrong.
+
+## D-115 · The reference client makes the receipt; a different implementation verifies it
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment, with a security gain in the verification half · **Status:** settled at S1 (owner, 25 Sep 2026)
+
+**Decision.** The OpenTimestamps reference client creates and upgrades receipts. The `opentimestamps` crate — the OpenTimestamps project's own Rust library, MIT OR Apache-2.0 — parses and verifies each receipt **before anything hashes it**. The owner's reason, in his words: *it makes the receipt checkable by something that did not produce it.*
+
+**What S1 found, which decided the shape.** Three Rust candidates carry an allowed licence or fail on one. `opentimestamps` 0.2.0 is the official library and **does not create timestamps and does not upgrade them**: its README says it parses, serializes and verifies existing receipts and plays them forward, and that the library is in early stages. `opentimestamps-client` 0.1.0 does both, and its own README states it "does not follow the code quality standards, security standards, Code of Conduct, or Ethics standards" of its author's organisation, and is unaffiliated with the OpenTimestamps project. `opentimestamps-cli` 0.2.0 publishes no licence and fails the gate without further inspection.
+
+So the only implementations that can create and upgrade are the Python reference client and a 0.1.0 personal project. Resting anchor B — one of the two anchors the integrity claim stands on — on the second was not a trade worth making, and the official crate covers the half it is actually good at.
+
+**What this costs, stated rather than absorbed.** The Python client is a pinned runtime dependency outside Cargo, so it is outside `cargo deny` and outside `ts-gate`. That is a third supply-chain surface, and it is named in CONTRIBUTING rather than left for a reader to notice. Verification does not make that dependency safe. It makes the artefact it produces checkable by something else.
+
+**Rejected.** The Python client alone, where nothing of ours checks a receipt before hashing it. `opentimestamps-client` 0.1.0 for everything, which is in-toolchain and gate-covered and rests anchor B on a project disclaiming its own security standards. Writing the calendar protocol ourselves, which is the one part of this unit where a bug stays invisible until a counterparty tries to verify.
+
+## D-119 · A receipt commits to SHA-256 of what was stamped, and INV-PRIM-01 still forbids SHA-256
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity, as claim accuracy · **Status:** flagged at S2, awaiting the owner
+
+**What S2 found.** The OpenTimestamps reference client stamps a **file** and offers no option to timestamp a raw digest. The worker therefore writes the 32 root bytes to a file and stamps that, and the receipt's start digest is `SHA-256(root)` rather than the root. Verification compares against that, and `verify_receipt` takes the stamped bytes rather than assuming their length, because assuming it is how a fixture stops being usable and a caller stops being checked.
+
+**Why this is recorded rather than decided.** INV-PRIM-01 says "One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. ... Any copy claiming otherwise is wrong and blocks submission." **This is the second construction that needs SHA-256 and cannot avoid it.** The first is §2.4's program address and account discriminator, which E-11's independent implementation found and recorded as its defect D-8; the proposed scoping is this repository's **D-102**, which the owner has not ruled on. Anchor B does not create a new conflict, it meets the same one from another direction — and it is the stronger instance, because a Solana address derivation is at least arguably outside "the system" while a receipt for an epoch root plainly is not.
+
+**What is true meanwhile.** No log digest uses SHA-256. Every record, head, node, PRF output, promise and root is Keccak-256, and `receipt_digest` itself is Keccak-256 over the receipt. SHA-256 appears only inside formats this system consumes rather than defines: Solana's addresses, and OpenTimestamps' own commitment. INV-PRIM-01 as written does not say that, and until D-102 is ruled the document forbids what two units require.

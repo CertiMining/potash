@@ -29,6 +29,9 @@ pub const TAG_MTN1: [u8; 8] = *b"CMv1MTN1";
 pub const TAG_PAD: [u8; 8] = *b"CMv1PADD";
 /// The tag over a signed inclusion promise (§1.6).
 pub const TAG_SPI: [u8; 8] = *b"CMv1SPI0";
+/// The tag over anchor B's receipt digest (§2.4, D-113). New in v0.1.18, rather than spending
+/// `TAG_CKPT` on the first construction that needed a tag.
+pub const TAG_RCPT: [u8; 8] = *b"CMv1RCPT";
 
 /// A submission's identifier (§2.3, D-29).
 pub type SubmissionId = [u8; 16];
