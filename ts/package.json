@@ -1,0 +1,26 @@
+{
+  "name": "certimining-ts-verifier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent TypeScript verifier for the TCU-02 CertiMining anchored log disclosure package (E-11).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/kat.test.ts && node --test \"test/*.test.ts\"",
+    "test:net": "CERTIMINING_DEVNET=1 node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test:kat": "node --test test/kat.test.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "7.0.2"
+  }
+}
