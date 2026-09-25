@@ -34,6 +34,12 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 anchor-lang = "=1.2.0"
 
 [dev-dependencies]
+# §4.4's V-Z-01 compares what an observer sees across epochs holding 0, 1, 128 and 255 real leaves.
+# Those roots have to be real trees or the test proves nothing about a real publisher, so the engine
+# is a dev-dependency of the tests. It is not a dependency of the program: nothing under src/ uses
+# it, and the deployed binary does not contain it (Codex round one, finding 4).
+certimining-core = { path = "../../crates/certimining-core", features = ["native"] }
+certimining-log = { path = "../../crates/certimining-log", features = ["native"] }
 # Runs the program in-process on the Agave 4.2.2 runtime crates (D-16, D-87).
 litesvm = "=0.16.0"
 solana-instruction = "=3.4.1"

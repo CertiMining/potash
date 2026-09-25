@@ -146,12 +146,49 @@ pub fn missing_epochs<S: RootSource>(
     program_id: &Pubkey,
     first: u64,
     last: u64,
-) -> Result<Vec<u64>, Unreachable> {
-    let mut missing = Vec::new();
+) -> Result<Gaps, Unreachable> {
+    let mut gaps = Gaps::default();
     for epoch in first..=last {
-        if root_for_epoch(source, program_id, epoch)? == Fetched::Absent {
-            missing.push(epoch);
+        match root_for_epoch(source, program_id, epoch)? {
+            Fetched::Placed(_) => {}
+            Fetched::Absent => gaps.absent.push(epoch),
+            Fetched::Refused(reason) => gaps.refused.push((epoch, reason)),
         }
     }
-    Ok(missing)
+    Ok(gaps)
+}
+
+/// Every epoch in a range for which the caller has no usable root, with the two reasons kept apart.
+///
+/// They are kept apart for the same reason `Unreachable` is not an absence (D-106). An epoch with
+/// nothing at its address is a gap in the on-chain sequence and so is evidence about the batcher
+/// (INV-ANCH-02). An epoch whose account was refused says something else entirely: a third party can
+/// place an account at a derived address, and one that fails the checks of D-82 is evidence about
+/// whoever placed it. Counting a refusal as "not missing" was worse than either, because it returned
+/// an empty list to a caller holding no root at all.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Gaps {
+    /// Epochs with nothing at the derived address.
+    pub absent: Vec<u64>,
+    /// Epochs whose account came back and failed a check, with the reason.
+    pub refused: Vec<(u64, Refused)>,
+}
+
+impl Gaps {
+    /// Whether every epoch in the range had a usable root.
+    pub fn is_empty(&self) -> bool {
+        self.absent.is_empty() && self.refused.is_empty()
+    }
+
+    /// Every epoch without a usable root, whatever the reason, in ascending order.
+    pub fn without_a_root(&self) -> Vec<u64> {
+        let mut all: Vec<u64> = self
+            .absent
+            .iter()
+            .copied()
+            .chain(self.refused.iter().map(|(e, _)| *e))
+            .collect();
+        all.sort_unstable();
+        all
+    }
 }

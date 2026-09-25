@@ -4,6 +4,8 @@
 //! submission is a property worth testing, and it is not testable if it only exists inside a call to
 //! a cluster.
 
+use certimining_core::Digest;
+
 /// What a submission's outcome means for the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
@@ -36,6 +38,37 @@ pub fn classify(program_error: Option<u32>) -> Outcome {
         None => Outcome::Retry,
         Some(CHECKPOINT_ALREADY_WRITTEN) => Outcome::AlreadyPublished,
         Some(code) => Outcome::Refused(code),
+    }
+}
+
+/// What `AlreadyPublished` turns out to mean once the caller has read the epoch back.
+///
+/// Codex round one, finding 2. `classify` sees an error code and nothing else, so it cannot tell a
+/// retry that arrived late from an epoch that already carries somebody else's root. Treating `0x0E`
+/// as success on its own is therefore a decision made without the one fact that decides it, and a
+/// client that stopped there would report a successful publication of a root that is not on the
+/// chain (D-108).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settlement {
+    /// The epoch carries the root that was submitted. The retry arrived after the first attempt
+    /// landed, which is the ordinary case and is success.
+    Matches,
+    /// The epoch carries a different root. Two roots exist for one epoch, which is the condition
+    /// INV-ANCH-06 is about, and no client should report it as a successful publication.
+    Equivocation { on_chain: Digest },
+    /// The program said the epoch was already written and nothing usable is there. A client cannot
+    /// assume the program it is talking to carries D-104's fix, so this stays reachable.
+    Unwritten,
+}
+
+/// Settles an `AlreadyPublished` against what the chain actually holds.
+///
+/// `on_chain` is `None` when the epoch has no usable root — absent, or refused by D-82's checks.
+pub fn settle(requested: &Digest, on_chain: Option<&Digest>) -> Settlement {
+    match on_chain {
+        None => Settlement::Unwritten,
+        Some(found) if found == requested => Settlement::Matches,
+        Some(found) => Settlement::Equivocation { on_chain: *found },
     }
 }
 

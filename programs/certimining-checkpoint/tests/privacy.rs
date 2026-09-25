@@ -12,6 +12,8 @@
 
 use anchor_lang::{AnchorDeserialize, InstructionData, ToAccountMetas};
 use certimining_checkpoint::{CheckpointAccount, LogConfig};
+use certimining_core::{Digest, NativeKeccak, SubmissionId};
+use certimining_log::{BuiltEpoch, EpochTree};
 use litesvm::LiteSVM;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
@@ -31,6 +33,8 @@ const PROGRAM: &str = concat!(
 ///
 /// `epoch` 10..18, `published_slot` 50..58, `published_unix` 58..66, `root` 18..50, `bump` 99, and
 /// `receipt_digest` 66..98 once one is attached.
+const DEPLOYED_HEIGHT: u8 = 8;
+
 fn permitted_account_offsets() -> Vec<usize> {
     let mut offsets: Vec<usize> = Vec::new();
     offsets.extend(10..18); // epoch
@@ -44,7 +48,13 @@ fn permitted_account_offsets() -> Vec<usize> {
 
 struct Published {
     instruction_data: Vec<u8>,
-    transaction_len: usize,
+    /// The serialized transaction, in full. Codex round one, finding 4: this used to be its length
+    /// alone, which let any fixed-width byte outside the account carry a record count past a test
+    /// whose own name said "byte-exact".
+    transaction: Vec<u8>,
+    /// The bytes of the transaction §4.4's closed list permits to differ, located in this
+    /// transaction rather than assumed at fixed offsets.
+    permitted: Vec<std::ops::Range<usize>>,
     account: Vec<u8>,
 }
 
@@ -86,21 +96,64 @@ fn publish_epoch(
         accounts: metas,
         data: data.clone(),
     };
+    let blockhash = svm.latest_blockhash();
     let message = Message::new(&[ix], Some(&payer.pubkey()));
-    let tx = Transaction::new(&[payer, authority], message, svm.latest_blockhash());
-    let serialized = bincode_len(&tx);
+    let tx = Transaction::new(&[payer, authority], message, blockhash);
+    let serialized = bincode_serialize(&tx);
+    let permitted = permitted_transaction_ranges(
+        &serialized,
+        tx.signatures.len(),
+        &checkpoint.to_bytes(),
+        blockhash.as_ref(),
+        &data,
+    );
     svm.send_transaction(tx).expect("publishes");
     let account = svm.get_account(&checkpoint).expect("the checkpoint").data;
     Published {
         instruction_data: data,
-        transaction_len: serialized,
+        transaction: serialized,
+        permitted,
         account,
     }
 }
 
-/// The transaction's wire length, which is what an observer measures.
-fn bincode_len(tx: &Transaction) -> usize {
-    bincode_serialize(tx).len()
+/// §4.4's closed list, for the transaction, located in the bytes rather than assumed.
+///
+/// The list names the checkpoint address, the recent blockhash, the signature, and the `epoch` and
+/// `root` arguments. Each is found by its own value, so a layout change moves the permitted window
+/// with it instead of silently exposing a byte the list does not cover. Everything outside these
+/// ranges must be identical across record counts, which is what "byte-exact" has to mean.
+fn permitted_transaction_ranges(
+    serialized: &[u8],
+    signatures: usize,
+    checkpoint: &[u8; 32],
+    blockhash: &[u8],
+    instruction_data: &[u8],
+) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    // The signatures sit immediately after their one-byte count, and every message difference
+    // changes them.
+    ranges.push(1..1 + 64 * signatures);
+    ranges.push(find(serialized, checkpoint, "the checkpoint address"));
+    ranges.push(find(serialized, blockhash, "the recent blockhash"));
+    // Inside the instruction data, the eight discriminator bytes are not permitted to differ; the
+    // arguments after them are `epoch` and `root`.
+    assert_eq!(
+        instruction_data.len(),
+        48,
+        "§1.8: 8 discriminator, 8 epoch, 32 root, and nothing else"
+    );
+    let data = find(serialized, instruction_data, "the instruction data");
+    ranges.push(data.start + 8..data.start + 48);
+    ranges
+}
+
+fn find(haystack: &[u8], needle: &[u8], what: &str) -> std::ops::Range<usize> {
+    let at = haystack
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .unwrap_or_else(|| panic!("{what} is not in the serialized transaction"));
+    at..at + needle.len()
 }
 
 fn bincode_serialize(tx: &Transaction) -> Vec<u8> {
@@ -154,21 +207,34 @@ fn fresh_log(height: u8) -> (LiteSVM, Keypair, Keypair) {
     (svm, authority, payer)
 }
 
-/// A root standing in for an epoch holding `records` real leaves. The tree itself is E-06's and E-07's,
-/// and this program never sees one: what matters here is that the record count reaches the chain only
-/// through a 32-byte digest, so any two counts give roots that differ everywhere and in nothing else.
+/// The root of a **real** epoch holding `records` real leaves, built by the engine at `H = 8`.
+///
+/// Codex round one, finding 4. This was a deterministic PRNG over the record count, which made the
+/// comparison below a test of the program and not of a publisher: a pseudorandom 32-byte value
+/// differs everywhere for any two counts by construction, so it could not have leaked a count even
+/// if a real root did. It also meant V-P-07's "a zero-record epoch publishes a valid root" was never
+/// established here, because no zero-record tree was ever built. The engine is a dev-dependency of
+/// this test and not of the program.
 fn root_for(records: usize) -> [u8; 32] {
-    // A deterministic spread with no structure an observer could read, built without pulling the
-    // engine into a program that has no business depending on it.
-    let mut out = [0u8; 32];
-    let mut state = 0x9e37_79b9_7f4a_7c15u64 ^ records as u64;
-    for chunk in out.chunks_mut(8) {
-        state = state
-            .wrapping_mul(0x5851_f42d_4c95_7f2d)
-            .wrapping_add(0x1405_7b7e_f767_814f);
-        chunk.copy_from_slice(&state.to_le_bytes());
-    }
-    out
+    let key: Digest = [0x5a; 32];
+    let real: Vec<(SubmissionId, Digest)> = (0..records)
+        .map(|i| {
+            let mut id = [0u8; 16];
+            id[..8].copy_from_slice(&(i as u64).to_le_bytes());
+            let mut leaf = [0u8; 32];
+            leaf[..8].copy_from_slice(&(i as u64 ^ 0xa5a5_a5a5_a5a5_a5a5).to_le_bytes());
+            leaf[8] = 0x11;
+            (id, leaf)
+        })
+        .collect();
+    let built = <BuiltEpoch as EpochTree>::build::<NativeKeccak>(1, DEPLOYED_HEIGHT, &key, &real)
+        .expect("the engine builds an epoch of this size");
+    assert_eq!(
+        built.leaves.len(),
+        1usize << DEPLOYED_HEIGHT,
+        "every epoch is full, whatever the record count (INV-TREE-02)"
+    );
+    built.root
 }
 
 #[test]
@@ -207,9 +273,28 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
                 "§1.8: the instruction is 48 bytes whatever the record count, and {records} is not"
             );
             assert_eq!(
-                published.transaction_len, first.transaction_len,
+                published.transaction.len(),
+                first.transaction.len(),
                 "the transaction's length does not move with the record count ({records})"
             );
+            // The byte-exact half, for the transaction as well as the account. Every byte that
+            // differs must lie inside a window §4.4's list names.
+            for (offset, (a, b)) in first
+                .transaction
+                .iter()
+                .zip(published.transaction.iter())
+                .enumerate()
+            {
+                if a != b {
+                    assert!(
+                        first.permitted.iter().any(|r| r.contains(&offset))
+                            && published.permitted.iter().any(|r| r.contains(&offset)),
+                        "V-Z-01: transaction byte {offset} differs between an epoch of {} records \
+                         and one of {records}, and §4.4's list does not permit it",
+                        group[0].0
+                    );
+                }
+            }
             assert_eq!(
                 published.account.len(),
                 CheckpointAccount::LEN,
@@ -260,7 +345,7 @@ fn v_z_01_an_empty_epoch_is_published_like_any_other() {
     let full = publish_epoch(&mut svm, &authority, &payer, 2, root_for(255));
     assert_eq!(empty.account.len(), full.account.len());
     assert_eq!(empty.instruction_data.len(), full.instruction_data.len());
-    assert_eq!(empty.transaction_len, full.transaction_len);
+    assert_eq!(empty.transaction.len(), full.transaction.len());
     let decoded = CheckpointAccount::deserialize(&mut &empty.account[8..]).expect("decodes");
     assert_eq!(decoded.epoch, 1);
     assert_ne!(
@@ -313,7 +398,7 @@ fn v_z_06_a_daily_filer_and_a_twice_yearly_filer_look_the_same() {
             q.instruction_data.len(),
             "day {day}"
         );
-        assert_eq!(b.transaction_len, q.transaction_len, "day {day}");
+        assert_eq!(b.transaction.len(), q.transaction.len(), "day {day}");
         assert_eq!(b.account.len(), q.account.len(), "day {day}");
         for (offset, (x, y)) in b.account.iter().zip(q.account.iter()).enumerate() {
             if x != y {

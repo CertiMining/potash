@@ -993,7 +993,7 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** owner's ruling · **Status:** settled at S0 (owner, 24 Sep 2026)
 
-**Decision.** INV-GOV-01 offers two ways to satisfy it, and the owner ruled **disclose**. The program's upgrade authority stays with the deploy key for the hackathon deployment, and the README states plainly that it is live, who holds it, and why. Burning the authority is a decision for a deployment that claims permanence, and it goes to milestone 5 rather than being taken now by default.
+**Decision.** INV-GOV-01 offers two ways to satisfy it, and the owner ruled **disclose**. The program's upgrade authority stays with the deploy key for the hackathon deployment, and the repository states plainly that it is live, who holds it, and why. **Where** (amended after Codex round one, finding 12): this record and `docs/anchoring.md` said "the README" while the repository had none, so the disclosure existed only for a reader who already knew to look in `docs/`. It lives in `docs/anchoring.md` until E-15 writes the README, and moves there when it exists. Burning the authority is a decision for a deployment that claims permanence, and it goes to milestone 5 rather than being taken now by default.
 
 **Ground.** INV-GOV-01's own words: a live upgrade authority makes every invariant conditional on the current deployment, so the honest options are to remove it or to say it is there. A submission deployment that may need a fix is not a deployment claiming permanence, and pretending otherwise would be the overstatement the shipping posture forbids.
 
@@ -1028,3 +1028,45 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **The gate worked.** `cargo deny check` failed CI on the first push that introduced the dependency, before anything reached a cluster, which is what D-18 put it there to do. It is recorded that way rather than as an obstacle that was removed.
 
 **Rejected.** Hand-writing the four JSON-RPC calls the client needs over an HTTP stack of our own choosing, to avoid a permissive data licence on a root-certificate bundle. Days of work, eighteen days from the deadline, and hand-written RPC against a live network is likelier to be wrong than the crate the cluster's own client uses.
+
+## D-104 · Existence is ownership and data, never a lamport balance
+
+**Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 2)
+
+**The defect.** `publish_checkpoint` read `data_is_empty() && lamports() == 0` as "this epoch has no checkpoint". A checkpoint address is derived from a public seed, so anyone can compute the next one and send lamports to it. That made the address non-empty, the epoch returned `0x0E`, `last_epoch` never advanced, and **every later epoch failed `0x0D` behind it**. Roughly a thousandth of a SOL stopped the log permanently, and D-104's own code comment claimed it made "the same system-program call Anchor's `init` performs" while `init` handles exactly this case and this did not.
+
+**Decision.** Existence is the narrow thing it should always have been: this program owns the account **and** it holds data. An address someone funded is an empty slot, and the instruction fills it. Anything else already there belongs to a third party and is `0x05` rather than written through. Creation tops up, allocates and assigns rather than calling `create_account`, which refuses a funded address outright.
+
+**Evidence.** `a_funded_checkpoint_address_does_not_stop_the_log` fails against the previous binary with `6014` and passes against this one, and `a_written_checkpoint_is_still_0x0e_on_a_second_publish` holds the original behaviour in place.
+
+## D-105 · A zero receipt digest is not a value
+
+**Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 6)
+
+**The defect.** INV-ANCH-03 is zero to a value, once. Attaching an all-zero digest left the sentinel in place and set `anchor_kind`, so a second attachment passed the same check and overwrote it. The write-once field was writable twice.
+
+**Decision.** An all-zero `receipt_digest` argument is `0x05`. The sentinel cannot be written as a value, so the field moves from zero to a value exactly once.
+
+## D-106 · A refused account is not an epoch that is fine
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 7)
+
+**The defect.** `missing_epochs` pushed only `Fetched::Absent`. An account that came back and failed D-82's checks was therefore counted as not missing, and a caller with no usable root for an epoch could be handed an empty list.
+
+**Decision.** `missing_epochs` returns `Gaps`, holding absences and refusals separately, for the reason `Unreachable` is already separate from both: an absence is evidence about the batcher under INV-ANCH-02, and an account a third party placed at a derived address is evidence about whoever placed it. `without_a_root` answers the caller who only wants to know which epochs they cannot verify.
+
+## D-107 · Deriving the address settles which account, not whether the answer is the chain's
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** security necessity, as claim accuracy · **Status:** applied at S9 round 1 (Codex finding 8)
+
+**The defect.** `docs/anchoring.md` said there was "no server that could answer differently for different askers". Deriving the address removes the indexer's discretion over *which* account is read. It does not remove the RPC: the account arrives from one endpoint on its word alone, with no bank proof, no light client and no second endpoint, so a compromised node can hand two counterparties two structurally valid checkpoints for one epoch and every check below passes on both.
+
+**Decision.** The claim is corrected where it was made. A counterparty who needs that assurance asks more than one endpoint, and this client does not do it for them.
+
+## D-108 · `AlreadyPublished` is settled against the chain, not against a code
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 2)
+
+**The defect.** `classify` sees an error code and nothing else, so `0x0E` alone cannot distinguish a retry that arrived after the first attempt landed from an epoch already carrying somebody else's root. Reporting it as success was a decision taken without the fact that decides it.
+
+**Decision.** `settle(requested, on_chain)` returns `Matches`, `Equivocation { on_chain }` or `Unwritten`. Two roots for one epoch is INV-ANCH-06's condition and is never a successful publication. `Unwritten` stays reachable because a client cannot assume the program it is talking to carries D-104's fix.

@@ -59,10 +59,21 @@ pub mod certimining_checkpoint {
 
         // Existence first, then monotonicity. Both conditions hold when an epoch is republished, and
         // §2.4 names this order so the two codes stay distinguishable (D-80).
+        //
+        // What existence means here is narrow on purpose: this program owns the account and it holds
+        // data. Reading a lamport balance as existence would hand anyone a way to stop the log, since
+        // a checkpoint address is derived from a public seed and anyone may send lamports to it
+        // (D-104). An address someone funded is still an empty slot, and this instruction fills it.
         let checkpoint = ctx.accounts.checkpoint.to_account_info();
         require!(
-            checkpoint.data_is_empty() && checkpoint.lamports() == 0,
+            checkpoint.owner != &crate::ID || checkpoint.data_is_empty(),
             CheckpointError::CheckpointAlreadyWritten
+        );
+        // Anything else already at the address belongs to a third party, and this program will not
+        // write through it.
+        require!(
+            checkpoint.owner == &anchor_lang::system_program::ID && checkpoint.data_is_empty(),
+            CheckpointError::MalformedPayload
         );
         let next = ctx
             .accounts
@@ -72,23 +83,48 @@ pub mod certimining_checkpoint {
             .ok_or(CheckpointError::EpochOutOfOrder)?;
         require!(epoch == next, CheckpointError::EpochOutOfOrder);
 
-        // The account `init` would have created, created here so existence could be read first. Same
-        // system-program call, same rent, same owner.
+        // The account `init` would have created, created here so existence could be read first, and
+        // created the way `init` does it rather than the way that is shorter to write. The system
+        // program's `create_account` refuses any address already holding lamports, so an address a
+        // third party funded could never be written through it; topping up, allocating and assigning
+        // reaches the same account from either starting point (D-104).
         let bump = ctx.bumps.checkpoint;
         let epoch_le = epoch.to_le_bytes();
         let seeds: &[&[u8]] = &[CheckpointAccount::SEED, &epoch_le, &[bump]];
+        let signer: &[&[&[u8]]] = &[seeds];
         let rent = Rent::get()?.minimum_balance(CheckpointAccount::LEN);
-        anchor_lang::system_program::create_account(
+        let held = checkpoint.lamports();
+        if held < rent {
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.key(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.payer.to_account_info(),
+                        to: checkpoint.clone(),
+                    },
+                ),
+                rent.checked_sub(held)
+                    .ok_or(CheckpointError::ArithmeticOverflow)?,
+            )?;
+        }
+        anchor_lang::system_program::allocate(
             CpiContext::new(
                 ctx.accounts.system_program.key(),
-                anchor_lang::system_program::CreateAccount {
-                    from: ctx.accounts.payer.to_account_info(),
-                    to: checkpoint.clone(),
+                anchor_lang::system_program::Allocate {
+                    account_to_allocate: checkpoint.clone(),
                 },
             )
-            .with_signer(&[seeds]),
-            rent,
+            .with_signer(signer),
             CheckpointAccount::LEN as u64,
+        )?;
+        anchor_lang::system_program::assign(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                anchor_lang::system_program::Assign {
+                    account_to_assign: checkpoint.clone(),
+                },
+            )
+            .with_signer(signer),
             &crate::ID,
         )?;
 
@@ -129,6 +165,12 @@ pub mod certimining_checkpoint {
         );
         require!(
             kind == ANCHOR_KIND_OPENTIMESTAMPS,
+            CheckpointError::MalformedPayload
+        );
+        // A zero digest is not a value, so attaching one would leave the sentinel in place and let a
+        // second attachment through, which is the rule INV-ANCH-03 exists to state (D-105).
+        require!(
+            receipt_digest != [0u8; 32],
             CheckpointError::MalformedPayload
         );
         let checkpoint = &mut ctx.accounts.checkpoint;
@@ -232,4 +274,6 @@ pub enum CheckpointError {
     UnsupportedSchemaVersion = 0x0F,
     #[msg("0x15: this epoch's receipt is already attached")]
     ReceiptAlreadyAttached = 0x15,
+    #[msg("checked arithmetic overflowed")]
+    ArithmeticOverflow = 0x10,
 }

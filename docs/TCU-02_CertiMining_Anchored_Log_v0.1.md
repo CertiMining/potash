@@ -205,7 +205,7 @@ holder does not choose the policy its own promise is judged against.
 
 ### 1.7 Governance
 
-**INV-GOV-01.** A live program upgrade authority makes every invariant conditional on the current deployment. Before submission the authority is set to `None`, or the README states plainly that it is live and why.
+**INV-GOV-01.** A live program upgrade authority makes every invariant conditional on the current deployment. Before submission the authority is set to `None`, or the repository states plainly, at the entry point a reader arrives through, that it is live and why. Until the README of E-15 exists, that place is `docs/anchoring.md`, and the disclosure moves to the README when there is one. A disclosure a reader does not meet is not a disclosure (Codex round one, finding 12).
 **INV-GOV-02.** The checkpoint authority key is a liveness dependency, not an integrity one: it can stall the log or publish garbage roots, and can do neither retroactively nor selectively (INV-ANCH-06).
 
 ### 1.8 Hard limits

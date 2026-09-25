@@ -30,8 +30,17 @@ existed. The create is the same system-program call, with the same rent and the 
 
 ## What a counterparty does, and does not, take on trust
 
-`root_for_epoch` derives `["cm_ckpt", epoch_le]` against the program id. No index, no
-`getProgramAccounts`, no server that could answer differently for different askers.
+`root_for_epoch` derives `["cm_ckpt", epoch_le]` against the program id. No index and no
+`getProgramAccounts`: the address a counterparty reads is one they computed, not one a server chose
+for them.
+
+**What that does not remove is the RPC itself.** The account comes back from one endpoint, over its
+word alone: this client asks for no bank proof, runs no light client, and does not compare answers
+across endpoints. A malicious or compromised RPC can hand two counterparties two different,
+structurally valid checkpoints for one epoch, and every check below would pass on both. Deriving the
+address closes the question of *which* account is being read; it does not close the question of
+whether the answer is the chain's. A counterparty who needs that assurance today has to ask more than
+one endpoint, and this client does not do it for them (D-107).
 
 What comes back is then **placed before it is believed**: the account must be owned by the program,
 carry the program's discriminator, carry schema version 1, and carry the epoch that was asked for
@@ -80,7 +89,10 @@ the rest.
 ## The upgrade authority is live, and said so
 
 INV-GOV-01 allows two answers and the owner chose disclosure (D-88): the upgrade authority stays with
-the deploy payer for this deployment, and the README states that it is live, who holds it and why.
+the deploy payer for this deployment, and this file states that it is live, who holds it and why.
+This file is where the disclosure lives until E-15 writes the repository's README, which is the entry
+point most readers arrive through; three texts claimed a README that did not exist (Codex round one,
+finding 12).
 
 Three keys carry three jobs, and none of them is the same key. The **program address** is the id in
 `declare_id!`: nobody funds it, it signs once at the deploy and never again, and

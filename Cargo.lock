@@ -940,6 +940,8 @@ name = "certimining-checkpoint"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "certimining-core",
+ "certimining-log",
  "litesvm",
  "solana-instruction",
  "solana-keypair",

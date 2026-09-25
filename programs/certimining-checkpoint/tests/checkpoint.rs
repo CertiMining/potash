@@ -368,3 +368,81 @@ fn a_published_checkpoint_carries_what_the_epoch_fixes_and_nothing_else() {
     assert_eq!(checkpoint.anchor_kind, 0);
     assert_eq!(log.config_account().last_epoch, 1);
 }
+
+/// Codex round one, finding 2. A checkpoint address is derived from a public seed, so anyone can
+/// send lamports to the next one before the authority publishes it. Reading a lamport balance as
+/// "already written" turned that into a permanent stop: the epoch was refused, `last_epoch` never
+/// advanced, and every later epoch failed `0x0D` behind it (D-104).
+#[test]
+fn a_funded_checkpoint_address_does_not_stop_the_log() {
+    let mut log = Log::new();
+    log.initialize(DEPLOYED_HEIGHT).expect("initialize");
+
+    // A stranger funds the address epoch 1 will use. `airdrop` places exactly the account a
+    // system transfer would leave: owned by the system program, no data, non-zero lamports.
+    let target = log.checkpoint(1);
+    log.svm
+        .airdrop(&target, 5_000_000)
+        .expect("a stranger funds the next checkpoint address");
+    assert!(
+        log.svm
+            .get_account(&target)
+            .map(|a| a.lamports)
+            .unwrap_or(0)
+            > 0,
+        "the address is funded before the authority ever touches it"
+    );
+
+    // The epoch publishes anyway, and the account holds what the epoch fixes.
+    let authority = log.authority.insecure_clone();
+    log.publish(1, [0x11; 32], &authority)
+        .expect("a funded address is an empty slot, not a written checkpoint");
+    let raw = log.svm.get_account(&target).expect("the checkpoint exists");
+    assert_eq!(raw.data.len(), CheckpointAccount::LEN);
+    let written = CheckpointAccount::deserialize(&mut &raw.data[8..]).expect("decodes");
+    assert_eq!(written.root, [0x11; 32]);
+    assert_eq!(written.epoch, 1);
+
+    // And the log keeps going, which is what the attack was trying to prevent.
+    log.publish(2, [0x22; 32], &authority)
+        .expect("the next epoch still publishes");
+}
+
+/// Codex round one, finding 2, the other half. Once the program owns the account and it holds data,
+/// a second publish is `0x0E` exactly as before: the narrower existence test did not weaken it.
+#[test]
+fn a_written_checkpoint_is_still_0x0e_on_a_second_publish() {
+    let mut log = Log::new();
+    log.initialize(DEPLOYED_HEIGHT).expect("initialize");
+    let authority = log.authority.insecure_clone();
+    log.publish(1, [0x11; 32], &authority).expect("first");
+    assert_eq!(
+        log.publish(1, [0x99; 32], &authority),
+        Err(CHECKPOINT_ALREADY_WRITTEN),
+        "D-80: existence is decided before monotonicity, so this is 0x0E"
+    );
+}
+
+/// Codex round one, finding 6. A zero digest is the sentinel, not a value: attaching one left the
+/// sentinel in place and let a second attachment through, which is the rule INV-ANCH-03 states
+/// (D-105).
+#[test]
+fn an_all_zero_receipt_digest_is_refused_so_the_write_happens_once() {
+    let mut log = Log::new();
+    log.initialize(DEPLOYED_HEIGHT).expect("initialize");
+    let authority = log.authority.insecure_clone();
+    log.publish(1, [0x11; 32], &authority).expect("publish");
+
+    assert_eq!(
+        log.attach(1, [0u8; 32], 1),
+        Err(MALFORMED_PAYLOAD),
+        "a zero digest is not a receipt"
+    );
+    log.attach(1, [0x44; 32], 1)
+        .expect("a real digest attaches");
+    assert_eq!(
+        log.attach(1, [0x55; 32], 1),
+        Err(RECEIPT_ALREADY_ATTACHED),
+        "zero to a value, exactly once"
+    );
+}

@@ -32,7 +32,9 @@ mod schedule;
 
 pub use fetch::{
     checkpoint_address, config_address, decode_checkpoint, missing_epochs, root_for_epoch, Fetched,
-    PublishedCheckpoint, Refused, RootSource, Unreachable,
+    Gaps, PublishedCheckpoint, Refused, RootSource, Unreachable,
 };
-pub use publish::{classify, should_retry, Outcome, CHECKPOINT_ALREADY_WRITTEN};
+pub use publish::{
+    classify, settle, should_retry, Outcome, Settlement, CHECKPOINT_ALREADY_WRITTEN,
+};
 pub use schedule::{build_start, publication_time, Schedule, EPOCH_SECONDS};

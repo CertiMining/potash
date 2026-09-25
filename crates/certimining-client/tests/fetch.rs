@@ -194,13 +194,44 @@ fn a_gap_is_named_rather_than_noted() {
     for epoch in [1u64, 2, 4, 5, 7] {
         cluster.publish(epoch, [epoch as u8; 32]);
     }
-    assert_eq!(
-        missing_epochs(&cluster, &PROGRAM, 1, 7).expect("the cluster answered"),
-        vec![3, 6]
-    );
+    let gaps = missing_epochs(&cluster, &PROGRAM, 1, 7).expect("the cluster answered");
+    assert_eq!(gaps.absent, vec![3, 6]);
+    assert!(gaps.refused.is_empty());
     assert!(missing_epochs(&cluster, &PROGRAM, 1, 2)
         .expect("answered")
         .is_empty());
+}
+
+/// Codex round one, finding 7. A refused account was neither placed nor absent, and the loop only
+/// counted absences, so a caller holding no usable root for an epoch was told there were no gaps
+/// (D-106).
+#[test]
+fn an_epoch_whose_account_was_refused_is_not_reported_as_fine() {
+    let mut cluster = Cluster::default();
+    cluster.publish(1, [1u8; 32]);
+    cluster.publish(2, [2u8; 32]);
+    // A third party places an account at epoch 3's derived address. Anyone can.
+    cluster.put(
+        checkpoint_address(&PROGRAM, 3),
+        Pubkey::new_unique(),
+        vec![0u8; CheckpointAccount::LEN],
+    );
+
+    let gaps = missing_epochs(&cluster, &PROGRAM, 1, 3).expect("the cluster answered");
+    assert!(
+        !gaps.is_empty(),
+        "an epoch with no usable root is never an empty result"
+    );
+    assert!(
+        gaps.absent.is_empty(),
+        "nothing is absent: something is there, and it was refused"
+    );
+    assert_eq!(gaps.refused, vec![(3, Refused::NotTheProgram)]);
+    assert_eq!(
+        gaps.without_a_root(),
+        vec![3],
+        "the caller asking only which epochs they cannot verify gets the same answer either way"
+    );
 }
 
 #[test]

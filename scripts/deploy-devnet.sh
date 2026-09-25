@@ -64,11 +64,25 @@ if "$AGAVE_BIN/solana" account "$program_id" --url "$URL" 2>/dev/null | grep -q 
   exit 1
 fi
 
-# The artefact must be the one the pinned SBF toolchain produced, not a stale file from another build.
+# The artefact must be the one the pinned SBF toolchain produced, and it must correspond to a commit.
+# Codex round one, finding 11: the deployed bytes matched no commit, because a doc comment in the
+# program was edited after the deploy and every embedded panic line number moved with it. The build
+# is reproducible; what was missing was anything tying the bytes to a tree.
 [ -f "$SO" ] || { echo "deploy: $SO is missing. Run scripts/build-sbf.sh." >&2; exit 1; }
+if [ -n "$(git status --porcelain -- programs crates Cargo.toml Cargo.lock rust-toolchain.toml)" ]; then
+  echo "deploy: the program sources are not clean, so the deployed bytes would match no commit." >&2
+  echo "        Commit first, rebuild with scripts/build-sbf.sh, then deploy." >&2
+  exit 1
+fi
+artefact_sha="$(shasum -a 256 "$SO" | cut -d' ' -f1)"
+source_commit="$(git rev-parse HEAD)"
 echo "program:  $program_id  (address only: unfunded, signs once, never again)"
 echo "payer:    $payer_id  (also the upgrade authority, disclosed per D-88)"
-echo "artefact: $SO  $(wc -c <"$SO" | tr -d ' ') bytes  sha256 $(shasum -a 256 "$SO" | cut -d' ' -f1)"
+echo "artefact: $SO  $(wc -c <"$SO" | tr -d ' ') bytes  sha256 $artefact_sha"
+echo "source:   $source_commit  (clean)"
+echo
+echo "Record these two lines with the deployment. A reader can rebuild that commit with"
+echo "scripts/build-sbf.sh and compare the digest; nothing else ties the bytes to the source."
 
 # The deploy itself. --upgrade-authority is stated rather than inherited from any CLI config, so the
 # governance claim in the README is the one this command made.
@@ -81,3 +95,19 @@ echo "artefact: $SO  $(wc -c <"$SO" | tr -d ' ') bytes  sha256 $(shasum -a 256 "
 
 # Read the deployment back, so the record states what the cluster holds rather than what was sent.
 "$AGAVE_BIN/solana" program show "$program_id" --url "$URL"
+
+# D-79 puts `initialize` in this procedure, because whoever calls it first owns the log and a
+# deployed-but-uninitialized program is front-runnable by anyone watching the cluster. Codex round
+# one, finding 9: this script deployed and stopped, and said nothing about the gap.
+#
+# The call itself is not made here. It needs the Anchor instruction encoding, which this shell has no
+# way to build, and the remedy for a front-run is a redeploy to a new program id rather than anything
+# recoverable. So the script refuses to report success while the window is open, and names the step.
+echo
+echo "DEPLOYED BUT NOT INITIALIZED."
+echo "Until \`initialize\` runs, whoever calls it first owns this log (D-79). Run it now:"
+echo
+echo "  cargo test -p certimining-client --features cluster --test devnet -- --ignored --nocapture"
+echo
+echo "and confirm LogConfig.authority is the checkpoint key you intended before announcing the id."
+exit 1

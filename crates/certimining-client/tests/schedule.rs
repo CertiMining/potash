@@ -94,3 +94,34 @@ mod retry {
         }
     }
 }
+
+/// Codex round one, finding 2, the client's half. `classify` sees a code and nothing else, so
+/// `0x0E` alone cannot distinguish a retry that arrived late from an epoch carrying someone else's
+/// root. The decision needs the chain read back (D-108).
+mod settlement {
+    use certimining_client::{settle, Settlement};
+
+    const ASKED: [u8; 32] = [0xaa; 32];
+    const OTHER: [u8; 32] = [0xbb; 32];
+
+    #[test]
+    fn the_same_root_on_chain_is_the_success_a_late_retry_looks_like() {
+        assert_eq!(settle(&ASKED, Some(&ASKED)), Settlement::Matches);
+    }
+
+    #[test]
+    fn a_different_root_on_chain_is_never_reported_as_a_successful_publication() {
+        assert_eq!(
+            settle(&ASKED, Some(&OTHER)),
+            Settlement::Equivocation { on_chain: OTHER },
+            "two roots for one epoch is INV-ANCH-06's condition, not a publication"
+        );
+    }
+
+    #[test]
+    fn already_written_with_nothing_usable_there_is_neither_success_nor_equivocation() {
+        // What a pre-funded address produced before D-104. A client cannot assume the program it is
+        // talking to carries that fix, so the case stays reachable and stays named.
+        assert_eq!(settle(&ASKED, None), Settlement::Unwritten);
+    }
+}
