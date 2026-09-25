@@ -107,12 +107,14 @@ upgrade the program.
 | | |
 |---|---|
 | Cluster | Solana devnet |
-| Program | `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB` |
-| ProgramData | `HELvWepyztbX9ZkfqPyHxCpReG6dyjVMix4E27btwMF6` |
+| Program | `jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no` |
+| ProgramData | filled at deploy |
 | Upgrade authority | `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz` (live, see above) |
 | Checkpoint authority | `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB` |
 | `tree_height` | 8, written once at `initialize` |
-| Deployed in slot | 503659540 |
+| Deployed in slot | filled at deploy |
+
+**A superseded deployment.** `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB` was announced on 24 September and is superseded. Its epoch 1 carries a receipt digest standing for no OpenTimestamps receipt, written into a field that is write-once, so it claims an anchor it does not have and always will; and its log begins at epoch 1 rather than at a UTC day index, which the rule in §1.4 now forbids. Neither is repairable in place, and the address above replaces it.
 
 Devnet runs Agave 4.3.0 while this repository pins 4.2.2, so the suite that proves the program's
 behaviour and the cluster that runs it are not the same version. D-86 makes that a thing to measure

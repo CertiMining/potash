@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 URL="https://api.devnet.solana.com"
 AGAVE_BIN="${POTASH_AGAVE_BIN:-$HOME/.local/share/potash/agave/v4.2.2/solana-release/bin}"
 KEYS="$HOME/.config/certimining"
-PROGRAM_KEY="$KEYS/program-id.json"
+PROGRAM_KEY="${POTASH_PROGRAM_KEY:-$KEYS/program-id-2.json}"
 PAYER_KEY="$KEYS/deploy-keypair.json"
 SO="target/deploy/certimining_checkpoint.so"
 

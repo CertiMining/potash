@@ -14,7 +14,7 @@ use anchor_lang::prelude::*;
 // not the upgrade authority, which is a separate key (D-88). The only lamports it ever holds are the
 // program account's own rent-exemption, placed there by the loader. Every test on this branch
 // verifies the address that actually deploys.
-declare_id!("HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB");
+declare_id!("jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no");
 
 /// §1.8's range for the tree height, written once at `initialize` (INV-TREE-06, D-78).
 /// §1.4's epoch clock: an epoch is a UTC day index, so a day is this many seconds.
