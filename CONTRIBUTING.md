@@ -95,6 +95,20 @@ signature in the set. No generated key and no real key belongs in this repositor
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
 
+## A dependency no gate covers
+
+Anchor B's receipts are created and upgraded by the **OpenTimestamps reference client**, pinned at
+**v0.7.2**, LGPL-3.0, installed in a private virtual environment at
+`~/.local/share/potash/ots-venv` and invoked as a process rather than linked (D-115). It is the only
+implementation that both submits to calendars and upgrades once Bitcoin confirms.
+
+`cargo deny` reads `Cargo.lock` and `scripts/ts-gate.sh` reads `ts/package-lock.json`. **Neither sees
+this.** It is a third supply-chain surface, it is named here rather than left for a reader to notice,
+and what mitigates it is not a gate: every receipt it produces is parsed and verified by the
+`opentimestamps` crate — the OpenTimestamps project's own Rust library, which cannot create a
+receipt — before anything computes a digest over it. That does not make the dependency safe. It
+makes the artefact checkable by something that did not produce it.
+
 ## The privacy release gate
 
 §4.4's V-Z-02, V-Z-03 and V-Z-04 are release blockers and run in `checks` at the sample sizes D-66
