@@ -79,6 +79,28 @@ fn build(epoch: u64, records: usize) -> (Digest, Duration) {
     (built.root, started.elapsed())
 }
 
+/// Retries a cluster read through a transient fault.
+///
+/// A 200-minute run on a public endpoint meets DNS failures, rate limits and dropped connections.
+/// The first attempt at this gate died at epoch 13 of 200 on a name-resolution error, which measured
+/// nothing and cost the run. A fault here is not evidence about the property under test, so it is
+/// retried rather than recorded; a fault that outlasts the retries stops the run, because a gap in
+/// the series would bias exactly what the series is measuring.
+fn with_retry<T>(what: &str, mut attempt: impl FnMut() -> Result<T, String>) -> T {
+    let mut waited = Duration::from_secs(1);
+    for _ in 0..6 {
+        match attempt() {
+            Ok(value) => return value,
+            Err(e) => {
+                println!("  {what}: {e}; retrying in {} s", waited.as_secs());
+                std::thread::sleep(waited);
+                waited = (waited * 2).min(Duration::from_secs(30));
+            }
+        }
+    }
+    panic!("{what}: still failing after six attempts, so the run stops rather than skip an epoch");
+}
+
 /// Pearson's r. Returns 0.0 when a sample has no variance, which is the honest answer: a constant
 /// carries no correlation with anything.
 fn pearson(xs: &[f64], ys: &[f64]) -> f64 {
@@ -183,11 +205,13 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
 
         // Publication is at a fixed time whatever the build took (INV-ANCH-01), so the delay measured
         // below is the network's and not the builder's.
-        let before = rpc.get_slot().expect("a slot");
+        let before = with_retry("get_slot", || rpc.get_slot().map_err(|e| e.to_string()));
         let reference = Instant::now();
-        let anchored = cluster
-            .publish(next_epoch, root, &payer, &authority, 3)
-            .unwrap_or_else(|e| panic!("epoch {next_epoch}: {e:?}"));
+        let anchored = with_retry("publish", || {
+            cluster
+                .publish(next_epoch, root, &payer, &authority, 3)
+                .map_err(|e| format!("{e:?}"))
+        });
         let wall = reference.elapsed();
         let landed = anchored.published_slot.saturating_sub(before);
 
@@ -202,7 +226,9 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
         );
 
         assert_eq!(
-            cluster.status(next_epoch).expect("the cluster answered"),
+            with_retry("status", || cluster
+                .status(next_epoch)
+                .map_err(|e| format!("{e:?}"))),
             AnchorStatus::Single,
             "a root is anchored once and has no receipt: this harness attaches none"
         );

@@ -107,7 +107,11 @@ echo
 echo "DEPLOYED BUT NOT INITIALIZED."
 echo "Until \`initialize\` runs, whoever calls it first owns this log (D-79). Run it now:"
 echo
-echo "  cargo test -p certimining-client --features cluster --test devnet -- --ignored --nocapture"
+echo "  CERTIMINING_RPC=<endpoint> cargo test -p certimining-client --features cluster \\"
+echo "      --test correlation -- --ignored --nocapture"
+echo
+echo "That harness initializes the log and then runs V-Z-01's landing-delay gate. devnet.rs cannot"
+echo "be used here: it writes placeholder anchor data and refuses the announced program id."
 echo
 echo "and confirm LogConfig.authority is the checkpoint key you intended before announcing the id."
 exit 1
