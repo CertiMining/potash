@@ -122,7 +122,11 @@ Schema 1 flag bits: `bit 0 = RESERVE_WITHOUT_PRIOR_RESOURCE`, `bit 1 = CATEGORY_
 
 ### 1.4 Epoch tree — fixed capacity, count-hiding
 
-Epoch `e` = UTC day index. The tree has a **fixed height `H`, chosen once at `initialize` and immutable thereafter**. Default for this deployment: **`H = 8`, capacity `C = 256` slots**. Whatever `H` is, every epoch uses it, every epoch, forever.
+Epoch `e` = UTC day index, `floor(unix_seconds / 86400)`. **A log begins at the day it is initialized**, not at zero: `initialize` writes `start_epoch`, the UTC day index the chain itself reports at that moment, and `publish_checkpoint` then takes exactly `last_epoch + 1` forever after. Through v0.1.16 this document gave the epoch its meaning and left a new log's `last_epoch` at zero, which made the first publishable epoch `1` — 2 January 1970 — and put the current day roughly twenty thousand transactions away, so the daily cadence INV-ANCH-01 requires was unreachable from the first deploy (D-109).
+
+`start_epoch` is an argument to `initialize` so that the intended value is visible in the transaction, and the program requires it to equal the day index the on-chain clock reports. The operator states it; the chain decides it. The match is exact, so a transaction prepared before midnight and landing after it is refused and resubmitted with the new day; a tolerance would be a choice between two values, and this value is not the operator's to choose.
+
+The tree has a **fixed height `H`, chosen once at `initialize` and immutable thereafter**. Default for this deployment: **`H = 8`, capacity `C = 256` slots**. Whatever `H` is, every epoch uses it, every epoch, forever.
 
 Hiding quality comes from the capacity being fixed and always full, not from it being large. `C = 256` absorbs roughly 250 filings a day against a realistic industry rate of one or two, so overflow is not a practical concern, and it is four times cheaper to build than `C = 1024`. See decision **D-02** (Appendix B) for the revision triggers.
 
@@ -156,7 +160,7 @@ epoch root     = root of the complete binary tree over all C slots
 
 This is cover traffic applied at Layer 1 rather than Layer 5. It is what removes the "something material just happened at an identified asset" signal that makes public typed registries unusable in this domain, and it is the property most likely to generalize beyond mining.
 
-**INV-ANCH-02 (single authority, monotone epochs).** `publish_checkpoint` accepts `e = last_epoch + 1` only. Gaps and replays are rejected. A gap in the on-chain sequence is itself evidence of batcher failure and must surface in the client.
+**INV-ANCH-02 (single authority, monotone epochs).** `publish_checkpoint` accepts `e = last_epoch + 1` only. Gaps and replays are rejected. A gap in the on-chain sequence is itself evidence of batcher failure and must surface in the client. **The sequence begins at `LogConfig.start_epoch`** (§1.4, D-109): an epoch before it is not a gap but a day the log did not exist for, and a client that could not tell the two apart would accuse a batcher of failing to publish before it was deployed.
 
 **INV-ANCH-03 (write-once).** Checkpoint accounts are written once. `attach_anchor_receipt` may transition `receipt_digest` from zero to a value exactly once. No instruction mutates a non-zero field.
 
@@ -464,14 +468,14 @@ pub struct InclusionProof {
 #[program]
 pub mod certimining_checkpoint {
     pub fn initialize(ctx: Context<Initialize>, authority: Pubkey,
-                      tree_height: u8) -> Result<()>;
+                      tree_height: u8, start_epoch: u64) -> Result<()>;
     pub fn publish_checkpoint(ctx: Context<Publish>, epoch: u64, root: [u8;32]) -> Result<()>;
     pub fn attach_anchor_receipt(ctx: Context<Attach>, epoch: u64,
                                  receipt_digest: [u8;32], kind: u8) -> Result<()>;
 }
 ```
 
-`initialize` takes `tree_height` (4..=16, default 8) and writes it once; anything outside the range is `0x05` (V-N-22). No instruction changes it afterwards (INV-TREE-06). The `LogConfig` PDA is its own guard against a second call, since the account already exists. **Whoever calls `initialize` first owns the log**, so it belongs to the deploy procedure rather than to whoever gets there first; a front-run is visible because `LogConfig.authority` is not the operator's key, and the remedy is a redeploy to a new program id. The program's upgrade authority is settled in the same step, which is where INV-GOV-01's choice is made (D-79).
+`initialize` takes `tree_height` (4..=16, default 8) and writes it once; anything outside the range is `0x05` (V-N-22). It also takes `start_epoch` and writes it once, refusing with `0x05` anything but the UTC day index the on-chain clock reports (§1.4, D-109); `last_epoch` is written as `start_epoch - 1`, so the first publication is `start_epoch` itself. `start_epoch` occupies eight of the sixteen bytes that were reserved, so `LogConfig` is still 68 bytes. No instruction changes it afterwards (INV-TREE-06). The `LogConfig` PDA is its own guard against a second call, since the account already exists. **Whoever calls `initialize` first owns the log**, so it belongs to the deploy procedure rather than to whoever gets there first; a front-run is visible because `LogConfig.authority` is not the operator's key, and the remedy is a redeploy to a new program id. The program's upgrade authority is settled in the same step, which is where INV-GOV-01's choice is made (D-79).
 
 **`publish_checkpoint` checks in this order** (D-80): the checkpoint account already exists is `0x0E`, and only then `epoch ≠ last_epoch + 1` is `0x0D`. Both conditions can hold at once — republishing epoch `e` is also an epoch that is not `last + 1` — so the order is stated here rather than left to an implementation, and the account is created explicitly so existence can be seen before it is refused.
 
@@ -487,7 +491,8 @@ LogConfig (PDA ["cm_cfg"])            offset  len        CheckpointAccount (PDA 
   last_epoch                              42    8          root                    18   32
   tree_height                             50    1          published_slot          50    8
   bump                                    51    1          published_unix          58    8
-  reserved                                52   16          receipt_digest          66   32
+  start_epoch                             52    8          receipt_digest          66   32
+  reserved                                60    8
                                         total   68         anchor_kind             98    1
                                                            bump                    99    1
                                                            reserved               100    6

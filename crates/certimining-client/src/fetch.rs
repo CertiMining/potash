@@ -1,4 +1,8 @@
-//! Fetching a root by epoch, without an indexer (§2.3's `AnchorClient`, D-82).
+//! Fetching a root by epoch, without an indexer (D-82).
+//!
+//! This is the read half that §2.3's `status` is built on, and it is not itself `AnchorClient`.
+//! Codex round one, finding 3: the header said it was, which told a reader the trait was implemented
+//! somewhere in this crate when none of its three operations existed.
 //!
 //! The address is derived, not searched: `["cm_ckpt", epoch_le]` against the program id. What comes
 //! back is then placed before it is believed, because an RPC node can return anything and a root that

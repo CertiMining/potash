@@ -17,6 +17,9 @@ use anchor_lang::prelude::*;
 declare_id!("HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB");
 
 /// §1.8's range for the tree height, written once at `initialize` (INV-TREE-06, D-78).
+/// §1.4's epoch clock: an epoch is a UTC day index, so a day is this many seconds.
+pub const SECONDS_PER_DAY: u64 = 86_400;
+
 pub const MIN_TREE_HEIGHT: u8 = 4;
 pub const MAX_TREE_HEIGHT: u8 = 16;
 
@@ -33,19 +36,45 @@ pub mod certimining_checkpoint {
     /// Writes the authority and the tree height once. The `LogConfig` PDA is its own guard against a
     /// second call, and whoever calls first owns the log, which is why this belongs to the deploy
     /// procedure (D-79).
-    pub fn initialize(ctx: Context<Initialize>, authority: Pubkey, tree_height: u8) -> Result<()> {
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        authority: Pubkey,
+        tree_height: u8,
+        start_epoch: u64,
+    ) -> Result<()> {
         require!(
             (MIN_TREE_HEIGHT..=MAX_TREE_HEIGHT).contains(&tree_height),
             CheckpointError::MalformedPayload
         );
+
+        // §1.4: an epoch is a UTC day index, and `publish_checkpoint` takes exactly `last + 1`. A log
+        // that began at zero could therefore never reach the current day without backfilling every
+        // day since 1970, which made the daily cadence INV-ANCH-01 requires impossible from the first
+        // deploy (D-109). The log begins at today.
+        //
+        // The argument is present so the intended value appears in the transaction, and it is
+        // checked rather than trusted: the operator states it, the chain decides it. An exact match
+        // is required, so a transaction prepared before midnight and landing after it is refused and
+        // resubmitted with the new day. That is deliberate — a tolerance would be a choice between
+        // two values, and this value is not the operator's to choose.
+        let clock = Clock::get()?;
+        let today = u64::try_from(clock.unix_timestamp)
+            .map_err(|_| error!(CheckpointError::ArithmeticOverflow))?
+            / SECONDS_PER_DAY;
+        require!(start_epoch == today, CheckpointError::MalformedPayload);
+
         let bump = ctx.bumps.config;
         let config = &mut ctx.accounts.config;
         config.schema_version = SCHEMA_VERSION;
         config.authority = authority;
-        config.last_epoch = 0;
+        // The first publishable epoch is `start_epoch`, and publication is always `last + 1`.
+        config.last_epoch = start_epoch
+            .checked_sub(1)
+            .ok_or(CheckpointError::ArithmeticOverflow)?;
         config.tree_height = tree_height;
         config.bump = bump;
-        config.reserved = [0u8; 16];
+        config.start_epoch = start_epoch;
+        config.reserved = [0u8; 8];
         Ok(())
     }
 
@@ -94,39 +123,61 @@ pub mod certimining_checkpoint {
         let signer: &[&[&[u8]]] = &[seeds];
         let rent = Rent::get()?.minimum_balance(CheckpointAccount::LEN);
         let held = checkpoint.lamports();
-        if held < rent {
-            anchor_lang::system_program::transfer(
+        if held == 0 {
+            // The ordinary path, and the cheap one: one CPI, exactly what `init` emits. Doing the
+            // three-call dance unconditionally cost §1.8's budget about 7,400 CU for a case that
+            // only arises when somebody has funded the address on purpose.
+            anchor_lang::system_program::create_account(
                 CpiContext::new(
                     ctx.accounts.system_program.key(),
-                    anchor_lang::system_program::Transfer {
+                    anchor_lang::system_program::CreateAccount {
                         from: ctx.accounts.payer.to_account_info(),
                         to: checkpoint.clone(),
                     },
-                ),
-                rent.checked_sub(held)
-                    .ok_or(CheckpointError::ArithmeticOverflow)?,
+                )
+                .with_signer(signer),
+                rent,
+                CheckpointAccount::LEN as u64,
+                &crate::ID,
+            )?;
+        } else {
+            // The attacked path. `create_account` refuses a funded address outright, so the account
+            // is topped up, allocated and assigned instead, reaching the same state from a start
+            // somebody else chose.
+            if held < rent {
+                anchor_lang::system_program::transfer(
+                    CpiContext::new(
+                        ctx.accounts.system_program.key(),
+                        anchor_lang::system_program::Transfer {
+                            from: ctx.accounts.payer.to_account_info(),
+                            to: checkpoint.clone(),
+                        },
+                    ),
+                    rent.checked_sub(held)
+                        .ok_or(CheckpointError::ArithmeticOverflow)?,
+                )?;
+            }
+            anchor_lang::system_program::allocate(
+                CpiContext::new(
+                    ctx.accounts.system_program.key(),
+                    anchor_lang::system_program::Allocate {
+                        account_to_allocate: checkpoint.clone(),
+                    },
+                )
+                .with_signer(signer),
+                CheckpointAccount::LEN as u64,
+            )?;
+            anchor_lang::system_program::assign(
+                CpiContext::new(
+                    ctx.accounts.system_program.key(),
+                    anchor_lang::system_program::Assign {
+                        account_to_assign: checkpoint.clone(),
+                    },
+                )
+                .with_signer(signer),
+                &crate::ID,
             )?;
         }
-        anchor_lang::system_program::allocate(
-            CpiContext::new(
-                ctx.accounts.system_program.key(),
-                anchor_lang::system_program::Allocate {
-                    account_to_allocate: checkpoint.clone(),
-                },
-            )
-            .with_signer(signer),
-            CheckpointAccount::LEN as u64,
-        )?;
-        anchor_lang::system_program::assign(
-            CpiContext::new(
-                ctx.accounts.system_program.key(),
-                anchor_lang::system_program::Assign {
-                    account_to_assign: checkpoint.clone(),
-                },
-            )
-            .with_signer(signer),
-            &crate::ID,
-        )?;
 
         let clock = Clock::get()?;
         let written = CheckpointAccount {
@@ -194,11 +245,15 @@ pub struct LogConfig {
     pub last_epoch: u64,
     pub tree_height: u8,
     pub bump: u8,
-    pub reserved: [u8; 16],
+    /// The first epoch this log publishes, the UTC day index at `initialize` (D-109). A client needs
+    /// it to tell an epoch before the log existed from a gap in the sequence (INV-ANCH-02).
+    pub start_epoch: u64,
+    pub reserved: [u8; 8],
 }
 
 impl LogConfig {
-    /// 8 discriminator, 2 schema, 32 authority, 8 last epoch, 1 height, 1 bump, 16 reserved.
+    /// 8 discriminator, 2 schema, 32 authority, 8 last epoch, 1 height, 1 bump, 8 start epoch,
+    /// 8 reserved.
     pub const LEN: usize = 68;
     pub const SEED: &'static [u8] = b"cm_cfg";
 }

@@ -20,6 +20,17 @@ const PROGRAM: &str = concat!(
 
 /// §1.8's limits.
 const PUBLISH_LIMIT: u64 = 15_000;
+
+/// §1.4's epoch clock. Every test below runs on one fixed day, so `start_epoch` is a constant rather
+/// than whatever the runner's wall clock says (D-109).
+const START: u64 = 20_721;
+
+fn pin_the_clock(svm: &mut LiteSVM) {
+    let mut clock: anchor_lang::prelude::Clock = svm.get_sysvar();
+    clock.unix_timestamp = (START * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+    svm.set_sysvar(&clock);
+}
+
 const ATTACH_LIMIT: u64 = 12_000;
 
 fn metas(accounts: Vec<anchor_lang::prelude::AccountMeta>) -> Vec<solana_instruction::AccountMeta> {
@@ -40,6 +51,7 @@ fn both_instructions_stay_inside_the_limits_1_8_gives() {
     let mut svm = LiteSVM::new();
     let program_id = certimining_checkpoint::ID;
     svm.add_program(program_id, &program).expect("load");
+    pin_the_clock(&mut svm);
     let payer = Keypair::new();
     let authority = Keypair::new();
     svm.airdrop(&payer.pubkey(), 100_000_000_000).expect("fund");
@@ -66,13 +78,16 @@ fn both_instructions_stay_inside_the_limits_1_8_gives() {
         data: certimining_checkpoint::instruction::Initialize {
             authority: anchor_lang::prelude::Pubkey::from(authority.pubkey().to_bytes()),
             tree_height: 8,
+            start_epoch: START,
         }
         .data(),
     };
     let initialize_cu = send(&mut svm, initialize, &[&payer]);
 
-    let (checkpoint, _) =
-        Pubkey::find_program_address(&[CheckpointAccount::SEED, &1u64.to_le_bytes()], &program_id);
+    let (checkpoint, _) = Pubkey::find_program_address(
+        &[CheckpointAccount::SEED, &START.to_le_bytes()],
+        &program_id,
+    );
     let publish = Instruction {
         program_id,
         accounts: metas(
@@ -86,7 +101,7 @@ fn both_instructions_stay_inside_the_limits_1_8_gives() {
             .to_account_metas(None),
         ),
         data: certimining_checkpoint::instruction::PublishCheckpoint {
-            epoch: 1,
+            epoch: START,
             root: [0xab; 32],
         }
         .data(),
@@ -104,7 +119,7 @@ fn both_instructions_stay_inside_the_limits_1_8_gives() {
             .to_account_metas(None),
         ),
         data: certimining_checkpoint::instruction::AttachAnchorReceipt {
-            epoch: 1,
+            epoch: START,
             receipt_digest: [0x33; 32],
             kind: 1,
         }

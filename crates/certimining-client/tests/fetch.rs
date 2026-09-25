@@ -40,6 +40,20 @@ impl Cluster {
         self.accounts.insert(address, (owner, data));
     }
 
+    /// A checkpoint with anchor B's receipt attached.
+    fn publish_dual(&mut self, epoch: u64, root: [u8; 32], receipt: [u8; 32]) {
+        self.publish(epoch, root);
+        let address = checkpoint_address(&PROGRAM, epoch);
+        let (owner, mut data) = self
+            .accounts
+            .get(&address)
+            .cloned()
+            .expect("just published");
+        data[66..98].copy_from_slice(&receipt);
+        data[98] = 1;
+        self.put(address, owner, data);
+    }
+
     /// A checkpoint as the program writes one.
     fn publish(&mut self, epoch: u64, root: [u8; 32]) {
         let account = CheckpointAccount {
@@ -261,4 +275,43 @@ fn nothing_at_the_address_is_not_the_same_as_a_refusal() {
         Some(Refused::NotACheckpoint),
         "and a zeroed account is a refusal"
     );
+}
+
+/// Codex round one, finding 3. §2.3's `status` is `Pending`, `Single` or `Dual`, and INV-ANCH-05
+/// forbids degrading silently to a dual-anchor claim. The decision is made without a network, so it
+/// is tested without one (D-110).
+mod status {
+    use super::*;
+    use certimining_client::{status_of, AnchorStatus};
+
+    #[test]
+    fn an_epoch_with_no_checkpoint_is_pending() {
+        assert_eq!(status_of(&Fetched::Absent), AnchorStatus::Pending);
+    }
+
+    #[test]
+    fn a_root_without_a_receipt_is_single_and_never_dual() {
+        let mut cluster = Cluster::default();
+        cluster.publish(1, [1u8; 32]);
+        let fetched = root_for_epoch(&cluster, &PROGRAM, 1).expect("answered");
+        assert_eq!(status_of(&fetched), AnchorStatus::Single);
+    }
+
+    #[test]
+    fn a_root_with_a_receipt_attached_is_dual() {
+        let mut cluster = Cluster::default();
+        cluster.publish_dual(1, [1u8; 32], [0x44; 32]);
+        let fetched = root_for_epoch(&cluster, &PROGRAM, 1).expect("answered");
+        assert_eq!(status_of(&fetched), AnchorStatus::Dual);
+    }
+
+    #[test]
+    fn an_account_this_client_refuses_is_pending_rather_than_anchored() {
+        // Reporting a refused account as Single would be INV-ANCH-05's silent degradation pointed
+        // the other way: a root the client does not have, announced as one it does.
+        assert_eq!(
+            status_of(&Fetched::Refused(Refused::NotTheProgram)),
+            AnchorStatus::Pending
+        );
+    }
 }

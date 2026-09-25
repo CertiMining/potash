@@ -24,12 +24,16 @@
     clippy::arithmetic_side_effects
 )]
 
+mod anchor;
 #[cfg(feature = "cluster")]
 pub mod cluster;
 mod fetch;
 mod publish;
 mod schedule;
 
+pub use anchor::{status_of, AnchorRef, AnchorStatus};
+#[cfg(feature = "cluster")]
+pub use cluster::PublishFailed;
 pub use fetch::{
     checkpoint_address, config_address, decode_checkpoint, missing_epochs, root_for_epoch, Fetched,
     Gaps, PublishedCheckpoint, Refused, RootSource, Unreachable,

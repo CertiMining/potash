@@ -25,6 +25,16 @@ use solana_transaction::Transaction;
 const URL: &str = "https://api.devnet.solana.com";
 const TREE_HEIGHT: u8 = 8;
 
+/// §1.4's epoch clock. `initialize` refuses anything but the day index the chain reports, so this is
+/// the value to offer it (D-109).
+fn today_utc() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock after 1970")
+        .as_secs()
+        / 86_400
+}
+
 /// A keypair from the path S6 keeps it at. The file is a JSON array of 64 bytes; only the public half
 /// is ever printed.
 fn key(name: &str) -> Keypair {
@@ -48,6 +58,28 @@ fn serde_json_bytes(raw: &str) -> Vec<u8> {
         .collect()
 }
 
+/// The announced deployment is named in exactly one file, and this harness may not touch it.
+///
+/// It publishes a placeholder root and attaches a receipt digest standing for no OpenTimestamps
+/// receipt. `receipt_digest` is write-once, so running this against the announced program leaves an
+/// epoch permanently claiming an anchor it does not have — which is what happened on 24 September
+/// (Codex round one, finding 10). Deploy a throwaway program id for this comparison.
+fn refuse_the_announced_deployment(program_id: &str) {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../ANNOUNCED_PROGRAM_ID");
+    let announced = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("{path}: {e}"))
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+        .expect("the file names one address")
+        .to_string();
+    assert_ne!(
+        program_id, announced,
+        "this harness writes placeholder anchor data and must never target the announced \
+         deployment. Deploy a throwaway program id and point declare_id! at it for this run."
+    );
+}
+
 fn metas(accounts: Vec<anchor_lang::prelude::AccountMeta>) -> Vec<solana_instruction::AccountMeta> {
     accounts
         .into_iter()
@@ -69,6 +101,7 @@ fn the_devnet_column_matches_the_litesvm_column() {
     let payer = key("deploy-keypair.json");
     let authority = key("checkpoint-authority.json");
     let program_id = Pubkey::from(certimining_checkpoint::ID.to_bytes());
+    refuse_the_announced_deployment(&program_id.to_string());
     let cluster = Cluster::new(URL.to_string(), certimining_checkpoint::ID);
     // Every send below confirms at the commitment `Cluster::new` set, which is `confirmed`:
     // the level a counterparty reads at, so the column records what a counterparty would see.
@@ -104,6 +137,7 @@ fn the_devnet_column_matches_the_litesvm_column() {
             data: certimining_checkpoint::instruction::Initialize {
                 authority: anchor_key(&authority.pubkey()),
                 tree_height: TREE_HEIGHT,
+                start_epoch: today_utc(),
             }
             .data(),
         };

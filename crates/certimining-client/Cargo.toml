@@ -15,7 +15,15 @@ unsafe_code = "forbid"
 # a map, so a cluster is never needed to check the client's own decisions (D-84). `cluster` adds the
 # one implementation that does reach a network, on the Agave 4.2.2 line the deployment runs (D-15).
 default = []
-cluster = ["dep:solana-rpc-client", "dep:solana-commitment-config", "dep:solana-pubkey"]
+cluster = [
+    "dep:solana-rpc-client",
+    "dep:solana-commitment-config",
+    "dep:solana-pubkey",
+    "dep:solana-instruction",
+    "dep:solana-message",
+    "dep:solana-transaction",
+    "dep:solana-signer",
+]
 
 [dependencies]
 # The engine: digests, the tree and the promise types (D-84).
@@ -31,6 +39,13 @@ anchor-lang = "=1.2.0"
 solana-rpc-client = { version = "=4.2.2", default-features = false, optional = true }
 solana-commitment-config = { version = "=3.1.1", optional = true }
 solana-pubkey = { version = "=3.0.0", optional = true }
+# Building and signing the publish transaction, which §2.3's `publish` has to do itself (D-110).
+# Already in the lock file as test dependencies; the `cluster` feature promotes them, so no crate
+# enters the graph that the licence and advisory gates had not already seen.
+solana-instruction = { version = "=3.4.1", optional = true }
+solana-message = { version = "=4.4.1", optional = true }
+solana-transaction = { version = "=4.1.6", optional = true }
+solana-signer = { version = "=3.0.1", optional = true }
 
 [dev-dependencies]
 # The cluster stand-in for tests that need one; the RPC itself is behind a trait (D-84).

@@ -1070,3 +1070,29 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **The defect.** `classify` sees an error code and nothing else, so `0x0E` alone cannot distinguish a retry that arrived after the first attempt landed from an epoch already carrying somebody else's root. Reporting it as success was a decision taken without the fact that decides it.
 
 **Decision.** `settle(requested, on_chain)` returns `Matches`, `Equivocation { on_chain }` or `Unwritten`. Two roots for one epoch is INV-ANCH-06's condition and is never a successful publication. `Unwritten` stays reachable because a client cannot assume the program it is talking to carries D-104's fix.
+
+## D-109 · A log begins at the day it is initialized
+
+**Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** owner's ruling · **Status:** settled at S9 round 1 (owner, 25 Sep 2026)
+
+**The defect (Codex finding 1, High).** §1.4 makes an epoch a UTC day index. `initialize` wrote `last_epoch = 0` and `publish_checkpoint` takes exactly `last + 1`, so the first publishable epoch was `1` — 2 January 1970 — and reaching the current day would have taken twenty thousand transactions. INV-ANCH-01's daily cadence was unreachable from the first deploy, and the deployment made on 24 September published epoch 1.
+
+**Decision (the owner's, option (a)).** `initialize` takes `start_epoch`, written once. **Its value is the UTC day index at `initialize` and is never operator-chosen:** the argument is present so the intended value appears in the transaction, and the program requires it to equal what the on-chain clock reports. Publication remains exactly `last + 1`. §1.4, §2.4 and INV-ANCH-02 are amended.
+
+**What the exact match costs, stated rather than smoothed over.** A transaction prepared before midnight UTC and landing after it is refused and must be resubmitted with the new day. A tolerance would be a choice between two values, and this value is not the operator's to choose.
+
+**The layout.** `start_epoch` takes eight of `LogConfig`'s sixteen reserved bytes, so the account is still 68. A client needs it for INV-ANCH-02: an epoch before `start_epoch` is a day the log did not exist for, not a gap, and a client without it would accuse a batcher of failing to publish before it was deployed.
+
+**Compute.** `publish_checkpoint` moved from 8,765 CU to 13,310, from this change and from D-104's narrower existence test together. §1.8's bound is 15,000 and the assertion is unchanged; the margin is thinner and the figure is recorded here so a later rise is visible against it.
+
+## D-110 · `publish` and `status` are implemented; `timestamp` stays with anchor B
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** owner's ruling · **Status:** settled at S9 round 1 (owner, 25 Sep 2026)
+
+**The defect (Codex finding 3, High).** §2.3's `AnchorClient` names `publish`, `timestamp` and `status`. The crate implemented none of them and offered a callback loop plus an account read, while two module headers announced "§2.3's `AnchorClient`". A caller could not construct, sign, refresh a blockhash, confirm, or report `Pending | Single | Dual`. The retry comment promised a fresh blockhash the callback shape could not deliver.
+
+**Decision (the owner's, option (a)).** `publish` and `status` are implemented here; `timestamp` is OpenTimestamps, anchor B, and stays E-10's. Both module headers are corrected in the same commit rather than left to a later tidy.
+
+**What that means in the code.** `Cluster::publish` builds the instruction, signs with the payer and the checkpoint authority borrowed for the call and never retained, **fetches a blockhash on every attempt**, confirms, and reads the epoch back rather than assuming the submission's outcome. `AlreadyPublished` is settled against the chain through D-108 before it counts as success. `Cluster::status` returns `Pending`, `Single` or `Dual` from the epoch's account, and **an account the client refuses is `Pending`, not `Single`** — announcing a root the client does not have would be INV-ANCH-05's silent degradation pointed the other way.
+
+**Dependencies.** `solana-instruction`, `solana-message`, `solana-transaction` and `solana-signer` move from dev-dependencies to optional dependencies under the `cluster` feature. They were already in the lock file at the same pinned versions, so nothing entered the graph that the advisory and licence gates had not already seen.

@@ -30,6 +30,16 @@ const RECEIPT_ALREADY_ATTACHED: u32 = ANCHOR_OFFSET + 0x15;
 
 const DEPLOYED_HEIGHT: u8 = 8;
 
+/// §1.4's epoch clock. Every test below runs on one fixed day, so `start_epoch` is a constant rather
+/// than whatever the runner's wall clock says (D-109).
+const START: u64 = 20_721;
+
+fn pin_the_clock(svm: &mut LiteSVM) {
+    let mut clock: anchor_lang::prelude::Clock = svm.get_sysvar();
+    clock.unix_timestamp = (START * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+    svm.set_sysvar(&clock);
+}
+
 struct Log {
     svm: LiteSVM,
     program_id: Pubkey,
@@ -47,6 +57,7 @@ impl Log {
         let program_id = certimining_checkpoint::ID;
         svm.add_program(program_id, &program)
             .expect("load the checkpoint program");
+        pin_the_clock(&mut svm);
         let payer = Keypair::new();
         let authority = Keypair::new();
         svm.airdrop(&payer.pubkey(), 10_000_000_000)
@@ -101,6 +112,7 @@ impl Log {
             data: certimining_checkpoint::instruction::Initialize {
                 authority: anchor_lang::prelude::Pubkey::from(self.authority.pubkey().to_bytes()),
                 tree_height: height,
+                start_epoch: START,
             }
             .data(),
         };
@@ -192,7 +204,10 @@ fn a_log_initializes_once_and_writes_what_it_was_given() {
     let config = log.config_account();
     assert_eq!(config.tree_height, DEPLOYED_HEIGHT, "D-78: written once");
     assert_eq!(config.schema_version, 1);
-    assert_eq!(config.last_epoch, 0);
+    // D-109: the log begins at the day it was initialized, so the first publication is START and
+    // `last_epoch` is the day before it.
+    assert_eq!(config.start_epoch, START);
+    assert_eq!(config.last_epoch, START - 1);
     assert_eq!(
         config.authority.to_bytes(),
         log.authority.pubkey().to_bytes()
@@ -225,14 +240,14 @@ fn v_n_10_an_epoch_that_is_not_the_next_one_is_0x0d() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initializes");
     assert_eq!(
-        log.publish(2, [0x11; 32], &log.authority.insecure_clone()),
+        log.publish(START + 1, [0x11; 32], &log.authority.insecure_clone()),
         Err(EPOCH_OUT_OF_ORDER),
         "INV-ANCH-02: a gap is refused"
     );
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority).expect("epoch 1");
+    log.publish(START, [0x11; 32], &authority).expect("epoch 1");
     assert_eq!(
-        log.publish(3, [0x22; 32], &authority),
+        log.publish(START + 2, [0x22; 32], &authority),
         Err(EPOCH_OUT_OF_ORDER),
         "and so is a jump"
     );
@@ -243,14 +258,14 @@ fn v_n_11_a_second_checkpoint_for_one_epoch_is_0x0e() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initializes");
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority).expect("epoch 1");
+    log.publish(START, [0x11; 32], &authority).expect("epoch 1");
     assert_eq!(
-        log.publish(1, [0x99; 32], &authority),
+        log.publish(START, [0x99; 32], &authority),
         Err(CHECKPOINT_ALREADY_WRITTEN),
         "D-80: existence is decided before monotonicity, so this is 0x0E and not 0x0D"
     );
     assert_eq!(
-        log.checkpoint_account(1).root,
+        log.checkpoint_account(START).root,
         [0x11; 32],
         "INV-ANCH-03: and the first root stands"
     );
@@ -261,14 +276,14 @@ fn v_n_12_a_second_receipt_for_one_epoch_is_0x15() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initializes");
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority).expect("epoch 1");
-    log.attach(1, [0x33; 32], 1).expect("the first receipt");
+    log.publish(START, [0x11; 32], &authority).expect("epoch 1");
+    log.attach(START, [0x33; 32], 1).expect("the first receipt");
     assert_eq!(
-        log.attach(1, [0x44; 32], 1),
+        log.attach(START, [0x44; 32], 1),
         Err(RECEIPT_ALREADY_ATTACHED),
         "INV-ANCH-03: zero to value, once"
     );
-    assert_eq!(log.checkpoint_account(1).receipt_digest, [0x33; 32]);
+    assert_eq!(log.checkpoint_account(START).receipt_digest, [0x33; 32]);
 }
 
 #[test]
@@ -276,15 +291,15 @@ fn an_anchor_kind_the_specification_does_not_have_is_0x05() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initializes");
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority).expect("epoch 1");
+    log.publish(START, [0x11; 32], &authority).expect("epoch 1");
     for kind in [0u8, 2, 255] {
         assert_eq!(
-            log.attach(1, [0x33; 32], kind),
+            log.attach(START, [0x33; 32], kind),
             Err(MALFORMED_PAYLOAD),
             "D-81: one kind, and {kind} is not it"
         );
     }
-    assert!(log.attach(1, [0x33; 32], 1).is_ok());
+    assert!(log.attach(START, [0x33; 32], 1).is_ok());
 }
 
 #[test]
@@ -296,12 +311,12 @@ fn v_n_19_a_signer_that_is_not_the_authority_is_refused() {
         .airdrop(&stranger.pubkey(), 1_000_000_000)
         .expect("fund");
     assert!(
-        log.publish(1, [0x11; 32], &stranger).is_err(),
+        log.publish(START, [0x11; 32], &stranger).is_err(),
         "V-N-19: the has_one constraint refuses a signer that is not the authority"
     );
     let authority = log.authority.insecure_clone();
     assert!(
-        log.publish(1, [0x11; 32], &authority).is_ok(),
+        log.publish(START, [0x11; 32], &authority).is_ok(),
         "and the authority is accepted"
     );
 }
@@ -319,7 +334,7 @@ fn v_n_13_a_config_written_under_another_schema_is_0x0f() {
         .expect("rewrite the config");
     let authority = log.authority.insecure_clone();
     assert_eq!(
-        log.publish(1, [0x11; 32], &authority),
+        log.publish(START, [0x11; 32], &authority),
         Err(UNSUPPORTED_SCHEMA_VERSION),
         "V-N-13: schema 2 is not a schema this program writes"
     );
@@ -335,14 +350,14 @@ fn the_account_layouts_are_the_ones_2_4_states() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initializes");
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority).expect("epoch 1");
+    log.publish(START, [0x11; 32], &authority).expect("epoch 1");
     assert_eq!(
         log.svm.get_account(&log.config).expect("config").data.len(),
         LogConfig::LEN
     );
     assert_eq!(
         log.svm
-            .get_account(&log.checkpoint(1))
+            .get_account(&log.checkpoint(START))
             .expect("checkpoint")
             .data
             .len(),
@@ -355,10 +370,11 @@ fn a_published_checkpoint_carries_what_the_epoch_fixes_and_nothing_else() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initializes");
     let authority = log.authority.insecure_clone();
-    log.publish(7, [0x11; 32], &authority).err();
-    log.publish(1, [0xab; 32], &authority).expect("epoch 1");
-    let checkpoint = log.checkpoint_account(1);
-    assert_eq!(checkpoint.epoch, 1);
+    log.publish(START + 6, [0x11; 32], &authority).err();
+    log.publish(START, [0xab; 32], &authority)
+        .expect("the log's first epoch");
+    let checkpoint = log.checkpoint_account(START);
+    assert_eq!(checkpoint.epoch, START);
     assert_eq!(checkpoint.root, [0xab; 32]);
     assert_eq!(checkpoint.schema_version, 1);
     assert_eq!(
@@ -366,7 +382,7 @@ fn a_published_checkpoint_carries_what_the_epoch_fixes_and_nothing_else() {
         "INV-ANCH-03: zero until a receipt is attached"
     );
     assert_eq!(checkpoint.anchor_kind, 0);
-    assert_eq!(log.config_account().last_epoch, 1);
+    assert_eq!(log.config_account().last_epoch, START);
 }
 
 /// Codex round one, finding 2. A checkpoint address is derived from a public seed, so anyone can
@@ -380,7 +396,7 @@ fn a_funded_checkpoint_address_does_not_stop_the_log() {
 
     // A stranger funds the address epoch 1 will use. `airdrop` places exactly the account a
     // system transfer would leave: owned by the system program, no data, non-zero lamports.
-    let target = log.checkpoint(1);
+    let target = log.checkpoint(START);
     log.svm
         .airdrop(&target, 5_000_000)
         .expect("a stranger funds the next checkpoint address");
@@ -395,16 +411,16 @@ fn a_funded_checkpoint_address_does_not_stop_the_log() {
 
     // The epoch publishes anyway, and the account holds what the epoch fixes.
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority)
+    log.publish(START, [0x11; 32], &authority)
         .expect("a funded address is an empty slot, not a written checkpoint");
     let raw = log.svm.get_account(&target).expect("the checkpoint exists");
     assert_eq!(raw.data.len(), CheckpointAccount::LEN);
     let written = CheckpointAccount::deserialize(&mut &raw.data[8..]).expect("decodes");
     assert_eq!(written.root, [0x11; 32]);
-    assert_eq!(written.epoch, 1);
+    assert_eq!(written.epoch, START);
 
     // And the log keeps going, which is what the attack was trying to prevent.
-    log.publish(2, [0x22; 32], &authority)
+    log.publish(START + 1, [0x22; 32], &authority)
         .expect("the next epoch still publishes");
 }
 
@@ -415,9 +431,9 @@ fn a_written_checkpoint_is_still_0x0e_on_a_second_publish() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initialize");
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority).expect("first");
+    log.publish(START, [0x11; 32], &authority).expect("first");
     assert_eq!(
-        log.publish(1, [0x99; 32], &authority),
+        log.publish(START, [0x99; 32], &authority),
         Err(CHECKPOINT_ALREADY_WRITTEN),
         "D-80: existence is decided before monotonicity, so this is 0x0E"
     );
@@ -431,17 +447,17 @@ fn an_all_zero_receipt_digest_is_refused_so_the_write_happens_once() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initialize");
     let authority = log.authority.insecure_clone();
-    log.publish(1, [0x11; 32], &authority).expect("publish");
+    log.publish(START, [0x11; 32], &authority).expect("publish");
 
     assert_eq!(
-        log.attach(1, [0u8; 32], 1),
+        log.attach(START, [0u8; 32], 1),
         Err(MALFORMED_PAYLOAD),
         "a zero digest is not a receipt"
     );
-    log.attach(1, [0x44; 32], 1)
+    log.attach(START, [0x44; 32], 1)
         .expect("a real digest attaches");
     assert_eq!(
-        log.attach(1, [0x55; 32], 1),
+        log.attach(START, [0x55; 32], 1),
         Err(RECEIPT_ALREADY_ATTACHED),
         "zero to a value, exactly once"
     );

@@ -35,6 +35,16 @@ const PROGRAM: &str = concat!(
 /// `receipt_digest` 66..98 once one is attached.
 const DEPLOYED_HEIGHT: u8 = 8;
 
+/// §1.4's epoch clock. Every test below runs on one fixed day, so `start_epoch` is a constant rather
+/// than whatever the runner's wall clock says (D-109).
+const START: u64 = 20_721;
+
+fn pin_the_clock(svm: &mut LiteSVM) {
+    let mut clock: anchor_lang::prelude::Clock = svm.get_sysvar();
+    clock.unix_timestamp = (START * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+    svm.set_sysvar(&clock);
+}
+
 fn permitted_account_offsets() -> Vec<usize> {
     let mut offsets: Vec<usize> = Vec::new();
     offsets.extend(10..18); // epoch
@@ -174,6 +184,7 @@ fn fresh_log(height: u8) -> (LiteSVM, Keypair, Keypair) {
     let mut svm = LiteSVM::new();
     svm.add_program(certimining_checkpoint::ID, &program)
         .expect("load the program");
+    pin_the_clock(&mut svm);
     let payer = Keypair::new();
     let authority = Keypair::new();
     svm.airdrop(&payer.pubkey(), 100_000_000_000).expect("fund");
@@ -198,6 +209,7 @@ fn fresh_log(height: u8) -> (LiteSVM, Keypair, Keypair) {
         data: certimining_checkpoint::instruction::Initialize {
             authority: anchor_lang::prelude::Pubkey::from(authority.pubkey().to_bytes()),
             tree_height: height,
+            start_epoch: START,
         }
         .data(),
     };
@@ -244,7 +256,7 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
 
     let mut seen: Vec<(usize, Published)> = Vec::new();
     for (index, records) in counts.iter().enumerate() {
-        let epoch = index as u64 + 1;
+        let epoch = START + index as u64;
         seen.push((
             *records,
             publish_epoch(&mut svm, &authority, &payer, epoch, root_for(*records)),
@@ -256,7 +268,7 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
     let reversed: Vec<usize> = counts.iter().rev().copied().collect();
     let mut seen_reversed: Vec<(usize, Published)> = Vec::new();
     for (index, records) in reversed.iter().enumerate() {
-        let epoch = index as u64 + 1;
+        let epoch = START + index as u64;
         seen_reversed.push((
             *records,
             publish_epoch(&mut svm2, &authority2, &payer2, epoch, root_for(*records)),
@@ -341,13 +353,13 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
 fn v_z_01_an_empty_epoch_is_published_like_any_other() {
     // V-P-07, and INV-ANCH-01's "including epochs with zero real submissions".
     let (mut svm, authority, payer) = fresh_log(8);
-    let empty = publish_epoch(&mut svm, &authority, &payer, 1, root_for(0));
-    let full = publish_epoch(&mut svm, &authority, &payer, 2, root_for(255));
+    let empty = publish_epoch(&mut svm, &authority, &payer, START, root_for(0));
+    let full = publish_epoch(&mut svm, &authority, &payer, START + 1, root_for(255));
     assert_eq!(empty.account.len(), full.account.len());
     assert_eq!(empty.instruction_data.len(), full.instruction_data.len());
     assert_eq!(empty.transaction.len(), full.transaction.len());
     let decoded = CheckpointAccount::deserialize(&mut &empty.account[8..]).expect("decodes");
-    assert_eq!(decoded.epoch, 1);
+    assert_eq!(decoded.epoch, START);
     assert_ne!(
         decoded.root, [0u8; 32],
         "an empty epoch publishes a real root"
@@ -369,7 +381,7 @@ fn v_z_06_a_daily_filer_and_a_twice_yearly_filer_look_the_same() {
     let mut busy: Vec<Published> = Vec::new();
     let mut quiet: Vec<Published> = Vec::new();
     for day in 0..30u64 {
-        let epoch = day + 1;
+        let epoch = START + day;
         busy.push(publish_epoch(
             &mut busy_svm,
             &busy_authority,

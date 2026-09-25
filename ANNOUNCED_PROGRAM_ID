@@ -1,0 +1,10 @@
+# The one place the announced devnet deployment is named (owner's ruling, 25 Sep 2026).
+#
+# scripts/deploy-devnet.sh reads it, and crates/certimining-client/tests/devnet.rs refuses to run
+# against it. That harness publishes a placeholder root and attaches a receipt digest that stands for
+# no OpenTimestamps receipt, and `receipt_digest` is write-once: on 24 September it did exactly that
+# to the announced deployment, which then claimed to be dual-anchored for an epoch that was not
+# (Codex round one, finding 10). It needs its own throwaway program id.
+#
+# One line, the base58 address, nothing else.
+PENDING_REDEPLOY
