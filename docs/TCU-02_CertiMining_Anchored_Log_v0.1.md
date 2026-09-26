@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.15 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.14 plus unmerged amendments on this branch · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -122,7 +122,7 @@ Schema 1 flag bits: `bit 0 = RESERVE_WITHOUT_PRIOR_RESOURCE`, `bit 1 = CATEGORY_
 
 ### 1.4 Epoch tree — fixed capacity, count-hiding
 
-Epoch `e` = UTC day index, `floor(unix_seconds / 86400)`. **A log begins at the day it is initialized**, not at zero: `initialize` writes `start_epoch`, the UTC day index the chain itself reports at that moment, and `publish_checkpoint` then takes exactly `last_epoch + 1` forever after. Through v0.1.16 this document gave the epoch its meaning and left a new log's `last_epoch` at zero, which made the first publishable epoch `1` — 2 January 1970 — and put the current day roughly twenty thousand transactions away, so the daily cadence INV-ANCH-01 requires was unreachable from the first deploy (D-109).
+Epoch `e` = UTC day index, `floor(unix_seconds / 86400)`. **A log begins at the day it is initialized**, not at zero: `initialize` writes `start_epoch`, the UTC day index the chain itself reports at that moment, and `publish_checkpoint` then takes exactly `last_epoch + 1` forever after. Before this branch this document gave the epoch its meaning and left a new log's `last_epoch` at zero, which made the first publishable epoch `1` — 2 January 1970 — and put the current day roughly twenty thousand transactions away, so the daily cadence INV-ANCH-01 requires was unreachable from the first deploy (D-109).
 
 `start_epoch` is an argument to `initialize` so that the intended value is visible in the transaction, and the program requires it to equal the day index the on-chain clock reports. The operator states it; the chain decides it. The match is exact, so a transaction prepared before midnight and landing after it is refused and resubmitted with the new day; a tolerance would be a choice between two values, and this value is not the operator's to choose.
 
