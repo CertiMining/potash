@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! §2's vendor-neutrality claim, made testable: inside the Solana runtime, `certimining-core` returns
 //! what it returns natively, for every preimage the committed vectors record (issue #8's acceptance
 //! criterion).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The fixed-capacity epoch tree (§1.4, §2.3).
 //!
 //! Every epoch is a complete tree of the same height. Real leaves sit in slots chosen by a PRF under

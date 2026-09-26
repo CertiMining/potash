@@ -1,0 +1,12 @@
+This repository is licensed under either of
+
+  * Apache License, Version 2.0 (LICENSE-APACHE, http://www.apache.org/licenses/LICENSE-2.0)
+  * MIT license (LICENSE-MIT, http://opensource.org/licenses/MIT)
+
+at your option (D-120).
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this work by you, as defined in the Apache-2.0 licence, shall
+be dual licensed as above, without any additional terms or conditions.
+
+Every source file carries `SPDX-License-Identifier: MIT OR Apache-2.0`.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Canonical tenure identifiers and the asset commitment (TCU-02 §1.3; D-22 to D-26).
 //!
 //! A tenure identifier is canonicalized by Unicode NFKD, then uppercasing of a to z only, then

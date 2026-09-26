@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-08: §4.3's program vectors, written before the program (D-65, and issue #8's own task).
 //!
 //! Under LiteSVM rather than a validator (D-87): deterministic, in-process, and byte-deterministic in

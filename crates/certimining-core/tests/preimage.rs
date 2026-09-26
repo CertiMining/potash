@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-03: the byte layout of every preimage writer (§1.2, §1.3, §1.4, §1.6), the tag check behind
 //! V-N-09, and the sink's limit.
 //!

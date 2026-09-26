@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The publication schedule (§1.5, D-83).
 //!
 //! INV-ANCH-01 requires a checkpoint every epoch, empty ones included, at a publication time the

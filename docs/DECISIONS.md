@@ -1208,3 +1208,46 @@ So the only implementations that can create and upgrade are the Python reference
 **Ground (the owner's).** The invariant was written to stop mixed hash families inside the chain, the tree and the preimages, and scoped this way it still does exactly that. It was never meant to forbid an external anchor's format or a runtime's address derivation, and as written it forbade two things the architecture cannot avoid.
 
 **What is unchanged.** No log digest uses SHA-256. Nothing in `certimining-core` or `certimining-log` computes one. The two uses live in the client, one in `solana/pda`-equivalent derivation and one in receipt verification, and neither output enters a preimage of ours.
+
+## D-120 · The repository is dual licensed, MIT or Apache-2.0
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** owner's ruling · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**Decision.** `MIT OR Apache-2.0`, at the recipient's option. `LICENSE`, `LICENSE-MIT` and `LICENSE-APACHE` are at the repository root, every crate manifest declares it, and every source file carries `SPDX-License-Identifier: MIT OR Apache-2.0`.
+
+**What this replaces.** D-13 said the project's own crates are `publish = false` and declare no licence. That left the repository with no licence at all, which means all rights reserved: nobody could legally use, copy or adapt any of it, including a reviewer who cloned it. D-13 is superseded in this respect and otherwise unchanged.
+
+**Ground.** It matches every dependency already in the graph — each one is MIT, Apache-2.0 or both — so no licence-combination question arises.
+
+**Revisit at milestone 5** if counsel's screen says otherwise. R3 is still standing.
+
+## D-121 · The claim gate tells a denial from a claim by hashing the denial
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** security necessity · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**The problem.** §4.6 forbids any artifact in the repository from claiming fraud prevention, double-pledge prevention or regulatory compliance. §0 and §4.6 contain those words, because naming a claim is how a document forbids it. A grep for the nouns fails on the text that bans the claim.
+
+**Decision.** Two checks in `scripts/claim-check.sh`, run in the `checks` group.
+
+1. **Banned phrasings** — constructions a denial never uses. **The list is versioned in §4.6 of the specification** at the owner's condition, not only in the script, and the script reads it from there, so there is one copy and an independent reader of the document knows exactly what is forbidden.
+2. **The bare nouns**, where every occurrence must appear in `docs/claim-denials.txt` **as a SHA-256 of its trimmed line**. Editing a denial changes its hash and withdraws the exemption. A hash matching no line in the repository also fails, because that means a denial moved and nobody noticed.
+
+**Ground (the owner's).** An exemption that survives edits is how a claim eventually lands beside a denial.
+
+**Three probes, and two holes they found.** A banned phrasing added to a document fails the check. A denial edited by two words loses its exemption and fails. **A claim written into the specification itself did not fail**, because the phrasing check exempted the whole specification rather than only §4.6's list block — the exemption is now the list block alone. And a claim in a **new, untracked** file did not fail, because the gate read `git ls-files`; it reads untracked-but-not-ignored files now. The gate also checks itself, which is why its own header describes the banned phrasings instead of quoting them: a quoted example is indistinguishable from a claim.
+
+## D-122 · E-15 branches from the anchor-B branch
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** cost judgment · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**Decision.** `e-15/readme-and-scope` is cut from `e-10/anchor-b`.
+
+**Ground.** The README has to describe anchor B as it is — a root submitted to the calendars, a receipt not yet carried by a Bitcoin block, an epoch reading `single`. Only that branch holds anchor B, so anywhere else the README would describe it in the future tense or not at all. The cost is a stack three deep on a base that has not been reviewed.
+
+## D-123 · The README says "not audited" at the top, and splits measured from unmeasured
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** security necessity · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**Decision.** A status section near the top of the README, in S9's own words — **not audited** — followed by what is measured and what is not. The measured half names the figure and the threshold. The unmeasured half names the landing-delay run's single compressed execution, anchor B's incomplete cycle on the deployed log, the absent fuzz harness, and count-hiding resting on batcher key custody.
+
+**Ground (the owner's).** This is the sentence that keeps the entry honest to a judge. The README is the first page a reader meets and until this unit the repository had no page that said any of it; the disclosure of the live upgrade authority lived in `docs/anchoring.md`, which a reader arrives at only by already knowing to look.

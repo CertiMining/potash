@@ -2,6 +2,7 @@
 name = "certimining-checkpoint"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 # Anchor 1.2.0 and platform-tools v1.54 both require this (D-15).
 rust-version = "1.89"
 # No licence is declared until E-15 decides it (D-13).

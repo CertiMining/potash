@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The CertiMining checkpoint program (§2.4).
 //!
 //! Three instructions and nothing else, ever. There is no update, close, revoke, shred or set-state,

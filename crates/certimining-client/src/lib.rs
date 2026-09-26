@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `certimining-client`: publishing checkpoints on the epoch cadence, and fetching a root by epoch
 //! without an indexer (§1.5, §2.3).
 //!

@@ -108,11 +108,12 @@ upgrade the program.
 |---|---|
 | Cluster | Solana devnet |
 | Program | `jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no` |
-| ProgramData | filled at deploy |
+| ProgramData | `FKoiBxtiotM3y6MU61kh511mPp2CeJBNsGbL2QcrDojc` |
 | Upgrade authority | `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz` (live, see above) |
 | Checkpoint authority | `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB` |
 | `tree_height` | 8, written once at `initialize` |
-| Deployed in slot | filled at deploy |
+| `start_epoch` | 20721, the UTC day index at `initialize` (D-109) |
+| Deployed in slot | 504032574 · 164,752 bytes · sha256 `9a56057db60ceb3ea032813703fd72cd42599507a8e3e9bf916fca13f5c1f040` from `c017d563ebe6496e506856c3ae36f0ac6abb51bd` |
 
 **A superseded deployment.** `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB` was announced on 24 September and is superseded. Its epoch 1 carries a receipt digest standing for no OpenTimestamps receipt, written into a field that is write-once, so it claims an anchor it does not have and always will; and its log begins at epoch 1 rather than at a UTC day index, which the rule in §1.4 now forbids. Neither is repairable in place, and the address above replaces it.
 

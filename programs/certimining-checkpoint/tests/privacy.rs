@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! **§4.4's on-chain privacy tests. V-Z-01 and V-Z-06 are release blockers.**
 //!
 //! Under LiteSVM, which is deterministic (D-85, D-87): the closed list of bytes §4.4 permits to differ

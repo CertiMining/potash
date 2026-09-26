@@ -2,6 +2,7 @@
 name = "core-harness"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 rust-version = "1.89"
 publish = false
 description = "Test-only Solana program: returns the Keccak-256 of its instruction data, computed through certimining-core's SolanaKeccak, so KAT-01 can check the on-chain path (D-08, D-17). Never deployed."

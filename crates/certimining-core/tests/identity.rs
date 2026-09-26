@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-02: canonical tenure identifiers and the asset commitment (§1.3; D-22 to D-26), including
 //! V-P-01 and V-N-21. Canonicalization never hashes, so most tests use a stand-in hasher and run
 //! in every feature set; the commitment tests use the real hashers.

@@ -694,6 +694,37 @@ CU figures are recorded per commit in CI; a regression past threshold fails the 
 
 A PR merges only if: KATs pass; committed vectors match; every negative vector returns its documented code without panicking; **every §4.4 privacy test passes**; fuzz targets meet iteration counts in the nightly job; CU thresholds hold; no new on-chain instruction exists; and no artifact in the repo — code, comment, README, or demo copy — claims fraud prevention, double-pledge prevention, or regulatory compliance.
 
+**The banned phrasings, versioned here rather than only in the script that greps for them (D-121).** `scripts/claim-check.sh` reads this block, so an independent reader of this document knows exactly what is forbidden and a change to the list is a change to the specification. Matching is case-insensitive.
+
+```claim-phrasings-banned
+prevents fraud
+prevent fraud
+fraud prevention claim of
+fraud-proof
+fraudproof
+prevents double-pledg
+prevent double-pledg
+prevents double pledg
+detects double-pledg
+detects double pledg
+double-pledge prevention claim of
+ensures compliance
+ensure compliance
+guarantees compliance
+guarantee compliance
+regulatory compliance claim of
+compliant with ni 43-101
+ni 43-101 compliant
+ni 43-101-compliant
+tamper-proof
+tamperproof
+proves the estimate
+proves compliance
+certifies compliance
+```
+
+**Why phrasings and not the bare nouns.** §0 and this section contain the words *fraud prevention*, *double-pledge prevention* and *regulatory compliance*, because naming a claim is how a document forbids it. A check that banned the nouns would fail on the text that bans the claim. So the phrasings above are constructions a denial never uses, and the nouns are handled separately: every occurrence of one is listed in `docs/claim-denials.txt` **by a hash of its line**, so editing a denial withdraws its exemption and the check fires again. An exemption that survives edits is how a claim eventually lands beside a denial.
+
 ---
 
 ## Appendix A — Residuals

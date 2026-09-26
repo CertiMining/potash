@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! **§4.4's privacy acceptance tests. V-Z-02, V-Z-03 and V-Z-04 are release blockers.**
 //!
 //! These were written before the tree they measure (D-65), and their pass conditions were fixed

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 /// The engine's error codes (TCU-02 §2.1).
 ///
 /// Codes are stable across versions; a new condition takes a new code, never a changed one.

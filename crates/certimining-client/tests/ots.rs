@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Anchor B: the receipt digest, and a receipt checked by something that did not write it (E-10).
 //!
 //! The fixture is real. `tests/data/bitcoin-confirmed.ots` is the OpenTimestamps receipt this

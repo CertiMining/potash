@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Inclusion proofs and the pure verifier (§2.3, INV-IFACE-01).
 //!
 //! A proof carries digests and indices: one sibling per level from the leaf upward, the slot whose

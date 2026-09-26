@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # The CI pipeline as one script (S8). Each CI job runs one group. `scripts/ci.sh all` runs every group
 # in CI's order, stops at a KAT-01 failure as CI does, and prints each group's test counts and exit
 # code, so a local run is CI verbatim.
@@ -145,6 +146,9 @@ group_result() {
 # no_std proof (D-14, D-61).
 checks() {
   GROUP_FAILED=""
+  # §4.6's claim gate (E-15, D-121). First, because a claim in the repository is a merge blocker of
+  # the same severity as a failing test and costs a second to find.
+  check "claims" scripts/claim-check.sh
   check "fmt" cargo fmt --all --check
   check "clippy, no default features" cargo clippy --workspace --all-targets --no-default-features -- -D warnings
   check "clippy, default" cargo clippy --workspace --all-targets -- -D warnings
