@@ -39,7 +39,7 @@ runs these in this order and stops at the first that fails.
    height, a proof whose `height` disagrees is `0x13` before any hashing (V-N-16b).
 8. **Flags**, which are advisory and never a reason to refuse. Given the chain context the
    computation needs, they are recomputed and any discrepancy is reported; without it they are
-   reported as not recomputable. See SPEC-DEFECTS.md D-3.
+   reported as not recomputable. See SPEC-DEFECTS.md SD-03.
 
 Beside the package verifier, and used by the vector suite, the same code carries §1.3's state
 machine and its four stages, §1.3's canonicalization, §1.4's epoch tree with PRF slot assignment
@@ -72,7 +72,7 @@ No Solana SDK is on the path.
 ## What it does not check
 
 - **`payload_uri`.** It is in §2.5's `record` block and not in §1.3's leaf preimage, so nothing
-  binds it to the signature and no comparison can reach it. SPEC-DEFECTS.md D-1.
+  binds it to the signature and no comparison can reach it. SPEC-DEFECTS.md SD-01.
 - **`chain.genesis` for a record past `seq` 1.** One package carries no intermediate leaves, so
   the genesis cannot be walked forward to `prev_head`. D-4.
 - **`flags`, unless the caller supplies chain context.** Bits 0 and 1 are properties of earlier
@@ -83,7 +83,7 @@ No Solana SDK is on the path.
 - **`published_unix` against the epoch a checkpoint names.** §1.4 gives the epoch an arithmetic
   meaning, and nothing relates it to the publication timestamp beside it. INV-ANCH-01 licenses the
   landing time to vary and INV-ANCH-02 contemplates a batcher that lags, so a root published today
-  may legitimately name a much earlier day. SPEC-DEFECTS.md D-14.
+  may legitimately name a much earlier day. SPEC-DEFECTS.md SD-14.
 - **Whether `start_epoch` is the day index the chain reported at `initialize`.** That is a rule on
   `initialize`, and it cannot be re-derived from the account, which does not record the slot it was
   written in. The verifier reads the field and reports it rather than refusing a log that predates
@@ -184,7 +184,7 @@ four dev packages is reachable from `src/`: the build under `tsconfig.build.json
 types, and `dist/` contains no import outside `@noble/*`.
 
 No test oracle library is used. The vector suite's oracle is the committed vectors themselves, and
-KAT-01's rate-boundary cross-check uses the platform's own SHA-3 (see SPEC-DEFECTS.md D-10).
+KAT-01's rate-boundary cross-check uses the platform's own SHA-3 (see SPEC-DEFECTS.md SD-10).
 
 ## Toolchain
 

@@ -1,11 +1,16 @@
 # Specification defects found while building the TypeScript verifier
 
+**Numbering.** Entries here are `SD-nn`, this file's own sequence. They are **not** the `D-nn`
+decisions of `docs/DECISIONS.md`, which is a different series in the same repository; the two
+collided while this file used `D-nn`, so a citation to `D-16` now means one thing and `SD-16`
+another (owner's ruling, 26 Sep 2026).
+
 Each entry records a place where TCU-02 does not determine the answer, what was needed, what the
 document says, the readings available, and which vector or invariant forced the question.
 
-D-1 to D-13 were found against **v0.1.16**. All thirteen were re-read against **v0.1.18** and all
+SD-01 to SD-13 were found against **v0.1.16**. All thirteen were re-read against **v0.1.18** and all
 thirteen still stand: the amendment touches §1.4, §2.4's `initialize` and `LogConfig`, and
-INV-ANCH-02, and none of those is the ground any of the thirteen rests on. D-14 to D-16 are new in
+INV-ANCH-02, and none of those is the ground any of the thirteen rests on. SD-14 to SD-16 are new in
 v0.1.18 and come from the amendment itself.
 Nothing here was resolved by looking at another implementation. Where a committed vector settles a
 question the document leaves open, that is said plainly: a vector is evidence of what one
@@ -15,7 +20,7 @@ The entries are ordered by how much of the verifier they touch.
 
 ---
 
-## D-1 · §2.5, §1.3, INV-DISC-02 — `payload_uri` cannot be compared against the bytes
+## SD-01 · §2.5, §1.3, INV-DISC-02 — `payload_uri` cannot be compared against the bytes
 
 **What was needed.** The set of JSON fields that INV-DISC-02's "fails closed on any disagreement
 between JSON fields and the Borsh preimage" covers.
@@ -48,7 +53,7 @@ and leaves `payload_uri` uncompared. README.md lists it under what the verifier 
 
 ---
 
-## D-2 · §1.4, D-60 — "ascending order of submission identifier" does not say which order
+## SD-02 · §1.4, D-60 — "ascending order of submission identifier" does not say which order
 
 **What was needed.** The order in which real submissions are assigned to slots, because the probe
 is first-free-upward and the winner of a contested slot depends on who was placed first. The order
@@ -77,7 +82,7 @@ recorded. If the document is amended to say "as a little-endian integer", V-P-06
 
 ---
 
-## D-3 · INV-DISC-03 — a verifier cannot recompute flags from a disclosure package
+## SD-03 · INV-DISC-03 — a verifier cannot recompute flags from a disclosure package
 
 **What was needed.** How a package verifier satisfies "A verifier recomputes flags from the chain
 rather than trusting the supplied value, and a mismatch is reported as a discrepancy".
@@ -103,7 +108,7 @@ about.
 
 ---
 
-## D-4 · §2.5, §2.1 — no code is defined for a package whose own fields disagree
+## SD-04 · §2.5, §2.1 — no code is defined for a package whose own fields disagree
 
 **What was needed.** What a verifier returns when `chain.head` is not
 `Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)`, and what `chain.genesis` is for.
@@ -129,7 +134,7 @@ says so.
 
 ---
 
-## D-5 · §1.3 — the order between 0x08 and 0x06 inside condition (c)
+## SD-05 · §1.3 — the order between 0x08 and 0x06 inside condition (c)
 
 **What was needed.** The code for a record that carries an expected QP key different from its
 `qp_key` *and* no signature at all.
@@ -149,7 +154,7 @@ order them: "A key mismatch is 0x08, decided first."
 
 ---
 
-## D-6 · §2.3, §1.6 — the order between 0x17 and 0x07 in `verify_promise`
+## SD-06 · §2.3, §1.6 — the order between 0x17 and 0x07 in `verify_promise`
 
 **What was needed.** The code for a promise that is outside §1.6's policy *and* carries a signature
 that does not verify.
@@ -169,7 +174,7 @@ counts, and V-N-14's is too.
 
 ---
 
-## D-7 · §1.1 — "Ed25519 (RFC 8032)" does not pin the verification equation
+## SD-07 · §1.1 — "Ed25519 (RFC 8032)" does not pin the verification equation
 
 **What was needed.** Whether verification is cofactored or cofactorless, whether non-canonical
 point and scalar encodings are rejected, and whether small-order public keys are refused.
@@ -190,7 +195,7 @@ the disagreement cases rather than leaving the choice to each implementer.
 
 ---
 
-## D-8 · INV-PRIM-01 against §2.4 — "No SHA-256" forbids what fetching a root requires
+## SD-08 · INV-PRIM-01 against §2.4 — "No SHA-256" forbids what fetching a root requires
 
 **What was needed.** Which primitive derives the checkpoint address and the account discriminator.
 
@@ -213,7 +218,7 @@ output or promise. The invariant should say "no SHA-256 in any log digest".
 
 ---
 
-## D-9 · §2.3 — a proof's height is unbounded when no configured height is supplied
+## SD-09 · §2.3 — a proof's height is unbounded when no configured height is supplied
 
 **What was needed.** What `InclusionVerifier::verify` does with a proof claiming height 20 and
 twenty siblings.
@@ -232,7 +237,7 @@ against a fixed `height` field and so does not reach this.
 
 ---
 
-## D-10 · §4.1 — KAT-01 and KAT-02 name vectors that are not in the document or the corpus
+## SD-10 · §4.1 — KAT-01 and KAT-02 name vectors that are not in the document or the corpus
 
 **What was needed.** The published Keccak-256 answers for the empty input, a one-byte input, and
 the 135, 136 and 137-byte rate-boundary inputs, and the RFC 8032 §7.1 cases.
@@ -253,7 +258,7 @@ the published KAT.
 
 ---
 
-## D-11 · §1.2, E-03 — `TAG_CKPT` is defined, required of a writer, and never used
+## SD-11 · §1.2, E-03 — `TAG_CKPT` is defined, required of a writer, and never used
 
 **What was needed.** The checkpoint preimage, since §1.2 declares `TAG_CKPT = b"CMv1CKPT"` and E-03
 requires "domain-tagged, length-prefixed writers for asset, leaf, head, checkpoint, padding, SPI".
@@ -269,7 +274,7 @@ because there is nothing to build from. Nothing in the verifier depends on it.
 
 ---
 
-## D-12 · §2.5 — `anchor` carries provenance that nothing says how to check
+## SD-12 · §2.5 — `anchor` carries provenance that nothing says how to check
 
 **What was needed.** Whether a conforming verifier must check `anchor.solana_tx` and
 `anchor.solana_slot`, and against what.
@@ -289,7 +294,7 @@ README.md lists it under what the verifier does not check.
 
 ---
 
-## D-13 · §2.3 — `SignedPromise` has no stated wire encoding, and the vectors carry one
+## SD-13 · §2.3 — `SignedPromise` has no stated wire encoding, and the vectors carry one
 
 **What was needed.** The byte layout behind V-P-10's and V-N-14's `encoded` field.
 
@@ -305,7 +310,7 @@ document should still say it.
 
 ---
 
-## D-14 · §1.4, §2.4, INV-ANCH-01 — nothing relates `published_unix` to the epoch it publishes
+## SD-14 · §1.4, §2.4, INV-ANCH-01 — nothing relates `published_unix` to the epoch it publishes
 
 **New in v0.1.18.**
 
@@ -339,7 +344,7 @@ check.
 
 ---
 
-## D-15 · §2.4 — what a reader does with a `LogConfig` no conforming `initialize` could have written
+## SD-15 · §2.4 — what a reader does with a `LogConfig` no conforming `initialize` could have written
 
 **New in v0.1.18.**
 
@@ -368,16 +373,16 @@ when `start_epoch` is zero, so the state surfaces rather than passing silently.
 
 ---
 
-**Which deployment D-14 and D-15 were written against (added outside the sandbox, 26 Sep 2026).**
+**Which deployment SD-14 and SD-15 were written against (added outside the sandbox, 26 Sep 2026).**
 The live account these two defects cite — `start_epoch` 0, `last_epoch` 1, epoch 1 holding
 `0xabab…ab` — is the **superseded** deployment `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, not
 the announced one. The sandbox holds no deployment history, so the writer could not have known which
 it was reading; the verifier's devnet target has since been moved to the announced
-`jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no`. **Both defects stand, and D-15 is sharper for it:** an
+`jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no`. **Both defects stand, and SD-15 is sharper for it:** an
 account no conforming `initialize` could write does exist on devnet, it is readable by anyone, and a
 verifier has to decide what to do with it.
 
-## D-16 · INV-ANCH-02 — the gap a client must surface cannot be the gap the invariant describes
+## SD-16 · INV-ANCH-02 — the gap a client must surface cannot be the gap the invariant describes
 
 **New in v0.1.18.**
 
