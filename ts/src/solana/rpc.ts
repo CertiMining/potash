@@ -5,11 +5,18 @@
 import { type Digest, base64Decode } from "../bytes.ts";
 import { PackageFailure } from "../errors.ts";
 import { base58Decode, base58Encode } from "./base58.ts";
-import { type CheckpointAccount, type LogConfig, decodeCheckpointAccount, decodeLogConfig } from "./accounts.ts";
+import { type CheckpointAccount, type LogConfig, decodeCheckpointAccount, decodeLogConfig, placeEpoch } from "./accounts.ts";
 import { deriveCheckpointAddress, deriveLogConfigAddress } from "./pda.ts";
 
 /** The deployment this verifier was written against (§"Fetching a root"). */
-export const DEVNET_PROGRAM_ID = "HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB";
+// The announced devnet deployment. `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB` was announced
+// first and is superseded: its log was initialized under the pre-D-109 rule, so its sequence begins
+// at epoch 1 rather than a UTC day index, and its epoch 1 carries a receipt digest standing for no
+// OpenTimestamps receipt in a field that is write-once. Neither is repairable in place, which is why
+// there is a second address. Both are kept here because the superseded one is still readable by
+// anyone and is the account this verifier's own SPEC-DEFECTS D-15 was written against.
+export const DEVNET_PROGRAM_ID = "jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no";
+export const SUPERSEDED_PROGRAM_ID = "HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB";
 export const DEVNET_RPC_URL = "https://api.devnet.solana.com";
 
 export type RpcOptions = {
@@ -18,6 +25,12 @@ export type RpcOptions = {
   commitment?: "processed" | "confirmed" | "finalized";
   /** Injected so a test can drive the decoder without a network. Defaults to the global `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * The log's configuration, when the caller already holds it. Supplied, an absent checkpoint is
+   * classified without a second round trip; absent, it is fetched only when a checkpoint is missing
+   * and the reason has to be named (INV-ANCH-02).
+   */
+  logConfig?: LogConfig;
 };
 
 type AccountFetch = { data: Uint8Array; owner: string } | null;
@@ -70,17 +83,54 @@ export async function fetchLogConfig(options: RpcOptions = {}): Promise<LogConfi
 }
 
 /**
+ * Names the reason a checkpoint account is absent, which INV-ANCH-02 requires a client to do:
+ * an epoch before `start_epoch` is a day the log did not exist for and is not a gap, an epoch the
+ * sequence has already reached and cannot answer for is the gap that is evidence of failure, and
+ * an epoch past `last_epoch` is one the sequence has not reached yet.
+ */
+async function refuseMissingCheckpoint(epoch: bigint, options: RpcOptions): Promise<never> {
+  let config: LogConfig;
+  try {
+    config = options.logConfig ?? (await fetchLogConfig(options));
+  } catch (e) {
+    throw new PackageFailure(
+      "RootUnavailable",
+      `no checkpoint account for epoch ${epoch}, and the log's configuration could not be read either: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+  }
+  const placement = placeEpoch(config, epoch);
+  switch (placement.kind) {
+    case "before-log-start":
+      throw new PackageFailure(
+        "EpochBeforeLogStart",
+        `epoch ${epoch} precedes the log's start_epoch ${placement.startEpoch}: a day the log did not exist for, not a gap`,
+      );
+    case "inside-published-range":
+      throw new PackageFailure(
+        "CheckpointSequenceGap",
+        `epoch ${epoch} lies inside the published sequence ${placement.startEpoch}..${placement.lastEpoch} and has no checkpoint account`,
+      );
+    case "not-yet-published":
+      throw new PackageFailure(
+        "CheckpointNotYetPublished",
+        `the sequence has reached epoch ${placement.lastEpoch}; epoch ${epoch} has not been published`,
+      );
+  }
+}
+
+/**
  * Fetches one epoch's checkpoint. The account's own `epoch` is checked against the epoch asked
- * for: an account that answers for a different epoch is refused rather than read.
+ * for: an account that answers for a different epoch is refused rather than read. An absent
+ * account is refused with the reason it is absent, which INV-ANCH-02 makes a client's job.
  */
 export async function fetchCheckpoint(epoch: bigint, options: RpcOptions = {}): Promise<CheckpointAccount> {
   const programIdText = options.programId ?? DEVNET_PROGRAM_ID;
   const programId = base58Decode(programIdText);
   const { address } = deriveCheckpointAddress(programId, epoch);
   const account = await getAccountInfo(address, options);
-  if (account === null) {
-    throw new PackageFailure("RootUnavailable", `no checkpoint account for epoch ${epoch}`);
-  }
+  if (account === null) return refuseMissingCheckpoint(epoch, options);
   if (account.owner !== programIdText) {
     throw new PackageFailure("RootUnavailable", `checkpoint account is owned by ${account.owner}, not the program`);
   }

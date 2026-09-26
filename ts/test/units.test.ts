@@ -15,11 +15,15 @@ import { createProgramAddress, deriveCheckpointAddress, deriveLogConfigAddress, 
 import {
   CHECKPOINT_DISCRIMINATOR,
   CHECKPOINT_LEN,
+  EPOCH_SECONDS,
   LOG_CONFIG_DISCRIMINATOR,
+  LOG_CONFIG_LEN,
   accountDiscriminator,
   anchorStatus,
   decodeCheckpointAccount,
   decodeLogConfig,
+  placeEpoch,
+  utcDayIndex,
 } from "../src/solana/accounts.ts";
 import { DEVNET_PROGRAM_ID, fetchCheckpoint, fetchRoot } from "../src/solana/rpc.ts";
 import { MAX_MERGE_DELAY, decodePromise, verifyPromise } from "../src/promise.ts";
@@ -76,6 +80,25 @@ function checkpointBytes(fields: { epoch: bigint; root: Uint8Array; receipt?: Ui
   return data;
 }
 
+function logConfigBytes(fields: {
+  authority?: Uint8Array;
+  lastEpoch?: bigint;
+  treeHeight?: number;
+  startEpoch?: bigint;
+  reserved?: number;
+}): Uint8Array {
+  const data = new Uint8Array(LOG_CONFIG_LEN);
+  data.set(LOG_CONFIG_DISCRIMINATOR, 0);
+  data.set(u16le(1), 8);
+  if (fields.authority) data.set(fields.authority, 10);
+  data.set(u64le(fields.lastEpoch ?? 0n), 42);
+  data[50] = fields.treeHeight ?? 8;
+  data[51] = 254;
+  data.set(u64le(fields.startEpoch ?? 0n), 52);
+  if (fields.reserved !== undefined) data.fill(fields.reserved, 60, 68);
+  return data;
+}
+
 test("§2.4's CheckpointAccount decodes at the stated offsets, and refuses anything else", () => {
   const root = fromHex(`0x${"ab".repeat(32)}`, 32);
   const decoded = decodeCheckpointAccount(checkpointBytes({ epoch: 20361n, root }));
@@ -91,11 +114,60 @@ test("§2.4's CheckpointAccount decodes at the stated offsets, and refuses anyth
 
   assert.throws(() => decodeCheckpointAccount(new Uint8Array(CHECKPOINT_LEN)), PackageFailure); // wrong discriminator
   assert.throws(() => decodeCheckpointAccount(checkpointBytes({ epoch: 1n, root }).slice(0, 105)), PackageFailure);
-  const asLogConfig = new Uint8Array(68);
-  asLogConfig.set(LOG_CONFIG_DISCRIMINATOR, 0);
-  asLogConfig[50] = 8;
-  assert.equal(decodeLogConfig(asLogConfig).treeHeight, 8);
-  assert.throws(() => decodeCheckpointAccount(asLogConfig), PackageFailure);
+  assert.throws(() => decodeCheckpointAccount(logConfigBytes({})), PackageFailure);
+});
+
+test("§2.4's LogConfig decodes at the stated offsets, start_epoch included", () => {
+  const authority = fromHex(`0x${"7e".repeat(32)}`, 32);
+  const data = logConfigBytes({ authority, lastEpoch: 20353n, treeHeight: 8, startEpoch: 20354n, reserved: 0x5a });
+  assert.equal(data.length, LOG_CONFIG_LEN, "§2.4 still fixes LogConfig at 68 bytes");
+  const config = decodeLogConfig(data);
+  assert.equal(config.schemaVersion, 1);
+  assert.equal(toHex(config.authority), toHex(authority));
+  assert.equal(config.lastEpoch, 20353n);
+  assert.equal(config.treeHeight, 8);
+  assert.equal(config.bump, 254);
+  // The field that moved into what v0.1.16's table showed as reserved.
+  assert.equal(config.startEpoch, 20354n, "start_epoch is a u64 little-endian at offset 52");
+  assert.equal(toHex(config.reserved), `0x${"5a".repeat(8)}`, "the remaining eight bytes at offset 60 are §2.6's");
+  // §1.4: last_epoch is written as start_epoch - 1, so the first publication is start_epoch itself.
+  assert.equal(config.lastEpoch + 1n, config.startEpoch, "a log with no checkpoint yet");
+
+  // start_epoch is read from its own bytes and not from the reserved region beside it.
+  const shifted = logConfigBytes({ startEpoch: 0n, reserved: 0xff });
+  assert.equal(decodeLogConfig(shifted).startEpoch, 0n);
+  assert.throws(() => decodeLogConfig(data.slice(0, 67)), PackageFailure);
+  assert.throws(() => decodeLogConfig(checkpointBytes({ epoch: 1n, root: new Uint8Array(32) })), PackageFailure);
+});
+
+test("§1.4's epoch clock is floor(unix_seconds / 86400)", () => {
+  assert.equal(EPOCH_SECONDS, 86400n);
+  assert.equal(utcDayIndex(0n), 0n);
+  assert.equal(utcDayIndex(86399n), 0n);
+  assert.equal(utcDayIndex(86400n), 1n);
+  assert.equal(utcDayIndex(20400n * 86400n), 20400n, "V-P-05's epoch as a day index");
+  assert.equal(utcDayIndex(20400n * 86400n + 86399n), 20400n, "the last second of that day");
+  // Floor, not truncation towards zero: a timestamp before 1970 is a lower day index, not a higher one.
+  assert.equal(utcDayIndex(-1n), -1n);
+  assert.equal(utcDayIndex(-86400n), -1n);
+});
+
+test("INV-ANCH-02: an absent checkpoint is placed against the log's own life", () => {
+  const config = decodeLogConfig(logConfigBytes({ startEpoch: 20354n, lastEpoch: 20360n }));
+  // Before the log existed: not a gap.
+  assert.deepEqual(placeEpoch(config, 20353n), { kind: "before-log-start", startEpoch: 20354n });
+  assert.deepEqual(placeEpoch(config, 0n), { kind: "before-log-start", startEpoch: 20354n });
+  // Inside the published sequence: an epoch the log must be able to answer for.
+  assert.deepEqual(placeEpoch(config, 20354n), { kind: "inside-published-range", startEpoch: 20354n, lastEpoch: 20360n });
+  assert.deepEqual(placeEpoch(config, 20357n), { kind: "inside-published-range", startEpoch: 20354n, lastEpoch: 20360n });
+  assert.deepEqual(placeEpoch(config, 20360n), { kind: "inside-published-range", startEpoch: 20354n, lastEpoch: 20360n });
+  // Past the sequence: not published yet.
+  assert.deepEqual(placeEpoch(config, 20361n), { kind: "not-yet-published", lastEpoch: 20360n });
+
+  // A log that has published nothing yet: start_epoch itself is still ahead of the sequence.
+  const fresh = decodeLogConfig(logConfigBytes({ startEpoch: 20354n, lastEpoch: 20353n }));
+  assert.deepEqual(placeEpoch(fresh, 20354n), { kind: "not-yet-published", lastEpoch: 20353n });
+  assert.deepEqual(placeEpoch(fresh, 20353n), { kind: "before-log-start", startEpoch: 20354n });
 });
 
 test("fetching a root speaks JSON-RPC and refuses an account that is not the one asked for", async () => {
@@ -143,6 +215,51 @@ test("fetching a root speaks JSON-RPC and refuses an account that is not the one
   await assert.rejects(
     fetchCheckpoint(20361n, { fetchImpl: stub({ result: { value: null } }) }),
     (e: unknown) => e instanceof PackageFailure && e.failure === "RootUnavailable",
+  );
+});
+
+test("INV-ANCH-02: an absent checkpoint is refused with the reason it is absent", async () => {
+  const programId = base58Decode(DEVNET_PROGRAM_ID);
+  const configAddress = base58Encode(deriveLogConfigAddress(programId).address);
+  const config = logConfigBytes({ startEpoch: 20354n, lastEpoch: 20360n });
+
+  // Answers for the LogConfig address and for nothing else: every checkpoint is absent.
+  let configReads = 0;
+  const stub = (async (_url: string, init: any) => {
+    const address = JSON.parse(init.body).params[0];
+    if (address === configAddress) {
+      configReads += 1;
+      return { ok: true, json: async () => ({ result: { value: { data: [base64Encode(config), "base64"], owner: DEVNET_PROGRAM_ID } } }) } as any;
+    }
+    return { ok: true, json: async () => ({ result: { value: null } }) } as any;
+  }) as unknown as typeof fetch;
+
+  const expect = async (epoch: bigint, failure: string, fragment: RegExp) => {
+    await assert.rejects(
+      fetchCheckpoint(epoch, { fetchImpl: stub }),
+      (e: unknown) => e instanceof PackageFailure && e.failure === failure && fragment.test(e.message),
+      `epoch ${epoch} should be ${failure}`,
+    );
+  };
+  await expect(20353n, "EpochBeforeLogStart", /not a gap/);
+  await expect(20357n, "CheckpointSequenceGap", /inside the published sequence 20354\.\.20360/);
+  await expect(20400n, "CheckpointNotYetPublished", /has reached epoch 20360/);
+  assert.equal(configReads, 3, "the configuration is read only when a checkpoint is missing");
+
+  // A caller who already holds the configuration is not charged a second round trip.
+  const decoded = decodeLogConfig(config);
+  configReads = 0;
+  await assert.rejects(
+    fetchCheckpoint(20353n, { fetchImpl: stub, logConfig: decoded }),
+    (e: unknown) => e instanceof PackageFailure && e.failure === "EpochBeforeLogStart",
+  );
+  assert.equal(configReads, 0, "a supplied configuration was fetched again");
+
+  // When the configuration cannot be read either, the failure says so rather than guessing.
+  const blind = (async () => ({ ok: true, json: async () => ({ result: { value: null } }) }) as any) as unknown as typeof fetch;
+  await assert.rejects(
+    fetchCheckpoint(20357n, { fetchImpl: blind }),
+    (e: unknown) => e instanceof PackageFailure && e.failure === "RootUnavailable" && /could not be read either/.test(e.message),
   );
 });
 

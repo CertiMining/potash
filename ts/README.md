@@ -1,7 +1,7 @@
 # TCU-02 disclosure-package verifier (TypeScript)
 
 An independent verifier for the §2.5 disclosure package of *TCU-02 — CertiMining Anchored Log*,
-v0.1.16. It was written from the specification in `../spec/` and from the committed vectors in
+v0.1.18. It was written from the specification in `../spec/` and from the committed vectors in
 `../vectors/`, and from nothing else. No other implementation of this specification was read while
 it was built, which is the only reason agreement between the two carries any information.
 
@@ -54,10 +54,20 @@ No Solana SDK is on the path.
 
 - `LogConfig` at the PDA for seeds `["cm_cfg"]`, `CheckpointAccount` at `["cm_ckpt", epoch_le]`,
   both derived by the SHA-256 construction, with the canonical bump and the off-curve check.
+- Every byte of both layouts is accounted for, `LogConfig.start_epoch` at offset 52 included. That
+  field is where §1.4 puts the beginning of a log, and §1.4's clock, `floor(unix_seconds / 86400)`,
+  is implemented as `utcDayIndex`.
 - The 8-byte Anchor discriminators are **computed** from `SHA-256("account:" ‖ N)` rather than
   copied from §2.4's table, and a test asserts they equal the two constants the table publishes.
 - A fetched account is refused unless it is owned by the program, carries the right discriminator,
   is exactly the length §2.4 fixes, and answers for the epoch that was asked for.
+- **An absent checkpoint is refused with the reason it is absent**, which is what INV-ANCH-02 asks a
+  client to distinguish. An epoch before `start_epoch` is `EpochBeforeLogStart`, a day the log did
+  not exist for and not a gap. An epoch inside `start_epoch .. last_epoch` is
+  `CheckpointSequenceGap`. An epoch past `last_epoch` is `CheckpointNotYetPublished`, carrying
+  `last_epoch` so a caller holding a clock can measure the lag. Reporting the three alike would
+  accuse a batcher of failing to publish before it was deployed. The log's configuration is read
+  only when a checkpoint is missing, or not at all when the caller passes one in.
 
 ## What it does not check
 
@@ -70,6 +80,16 @@ No Solana SDK is on the path.
 - **The `anchor` block.** `solana_tx`, `solana_slot` and `ots_receipt_digest` are not checked
   against anything. Publication provenance enters through the checkpoint account the verifier
   fetches for `inclusion.epoch`, which is the seam §2.3 leaves to the caller. D-12.
+- **`published_unix` against the epoch a checkpoint names.** §1.4 gives the epoch an arithmetic
+  meaning, and nothing relates it to the publication timestamp beside it. INV-ANCH-01 licenses the
+  landing time to vary and INV-ANCH-02 contemplates a batcher that lags, so a root published today
+  may legitimately name a much earlier day. SPEC-DEFECTS.md D-14.
+- **Whether `start_epoch` is the day index the chain reported at `initialize`.** That is a rule on
+  `initialize`, and it cannot be re-derived from the account, which does not record the slot it was
+  written in. The verifier reads the field and reports it rather than refusing a log that predates
+  the rule. D-15.
+- **Whether the batcher is behind.** Measuring the lag of `last_epoch` against today needs a clock,
+  and the verifier holds none. It reports `last_epoch` and leaves the judgement to the caller. D-16.
 - **Whether the root is the one the honest batcher published.** The verifier checks that the
   account at the derived address answers for that epoch. It cannot check that the authority
   published a root over a tree it honestly built, which INV-GOV-02 and RES-03 already say.
@@ -119,7 +139,7 @@ src/promise.ts           §1.6's SPI, its policy, and D-72's window
 src/disclosure.ts        §2.5's package and INV-DISC-02's verifier
 src/solana/base58.ts     addresses in and out
 src/solana/pda.ts        §2.4's program-derived addresses
-src/solana/accounts.ts   §2.4's two layouts and their computed discriminators
+src/solana/accounts.ts   §2.4's two layouts, their computed discriminators, §1.4's epoch clock
 src/solana/rpc.ts        getAccountInfo over fetch, and the two fetches a verifier needs
 test/kat.test.ts         §4.1's KAT-01 and KAT-02; runs first
 test/vectors.test.ts     the manifest, the enumeration, and every committed vector
@@ -131,6 +151,20 @@ test/perf.test.ts        §4.4a
 test/devnet.test.ts      the one test that touches a network; skipped by default
 tools/mutation-check.mjs the evidence that each test fails for the reason it names
 ```
+
+## The deployment this was run against
+
+`test/devnet.test.ts`, run by hand on 26 September 2026 against
+`HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, read `LogConfig` at
+`DEoAdvXnMNYxuboN1MXUJRUynbixzF42DCBPUV6wvafw`: schema 1, `tree_height` 8, **`start_epoch` 0**,
+`last_epoch` 1, and one checkpoint at epoch 1 carrying the root `0xabab…ab`.
+
+`start_epoch` 0 is not a value a conforming `initialize` under v0.1.18 could write, and
+`last_epoch` 1 with today at day 20722 is the state §1.4's amendment exists to prevent: the first
+publishable epoch is 2 January 1970 and the current day is some twenty thousand transactions away,
+so INV-ANCH-01's daily cadence is unreachable. The deployment predates the amendment. The verifier
+reads it rather than refusing it, for the reason D-15 gives, and the devnet test prints the state
+instead of asserting conformance.
 
 ## Dependencies
 
@@ -184,8 +218,9 @@ signature path should be set against real data rather than guessed.
 ## Evidence that the tests fail for the reasons they name
 
 `node tools/mutation-check.mjs` breaks one thing at a time, runs the suite, restores the file, and
-reports. It carries 32 mutations, one per property the suite claims to hold, from the hash family
+reports. It carries 37 mutations, one per property the suite claims to hold, from the hash family
 and the leaf field order to the slot assignment order, the condition ordering of §1.3, the
-JSON-versus-Borsh ordering, §2.4's account offsets, and the handler table that makes "every vector"
-enforced rather than claimed. All 32 are caught. A mutation that leaves the suite green is printed
+JSON-versus-Borsh ordering, §2.4's account offsets including `start_epoch`, INV-ANCH-02's three
+placements, §1.4's flooring clock, and the handler table that makes "every vector" enforced rather
+than claimed. All 37 are caught. A mutation that leaves the suite green is printed
 as a failure of the script, which is how the one hole found during development was closed.

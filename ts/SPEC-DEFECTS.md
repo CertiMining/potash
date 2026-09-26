@@ -1,7 +1,12 @@
 # Specification defects found while building the TypeScript verifier
 
-Each entry records a place where TCU-02 v0.1.16 does not determine the answer, what was needed,
-what the document says, the readings available, and which vector or invariant forced the question.
+Each entry records a place where TCU-02 does not determine the answer, what was needed, what the
+document says, the readings available, and which vector or invariant forced the question.
+
+D-1 to D-13 were found against **v0.1.16**. All thirteen were re-read against **v0.1.18** and all
+thirteen still stand: the amendment touches §1.4, §2.4's `initialize` and `LogConfig`, and
+INV-ANCH-02, and none of those is the ground any of the thirteen rests on. D-14 to D-16 are new in
+v0.1.18 and come from the amendment itself.
 Nothing here was resolved by looking at another implementation. Where a committed vector settles a
 question the document leaves open, that is said plainly: a vector is evidence of what one
 implementation did, not of what the specification requires.
@@ -298,6 +303,114 @@ document should still say it.
 
 ---
 
+---
+
+## D-14 · §1.4, §2.4, INV-ANCH-01 — nothing relates `published_unix` to the epoch it publishes
+
+**New in v0.1.18.**
+
+**What was needed.** Whether a verifier may conclude anything from comparing
+`floor(published_unix / 86400)` with `CheckpointAccount.epoch`, now that §1.4 gives the epoch an
+arithmetic definition it did not previously carry.
+
+**What the document says.** §1.4 defines `e` as `floor(unix_seconds / 86400)` and holds
+`initialize` to the day index the chain reports, exactly, with a tolerance refused in terms: "a
+transaction prepared before midnight and landing after it is refused and resubmitted with the new
+day". §2.4 records `published_unix` in every checkpoint. INV-ANCH-01 says `published_slot` and
+`published_unix` "may vary with network conditions", and INV-ANCH-02 contemplates a batcher that has
+fallen behind. No sentence relates the two fields.
+
+**Candidate readings.**
+1. The exactness §1.4 demands of `initialize` extends to publication, so a checkpoint whose
+   `published_unix` falls on a different day than its `epoch` is refused.
+2. It does not extend, because §1.4's own midnight rule is stated only for `initialize`, and a
+   checkpoint transaction submitted at 23:59:59 legitimately lands on the following day.
+3. The epoch is the day whose records the tree holds, not the day the root was published, so the two
+   fields are unrelated by design and a lagging batcher publishes an old epoch today.
+
+**What forced the question.** The live deployment at `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`
+holds one checkpoint, epoch 1, whose `published_unix` is in 2026. Under reading 1 that checkpoint is
+refused and no root can be fetched at all; under 2 and 3 it is read. The verifier behaves
+differently depending on which reading an implementer took, and nothing in the document decides it.
+
+**What this verifier does.** Does not compare them, which is reading 3, the only one consistent with
+INV-ANCH-02's lagging batcher. README.md lists the comparison under what the verifier does not
+check.
+
+---
+
+## D-15 · §2.4 — what a reader does with a `LogConfig` no conforming `initialize` could have written
+
+**New in v0.1.18.**
+
+**What was needed.** Whether to refuse a `LogConfig` whose `start_epoch` cannot be a day index the
+chain reported, or whose `last_epoch` is not at least `start_epoch - 1`.
+
+**What the document says.** §2.4 constrains what `initialize` accepts: anything but the clock's day
+index is `0x05`. It says nothing about a reader. §2.4's discriminator paragraph shows the section is
+alive to the reader's position, since its stated reason for publishing the constants is that the
+alternative was "to accept whatever an account carried". INV-TREE-06 promises that records under an
+older log "remain verifiable forever".
+
+**Candidate readings.**
+1. Refuse: the account is not one a conforming program could have written, so fail closed.
+2. Read and report: the rule binds `initialize`, and refusing would make every log initialized under
+   an earlier version unreadable, against INV-TREE-06's promise.
+
+**What forced the question.** The live devnet deployment carries `start_epoch = 0` and
+`last_epoch = 1`, which no conforming `initialize` under v0.1.18 could write: it is the pre-amendment
+state D-109 describes, where the first publishable epoch is 2 January 1970. Reading 1 makes the only
+existing deployment unreadable by a conforming verifier.
+
+**What this verifier does.** Reading 2. It reads `start_epoch`, classifies epochs against whatever
+the account says, and refuses nothing on the value. `test/devnet.test.ts` prints an explicit note
+when `start_epoch` is zero, so the state surfaces rather than passing silently.
+
+---
+
+**Which deployment D-14 and D-15 were written against (added outside the sandbox, 26 Sep 2026).**
+The live account these two defects cite — `start_epoch` 0, `last_epoch` 1, epoch 1 holding
+`0xabab…ab` — is the **superseded** deployment `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, not
+the announced one. The sandbox holds no deployment history, so the writer could not have known which
+it was reading; the verifier's devnet target has since been moved to the announced
+`jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no`. **Both defects stand, and D-15 is sharper for it:** an
+account no conforming `initialize` could write does exist on devnet, it is readable by anyone, and a
+verifier has to decide what to do with it.
+
+## D-16 · INV-ANCH-02 — the gap a client must surface cannot be the gap the invariant describes
+
+**New in v0.1.18.**
+
+**What was needed.** What a client looks for when INV-ANCH-02 says "a gap in the on-chain sequence is
+itself evidence of batcher failure and must surface in the client".
+
+**What the document says.** `publish_checkpoint` accepts `e = last_epoch + 1` only, and the sequence
+begins at `start_epoch`. Those two together make the published range contiguous by construction: an
+interior hole is unreachable, because the program will not accept the epoch that would follow one.
+What a stalled batcher produces is not a hole but a sequence that lags the calendar, and the
+amendment's own addition is about the other end, that an epoch before `start_epoch` is not a gap.
+
+**Candidate readings.**
+1. "Gap" means an interior hole, in which case the requirement is about a state the program's own
+   monotonicity rule forbids, and a client has nothing to look for.
+2. "Gap" means the distance between `last_epoch` and the current day index, which is what a stalled
+   batcher actually shows and what INV-ANCH-01's daily cadence fails as. Detecting it needs a clock,
+   which §2.3 keeps out of the verifier and INV-IFACE-01 keeps out of offline verification.
+3. Both, with reading 1 covering an account that has been closed or was never created despite the
+   sequence having passed it.
+
+**What forced the question.** Writing the refusal for a missing checkpoint account. The three cases
+are only distinguishable once "gap" has a meaning.
+
+**What this verifier does.** Names all three placements rather than one refusal:
+`before-log-start` (a day the log did not exist for, and the amendment is explicit that this is not
+a gap), `inside-published-range` (the sequence has passed this epoch and cannot answer for it, which
+is reading 3's case and the only one a pure verifier can detect), and `not-yet-published` (with
+`last_epoch` reported, so a caller holding a clock can measure the lag of reading 2 itself). It does
+not rule on batcher failure, because that needs a clock the verifier does not hold.
+
+---
+
 ## Minor observations
 
 - **§4.3's record vectors omit `c`.** Their `chain` blocks carry `head`, `seq` and
@@ -311,6 +424,20 @@ document should still say it.
   that "has seen a resource" while `seq` is 0 and `prev_head` is the genesis head, so the state has
   seen a record and holds none. The assertion it supports, that a flag does not change the leaf
   digest, is sound; the construction is not reachable by `apply`.
+- **`last_epoch = start_epoch - 1` is stated unconditionally and underflows at zero.** §2.4 writes
+  `last_epoch` as `start_epoch - 1`; `start_epoch` is a `u64`, and INV-STATE-07 makes unchecked
+  arithmetic `0x10`. An honest clock never reports day zero, so the case is unreachable in practice,
+  but the sentence does not say so and the neighbouring invariant says all arithmetic is checked.
+- **§4.3 has no vector for the new refusal.** `initialize` now returns `0x05` when `start_epoch` is
+  not the day index the clock reports, and no row covers it, where the neighbouring `tree_height`
+  condition has V-N-22. The condition depends on the runtime clock, so it may not be reproducible as
+  a committed vector, which is worth saying in the table rather than leaving the omission to be read
+  as an oversight.
+- **§1.8 does not carry `LogConfig`'s size or `initialize`'s instruction length.** The table fixes
+  `CheckpointAccount` at 106 bytes and `publish_checkpoint`'s instruction data at 48. `start_epoch`
+  lengthens `initialize`'s instruction data by eight bytes, and neither figure is recorded anywhere
+  a regression could be checked against. V-Z-01's closed byte list is about `publish_checkpoint`
+  only, so nothing catches a change here.
 - **§2.5's example package is not labelled schema 1.** The `record` block carries no
   `schema_version`, and the schema gate of §1.3 is about the chain's version rather than the
   package's. A package produced under a later schema would be distinguishable only by the `schema`

@@ -19,12 +19,29 @@ export const CHECKPOINT_DISCRIMINATOR = accountDiscriminator("CheckpointAccount"
 export const LOG_CONFIG_LEN = 68;
 export const CHECKPOINT_LEN = 106;
 
+/** §1.4: an epoch is a UTC day index, `floor(unix_seconds / 86400)`. */
+export const EPOCH_SECONDS = 86400n;
+
+export function utcDayIndex(unixSeconds: bigint): bigint {
+  // Floor division, which for a negative timestamp is not truncation towards zero.
+  const q = unixSeconds / EPOCH_SECONDS;
+  return unixSeconds < 0n && q * EPOCH_SECONDS !== unixSeconds ? q - 1n : q;
+}
+
 export type LogConfig = {
   schemaVersion: number;
   authority: Uint8Array;
   lastEpoch: bigint;
   treeHeight: number;
   bump: number;
+  /**
+   * §1.4, D-109: the UTC day index the chain reported at `initialize`. A log begins here, and
+   * `last_epoch` was written as `start_epoch - 1`, so the first publication is `start_epoch`
+   * itself. It occupies eight of the sixteen bytes v0.1.16's table showed as reserved.
+   */
+  startEpoch: bigint;
+  /** §2.6 reserves the remaining eight bytes and nothing in this TCU reads them. */
+  reserved: Uint8Array;
 };
 
 export type CheckpointAccount = {
@@ -57,6 +74,8 @@ export function decodeLogConfig(data: Uint8Array): LogConfig {
     lastEpoch: readU64le(data, 42),
     treeHeight: data[50]!,
     bump: data[51]!,
+    startEpoch: readU64le(data, 52),
+    reserved: data.slice(60, 68),
   };
 }
 
@@ -72,6 +91,26 @@ export function decodeCheckpointAccount(data: Uint8Array): CheckpointAccount {
     anchorKind: data[98]!,
     bump: data[99]!,
   };
+}
+
+/**
+ * Where an epoch falls against the log's own life (INV-ANCH-02, §1.4, D-109).
+ *
+ * `publish_checkpoint` accepts `last_epoch + 1` only, and the sequence begins at `start_epoch`, so
+ * an epoch with no checkpoint account is one of three different things and a client that reported
+ * them alike would accuse a batcher of failing to publish before it was deployed.
+ */
+export type EpochPlacement =
+  | { kind: "before-log-start"; startEpoch: bigint }
+  | { kind: "inside-published-range"; startEpoch: bigint; lastEpoch: bigint }
+  | { kind: "not-yet-published"; lastEpoch: bigint };
+
+export function placeEpoch(config: LogConfig, epoch: bigint): EpochPlacement {
+  if (epoch < config.startEpoch) return { kind: "before-log-start", startEpoch: config.startEpoch };
+  if (epoch <= config.lastEpoch) {
+    return { kind: "inside-published-range", startEpoch: config.startEpoch, lastEpoch: config.lastEpoch };
+  }
+  return { kind: "not-yet-published", lastEpoch: config.lastEpoch };
 }
 
 /** INV-ANCH-05: until anchor B is attached the client reports "single"; after, "dual". */
