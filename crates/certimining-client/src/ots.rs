@@ -163,6 +163,25 @@ impl AnchorB for ReferenceClient {
         // holds the 32 root bytes and nothing else, which is what the receipt then commits to
         // through SHA-256 (D-119).
         let stamped = self.stamped_path(epoch);
+        let receipt = self.receipt_path(epoch);
+        // A worker that restarts must not resubmit an epoch it has already stamped: the client
+        // refuses to overwrite a receipt, and a second submission would produce a second receipt for
+        // one epoch when only one digest can ever be attached (INV-ANCH-03). An existing receipt for
+        // the same root is the submission already having happened.
+        if receipt.exists() {
+            let existing = std::fs::read(&stamped).map_err(|e| e.to_string())?;
+            if existing != root {
+                return Err(format!(
+                    "{}: a receipt already exists for epoch {epoch}, over a different root",
+                    receipt.display()
+                ));
+            }
+            return Ok(PendingReceipt {
+                epoch,
+                root: *root,
+                path: receipt,
+            });
+        }
         std::fs::write(&stamped, root).map_err(|e| e.to_string())?;
         self.run(&[std::ffi::OsStr::new("stamp"), stamped.as_os_str()])?;
         Ok(PendingReceipt {
@@ -173,7 +192,12 @@ impl AnchorB for ReferenceClient {
     }
 
     fn upgrade(&self, pending: &PendingReceipt) -> Result<Option<Digest>, String> {
-        self.run(&[std::ffi::OsStr::new("upgrade"), pending.path.as_os_str()])?;
+        // The reference client exits non-zero while a timestamp is merely pending — "Failed!
+        // Timestamp not complete" — and that is the expected state for hours rather than a fault.
+        // The exit status is therefore not the verdict: the receipt on disk is read and verified, and
+        // a receipt that upgraded to nothing yet is `NotYetConfirmed`. Reading the exit code as the
+        // answer made every pending epoch an error.
+        let _ = self.run(&[std::ffi::OsStr::new("upgrade"), pending.path.as_os_str()]);
         let bytes = std::fs::read(&pending.path).map_err(|e| e.to_string())?;
         // Checked by an implementation that did not write it, before anything hashes it (D-115).
         match verify_receipt(&bytes, &pending.root) {
