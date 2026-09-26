@@ -1142,6 +1142,115 @@ Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
 **Ground.** Adding the vector now means a change to E-05's generator, which is Rust work inside the unit whose point is not touching Rust, while E-08 and E-09 are under review on the same base. The acceptance criteria for this unit are met without it, and the record says what the fixture is and is not.
 
 **Rejected.** Hand-authoring a fixture, which §4.2 forbids.
+
+## D-99 · `payload_uri` is an unauthenticated hint, and the document says so
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to the spec-only pull request (D-103)
+
+**The defect (E-11's SD-01).** §1.3's leaf preimage is 161 bytes and does not contain `payload_uri`. §2.5's package carries it, and INV-DISC-02's comparison therefore cannot reach it. **An issuer can release two packages for one record differing only in the pointer to the estimate, and both verify completely.**
+
+**Decision.** §2.5 and INV-DISC-02 say plainly that `payload_uri` is an unauthenticated hint, that `payload_digest` is the authenticated commitment to the payload, and that a counterparty checks fetched content against that digest rather than trusting the URI it was handed. No digest moves and no construction changes.
+
+**Ground.** The content is committed; only the pointer is not. §1.3 already says the engine resolves no URI and checks no host, so nothing in the system was ever relying on it. What was wrong was leaving a reader to infer that, seventeen days from a deadline, from the absence of a field in a table.
+
+**Rejected.** Putting `payload_uri` in the leaf preimage, which changes every committed digest, KAT-03 and both implementations. A second signature over the package, which is a new construction and new vectors.
+
+**Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
+
+## D-99 · `payload_uri` is an unauthenticated hint, and the document says so
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to the spec-only pull request (D-103)
+
+**The defect (E-11's SD-01).** §1.3's leaf preimage is 161 bytes and does not contain `payload_uri`. §2.5's package carries it, and INV-DISC-02's comparison therefore cannot reach it. **An issuer can release two packages for one record differing only in the pointer to the estimate, and both verify completely.**
+
+**Decision.** §2.5 and INV-DISC-02 say plainly that `payload_uri` is an unauthenticated hint, that `payload_digest` is the authenticated commitment to the payload, and that a counterparty checks fetched content against that digest rather than trusting the URI it was handed. No digest moves and no construction changes.
+
+**Ground.** The content is committed; only the pointer is not. §1.3 already says the engine resolves no URI and checks no host, so nothing in the system was ever relying on it. What was wrong was leaving a reader to infer that, seventeen days from a deadline, from the absence of a field in a table.
+
+**Rejected.** Putting `payload_uri` in the leaf preimage, which changes every committed digest, KAT-03 and both implementations. A second signature over the package, which is a new construction and new vectors.
+
+**Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
+
+## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-02).** §1.4 says real submissions are assigned in ascending order of submission identifier, and the identifier is `[u8; 16]`. The probe is first-free-upward, so the order decides who wins a contested slot and therefore **decides the root**. Two conforming implementations could produce different roots from one set of submissions. `V-P-06` is lexicographic; D-69's "ordinal counter" and INV-ENC-02's little-endian rule both point at numeric.
+
+**Decision.** Lexicographic over the sixteen bytes as stored, matching the committed vectors and both implementations. **The surprising half is written out rather than left for a reader to hit:** over a little-endian counter this is not ascending by count, because it sorts by the least significant byte first.
+
+**Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
+
+**Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
+
+## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-02).** §1.4 says real submissions are assigned in ascending order of submission identifier, and the identifier is `[u8; 16]`. The probe is first-free-upward, so the order decides who wins a contested slot and therefore **decides the root**. Two conforming implementations could produce different roots from one set of submissions. `V-P-06` is lexicographic; D-69's "ordinal counter" and INV-ENC-02's little-endian rule both point at numeric.
+
+**Decision.** Lexicographic over the sixteen bytes as stored, matching the committed vectors and both implementations. **The surprising half is written out rather than left for a reader to hit:** over a little-endian counter this is not ascending by count, because it sorts by the least significant byte first.
+
+**Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
+
+**Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
+
+## D-101 · Flags are recomputed only by a holder who has the chain
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-03).** INV-DISC-03 says a verifier recomputes flags from the chain rather than trusting the supplied value. Bit 0 depends on whether any *earlier* record in the chain carried category 1 or 2; bit 1 on the *previous* record's category. §2.5's package carries one record. The invariant asked for a computation its own inputs make impossible.
+
+**Decision.** A verifier recomputes flags when it holds the chain context the computation needs, reports them as not recomputable when it does not, and **never refuses a package over a flag** either way.
+
+**Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
+
+## D-101 · Flags are recomputed only by a holder who has the chain
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-03).** INV-DISC-03 says a verifier recomputes flags from the chain rather than trusting the supplied value. Bit 0 depends on whether any *earlier* record in the chain carried category 1 or 2; bit 1 on the *previous* record's category. §2.5's package carries one record. The invariant asked for a computation its own inputs make impossible.
+
+**Decision.** A verifier recomputes flags when it holds the chain context the computation needs, reports them as not recomputable when it does not, and **never refuses a package over a flag** either way.
+
+**Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
+
+## D-102 and D-119 · INV-PRIM-01 is scoped to this system's own digests
+
+**Date:** 25 Sep 2026 · **Units:** E-11 (found it), E-10 (met it again) · **Class:** security necessity, as claim accuracy · **Status:** settled at S9 (owner, 25 Sep 2026)
+
+**The defect, found twice from two directions.** INV-PRIM-01 read "One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. ... Any copy claiming otherwise is wrong and blocks submission." Two constructions the architecture cannot avoid require SHA-256. **E-11's independent TypeScript verifier met it first**, from the address side: a Solana program-derived address and an Anchor account discriminator are SHA-256 by construction, so no verifier can fetch a root without it, and INV-IFACE-01 requires a counterparty to fetch one themselves. **E-10 met it from the receipt side**: an OpenTimestamps receipt commits to SHA-256 of the bytes stamped, because that is the OTS format, and the reference client offers no raw-digest option. The second is the harder instance: a Solana address derivation is at least arguably outside "the system", and a receipt for an epoch root plainly is not.
+
+**Decision (the owner's).** The invariant is scoped to this system's own digests. Every digest this system computes and commits to is Keccak-256 — records, heads, nodes, PRF outputs, promises, roots, and `receipt_digest` itself. Digests produced by external systems the design anchors to or runs on are consumed in their native format, and **this system never computes one**. **Both exceptions are named**, OpenTimestamps receipts and Solana address and discriminator derivation, rather than left as a general licence to reach for another hash function. The "blocks submission" sentence stays, scoped to this system's own constructions.
+
+**Ground (the owner's).** The invariant was written to stop mixed hash families inside the chain, the tree and the preimages, and scoped this way it still does exactly that. It was never meant to forbid an external anchor's format or a runtime's address derivation, and as written it forbade two things the architecture cannot avoid.
+
+**What is unchanged.** No log digest uses SHA-256. Nothing in `certimining-core` or `certimining-log` computes one — `grep -rn "sha2\|Sha256" crates/certimining-core/src crates/certimining-log/src` returns nothing. The two uses live in the client: program-address and discriminator derivation, and the start digest an OpenTimestamps receipt carries.
+
+**Corrected 29 Sep 2026: an earlier version of this entry said neither output "enters a preimage of ours", and that is false.** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)` hashes the whole receipt, and a receipt contains its own SHA-256 start digest, so that digest is literally inside a Keccak preimage this system computes — `crates/certimining-client/src/ots.rs`, `receipt_digest`, which takes the receipt bytes entire. A review found it.
+
+**What the scoping actually says, restated so it is true.** This system computes no SHA-256 of its own and derives no digest from one. It commits to external artefacts **opaquely**: `receipt_digest` hashes a receipt as bytes, without parsing it, so what is inside those bytes — a start digest, a merkle path, an attestation — is not a field this system reads or reasons about. That is a weaker and accurate statement of the same intent: INV-PRIM-01 exists to stop mixed hash families inside the chain, the tree and the preimages, and hashing an opaque blob does not mix families in the sense that matters. Claiming nothing external ever reaches a preimage was both untrue and stronger than the invariant needs.
+
+## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026)
+
+**Decision.** D-99, D-100 and D-101 are amended into TCU-02 in a **spec-only pull request after both Codex rounds**, so the commits under review stay the commits under review.
+
+**And branches stop claiming version numbers.** Three branches were amending one document at once and two of them claimed v0.1.18. Each branch's amendment notes now say "on this branch, unmerged", the version line says `0.1.17 plus unmerged amendments on this branch`, and **the spec-only pull request assigns the next linear number to everything merged since, in merge order** — one renumbering pass, done once, rather than a running collision nobody owns.
+
+**Ground.** A version number is a claim about a document's identity, and a claim two siblings both make is worth nothing to a reader. The numbering is linear because the merged history is; the branches are not, so they do not get to number.
+
+## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026)
+
+**Decision.** D-99, D-100 and D-101 are amended into TCU-02 in a **spec-only pull request after both Codex rounds**, so the commits under review stay the commits under review.
+
+**And branches stop claiming version numbers.** Three branches were amending one document at once and two of them claimed v0.1.18. Each branch's amendment notes now say "on this branch, unmerged", the version line says `0.1.17 plus unmerged amendments on this branch`, and **the spec-only pull request assigns the next linear number to everything merged since, in merge order** — one renumbering pass, done once, rather than a running collision nobody owns.
+
+**Ground.** A version number is a claim about a document's identity, and a claim two siblings both make is worth nothing to a reader. The numbering is linear because the merged history is; the branches are not, so they do not get to number.
+
 ## D-104 · Existence is ownership and data, never a lamport balance
 
 **Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 2)
@@ -1236,52 +1345,6 @@ The arm stays, because it is reachable — but for the other reason. Inside the 
 
 **What the run therefore establishes, and what it does not.** It establishes that over 200 consecutive epochs at one-minute spacing on one endpoint, landing delay did not follow record count or build time above the stated bound. It does not establish the same across a day's worth of network conditions, which is milestone 5's run, and it is not a proof that no content-dependent scheduling exists.
 
-## D-99 · `payload_uri` is an unauthenticated hint, and the document says so
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to the spec-only pull request (D-103)
-
-**The defect (E-11's SD-01).** §1.3's leaf preimage is 161 bytes and does not contain `payload_uri`. §2.5's package carries it, and INV-DISC-02's comparison therefore cannot reach it. **An issuer can release two packages for one record differing only in the pointer to the estimate, and both verify completely.**
-
-**Decision.** §2.5 and INV-DISC-02 say plainly that `payload_uri` is an unauthenticated hint, that `payload_digest` is the authenticated commitment to the payload, and that a counterparty checks fetched content against that digest rather than trusting the URI it was handed. No digest moves and no construction changes.
-
-**Ground.** The content is committed; only the pointer is not. §1.3 already says the engine resolves no URI and checks no host, so nothing in the system was ever relying on it. What was wrong was leaving a reader to infer that, seventeen days from a deadline, from the absence of a field in a table.
-
-**Rejected.** Putting `payload_uri` in the leaf preimage, which changes every committed digest, KAT-03 and both implementations. A second signature over the package, which is a new construction and new vectors.
-
-**Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
-
-## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
-
-**The defect (E-11's SD-02).** §1.4 says real submissions are assigned in ascending order of submission identifier, and the identifier is `[u8; 16]`. The probe is first-free-upward, so the order decides who wins a contested slot and therefore **decides the root**. Two conforming implementations could produce different roots from one set of submissions. `V-P-06` is lexicographic; D-69's "ordinal counter" and INV-ENC-02's little-endian rule both point at numeric.
-
-**Decision.** Lexicographic over the sixteen bytes as stored, matching the committed vectors and both implementations. **The surprising half is written out rather than left for a reader to hit:** over a little-endian counter this is not ascending by count, because it sorts by the least significant byte first.
-
-**Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
-
-**Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
-
-## D-101 · Flags are recomputed only by a holder who has the chain
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
-
-**The defect (E-11's SD-03).** INV-DISC-03 says a verifier recomputes flags from the chain rather than trusting the supplied value. Bit 0 depends on whether any *earlier* record in the chain carried category 1 or 2; bit 1 on the *previous* record's category. §2.5's package carries one record. The invariant asked for a computation its own inputs make impossible.
-
-**Decision.** A verifier recomputes flags when it holds the chain context the computation needs, reports them as not recomputable when it does not, and **never refuses a package over a flag** either way.
-
-**Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
-
-## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026)
-
-**Decision.** D-99, D-100 and D-101 are amended into TCU-02 in a **spec-only pull request after both Codex rounds**, so the commits under review stay the commits under review.
-
-**And branches stop claiming version numbers.** Three branches were amending one document at once and two of them claimed v0.1.18. Each branch's amendment notes now say "on this branch, unmerged", the version line says `0.1.17 plus unmerged amendments on this branch`, and **the spec-only pull request assigns the next linear number to everything merged since, in merge order** — one renumbering pass, done once, rather than a running collision nobody owns.
-
-**Ground.** A version number is a claim about a document's identity, and a claim two siblings both make is worth nothing to a reader. The numbering is linear because the merged history is; the branches are not, so they do not get to number.
-
 ## D-112 · Anchor B commits to the upgraded receipt, and `single` until then is the budget
 
 **Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
@@ -1332,6 +1395,22 @@ refusal rather than a pass. Eight rejected spellings and the accepted one are in
 
 **Ground.** A blocking `timestamp` would couple anchor B's latency to the publication schedule, and INV-ANCH-01 says publication time depends on nothing but the schedule. Two anchors whose timing is coupled are less independent than two anchors, which is the property the second one exists to provide.
 
+## D-115 · The reference client makes the receipt; a different implementation verifies it
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment, with a security gain in the verification half · **Status:** settled at S1 (owner, 25 Sep 2026)
+
+**Decision.** The OpenTimestamps reference client creates and upgrades receipts. The `opentimestamps` crate — the OpenTimestamps project's own Rust library, MIT OR Apache-2.0 — **parses** each receipt before anything hashes it, and this repository checks the parsed result: that the start digest is the root that was stamped, and that a Bitcoin attestation is present rather than only a calendar's promise. Checking the attestation against Bitcoin needs a header source this crate does not have (H-12, [#48](https://github.com/CertiMining/potash/issues/48)), so "verifies" overstated it and is not used here. The owner's reason, in his words: *it makes the receipt checkable by something that did not produce it.*
+
+**What S1 found, which decided the shape.** Three Rust candidates carry an allowed licence or fail on one. `opentimestamps` 0.2.0 is the official library and **does not create timestamps and does not upgrade them**: crates.io describes it as "Rust library for parsing, verifying, and serializing OpenTimestamps timestamps". **A review found the crate exposes no verification function**, which this repository's own use corroborates: `crates/certimining-client/src/ots.rs`, `verify_receipt`, parses with `DetachedTimestampFile::from_reader` and then walks `Step` and `StepData` by hand rather than calling anything named verify. What the crate gives is parsing; the checking is ours. `opentimestamps-client` 0.1.0 does both, and its own README states it "does not follow the code quality standards, security standards, Code of Conduct, or Ethics standards" of its author's organisation, and is unaffiliated with the OpenTimestamps project. `opentimestamps-cli` 0.2.0 was recorded here as publishing no licence. **That is wrong** — `curl -s https://crates.io/api/v1/crates/opentimestamps-cli` returns `"license": "non-standard"` for 0.2.0, which is what crates.io reports when a crate declares a `license-file` rather than an SPDX expression, and a review found LGPL-3.0-or-later text in the packaged crate. What the original note actually described was not inspecting it: "fails the gate without further inspection" is the sentence admitting that.
+
+**The conclusion drawn from that was therefore also wrong.** This said the only implementations able to create and upgrade were the Python reference client and a 0.1.0 personal project; a review found that `opentimestamps-cli`'s source exposes both. The choice of the Python client stands on the other reasons above — it is the reference implementation and the one the calendars are operated against — and not on a field of two. Whether an LGPL-3.0-or-later crate clears D-89's closed licence list is a question that was never asked and is filed rather than answered here, because the deadline is not a reason to decide a licence question quickly (H-16, [issue #52](https://github.com/CertiMining/potash/issues/52)).
+
+Resting anchor B — one of the two anchors the integrity claim stands on — on a project that disclaims its own security standards was not a trade worth making, and the official crate covers the half it is good at.
+
+**What this costs, stated rather than absorbed.** The Python client is a pinned runtime dependency outside Cargo, so it is outside `cargo deny` and outside `ts-gate`. That is a third supply-chain surface, and it is named in CONTRIBUTING rather than left for a reader to notice. Verification does not make that dependency safe. It makes the artefact it produces checkable by something else.
+
+**Rejected.** The Python client alone, where nothing of ours checks a receipt before hashing it. `opentimestamps-client` 0.1.0 for everything, which is in-toolchain and gate-covered and rests anchor B on a project disclaiming its own security standards. Writing the calendar protocol ourselves, which is the one part of this unit where a bug stays invisible until a counterparty tries to verify.
+
 ## D-116 · Receipts are written outside the repository and committed by a person
 
 **Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment · **Status:** settled at S0 (owner, 25 Sep 2026)
@@ -1373,22 +1452,6 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **The rule underneath it.** A worker must never surface its own submission state as chain state — *must*, because none exists (D-117, H-13, [issue #49](https://github.com/CertiMining/potash/issues/49)) and the rule binds the one that is built. `Single` is a fact about the checkpoint account, not about what the worker believes it has sent, and the two diverge exactly when something has gone wrong.
 
-## D-115 · The reference client makes the receipt; a different implementation verifies it
-
-**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment, with a security gain in the verification half · **Status:** settled at S1 (owner, 25 Sep 2026)
-
-**Decision.** The OpenTimestamps reference client creates and upgrades receipts. The `opentimestamps` crate — the OpenTimestamps project's own Rust library, MIT OR Apache-2.0 — **parses** each receipt before anything hashes it, and this repository checks the parsed result: that the start digest is the root that was stamped, and that a Bitcoin attestation is present rather than only a calendar's promise. Checking the attestation against Bitcoin needs a header source this crate does not have (H-12, [#48](https://github.com/CertiMining/potash/issues/48)), so "verifies" overstated it and is not used here. The owner's reason, in his words: *it makes the receipt checkable by something that did not produce it.*
-
-**What S1 found, which decided the shape.** Three Rust candidates carry an allowed licence or fail on one. `opentimestamps` 0.2.0 is the official library and **does not create timestamps and does not upgrade them**: crates.io describes it as "Rust library for parsing, verifying, and serializing OpenTimestamps timestamps". **A review found the crate exposes no verification function**, which this repository's own use corroborates: `crates/certimining-client/src/ots.rs`, `verify_receipt`, parses with `DetachedTimestampFile::from_reader` and then walks `Step` and `StepData` by hand rather than calling anything named verify. What the crate gives is parsing; the checking is ours. `opentimestamps-client` 0.1.0 does both, and its own README states it "does not follow the code quality standards, security standards, Code of Conduct, or Ethics standards" of its author's organisation, and is unaffiliated with the OpenTimestamps project. `opentimestamps-cli` 0.2.0 was recorded here as publishing no licence. **That is wrong** — `curl -s https://crates.io/api/v1/crates/opentimestamps-cli` returns `"license": "non-standard"` for 0.2.0, which is what crates.io reports when a crate declares a `license-file` rather than an SPDX expression, and a review found LGPL-3.0-or-later text in the packaged crate. What the original note actually described was not inspecting it: "fails the gate without further inspection" is the sentence admitting that.
-
-**The conclusion drawn from that was therefore also wrong.** This said the only implementations able to create and upgrade were the Python reference client and a 0.1.0 personal project; a review found that `opentimestamps-cli`'s source exposes both. The choice of the Python client stands on the other reasons above — it is the reference implementation and the one the calendars are operated against — and not on a field of two. Whether an LGPL-3.0-or-later crate clears D-89's closed licence list is a question that was never asked and is filed rather than answered here, because the deadline is not a reason to decide a licence question quickly (H-16, [issue #52](https://github.com/CertiMining/potash/issues/52)).
-
-Resting anchor B — one of the two anchors the integrity claim stands on — on a project that disclaims its own security standards was not a trade worth making, and the official crate covers the half it is good at.
-
-**What this costs, stated rather than absorbed.** The Python client is a pinned runtime dependency outside Cargo, so it is outside `cargo deny` and outside `ts-gate`. That is a third supply-chain surface, and it is named in CONTRIBUTING rather than left for a reader to notice. Verification does not make that dependency safe. It makes the artefact it produces checkable by something else.
-
-**Rejected.** The Python client alone, where nothing of ours checks a receipt before hashing it. `opentimestamps-client` 0.1.0 for everything, which is in-toolchain and gate-covered and rests anchor B on a project disclaiming its own security standards. Writing the calendar protocol ourselves, which is the one part of this unit where a bug stays invisible until a counterparty tries to verify.
-
 ## D-119 · A receipt commits to SHA-256 of what was stamped, and INV-PRIM-01 still forbids SHA-256
 
 **Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity, as claim accuracy · **Status:** **ruled — see D-102 and D-119 below, settled by the owner 25 Sep 2026.** This entry is the flag as it was raised and is kept for the history; its "awaiting the owner" line was left standing after the ruling landed, which a review caught.
@@ -1398,22 +1461,6 @@ Resting anchor B — one of the two anchors the integrity claim stands on — on
 **Why this is recorded rather than decided.** INV-PRIM-01 says "One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. ... Any copy claiming otherwise is wrong and blocks submission." **This is the second construction that needs SHA-256 and cannot avoid it.** The first is §2.4's program address and account discriminator, which E-11's independent implementation found and recorded as its defect D-8; the proposed scoping is this repository's **D-102**, which the owner ruled the same day — the next entry in this file. Anchor B does not create a new conflict, it meets the same one from another direction — and it is the stronger instance, because a Solana address derivation is at least arguably outside "the system" while a receipt for an epoch root plainly is not.
 
 **What is true meanwhile.** No log digest uses SHA-256. Every record, head, node, PRF output, promise and root is Keccak-256, and `receipt_digest` itself is Keccak-256 over the receipt. SHA-256 appears only inside formats this system consumes rather than defines: Solana's addresses, and OpenTimestamps' own commitment. INV-PRIM-01 as written does not say that, and until D-102 is ruled the document forbids what two units require.
-
-## D-102 and D-119 · INV-PRIM-01 is scoped to this system's own digests
-
-**Date:** 25 Sep 2026 · **Units:** E-11 (found it), E-10 (met it again) · **Class:** security necessity, as claim accuracy · **Status:** settled at S9 (owner, 25 Sep 2026)
-
-**The defect, found twice from two directions.** INV-PRIM-01 read "One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. ... Any copy claiming otherwise is wrong and blocks submission." Two constructions the architecture cannot avoid require SHA-256. **E-11's independent TypeScript verifier met it first**, from the address side: a Solana program-derived address and an Anchor account discriminator are SHA-256 by construction, so no verifier can fetch a root without it, and INV-IFACE-01 requires a counterparty to fetch one themselves. **E-10 met it from the receipt side**: an OpenTimestamps receipt commits to SHA-256 of the bytes stamped, because that is the OTS format, and the reference client offers no raw-digest option. The second is the harder instance: a Solana address derivation is at least arguably outside "the system", and a receipt for an epoch root plainly is not.
-
-**Decision (the owner's).** The invariant is scoped to this system's own digests. Every digest this system computes and commits to is Keccak-256 — records, heads, nodes, PRF outputs, promises, roots, and `receipt_digest` itself. Digests produced by external systems the design anchors to or runs on are consumed in their native format, and **this system never computes one**. **Both exceptions are named**, OpenTimestamps receipts and Solana address and discriminator derivation, rather than left as a general licence to reach for another hash function. The "blocks submission" sentence stays, scoped to this system's own constructions.
-
-**Ground (the owner's).** The invariant was written to stop mixed hash families inside the chain, the tree and the preimages, and scoped this way it still does exactly that. It was never meant to forbid an external anchor's format or a runtime's address derivation, and as written it forbade two things the architecture cannot avoid.
-
-**What is unchanged.** No log digest uses SHA-256. Nothing in `certimining-core` or `certimining-log` computes one — `grep -rn "sha2\|Sha256" crates/certimining-core/src crates/certimining-log/src` returns nothing. The two uses live in the client: program-address and discriminator derivation, and the start digest an OpenTimestamps receipt carries.
-
-**Corrected 29 Sep 2026: an earlier version of this entry said neither output "enters a preimage of ours", and that is false.** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)` hashes the whole receipt, and a receipt contains its own SHA-256 start digest, so that digest is literally inside a Keccak preimage this system computes — `crates/certimining-client/src/ots.rs`, `receipt_digest`, which takes the receipt bytes entire. A review found it.
-
-**What the scoping actually says, restated so it is true.** This system computes no SHA-256 of its own and derives no digest from one. It commits to external artefacts **opaquely**: `receipt_digest` hashes a receipt as bytes, without parsing it, so what is inside those bytes — a start digest, a merkle path, an attestation — is not a field this system reads or reasons about. That is a weaker and accurate statement of the same intent: INV-PRIM-01 exists to stop mixed hash families inside the chain, the tree and the preimages, and hashing an opaque blob does not mix families in the sense that matters. Claiming nothing external ever reaches a preimage was both untrue and stronger than the invariant needs.
 
 ## D-120 · The repository is dual licensed, MIT or Apache-2.0
 
