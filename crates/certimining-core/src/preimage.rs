@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-03: domain-tagged preimage writers (§1.2, §1.3, §1.4, §1.6).
 //!
 //! Every digest in the engine is Keccak-256 over a preimage that carries exactly one domain tag,

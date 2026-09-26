@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The §2.1 error codes, checked one by one against the spec (S2), and the D-03 privacy property:
 //! an error value is a bare two-byte code with no room for record or asset content.
 

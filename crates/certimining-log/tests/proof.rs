@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-06: inclusion proofs, the pure verifier, and §4.3's proof vectors, each returning `0x13`.
 
 mod common;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! §1.8's compute limits, and the LiteSVM column of D-86's comparison table.
 //!
 //! Issue #8 makes these acceptance criteria, so they are assertions rather than measurements: the

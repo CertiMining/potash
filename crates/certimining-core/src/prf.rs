@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-06: §1.1's PRF and the three inputs §1.4 puts it to (§1.1, §1.2, D-59).
 //!
 //! `PRF(k, x) = Keccak256(TAG_PRF ‖ k ‖ len(x) ‖ x)`. The tag lives inside the construction and is

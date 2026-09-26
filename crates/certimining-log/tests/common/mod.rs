@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Helpers the epoch-tree tests share: the published test key, deterministic inputs, and the
 //! classifier and statistics §4.4 specifies for V-Z-02 and V-Z-04.
 //!

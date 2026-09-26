@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! D-86's devnet column: the same assertions the LiteSVM suite makes, against a real cluster.
 //!
 //! **Ignored by default and never part of CI.** It needs a deployed program, a funded key and a

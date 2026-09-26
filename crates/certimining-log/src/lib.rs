@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `certimining-log`: the fixed-capacity epoch tree, its inclusion proofs and the pure inclusion
 //! verifier (§1.4, §2.3).
 //!

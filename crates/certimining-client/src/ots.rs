@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Anchor B: OpenTimestamps (§1.5, §2.3, D-112 to D-118).
 //!
 //! Two things happen here and they are kept apart on purpose. A receipt is **created** by the

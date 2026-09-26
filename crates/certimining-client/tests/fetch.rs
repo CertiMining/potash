@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-09: deriving a root by epoch with no indexer, placing what comes back, and surfacing gaps.
 //!
 //! The cluster is a map here, because `RootSource` is a trait: an RPC that returns the wrong thing is

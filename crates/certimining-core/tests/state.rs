@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-04: the transition conditions of §1.3, the flags of INV-STATE-06 and INV-STATE-06a, and the
 //! positive and negative vectors of §4.2 and §4.3 that belong to this unit.
 //!

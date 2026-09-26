@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Signed inclusion promises, and what they can be used to show (§1.6, §2.3).
 //!
 //! A promise is the anti-censorship device: it binds one leaf to one epoch window under the batcher's

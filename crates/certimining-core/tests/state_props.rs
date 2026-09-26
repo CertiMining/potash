@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-04's property tests: `apply` is total on any record, a refused record never moves the chain,
 //! and the flags only ever carry the two bits schema 1 defines.
 

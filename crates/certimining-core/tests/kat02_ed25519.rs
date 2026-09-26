@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! KAT-02 (§4.1): Ed25519 against RFC 8032 §7.1's own vectors (D-45).
 //!
 //! The vectors are the RFC's, vendored with their provenance, never the crate's own test data. The
