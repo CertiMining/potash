@@ -38,7 +38,14 @@ This is worth stating precisely, because it is narrower than log equivocation an
 | QP attestation, batcher inclusion promises | Ed25519 (RFC 8032), verified off-chain by the verifier |
 | Anchor B | OpenTimestamps over the epoch root |
 
-**INV-PRIM-01.** One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. Poseidon's circuit-friendliness buys nothing without a proof system, and there is none here. Any copy claiming otherwise is wrong and blocks submission.
+**INV-PRIM-01 (scoped in v0.1.19).** One hash family for **every digest this system computes and commits to**: Keccak-256, for records, heads, nodes, PRF outputs, promises, roots and the anchor-B receipt digest. No Poseidon, no BLS12-381, no SHA-256 in any of them. Poseidon's circuit-friendliness buys nothing without a proof system, and there is none here. **Any copy claiming otherwise, about one of this system's own constructions, is wrong and blocks submission.**
+
+**Digests produced by external systems this design anchors to or runs on are consumed in their native format and are never mixed into a preimage of ours.** There are exactly two, and they are named rather than left as a general licence:
+
+- **OpenTimestamps receipts** commit to `SHA-256` of the bytes that were stamped, because that is the OTS format. The worker stamps the 32 root bytes; the receipt's own start digest is therefore SHA-256, and what this system computes over the receipt is `receipt_digest`, which is Keccak-256 (§2.4, D-113).
+- **Solana address and account-discriminator derivation** is `SHA-256` by construction, so no verifier can derive a checkpoint address or recognise an account without it (§2.4, D-91).
+
+**Why this was amended.** Through v0.1.18 the invariant forbade SHA-256 outright and said a copy claiming otherwise blocks submission, while two constructions the architecture cannot avoid require it. E-11's independent implementation found the first from the address side and E-10 met the second from the receipt side (D-102, D-119). The invariant was written to stop mixed hash families inside the chain, the tree and the preimages, and it still does exactly that; it was never meant to reach an external anchor's format or a runtime's addressing, and as written it forbade both.
 
 **INV-PRIM-02.** Ed25519 verification happens in the verifier, not in the Solana program. The program performs no signature checks beyond the checkpoint authority's transaction signature.
 
