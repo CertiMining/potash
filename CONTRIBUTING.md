@@ -95,6 +95,26 @@ signature in the set. No generated key and no real key belongs in this repositor
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
 
+## Editing the specification
+
+**Every scripted edit to `docs/TCU-02_CertiMining_Anchored_Log_v0.1.md` asserts that it matched.**
+A `str.replace` whose search string has gone stale changes nothing and reports nothing, so the file
+keeps its old text while the commit message describes the new one. That happened: two edits meant to
+move the version line matched nothing, the line sat at `0.1.15` through four commits, and the
+document carried §1.4's epoch clock, §2.4's `start_epoch`, INV-ANCH-02's start clause and V-N-26
+without saying so. The content was right every time; the claim was only ever in the commit messages.
+
+So: assert the match, then write. In Python, `assert old in s` before `s.replace(old, new, 1)`. With
+`sed -i`, check the file afterwards rather than trusting the exit code, which is zero for a pattern
+that matched nothing. The same holds for `docs/DECISIONS.md` and for any file whose text is the
+record rather than the code.
+
+**Branches do not number the specification (D-103).** Three branches amending one document cannot
+number linearly, and two of them both claimed `v0.1.18`. A branch's version line reads
+`0.1.14 plus unmerged amendments on this branch`, where `0.1.14` is what `main` holds, and its
+in-text notes say "on this branch, unmerged" or "before this branch". One spec-only pull request
+assigns the next linear number to everything merged since, in merge order.
+
 ## A dependency no gate covers
 
 Anchor B's receipts are created and upgraded by the **OpenTimestamps reference client**, pinned at
