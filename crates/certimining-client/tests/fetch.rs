@@ -1,4 +1,4 @@
-//! E-09: deriving a root by epoch with no indexer, placing what comes back, and surfacing gaps.
+//! E-09: deriving a root by epoch with no indexer, placing what comes back, and reporting lag.
 //!
 //! The cluster is a map here, because `RootSource` is a trait: an RPC that returns the wrong thing is
 //! easier to build in a test than to provoke on a network, and those are the cases that matter.
@@ -207,7 +207,7 @@ fn an_account_under_another_schema_or_discriminator_is_refused() {
     );
     assert_eq!(
         root_for_epoch(&cluster, &PROGRAM, 7).expect("answered"),
-        Fetched::Refused(Refused::NotACheckpoint)
+        Fetched::Refused(Refused::WrongDiscriminator)
     );
 
     cluster.put(checkpoint_address(&PROGRAM, 7), PROGRAM, vec![0u8; 20]);
@@ -280,21 +280,32 @@ fn an_epoch_inside_the_range_whose_account_was_refused_is_named_as_that() {
     assert!(!lag.is_empty());
 }
 
-/// The condition the program's own monotonicity forbids. If an account inside the published range is
-/// absent, the configuration is not one this program wrote, and that is reported as a thing nobody
-/// can reason from rather than as a gap.
+/// S9-R2-01. If the configuration says an epoch is published and its account does not come back, one
+/// consistent view of the chain cannot produce that: `publish_checkpoint` writes the checkpoint before
+/// it advances `last_epoch`. But the configuration and the account are separate reads with no shared
+/// response context, so what it proves is that the answers were not one snapshot — **not** that
+/// something other than this program wrote the configuration, which is what the error used to say.
 #[test]
-fn an_absent_account_inside_the_published_range_is_an_impossible_state() {
+fn an_absent_account_inside_the_published_range_is_a_read_that_was_not_one_snapshot() {
     let mut cluster = Cluster::default();
     cluster.configure(100, 104);
     cluster.publish(100, [1u8; 32]);
-    // 101 is deliberately not published, which `publish_checkpoint` could never have allowed.
+    // 101 is deliberately not published. Against one view that is unreachable; this fixture is the
+    // inconsistent view a caller can actually be served.
     let refused = sequence_lag(&cluster, &PROGRAM, 100, 104);
     assert!(
         refused.is_err(),
         "the client says it cannot reason from this, rather than inventing a gap"
     );
-    assert!(format!("{:?}", refused.unwrap_err()).contains("impossible"));
+    let message = format!("{:?}", refused.unwrap_err());
+    assert!(
+        message.contains("not one snapshot") || message.contains("separate reads"),
+        "the error names the reads, not the log: {message}"
+    );
+    assert!(
+        !message.contains("impossible"),
+        "the conclusion these reads cannot support is gone: {message}"
+    );
 }
 
 #[test]
@@ -321,7 +332,7 @@ fn nothing_at_the_address_is_not_the_same_as_a_refusal() {
     );
     assert_eq!(
         decode_checkpoint(&PROGRAM, &PROGRAM, &[0u8; 106], 7).err(),
-        Some(Refused::NotACheckpoint),
+        Some(Refused::WrongDiscriminator),
         "and a zeroed account is a refusal"
     );
 }
@@ -361,6 +372,77 @@ mod status {
         assert_eq!(
             status_of(&Fetched::Refused(Refused::NotTheProgram)),
             AnchorStatus::Pending
+        );
+    }
+}
+
+/// S9-R2-03. `decode_config` is public and was tested only through `sequence_lag`, which built a
+/// valid configuration every time. These are its four refusals, each reached directly.
+mod config_decoder {
+    use super::*;
+    use certimining_client::decode_config;
+
+    fn valid_bytes() -> Vec<u8> {
+        let config = LogConfig {
+            schema_version: 1,
+            authority: PROGRAM,
+            last_epoch: 104,
+            tree_height: 8,
+            bump: 255,
+            start_epoch: 100,
+            reserved: [0u8; 8],
+        };
+        let mut data = LogConfig::DISCRIMINATOR.to_vec();
+        config.serialize(&mut data).expect("serializes");
+        data.resize(LogConfig::LEN, 0);
+        data
+    }
+
+    #[test]
+    fn a_valid_configuration_decodes() {
+        let decoded = decode_config(&PROGRAM, &PROGRAM, &valid_bytes()).expect("decodes");
+        assert_eq!(decoded.start_epoch, 100);
+        assert_eq!(decoded.last_epoch, 104);
+        assert_eq!(decoded.tree_height, 8);
+    }
+
+    #[test]
+    fn an_account_owned_by_someone_else_is_refused() {
+        assert_eq!(
+            decode_config(&PROGRAM, &Pubkey::new_unique(), &valid_bytes()).err(),
+            Some(Refused::NotTheProgram)
+        );
+    }
+
+    #[test]
+    fn data_shorter_than_2_4s_layout_is_refused() {
+        let mut short = valid_bytes();
+        short.truncate(LogConfig::LEN - 1);
+        assert_eq!(
+            decode_config(&PROGRAM, &PROGRAM, &short).err(),
+            Some(Refused::TooShort)
+        );
+    }
+
+    /// The finding itself: this reported `NotACheckpoint`, which named the wrong account type.
+    #[test]
+    fn another_accounts_discriminator_is_a_discriminator_mismatch_and_says_so() {
+        let mut wrong = valid_bytes();
+        wrong[..8].copy_from_slice(CheckpointAccount::DISCRIMINATOR);
+        assert_eq!(
+            decode_config(&PROGRAM, &PROGRAM, &wrong).err(),
+            Some(Refused::WrongDiscriminator),
+            "a malformed configuration is not a checkpoint of the wrong shape"
+        );
+    }
+
+    #[test]
+    fn a_schema_this_client_does_not_read_is_refused() {
+        let mut other = valid_bytes();
+        other[8..10].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            decode_config(&PROGRAM, &PROGRAM, &other).err(),
+            Some(Refused::UnsupportedSchema)
         );
     }
 }

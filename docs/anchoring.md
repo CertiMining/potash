@@ -48,9 +48,35 @@ carry the program's discriminator, carry schema version 1, and carry the epoch t
 INV-ANCH-06 eliminates log equivocation only because every verifier resolves the same root — which
 holds only if each verifier checks what it resolved.
 
-Absence is not refusal. Nothing at the derived address means the epoch was never published, and for an
-epoch that should have been that is a gap and evidence of batcher failure (INV-ANCH-02). `missing_epochs`
-returns the epochs rather than a boolean, so a caller cannot reduce a gap to a warning.
+Absence is not refusal, and neither of them is a gap. **There is no interior gap to find**
+(S9-R2-02): `publish_checkpoint` accepts `last_epoch + 1` and nothing else, so the published range runs
+unbroken from `start_epoch` to `last_epoch`.
+
+`sequence_lag` places every epoch a caller asks about, and returns `Lag`:
+
+| Field | What it means |
+|---|---|
+| `before_log_start` | a day the log did not exist for. Not a failure of anyone's |
+| `not_yet_published` | the sequence has not reached it. **This is the batcher failure INV-ANCH-02 is about** |
+| `refused` | an account came back inside the published range and failed a check. Evidence about the response, not the log |
+| `epochs_behind()` | how far the sequence trails the highest epoch asked about |
+
+The `refused` arm needs its meaning stated, because the obvious reading is wrong. A third party
+**cannot** place an account at one of these addresses: `allocate` requires the target to sign
+(`solana-system-program-4.2.2`, `system_processor.rs:82-89`), a program-derived address is off-curve
+and has no key, and only the owning program can sign for it with its seeds. Sending it lamports is all
+an outsider can do, which is the attack D-104 closes. So inside the published range every account was
+written by this program, and a refusal there means the answers did not come from one view of the chain
+— a stale replica, a different fork, or an endpoint that is not serving the chain at all.
+
+**This client does not read a clock**, so it does not rule on lag. §2.3 and INV-IFACE-01 keep clocks
+out of verification; the client reports the distance, and whoever holds a clock decides what it means.
+
+**A known limit, filed rather than hidden.** `sequence_lag` reads the configuration and each
+checkpoint through separate requests with no shared response context, so an inconsistent view can
+produce a `refused` or an absent account that says nothing about the log. The error text says exactly
+that rather than drawing a conclusion. Binding the reads to one snapshot is tracked for after the
+deadline.
 
 ## Publication time belongs to the schedule
 

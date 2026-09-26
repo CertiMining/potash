@@ -38,8 +38,11 @@ pub enum Refused {
     NotTheProgram,
     /// The data is shorter than §2.4's layout.
     TooShort,
-    /// The discriminator is not `CheckpointAccount`'s.
-    NotACheckpoint,
+    /// The eight-byte discriminator is not the one the account this decoder was asked for carries.
+    /// Both decoders reach it, so it is named for the condition rather than for one account type: it
+    /// was `NotACheckpoint`, which reported a malformed `LogConfig` as the wrong kind of account
+    /// entirely (S9-R2-03).
+    WrongDiscriminator,
     /// The schema version is not one this client reads.
     UnsupportedSchema,
     /// The account decodes, but for another epoch than the one asked for.
@@ -103,7 +106,7 @@ pub fn decode_checkpoint(
     }
     let (discriminator, body) = data.split_at(8);
     if discriminator != CheckpointAccount::DISCRIMINATOR {
-        return Err(Refused::NotACheckpoint);
+        return Err(Refused::WrongDiscriminator);
     }
     let account = CheckpointAccount::deserialize(&mut &*body).map_err(|_| Refused::Malformed)?;
     if account.schema_version != certimining_checkpoint::SCHEMA_VERSION {
@@ -139,7 +142,7 @@ pub fn decode_config(
     }
     let (discriminator, body) = data.split_at(8);
     if discriminator != LogConfig::DISCRIMINATOR {
-        return Err(Refused::NotACheckpoint);
+        return Err(Refused::WrongDiscriminator);
     }
     let config = LogConfig::deserialize(&mut &*body).map_err(|_| Refused::Malformed)?;
     if config.schema_version != certimining_checkpoint::SCHEMA_VERSION {
@@ -217,12 +220,19 @@ pub fn sequence_lag<S: RootSource>(
             Fetched::Placed(_) => {}
             Fetched::Refused(reason) => lag.refused.push((epoch, reason)),
             Fetched::Absent => {
+                // On **one** consistent view of the chain this cannot happen: the configuration says
+                // the epoch is published, and `publish_checkpoint` writes the checkpoint before it
+                // advances `last_epoch`. But the configuration and this account came back from
+                // separate requests with no shared response context (S9-R2-01), so what this proves
+                // is that the answers were not one snapshot — not anything about the log. The earlier
+                // wording claimed something other than this program had written the configuration,
+                // which is a conclusion these reads cannot support.
                 return Err(Unreachable(format!(
-                    "epoch {epoch} is inside the published range {}..={} and its account is absent, \
-                     which `publish_checkpoint`'s own monotonicity makes impossible. Something other \
-                     than this program has written the log's configuration.",
+                    "epoch {epoch} is inside the published range {}..={} and its account did not come \
+                     back. These are separate reads with no shared response context, so this is \
+                     evidence about the responses and not about the log: ask again against one view.",
                     config.start_epoch, config.last_epoch
-                )))
+                )));
             }
         }
     }
@@ -234,12 +244,18 @@ pub fn sequence_lag<S: RootSource>(
 /// They are kept apart for the same reason `Unreachable` is not an absence. An epoch before the log
 /// started is a day it did not exist for. An epoch past `last_published` is the sequence lagging,
 /// which is the batcher failure INV-ANCH-02 is about and the only one an on-chain read can show.
-/// An epoch whose account was refused is evidence about whoever placed that account, since a third
-/// party can put one at a derived address.
+/// An epoch whose account was refused is evidence about **the response**, not about the chain.
 ///
-/// **`refused` is kept although the ruling said "lag and nothing else".** It is not a gap arm and it
-/// is reachable: dropping it would remove a working check on an account this client will not accept,
-/// which is a different condition from either lag or gap. Said here so the departure is visible.
+/// **What `refused` does not mean, corrected at S9-R2-01.** This said a third party could place an
+/// account at a derived address. That is false for a program-derived address: `allocate` requires the
+/// target to sign (`solana-system-program-4.2.2`, `system_processor.rs:82-89`), a PDA is off-curve and
+/// has no key, and only the owning program can sign for it with its seeds. A third party can send
+/// lamports to one — which is D-104's attack — and can do nothing else. Inside the published range
+/// every account was therefore written by this program, so a refusal there means the response did not
+/// come from the same view of the chain as the configuration did, or did not come from the chain.
+///
+/// The arm is kept, at the owner's ruling, with that meaning rather than the one first given for it.
+/// **Reading it as third-party interference would accuse someone of something they cannot do.**
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lag {
     /// The first epoch the log publishes, from its configuration.
