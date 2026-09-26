@@ -1,0 +1,58 @@
+[package]
+name = "certimining-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+# No licence is declared until E-15 decides it (D-13).
+publish = false
+description = "Publishes checkpoints on the epoch cadence and fetches a root by epoch without an indexer (TCU-02 §2.3, §1.5). The only crate here that speaks to a cluster."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[features]
+# The default build talks to nothing: `RootSource` is a trait and every test below implements it with
+# a map, so a cluster is never needed to check the client's own decisions (D-84). `cluster` adds the
+# one implementation that does reach a network, on the Agave 4.2.2 line the deployment runs (D-15).
+default = []
+cluster = [
+    "dep:solana-rpc-client",
+    "dep:solana-commitment-config",
+    "dep:solana-pubkey",
+    "dep:solana-instruction",
+    "dep:solana-message",
+    "dep:solana-transaction",
+    "dep:solana-signer",
+]
+
+[dependencies]
+# The engine: digests, the tree and the promise types (D-84).
+certimining-core = { path = "../certimining-core", features = ["native"] }
+certimining-log = { path = "../certimining-log", features = ["native"] }
+# The program's account layouts and address, so the client derives what the program writes rather
+# than a second opinion about it. `no-entrypoint` keeps the program's entrypoint out of this build.
+certimining-checkpoint = { path = "../../programs/certimining-checkpoint", features = ["no-entrypoint"] }
+# Anchor's account types for deserialising what the program wrote, and its Pubkey/PDA derivation.
+anchor-lang = "=1.2.0"
+# The cluster-facing half, on the line the deployment runs (D-15). Optional, so the default build and
+# every test stay free of a network.
+solana-rpc-client = { version = "=4.2.2", default-features = false, optional = true }
+solana-commitment-config = { version = "=3.1.1", optional = true }
+solana-pubkey = { version = "=3.0.0", optional = true }
+# Building and signing the publish transaction, which §2.3's `publish` has to do itself (D-110).
+# Already in the lock file as test dependencies; the `cluster` feature promotes them, so no crate
+# enters the graph that the licence and advisory gates had not already seen.
+solana-instruction = { version = "=3.4.1", optional = true }
+solana-message = { version = "=4.4.1", optional = true }
+solana-transaction = { version = "=4.1.6", optional = true }
+solana-signer = { version = "=3.0.1", optional = true }
+
+[dev-dependencies]
+# The cluster stand-in for tests that need one; the RPC itself is behind a trait (D-84).
+litesvm = "=0.16.0"
+solana-instruction = "=3.4.1"
+solana-keypair = "=3.1.2"
+solana-message = "=4.4.1"
+solana-pubkey = "=3.0.0"
+solana-signer = "=3.0.1"
+solana-transaction = "=4.1.6"

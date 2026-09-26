@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.1.14 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.1.14 plus unmerged amendments on this branch · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -122,7 +122,11 @@ Schema 1 flag bits: `bit 0 = RESERVE_WITHOUT_PRIOR_RESOURCE`, `bit 1 = CATEGORY_
 
 ### 1.4 Epoch tree — fixed capacity, count-hiding
 
-Epoch `e` = UTC day index. The tree has a **fixed height `H`, chosen once at `initialize` and immutable thereafter**. Default for this deployment: **`H = 8`, capacity `C = 256` slots**. Whatever `H` is, every epoch uses it, every epoch, forever.
+Epoch `e` = UTC day index, `floor(unix_seconds / 86400)`. **A log begins at the day it is initialized**, not at zero: `initialize` writes `start_epoch`, the UTC day index the chain itself reports at that moment, and `publish_checkpoint` then takes exactly `last_epoch + 1` forever after. Before this branch this document gave the epoch its meaning and left a new log's `last_epoch` at zero, which made the first publishable epoch `1` — 2 January 1970 — and put the current day roughly twenty thousand transactions away, so the daily cadence INV-ANCH-01 requires was unreachable from the first deploy (D-109).
+
+`start_epoch` is an argument to `initialize` so that the intended value is visible in the transaction, and the program requires it to equal the day index the on-chain clock reports. The operator states it; the chain decides it. The match is exact, so a transaction prepared before midnight and landing after it is refused and resubmitted with the new day; a tolerance would be a choice between two values, and this value is not the operator's to choose.
+
+The tree has a **fixed height `H`, chosen once at `initialize` and immutable thereafter**. Default for this deployment: **`H = 8`, capacity `C = 256` slots**. Whatever `H` is, every epoch uses it, every epoch, forever.
 
 Hiding quality comes from the capacity being fixed and always full, not from it being large. `C = 256` absorbs roughly 250 filings a day against a realistic industry rate of one or two, so overflow is not a practical concern, and it is four times cheaper to build than `C = 1024`. See decision **D-02** (Appendix B) for the revision triggers.
 
@@ -156,7 +160,11 @@ epoch root     = root of the complete binary tree over all C slots
 
 This is cover traffic applied at Layer 1 rather than Layer 5. It is what removes the "something material just happened at an identified asset" signal that makes public typed registries unusable in this domain, and it is the property most likely to generalize beyond mining.
 
-**INV-ANCH-02 (single authority, monotone epochs).** `publish_checkpoint` accepts `e = last_epoch + 1` only. Gaps and replays are rejected. A gap in the on-chain sequence is itself evidence of batcher failure and must surface in the client.
+**INV-ANCH-02 (single authority, monotone epochs).** `publish_checkpoint` accepts `e = last_epoch + 1` only. Gaps and replays are rejected. **The sequence begins at `LogConfig.start_epoch`** (§1.4, D-109) and runs unbroken to `last_epoch`.
+
+**What a client must surface, corrected on this branch (D-106, S9-R2-02).** Through the version before this one, this invariant said "a gap in the on-chain sequence is itself evidence of batcher failure and must surface in the client". **There is no such gap.** Accepting `last_epoch + 1` and nothing else makes the published range contiguous by construction, so an interior hole cannot exist, and an invariant requiring a client to detect one required a detector for an unreachable condition — which D-80's rule names a defect in this document.
+
+The batcher failure an on-chain read can show is **lag**: the sequence standing still while the calendar advances, so `last_epoch` falls behind the current UTC day index. A client surfaces that, and distinguishes it from two things it is not. An epoch **before `start_epoch`** is a day the log did not exist for, and reporting it as a failure would accuse a batcher of not publishing before it was deployed. An epoch whose account is **refused** is evidence about the response rather than about the log: inside the published range every account was written by this program, because a program-derived address can only be allocated by the program that owns it, so a refusal there means the answers did not come from one view of the chain. Judging lag needs a clock, and §2.3 and INV-IFACE-01 keep clocks out of verification, so the client reports the distance and the ruling belongs to whoever holds the clock.
 
 **INV-ANCH-03 (write-once).** Checkpoint accounts are written once. `attach_anchor_receipt` may transition `receipt_digest` from zero to a value exactly once. No instruction mutates a non-zero field.
 
@@ -205,7 +213,7 @@ holder does not choose the policy its own promise is judged against.
 
 ### 1.7 Governance
 
-**INV-GOV-01.** A live program upgrade authority makes every invariant conditional on the current deployment. Before submission the authority is set to `None`, or the README states plainly that it is live and why.
+**INV-GOV-01.** A live program upgrade authority makes every invariant conditional on the current deployment. Before submission the authority is set to `None`, or the repository states plainly, at the entry point a reader arrives through, that it is live and why. Until the README of E-15 exists, that place is `docs/anchoring.md`, and the disclosure moves to the README when there is one. A disclosure a reader does not meet is not a disclosure (Codex round one, finding 12).
 **INV-GOV-02.** The checkpoint authority key is a liveness dependency, not an integrity one: it can stall the log or publish garbage roots, and can do neither retroactively nor selectively (INV-ANCH-06).
 
 ### 1.8 Hard limits
@@ -228,7 +236,7 @@ holder does not choose the policy its own promise is judged against.
 
 ## §2 Interface / contract trait definitions
 
-Three crates. `certimining-core` holds digests and the state machine, `no_std`-compatible, zero Solana dependency. `certimining-log` holds the batcher, tree, and verifier. `certimining-checkpoint` is the Anchor program. The core crate must pass identical vectors under a native harness and under the Solana runtime — that is the vendor-neutrality claim made testable rather than asserted.
+Four crates. `certimining-core` holds digests and the state machine, `no_std`-compatible, zero Solana dependency. `certimining-log` holds the batcher, tree, and verifier, `no_std` with an allocator. `certimining-checkpoint` is the Anchor program. `certimining-client` publishes checkpoints and fetches roots, is `std`, and is the only crate that speaks to a cluster (D-84). The core crate must pass identical vectors under a native harness and under the Solana runtime — that is the vendor-neutrality claim made testable rather than asserted.
 
 ### 2.1 Error space
 
@@ -260,6 +268,8 @@ pub enum RegistryError {
 ```
 
 On-chain codes are returned as `6000 + code` (Anchor offset); the client reverses the offset and surfaces raw hex. Codes are stable across versions; new conditions take new codes.
+
+**Where two refusal conditions can hold at once, this document names which check runs first, and a code no path can return is a defect in this document rather than a spare** (D-80). `0x09` is the one deliberate exception: it is reserved and never returned under schema 1, which INV-STATE-06 states and D-01 explains.
 
 **INV-ERR-01.** No panic, unwrap, expect, unchecked index, or wrapping arithmetic on any path. `#![forbid(unsafe_code)]`, `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing, clippy::arithmetic_side_effects)]` at every crate root.
 
@@ -461,14 +471,19 @@ pub struct InclusionProof {
 ```rust
 #[program]
 pub mod certimining_checkpoint {
-    pub fn initialize(ctx: Context<Initialize>, authority: Pubkey) -> Result<()>;
+    pub fn initialize(ctx: Context<Initialize>, authority: Pubkey,
+                      tree_height: u8, start_epoch: u64) -> Result<()>;
     pub fn publish_checkpoint(ctx: Context<Publish>, epoch: u64, root: [u8;32]) -> Result<()>;
     pub fn attach_anchor_receipt(ctx: Context<Attach>, epoch: u64,
                                  receipt_digest: [u8;32], kind: u8) -> Result<()>;
 }
 ```
 
-`initialize` takes `tree_height` (4..=16, default 8) and writes it once. No instruction changes it afterwards (INV-TREE-06).
+`initialize` takes `tree_height` (4..=16, default 8) and writes it once; anything outside the range is `0x05` (V-N-22). It also takes `start_epoch` and writes it once, refusing with `0x05` anything but the UTC day index the on-chain clock reports (§1.4, D-109); `last_epoch` is written as `start_epoch - 1`, so the first publication is `start_epoch` itself. `start_epoch` occupies eight of the sixteen bytes that were reserved, so `LogConfig` is still 68 bytes. No instruction changes it afterwards (INV-TREE-06). The `LogConfig` PDA is its own guard against a second call, since the account already exists. **Whoever calls `initialize` first owns the log**, so it belongs to the deploy procedure rather than to whoever gets there first; a front-run is visible because `LogConfig.authority` is not the operator's key, and the remedy is a redeploy to a new program id. The program's upgrade authority is settled in the same step, which is where INV-GOV-01's choice is made (D-79).
+
+**`publish_checkpoint` checks in this order** (D-80): the checkpoint account already exists is `0x0E`, and only then `epoch ≠ last_epoch + 1` is `0x0D`. Both conditions can hold at once — republishing epoch `e` is also an epoch that is not `last + 1` — so the order is stated here rather than left to an implementation, and the account is created explicitly so existence can be seen before it is refused.
+
+**`attach_anchor_receipt` is the authority's alone**, `kind` accepts exactly one value, `1` for OpenTimestamps, with anything else `0x05`, and a second attach is `0x15` (D-81). The field is write-once, so an open writer could block the real receipt for ever with one garbage digest.
 
 **There is no other instruction, and none may be added.** No update, close, revoke, shred, or set-state. A pull request introducing one is rejected regardless of its guard conditions.
 
@@ -480,7 +495,8 @@ LogConfig (PDA ["cm_cfg"])            offset  len        CheckpointAccount (PDA 
   last_epoch                              42    8          root                    18   32
   tree_height                             50    1          published_slot          50    8
   bump                                    51    1          published_unix          58    8
-  reserved                                52   16          receipt_digest          66   32
+  start_epoch                             52    8          receipt_digest          66   32
+  reserved                                60    8
                                         total   68         anchor_kind             98    1
                                                            bump                    99    1
                                                            reserved               100    6
@@ -618,17 +634,18 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-23 | A record failing both (a) and (f) | `0x03`; the earlier condition decides |
 | V-N-24 | A record carrying `ext_commitment`, with a wrong `prev_head` | `0x0F`; the schema gate precedes (a) |
 | V-N-25 | A signature made by a key other than the `qp_key` the record claims, with no expected key supplied | `0x07` |
+| V-N-26 | `initialize` given a `start_epoch` that is not the UTC day index the on-chain clock reports — too low, too high, zero, or `u64::MAX` | `0x05` |
 
 ### 4.4 Privacy acceptance tests — these are the ones that matter
 
 | ID | Test | Pass condition |
 |---|---|---|
-| V-Z-01 | **Count-hiding.** Publish consecutive epochs holding 0, 1, 128 and 255 real leaves at H = 8, in more than one order, with tree-build time varied deliberately. | Instruction length, transaction length, account size and field layout are identical. A byte may differ between two epochs only if the epoch number, the publication schedule or a pseudorandom digest fixes it: in the checkpoint account, `epoch`, `bump`, `published_slot`, `published_unix`, `root` and `receipt_digest`; in the `publish_checkpoint` transaction, the checkpoint address, the recent blockhash, the signature and the `epoch` and `root` arguments. Every other byte is identical across record counts. This list is exhaustive and closed: any other byte that differs is a failure, and adding a byte to the list requires an amendment to this specification, never an edit to the test. `epoch` advances by exactly one per epoch, empty epochs included, and every epoch is submitted at its scheduled time however long its build took. Network delay may move the landing slot, but it must be independent of epoch content: the test measures the correlation of landing delay with record count, and with build time, across many epochs, and fails on any correlation above noise. It bounds no single epoch's delay, because one slow publication proves nothing either way. |
+| V-Z-01 | **Count-hiding.** Publish consecutive epochs holding 0, 1, 128 and 255 real leaves at H = 8, in more than one order, with tree-build time varied deliberately. | Instruction length, transaction length, account size and field layout are identical. A byte may differ between two epochs only if the epoch number, the publication schedule or a pseudorandom digest fixes it: in the checkpoint account, `epoch`, `bump`, `published_slot`, `published_unix`, `root` and `receipt_digest`; in the `publish_checkpoint` transaction, the checkpoint address, the recent blockhash, the signature and the `epoch` and `root` arguments. Every other byte is identical across record counts. This list is exhaustive and closed: any other byte that differs is a failure, and adding a byte to the list requires an amendment to this specification, never an edit to the test. `epoch` advances by exactly one per epoch, empty epochs included, and every epoch is submitted at its scheduled time however long its build took. Network delay may move the landing slot, but it must be independent of epoch content: the test measures the correlation of landing delay with record count, and with build time, across many epochs, and fails on any correlation above noise. It bounds no single epoch's delay, because one slow publication proves nothing either way. **Where each half runs (D-85):** the byte-exact comparison runs under LiteSVM in CI, which is deterministic and is what a closed list needs; the landing-delay correlation runs on devnet before submission, over **200 consecutive epochs**, with an absolute Pearson correlation **below 0.2** against record count and against build time. That bound is looser than V-Z-04's because a public network's scheduling noise is not what is under test: what is under test is whether epoch content moves the landing slot at all, and a leak of that kind produces a correlation near 1. Both figures are fixed here before any epoch is published, and recorded on issue #9. |
 | V-Z-02 | **Padding indistinguishability.** Given an epoch's root and all `C` leaf digests in slot order and no epoch key, classify each leaf as real or padding. **The adversary is computationally bounded, which is exactly what INV-TREE-02 claims.** An adversary who could search the 256-bit key space would derive `k_e`, recompute every padding leaf and answer with certainty, so count-hiding here is computational and no test can make it information-theoretic. An earlier draft of this row granted the classifier unlimited compute, which contradicted INV-TREE-02 and claimed more than any test can establish. The classifier is specified here rather than left to whoever writes the test, so a reader can judge how hard it tries: per-position byte statistics across the leaf set, and a structural-regularity check over each digest being deviation from the set's per-position byte mean, population count, zero-byte count, leading-zero bits, longest run of equal bytes, distinct byte values, a chi-squared statistic over nibbles, and Hamming distance to the root and to the adjacent slots. | The statistic is a distinguishing game, not raw accuracy: each trial presents one real leaf and one padding leaf from a freshly built epoch, the classifier names the real one, and successes must not leave a two-sided binomial test at α = 0.001 against p = 1/2. Accuracy alone cannot carry this test, because an epoch holding one real leaf and 255 padding leaves scores 255/256 for a classifier that answers "padding" every time and learns nothing; the pair game removes the base rate. A balanced epoch, `C/2` real, is also classified leaf by leaf, where accuracy is meaningful and the same band applies. Every feature is scored alone and the combined score as well, and each must pass. CI runs 200 epochs (D-66). **What this establishes is bounded and stated as such:** the named battery does not distinguish real leaves from padding. It is not a proof that no distinguisher exists, and it says nothing about an adversary who can recover `k_e`. Strengthening the battery is tracked for after the submission deadline. See RES-09. |
 | V-Z-03 | **Proof non-leakage.** Given a valid inclusion proof, recover anything about any sibling, or anything about how many real leaves its epoch held. | Siblings are digests only and no preimage is derivable, which the proof format asserts structurally and the test checks against every chain leaf and every PRF output of the epoch. **No field of a proof varies with the record count:** `height` is the log's, `epoch` is the tree's, the sibling count is `height`, and `slot_index` is pseudorandom under `k_e`. A proof that encoded the count in any of these would be a leak V-Z-01 cannot see, because a proof never goes on chain. The test builds epochs of 1, 128 and 255 real leaves at one height and compares those fields across all three. `slot_index` is the field a count could hide in, so the test does not compare it across counts but pins it: every slot must equal the assignment D-60 prescribes, computed independently in the test from the PRF construction and the probing rule rather than taken from the engine. A regenerated vector set cannot stand in for that, because the generator runs the engine under test. **The matrix is finite and stated:** this row's own samples are 1, 128 and 255 real leaves under the engine's hasher, and the epoch tree's conformance test repeats the same comparison at every count from 0 to `C` at `H = 4` and `H = 8` under a stand-in hasher, which exercises the identical assignment code. Neither is a proof that no count-dependent assignment exists; both are equality to D-60 over the counts they visit. |
 | V-Z-04 | **Position non-leakage.** Correlate `slot_index` with submission order, issuer, and time within epoch across 10,000 simulated epochs. | The absolute Pearson correlation must stay below 0.05 at the sample size CI runs and below 0.02 over the full 10,000 epochs, for each of the three. Both bounds are conservative: CI's standard error is about 0.006, so the bound sits eight standard errors out, while a real positional leak produces a correlation near 1. CI runs 400 epochs; the full run is ignored by default, is a release gate, and is recorded on issue #16 (D-66). |
 | V-Z-05 | **No asset identifier escapes.** Grep the full on-chain byte history and every disclosure package for `c`, tenure IDs, jurisdiction codes and registry codes. | Zero occurrences on-chain. In the disclosure package, only fields listed in §2.5. |
-| V-Z-06 | **Timing non-leakage.** Compare the on-chain timeline of an issuer who submits daily against one who submits twice a year. | Identical checkpoint cadence and footprint. |
+| V-Z-06 | **Timing non-leakage.** Compare the on-chain timeline of an issuer who submits daily against one who submits twice a year. | Identical checkpoint cadence and footprint. Run under LiteSVM beside V-Z-01's byte-exact half, because the property is about what the chain shows rather than about network timing (D-85). |
 
 **A failure in §4.4 is a release blocker of the same severity as a correctness failure.** These tests encode the reason this architecture exists.
 

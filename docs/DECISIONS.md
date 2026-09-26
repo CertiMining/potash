@@ -889,3 +889,236 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 **It also made a claim false.** The code and the unit note both said a refusal consumes nothing. That holds only if the signer cannot fail, and a signer holding a key outside this process is precisely the thing that can be unreachable.
 
 **Checked by.** A failing signer, through the public traits: the snapshot is unchanged after the error, `resume` accepts it, and a retry receives the identifier the failure did not consume. Restoring the old ordering fails that case by name.
+
+## D-78 · `initialize` takes the height its own prose already gives it
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `initialize(ctx, authority: Pubkey, tree_height: u8)`, refusing anything outside `4..=16` with `0x05` and writing both once. §2.4's code block is amended to match the sentence two lines below it, which already said the instruction takes a height.
+
+**Ground.** D-02 made height a deployment parameter so that a capacity change is a settings decision rather than a rewrite, INV-TREE-06 says it is written at `initialize` and never changed, and V-N-22 already names the refusal. The block was simply missing the parameter.
+
+**Rejected.** Compiling the height in as a constant, which contradicts all three.
+
+## D-79 · `initialize` is part of the deploy procedure, and so is the upgrade authority
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The PDA is the guard: seeds `["cm_cfg"]` with `init`, so a second call fails because the account exists. The payer signs and the `authority` argument does not need to.
+
+**Owner's condition (24 Sep 2026).** The program's upgrade authority is handled in the same step as `initialize`. INV-GOV-01's choice — burn the authority or disclose that it is live and why — is made at the first devnet deploy, not later, and which was chosen is recorded on issue #16.
+
+**What this does not prevent, stated rather than implied.** Whoever calls `initialize` first owns the log. A front-run is visible, because `LogConfig.authority` is not the operator's key, and the remedy is to redeploy to a new program id. The deploy procedure therefore runs `initialize` as part of deployment, and the README says so.
+
+**Rejected.** Requiring the authority to co-sign, which adds a ceremony without changing who wins the race.
+
+## D-80 · When two refusals can overlap, the specification names which check runs first
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision, as a general rule at the owner's instruction.** Where two refusal conditions can hold at once, TCU-02 states which check runs first, and **a code no path can return is a specification defect**, not a spare. Every code in §2.1 is checked against that rule on this branch, and any other unreachable one is reported.
+
+**The instance that produced the rule.** §4.3 gives V-N-10 `0x0D` for `epoch ≠ last + 1` and V-N-11 `0x0E` for a second publish of the same epoch. Under monotone epochs those are one condition: republishing epoch `e` means `last_epoch` is already `e`, so the monotonicity check fires and `0x0E` is unreachable. `publish_checkpoint` therefore creates the checkpoint account explicitly and orders the checks — the account already exists is `0x0E`, and only then `epoch ≠ last + 1` is `0x0D` — so both codes and both vectors survive. The cost is a manual create, which is the same system-program call Anchor's `init` performs.
+
+**Ground.** §2.1 says codes never change and new conditions take new numbers. A code that no path can return is worse than either outcome, because it reads as coverage that does not exist.
+
+**The audit the rule requires, 24 Sep 2026.** Every code in §2.1 was traced to the paths that return it and to the tests that reach it. **`0x09` `CategorySequenceUnsupported` is the only code with no returning path anywhere in the workspace**, which is what §2.1 and INV-STATE-06 already declare it to be: reserved, never returned under schema 1. Every other code from `0x03` to `0x17` has at least one returning path in `crates/certimining-core`, `crates/certimining-log` or `programs/certimining-checkpoint`, and at least one test that reaches it. `0x0E`, the instance that produced this rule, is now reached twice over: under LiteSVM in `tests/checkpoint.rs`, and on devnet as `Custom(6014)` in D-86's comparison. No other unreachable code was found.
+
+## D-81 · The receipt has one writer and one kind
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `attach_anchor_receipt` is the authority's alone, `kind` accepts exactly one value — 1, OpenTimestamps — with anything else `0x05`, and a second attach is `0x15`.
+
+**Ground.** The field is write-once by INV-ANCH-03, so under an open writer a stranger writes one garbage digest and permanently blocks the real receipt. An unconstrained `kind` byte is a field a later version can overload without saying so; INV-ANCH-04's "never parses the receipt" governs the digest, not the tag beside it.
+
+## D-82 · The client refuses an account it cannot place
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `root_for_epoch(e)` derives `["cm_ckpt", e_le]` against the program id, fetches it, and refuses unless the account's owner is the program, its discriminator is the program's, its `schema_version` is 1 and its stored `epoch` equals the epoch asked for.
+
+**Ground.** An RPC node can return anything, and fetching a root independently means nothing if the client believes whatever comes back. INV-ANCH-06 eliminates log equivocation only because every verifier resolves the same root, which holds only if each verifier checks what it resolved.
+
+## D-83 · The publication time is a function of the epoch, not of the build
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `publication_time(epoch)` is the epoch boundary plus a fixed offset. The build starts at a fixed lead before it and the transaction is submitted at that time whatever the build took. The crate holds no clock: the service supplies the time, exactly as the batcher is supplied its epoch (D-70).
+
+**Ground.** INV-ANCH-01. Publishing when the build finishes leaks build time, build time tracks record count, and that correlation is what V-Z-01 measures.
+
+## D-84 · The client is a fourth crate
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `crates/certimining-client`, `std`, depending on core, log and the Agave 4.2.2 client crates, with the RPC behind a trait so the tests run without a network. §2 is amended to name four crates.
+
+**Ground.** `certimining-log` is `no_std` and builds for bare metal, which D-14 and D-61 made load-bearing; an RPC client ends that.
+
+## D-85 · Where V-Z-01 and V-Z-06 run, and at what sample
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** Both venues, split by what each can prove.
+
+- **LiteSVM, in CI:** the byte-exact half of V-Z-01. Epochs of 0, 1, 128 and 255 records, published in more than one order with build time varied deliberately, compared for instruction length, transaction length, account size and field layout against §4.4's closed list. V-Z-06 runs here too, comparing a daily filer's checkpoint stream against a twice-yearly filer's.
+- **Devnet, before submission:** the half a deterministic runtime cannot show, being the correlation of landing delay with record count and with build time.
+
+**Owner's condition (24 Sep 2026), fixed before any epoch is published.** The devnet sample is **200 consecutive epochs**, and the bound is **an absolute Pearson correlation below 0.2** for landing delay against record count and against build time. Both are recorded on issue #9. The bound is looser than V-Z-04's 0.02 because a public network's scheduling noise is not under test here; what is under test is whether epoch content moves the landing slot at all, and a real leak of that kind produces a correlation near 1.
+
+**Ground.** The closed-list comparison is exactly what a deterministic runtime proves. The landing-delay half is exactly what it cannot, and a bound chosen after the numbers are visible is a bound chosen to pass.
+
+## D-86 · A 4.2 against 4.3 difference is detected, not discovered
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** After the first devnet deploy, the assertions the LiteSVM suite makes are run against devnet — the same compute figures, the same account bytes, the same error codes — and both sets are recorded side by side on issue #16. Any divergence stops the unit and goes to the owner as a decision.
+
+**Ground.** The owner's instruction is that a behavioural difference between the pinned toolchain and the cluster is a decision rather than a fix. Without a detector, "any difference" is a thing nobody is looking for.
+
+**Where it is recorded (owner's instruction, 24 Sep 2026).** This record was written expecting the first deploy in E-16, and named issue #16. The deploy happened in E-08/E-09 instead, so the two columns are recorded on **issues #8 and #9**.
+
+**Result, 24 Sep 2026.** Devnet (Agave 4.3.0) against LiteSVM (Agave 4.2.2), program `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`: `initialize` 7,504 CU both, `publish_checkpoint` 8,765 CU both, `attach_anchor_receipt` 5,693 CU both, `LogConfig` 68 bytes both, `CheckpointAccount` 106 bytes both, and a republished epoch refused with `Custom(6014)` — `6000 + 0x0E` — on both. No divergence, so nothing went to the owner as a decision. The harness stays in the tree and stays `#[ignore]`d, because the next deploy is the next thing it has to answer for.
+
+## D-87 · LiteSVM runs the program in CI
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The program's tests run under LiteSVM in Rust, as `kat01-onchain` already does. `anchor test` stays a local and demo tool. STANDARD-STEPS' S8 wording is amended accordingly.
+
+**Ground.** No validator process, deterministic, and byte-deterministic in the way V-Z-01's closed-list comparison needs. A validator in CI buys none of that and costs a runner dependency.
+
+## D-88 · The upgrade authority is disclosed, not burned, for this deployment
+
+**Date:** 24 Sep 2026 · **Unit:** E-08 · **Class:** owner's ruling · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** INV-GOV-01 offers two ways to satisfy it, and the owner ruled **disclose**. The program's upgrade authority stays with the deploy key for the hackathon deployment, and the repository states plainly that it is live, who holds it, and why. **Where** (amended after Codex round one, finding 12): this record and `docs/anchoring.md` said "the README" while the repository had none, so the disclosure existed only for a reader who already knew to look in `docs/`. It lives in `docs/anchoring.md` until E-15 writes the README, and moves there when it exists. Burning the authority is a decision for a deployment that claims permanence, and it goes to milestone 5 rather than being taken now by default.
+
+**Ground.** INV-GOV-01's own words: a live upgrade authority makes every invariant conditional on the current deployment, so the honest options are to remove it or to say it is there. A submission deployment that may need a fix is not a deployment claiming permanence, and pretending otherwise would be the overstatement the shipping posture forbids.
+
+**What it costs, stated where a reader meets the claims.** Every invariant this program enforces is enforced by *this* program, and whoever holds the deploy key can replace it. That is a trust assumption of the same kind as RES-03's, and the README says so rather than leaving a reader to infer it.
+
+**The keys, and why there are three (owner's amendments, 24 Sep 2026).** Three keys, one job each, all generated off-repo at S6, mode 0600, outside this repository; nothing here has ever held any secret half.
+
+- **Program address:** `jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no`, which `declare_id!` carries, so every test on this branch verifies the address that actually deploys. It is an address and never a wallet: nobody funds it, and it signs once at the deploy and never again. The only lamports it ever holds are the program account's own rent-exemption, which the loader places there.
+- **Deploy payer and upgrade authority:** `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz`, which pays for the deploy and is the authority disclosed under INV-GOV-01.
+- **Checkpoint authority:** `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB`, written into `LogConfig` at `initialize`.
+
+**Why the authority is split from the checkpoint key.** Both reasons are about what happens when one key is lost rather than about tidiness. **Blast radius:** a compromised checkpoint key can stall the log or publish garbage roots, which INV-GOV-02 already names as a liveness failure and not an integrity one, while a compromised upgrade key can replace the program and with it every invariant this repository claims. Holding them as one key would make the smaller failure carry the larger consequence. **Exposure:** only the checkpoint key runs unattended, signing on the epoch cadence in whatever the service runs on, while the upgrade key is used by a person at a deploy. A key that signs on a schedule is exposed continuously, and that is not the key that should be able to change the program.
+
+**Why the address is split from the payer (owner's ruling, 24 Sep 2026).** The first version of this record named one key as both the program id and the upgrade authority. That cannot be built. The loader creates the program account with the system program's `create_account` (`solana-loader-v3-interface-3.0.0`, `instruction.rs:246`), and `create_account` refuses any address that already holds lamports (`solana-system-program-4.2.2`, `system_processor.rs:161-167`), so the program address must be empty at deploy and cannot be the key that pays. Making the payer the authority as well would then leave the address key holding an authority it could only exercise as an executable account — a signing path nothing in the ecosystem exercises and nothing here has tested. The owner ruled the third key: a program address that is **never funded and never signs after the deploy**, enforced by two refusals in `scripts/deploy-devnet.sh` rather than by convention. The first refusal requires a zero balance, which is what "never funded" has to mean before the account exists; afterwards the address holds the program account's rent and the second refusal is what keeps the key closed. The disclosed governance key is unchanged by the split; only the program id moved, and it had never been deployed.
+
+**The superseded deployment (Codex round one, finding 10).** The first announced program was `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, deployed 24 September and initialized the same day. It is **superseded and must not be used**, for two reasons that cannot be undone on it. Its epoch 1 carries a placeholder root and a `receipt_digest` of `33…33` standing for no OpenTimestamps receipt, written by `crates/certimining-client/tests/devnet.rs` against the announced deployment; `receipt_digest` is write-once, so that epoch claims an anchor B it does not have, for good. And its `LogConfig` was written under the pre-D-109 rule, so its sequence begins at epoch 1 rather than at a UTC day index and can never reach the current day. The remedy for either is a new program id, which is what `jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no` is. The address key of the old deployment is retained but never used again.
+
+**How each key is exercised.** The payer signs the deploy and any later upgrade. The address key appears in exactly one command, the first deploy; an upgrade names the program by public key and never opens that file, which is what the second refusal checks. The checkpoint key signs `publish_checkpoint` and `attach_anchor_receipt` and nothing else — it cannot upgrade the program, and the program does not let it change `tree_height` or the authority.
+
+**Recorded on issue #16** under INV-GOV-01, at the first devnet deploy.
+
+## D-89 · One licence exception, scoped to one crate
+
+**Date:** 24 Sep 2026 · **Unit:** E-09 · **Class:** cost judgment · **Status:** settled at S9 (owner, 24 Sep 2026)
+
+**Decision.** `CDLA-Permissive-2.0` is allowed **for `webpki-roots` alone**, through a `[[licenses.exceptions]]` entry, not by adding it to the global allow list.
+
+**The chain, in full.** `certimining-client` → `solana-rpc-client` 4.2.2 → `reqwest` → `hyper-rustls` → `webpki-roots` 1.0.9. The dependency is not optional inside `solana-rpc-client`, so `default-features = false` does not remove it, and an optional feature of ours does not keep it out of `Cargo.lock`, which is what `cargo deny` reads.
+
+**What is licensed that way.** Mozilla's CA root certificate **data**, which the crate bundles. The crate's own code is MIT. The Community Data License Agreement Permissive 2.0 is permissive, has no copyleft term and places no attribution burden on a binary.
+
+**Why scoped rather than global (owner's condition).** A global allow would silently accept the next crate arriving under the same licence. Scoping means that crate still fails the gate and reaches a person, which is the behaviour that produced this entry.
+
+**The gate worked.** `cargo deny check` failed CI on the first push that introduced the dependency, before anything reached a cluster, which is what D-18 put it there to do. It is recorded that way rather than as an obstacle that was removed.
+
+**Rejected.** Hand-writing the four JSON-RPC calls the client needs over an HTTP stack of our own choosing, to avoid a permissive data licence on a root-certificate bundle. Days of work, eighteen days from the deadline, and hand-written RPC against a live network is likelier to be wrong than the crate the cluster's own client uses.
+
+## D-104 · Existence is ownership and data, never a lamport balance
+
+**Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 2)
+
+**The defect.** `publish_checkpoint` read `data_is_empty() && lamports() == 0` as "this epoch has no checkpoint". A checkpoint address is derived from a public seed, so anyone can compute the next one and send lamports to it. That made the address non-empty, the epoch returned `0x0E`, `last_epoch` never advanced, and **every later epoch failed `0x0D` behind it**. Roughly a thousandth of a SOL stopped the log permanently, and D-104's own code comment claimed it made "the same system-program call Anchor's `init` performs" while `init` handles exactly this case and this did not.
+
+**Decision.** Existence is the narrow thing it should always have been: this program owns the account **and** it holds data. An address someone funded is an empty slot, and the instruction fills it. Anything else already there belongs to a third party and is `0x05` rather than written through. Creation tops up, allocates and assigns rather than calling `create_account`, which refuses a funded address outright.
+
+**Evidence.** `a_funded_checkpoint_address_does_not_stop_the_log` fails against the previous binary with `6014` and passes against this one, and `a_written_checkpoint_is_still_0x0e_on_a_second_publish` holds the original behaviour in place.
+
+## D-105 · A zero receipt digest is not a value
+
+**Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 6)
+
+**The defect.** INV-ANCH-03 is zero to a value, once. Attaching an all-zero digest left the sentinel in place and set `anchor_kind`, so a second attachment passed the same check and overwrote it. The write-once field was writable twice.
+
+**Decision.** An all-zero `receipt_digest` argument is `0x05`. The sentinel cannot be written as a value, so the field moves from zero to a value exactly once.
+
+## D-106 · A refused account is not an epoch that is fine
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 7)
+
+**The defect.** `missing_epochs` pushed only `Fetched::Absent`. An account that came back and failed D-82's checks was therefore counted as not missing, and a caller with no usable root for an epoch could be handed an empty list.
+
+**Decision.** `missing_epochs` returns `Gaps`, holding absences and refusals separately, for the reason `Unreachable` is already separate from both: an absence is evidence about the batcher under INV-ANCH-02, and an account a third party placed at a derived address is evidence about whoever placed it. `without_a_root` answers the caller who only wants to know which epochs they cannot verify.
+
+**Amended 26 Sep 2026: there is no gap arm, because an interior gap cannot happen.** E-11's independent implementation found it from the specification alone. `publish_checkpoint` accepts `last_epoch + 1` and nothing else, so the published range is contiguous from `start_epoch` to `last_epoch` by construction, and the only absence this function could ever report was an epoch the sequence had not reached — a lagging batcher, reported under the name of something else. D-80's rule applies to a client branch as much as to an error code: a condition no path can reach reads as coverage that does not exist.
+
+`missing_epochs` is replaced by `sequence_lag`, returning `Lag`. It reads the log's configuration, then places each epoch asked about: **before the log started**, which is a day it did not exist for and not a failure of anyone's; **past `last_published`**, which is the lag INV-ANCH-02 is actually about and the only batcher failure an on-chain read can show; or **refused**, an account inside the published range that failed D-82's checks. `epochs_behind` gives a caller with a clock the number it needs, and the client reads no clock itself, because §2.3 and INV-IFACE-01 keep clocks out of verification. An absent account *inside* the published range returns `Unreachable` naming the state as impossible, since reaching it means something other than this program wrote the configuration.
+
+**One departure from the ruling, and the argument for it was wrong (S9-R2-01).** The instruction was "lag beyond `last_epoch` and nothing else". The arm was kept, and the reason given was that a third party can place an account at a derived address. **That is false.** `allocate` requires the target account to sign (`solana-system-program-4.2.2`, `system_processor.rs:82-89`); a program-derived address is off-curve and has no key; only the owning program can sign for it with its seeds. An outsider can send lamports to one, which is the attack D-104 closes, and can do nothing else. The owner confirmed the arm on the strength of an argument that does not hold.
+
+The arm stays, because it is reachable — but for the other reason. Inside the published range every account was written by this program, so a refusal there means the responses did not come from one view of the chain: a stale replica, a different fork, or an endpoint that is not serving the chain. Reading it as third-party interference would accuse someone of something they cannot do. The type's own documentation now says that instead.
+
+**And the absent-inside-the-range error claimed more than its reads support (S9-R2-01).** It said an absent account inside the published range meant "something other than this program has written the log's configuration". The configuration and the account are separate requests with no shared response context, so the only thing that state proves is that the answers were not one snapshot. The error says that now.
+
+**What is deferred, and why it is a mechanism rather than a claim.** Binding the configuration read and the checkpoint reads to one response context — `getMultipleAccounts` under a single context, or carrying the configuration's response slot into `min_context_slot` — is real work and is filed for after the deadline. Until then the client draws no conclusion it cannot support, which is the half that could not wait.
+
+## D-107 · Deriving the address settles which account, not whether the answer is the chain's
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** security necessity, as claim accuracy · **Status:** applied at S9 round 1 (Codex finding 8)
+
+**The defect.** `docs/anchoring.md` said there was "no server that could answer differently for different askers". Deriving the address removes the indexer's discretion over *which* account is read. It does not remove the RPC: the account arrives from one endpoint on its word alone, with no bank proof, no light client and no second endpoint, so a compromised node can hand two counterparties two structurally valid checkpoints for one epoch and every check below passes on both.
+
+**Decision.** The claim is corrected where it was made. A counterparty who needs that assurance asks more than one endpoint, and this client does not do it for them.
+
+## D-108 · `AlreadyPublished` is settled against the chain, not against a code
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 2)
+
+**The defect.** `classify` sees an error code and nothing else, so `0x0E` alone cannot distinguish a retry that arrived after the first attempt landed from an epoch already carrying somebody else's root. Reporting it as success was a decision taken without the fact that decides it.
+
+**Decision.** `settle(requested, on_chain)` returns `Matches`, `Equivocation { on_chain }` or `Unwritten`. Two roots for one epoch is INV-ANCH-06's condition and is never a successful publication. `Unwritten` stays reachable because a client cannot assume the program it is talking to carries D-104's fix.
+
+## D-109 · A log begins at the day it is initialized
+
+**Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** owner's ruling · **Status:** settled at S9 round 1 (owner, 25 Sep 2026)
+
+**The defect (Codex finding 1, High).** §1.4 makes an epoch a UTC day index. `initialize` wrote `last_epoch = 0` and `publish_checkpoint` takes exactly `last + 1`, so the first publishable epoch was `1` — 2 January 1970 — and reaching the current day would have taken twenty thousand transactions. INV-ANCH-01's daily cadence was unreachable from the first deploy, and the deployment made on 24 September published epoch 1.
+
+**Decision (the owner's, option (a)).** `initialize` takes `start_epoch`, written once. **Its value is the UTC day index at `initialize` and is never operator-chosen:** the argument is present so the intended value appears in the transaction, and the program requires it to equal what the on-chain clock reports. Publication remains exactly `last + 1`. §1.4, §2.4 and INV-ANCH-02 are amended.
+
+**What the exact match costs, stated rather than smoothed over.** A transaction prepared before midnight UTC and landing after it is refused and must be resubmitted with the new day. A tolerance would be a choice between two values, and this value is not the operator's to choose.
+
+**The layout.** `start_epoch` takes eight of `LogConfig`'s sixteen reserved bytes, so the account is still 68. A client needs it for INV-ANCH-02: an epoch before `start_epoch` is a day the log did not exist for, not a gap, and a client without it would accuse a batcher of failing to publish before it was deployed.
+
+**Compute.** `publish_checkpoint` moved from 8,765 CU to 13,310, from this change and from D-104's narrower existence test together. §1.8's bound is 15,000 and the assertion is unchanged; the margin is thinner and the figure is recorded here so a later rise is visible against it.
+
+## D-110 · `publish` and `status` are implemented; `timestamp` stays with anchor B
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** owner's ruling · **Status:** settled at S9 round 1 (owner, 25 Sep 2026)
+
+**The defect (Codex finding 3, High).** §2.3's `AnchorClient` names `publish`, `timestamp` and `status`. The crate implemented none of them and offered a callback loop plus an account read, while two module headers announced "§2.3's `AnchorClient`". A caller could not construct, sign, refresh a blockhash, confirm, or report `Pending | Single | Dual`. The retry comment promised a fresh blockhash the callback shape could not deliver.
+
+**Decision (the owner's, option (a)).** `publish` and `status` are implemented here; `timestamp` is OpenTimestamps, anchor B, and stays E-10's. Both module headers are corrected in the same commit rather than left to a later tidy.
+
+**What that means in the code.** `Cluster::publish` builds the instruction, signs with the payer and the checkpoint authority borrowed for the call and never retained, **fetches a blockhash on every attempt**, confirms, and reads the epoch back rather than assuming the submission's outcome. `AlreadyPublished` is settled against the chain through D-108 before it counts as success. `Cluster::status` returns `Pending`, `Single` or `Dual` from the epoch's account, and **an account the client refuses is `Pending`, not `Single`** — announcing a root the client does not have would be INV-ANCH-05's silent degradation pointed the other way.
+
+**Dependencies.** `solana-instruction`, `solana-message`, `solana-transaction` and `solana-signer` move from dev-dependencies to optional dependencies under the `cluster` feature. They were already in the lock file at the same pinned versions, so nothing entered the graph that the advisory and licence gates had not already seen.
+
+## D-111 · V-Z-01's landing-delay half runs at a compressed cadence, and says so
+
+**Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** owner's ruling · **Status:** settled at S9 round 1 (owner, 25 Sep 2026)
+
+**The defect (Codex finding 5, High).** §4.4 makes every row a release gate, and D-85 fixed V-Z-01's devnet half at 200 consecutive epochs with an absolute Pearson correlation below 0.2 against record count and against build time. The numbers were recorded on issue #9 before any epoch was published, as D-85 requires, and **the run was never performed**. Nothing in the repository computed a correlation, recorded a build time, or published 200 epochs.
+
+**Decision (the owner's).** The harness is built now and run at **one epoch per minute over 200 epochs**, on an endpoint nothing else on this machine uses during the run. The endpoint, the cadence and the reason for compression are recorded on issue #16. The full daily-cadence run is filed to milestone 5.
+
+**Why compression is honest here, and where it is not.** INV-ANCH-01's cadence is a day because a day is what hides filing rhythm from an observer. What this row measures is narrower: whether an epoch's *content* moves the slot its checkpoint lands in. That question is about the network's scheduling between submission and inclusion, which is seconds, not days, so a minute between epochs leaves it intact while a day would add 199 days of unrelated drift to the same measurement. What compression does cost is the diurnal variation a day-long cadence would sample — devnet is busier at some hours than others — so a 200-minute run sees one slice of that and a 200-day run would see all of it. A leak of the kind this row exists to catch produces a correlation near 1, far above either sampling regime's noise, which is why the bound is 0.2 and not something tighter.
+
+**What the run therefore establishes, and what it does not.** It establishes that over 200 consecutive epochs at one-minute spacing on one endpoint, landing delay did not follow record count or build time above the stated bound. It does not establish the same across a day's worth of network conditions, which is milestone 5's run, and it is not a proof that no content-dependent scheduling exists.

@@ -1,0 +1,50 @@
+[package]
+name = "certimining-checkpoint"
+version = "0.1.0"
+edition = "2021"
+# Anchor 1.2.0 and platform-tools v1.54 both require this (D-15).
+rust-version = "1.89"
+# No licence is declared until E-15 decides it (D-13).
+publish = false
+description = "The CertiMining checkpoint program (TCU-02 §2.4): three instructions, a root per epoch and an optional anchor receipt. No instruction updates, closes, revokes or deletes anything."
+
+[lib]
+# cdylib is the deployed program; lib lets the tests compile against the crate's own types.
+crate-type = ["cdylib", "lib"]
+name = "certimining_checkpoint"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[lints.rust]
+# Forbids unsafe code in every target of this package, tests included (D-21).
+unsafe_code = "forbid"
+# Anchor's `#[program]` macro checks these names inside this crate. Declare them as expected rather
+# than adding features that do nothing, which is what the harness does for the same reason.
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("custom-heap", "custom-panic", "anchor-debug", "no-log-ix-name"))',
+] }
+
+[dependencies]
+# The framework D-15 pins. Its error offset of 6000 is what §2.1's on-chain mapping assumes.
+anchor-lang = "=1.2.0"
+
+[dev-dependencies]
+# §4.4's V-Z-01 compares what an observer sees across epochs holding 0, 1, 128 and 255 real leaves.
+# Those roots have to be real trees or the test proves nothing about a real publisher, so the engine
+# is a dev-dependency of the tests. It is not a dependency of the program: nothing under src/ uses
+# it, and the deployed binary does not contain it (Codex round one, finding 4).
+certimining-core = { path = "../../crates/certimining-core", features = ["native"] }
+certimining-log = { path = "../../crates/certimining-log", features = ["native"] }
+# Runs the program in-process on the Agave 4.2.2 runtime crates (D-16, D-87).
+litesvm = "=0.16.0"
+solana-instruction = "=3.4.1"
+solana-keypair = "=3.1.2"
+solana-message = "=4.4.1"
+solana-pubkey = "=3.0.0"
+solana-signer = "=3.0.1"
+solana-transaction = "=4.1.6"

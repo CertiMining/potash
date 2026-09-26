@@ -28,6 +28,16 @@ confidence-threshold = 0.9
 # This project's own crates declare no licence until E-15 decides it (D-13).
 private = { ignore = true }
 
+# One crate, one licence, and not a global allow (D-89). `webpki-roots` bundles Mozilla's CA root
+# certificate **data**, which is licensed CDLA-Permissive-2.0; the crate's own code is MIT. It reaches
+# this workspace through the cluster client and nothing else:
+#     certimining-client -> solana-rpc-client 4.2.2 -> reqwest -> hyper-rustls -> webpki-roots
+# Scoping it here means a second crate arriving under the same licence still fails the gate, which is
+# how this one was found.
+[[licenses.exceptions]]
+name = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
