@@ -65,9 +65,15 @@ export class RegistryFailure extends Error {
 export const PACKAGE_FAILURES = [
     "MalformedPackage", // the JSON is not a §2.5 package at all: missing field, wrong type, bad hex
     "JsonBorshMismatch", // a §2.5 `record` field disagrees with `preimage_borsh` (INV-DISC-02)
-    "RootUnavailable", // no checkpoint account for the epoch, or the fetch failed
+    "RootUnavailable", // the fetch failed, or the account is not the program's
     "RootEpochMismatch", // the fetched checkpoint is for a different epoch than the proof claims
     "ChainSegmentBroken", // `chain.genesis` disagrees with `chain.prev_head` at seq 1
+    // INV-ANCH-02's three different reasons a checkpoint account can be absent. They are named apart
+    // because the invariant says so: an epoch before `start_epoch` is not a gap but a day the log did
+    // not exist for, and only the second of these is evidence of batcher failure.
+    "EpochBeforeLogStart",
+    "CheckpointSequenceGap",
+    "CheckpointNotYetPublished",
 ];
 export class PackageFailure extends Error {
     failure;

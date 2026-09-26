@@ -1031,6 +1031,147 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Rejected.** Hand-writing the four JSON-RPC calls the client needs over an HTTP stack of our own choosing, to avoid a permissive data licence on a root-certificate bundle. Days of work, eighteen days from the deadline, and hand-written RPC against a live network is likelier to be wrong than the crate the cluster's own client uses.
 
+## D-90 · Independence is enforced by a filesystem and a fresh context, not by restraint
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The TypeScript verifier is written in a worktree whose checkout contains `docs/`, `vectors/` and `ts/` and nothing else, so `crates/` and `programs/` do not exist on disk, and it is written by a subagent whose context begins empty. Its prompt carries the specification, the committed vectors and section numbers. It carries no part of this repository's decision records and no description of any construction. Where the specification is insufficient to write a conforming verifier, **the writer reports a specification defect rather than filling the gap**, and nobody fills it from knowledge of the engine. The exact prompt is recorded on issue #11, together with every file the writer opened.
+
+**Ground, and the reason it is not ceremony.** The same assistant wrote `certimining-core` and `certimining-log` earlier in the session that admitted this unit. A rule forbidding it to open those files would have constrained file handles and not knowledge, and V-P-08 would then compare two implementations with one author. The worktree removes the files; the fresh context removes the memory of writing them. What remains is a prompt, which is auditable, and which is published.
+
+**What this still does not establish.** Two implementations agreeing is evidence that the specification is unambiguous over the cases the vectors cover. It is not evidence over cases they do not cover, and a specification can be unambiguous and wrong in both implementations at once.
+
+**Rejected.** A worktree alone, with the assistant writing the verifier and the record saying its knowledge is not independent — honest, cheaper, and it supports a smaller claim. Discipline plus a file list, which would have been true and proved nothing.
+
+## D-91 · Two defects the specification could not be written around
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**(a) INV-DISC-01 contradicted INV-STATE-03 and the architecture.** Through v0.1.15 INV-DISC-01 said the disclosure package "never contains `c`", while INV-STATE-03 said `c` may leave the issuer's control inside a package the issuer chose to release. §2.5 carries `preimage_borsh`; INV-ENC-03 puts the QP signature over those 161 bytes; §1.3 puts `c` at bytes 8 to 39 of them. A conforming verifier cannot check the signature without `c`, so the invariant was unachievable rather than merely unmet.
+
+**Decision.** INV-DISC-01 is corrected to match the design: no epoch key, no sibling preimages, no other asset's data, no tenure, jurisdiction or registry value in clear, and `c` inside `preimage_borsh` and nowhere else. **The amendment states the cost in one plain sentence at the owner's instruction:** anyone holding one package can recompute `c` and recognise every other package the issuer releases for the same asset. V-Z-05's test text is amended with it, because a grep for `c` across a package that must carry the signed preimage tested a condition §2.5 cannot satisfy; its pass condition is otherwise unchanged and the row remains a release blocker.
+
+**Rejected.** Removing `c` from the signed preimage, which would change the leaf construction, every committed digest and KAT-03. Leaving both statements, which was not available: one of them was false.
+
+**(b) §2.4 named the account discriminator and never said how to compute it.** An implementer working from the document alone could not produce or check the eight bytes, and the only remaining option was to accept whatever an account carried, which removes the check. §2.4 now states the derivation — the first eight bytes of `SHA-256("account:" ‖ N)` — and both constants. They were verified against the deployed accounts on devnet rather than against this repository's Rust, so the amendment rests on the published rule and the live chain.
+
+Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
+
+## D-92 · E-11 branches from the E-08/E-09 head
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** `e-11/ts-verifier` is cut from `e-08-09/program-and-client`, not from `main`.
+
+**Ground.** `main` carries specification v0.1.14. The E-08/E-09 head carries v0.1.15, whose §2.4 and §2.1 changes are exactly what a TypeScript verifier decodes and reports. Implementing the older text and rebasing afterwards would mean writing a verifier against a contract that is already superseded. A finding from the concurrent review of E-08/E-09 lands under this unit's base.
+
+## D-93 · The TypeScript toolchain, and the supply-chain gate that comes with it
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** security necessity for the gate, cost judgment for the runner · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** Node as installed, TypeScript pinned to an exact version, `node --test` as the runner, no bundler and no framework. At most three runtime dependencies — a Keccak-256 implementation, an Ed25519 implementation, and nothing else — each pinned exactly and each cleared at S1 against a committed licence allowlist. The lock file is committed. **`cargo deny` does not see npm**, so this unit adds `npm audit` and a licence check to CI: a package arriving under an unlisted licence fails the build, the way `webpki-roots` did under D-89.
+
+**Ground.** Every dependency in a verifier is a party the counterparty has to trust, and a verifier is the artifact whose whole purpose is not requiring trust. `node --test` is in the runtime already, so the test runner costs no dependency and no licence review.
+
+**Rejected.** `vitest`, a better runner behind a dependency tree we would then be gating. Deno, a second toolchain to pin for one crate's worth of code.
+
+**Revisit if** a browser build needs a bundler, which would be a new dependency and a new decision rather than a build-script edit.
+
+## D-94 · Preimages are written by hand in TypeScript, and Borsh is a test oracle there too
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The byte writers are written from §1.3's width table, and any Borsh package is a test oracle only, never on the verifier's path. This is the same shape D-34 settled for Rust, reached from the same sentence in the specification rather than copied across.
+
+**Ground.** INV-ENC-04 prefixes variable-length fields with a `u16` where Borsh's own framing uses a `u32`. Exactly one preimage in this system has a variable-length field: `c`, whose `len(T)` precedes the canonical tenure. A stock Borsh encoder on the verifier's path would write four bytes where the specification says two and produce a plausible, wrong `c` for every asset, which no digest comparison against a wrong-but-consistent implementation would catch.
+
+**The rule that keeps KAT-03 honest.** `vectors/KAT-03.json` carries each writer's `fields`, `tag`, `preimage_len` and the assembled `preimage`. **The suite builds the preimage from `fields` and compares it against `preimage`; it never consumes `preimage` as an input.** Hashing a supplied preimage would pass the vector while testing nothing.
+
+## D-95 · One fetch path, written here, for the browser and for Node
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment, with a security edge · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** One `RootSource` interface with one implementation, speaking JSON-RPC over `fetch`, which is native in Node and in every browser. Address derivation from §2.4's seeds and account decoding from §2.4's offsets are written in this repository. `@solana/web3.js` is not a dependency.
+
+**Ground.** INV-IFACE-01 says a counterparty verifies offline given a record, a proof and a root they fetched themselves; the fetch is the step that must not be delegated to an indexer, and derivation is the part of it that decides which account is even being read. One implementation for both runtimes means a browser verifier and a Node verifier cannot disagree — with two, a divergence is a bug nobody's tests would see.
+
+**Checked at S1.** The pinned curve library must expose a point-on-curve test, or a program address cannot be rejected for lying on the curve.
+
+## D-96 · A package whose JSON disagrees with its bytes fails before any other work
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The verifier reads no JSON `record` field for any computation. It decodes `preimage_borsh`, derives every field from those bytes, and **before any signature or inclusion work** compares each derived field against the JSON's display copy, stopping at the first that differs. `flags` is excluded from the comparison and reported as a discrepancy rather than a rejection (INV-DISC-03).
+
+**The code, at the owner's ruling.** A JSON-versus-Borsh mismatch is a **verifier-level failure outside §2.1's code space**, named and documented, with no new code added. §2.1's codes belong to §1.3's transition conditions and the registry never sees a disclosure package, so a code there would assert a kinship that does not exist.
+
+**Ground.** INV-ENC-03 says a verifier that trusts JSON fields without recomputing from the Borsh preimage is non-conforming. Comparing after verification would let a package whose JSON lies to a human reader verify successfully, which is the failure this invariant exists to prevent; ignoring the JSON entirely would conform and leave the lie undetected.
+
+## D-97 · The two implementations are compared through the committed vectors, never against each other
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** The TypeScript suite verifies `vectors/MANIFEST.sha256` first, then reads every file in `vectors/` and asserts against each vector's `expected` block — the same artifact the Rust suite asserts against. **The suite enumerates the directory and fails if any committed vector has no handler**, so "every vector" is enforced rather than claimed. A new `ts` CI group runs it, and it is a release gate.
+
+**Ground (V-P-08).** Agreement through a manifest-pinned artifact is stronger than a direct diff of two programs, which can be made to pass by importing the other's behaviour — the one thing this unit must not do. Checking the manifest first means a vector edited to make TypeScript pass fails the group instead.
+
+**Where the weight actually falls.** The negative vectors carry `error` and `error_name`, so the two implementations must refuse the same records with the same codes. **V-N-23 and V-N-24 carry more than that:** they assert which code is returned when several conditions fail at once, so both implementations must agree on D-48's ordering and not merely on the codes themselves.
+
+## D-98 · The disclosure-package fixture is assembled in TypeScript, and a committed vector is filed for later
+
+**Date:** 24 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled at S0 (owner, 24 Sep 2026)
+
+**Decision.** No committed vector is a §2.5 package, and the package-level tests need one, so TypeScript assembles packages from V-P-09's record and V-P-05 and V-P-06's proof and root. Every digest inside such a package is already pinned by a committed vector; what is not independently pinned is the container. **A generated disclosure-package vector is filed against milestone 5** at the owner's instruction.
+
+**Ground.** Adding the vector now means a change to E-05's generator, which is Rust work inside the unit whose point is not touching Rust, while E-08 and E-09 are under review on the same base. The acceptance criteria for this unit are met without it, and the record says what the fixture is and is not.
+
+**Rejected.** Hand-authoring a fixture, which §4.2 forbids.
+## D-99 · `payload_uri` is an unauthenticated hint, and the document says so
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to the spec-only pull request (D-103)
+
+**The defect (E-11's SD-01).** §1.3's leaf preimage is 161 bytes and does not contain `payload_uri`. §2.5's package carries it, and INV-DISC-02's comparison therefore cannot reach it. **An issuer can release two packages for one record differing only in the pointer to the estimate, and both verify completely.**
+
+**Decision.** §2.5 and INV-DISC-02 say plainly that `payload_uri` is an unauthenticated hint, that `payload_digest` is the authenticated commitment to the payload, and that a counterparty checks fetched content against that digest rather than trusting the URI it was handed. No digest moves and no construction changes.
+
+**Ground.** The content is committed; only the pointer is not. §1.3 already says the engine resolves no URI and checks no host, so nothing in the system was ever relying on it. What was wrong was leaving a reader to infer that, seventeen days from a deadline, from the absence of a field in a table.
+
+**Rejected.** Putting `payload_uri` in the leaf preimage, which changes every committed digest, KAT-03 and both implementations. A second signature over the package, which is a new construction and new vectors.
+
+**Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
+
+## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-02).** §1.4 says real submissions are assigned in ascending order of submission identifier, and the identifier is `[u8; 16]`. The probe is first-free-upward, so the order decides who wins a contested slot and therefore **decides the root**. Two conforming implementations could produce different roots from one set of submissions. `V-P-06` is lexicographic; D-69's "ordinal counter" and INV-ENC-02's little-endian rule both point at numeric.
+
+**Decision.** Lexicographic over the sixteen bytes as stored, matching the committed vectors and both implementations. **The surprising half is written out rather than left for a reader to hit:** over a little-endian counter this is not ascending by count, because it sorts by the least significant byte first.
+
+**Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
+
+**Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
+
+## D-101 · Flags are recomputed only by a holder who has the chain
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-03).** INV-DISC-03 says a verifier recomputes flags from the chain rather than trusting the supplied value. Bit 0 depends on whether any *earlier* record in the chain carried category 1 or 2; bit 1 on the *previous* record's category. §2.5's package carries one record. The invariant asked for a computation its own inputs make impossible.
+
+**Decision.** A verifier recomputes flags when it holds the chain context the computation needs, reports them as not recomputable when it does not, and **never refuses a package over a flag** either way.
+
+**Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
+
+## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026)
+
+**Decision.** D-99, D-100 and D-101 are amended into TCU-02 in a **spec-only pull request after both Codex rounds**, so the commits under review stay the commits under review.
+
+**And branches stop claiming version numbers.** Three branches were amending one document at once and two of them claimed v0.1.18. Each branch's amendment notes now say "on this branch, unmerged", the version line says `0.1.17 plus unmerged amendments on this branch`, and **the spec-only pull request assigns the next linear number to everything merged since, in merge order** — one renumbering pass, done once, rather than a running collision nobody owns.
+
+**Ground.** A version number is a claim about a document's identity, and a claim two siblings both make is worth nothing to a reader. The numbering is linear because the merged history is; the branches are not, so they do not get to number.
+
 ## D-104 · Existence is ownership and data, never a lamport balance
 
 **Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 2)

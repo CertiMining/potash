@@ -4,7 +4,7 @@
 # code, so a local run is CI verbatim.
 #
 #   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | kat02 | vectors | checks | miri |
-#                                   deny | all
+#                                   deny | ts | all
 #   scripts/ci.sh install-<tool>    CI only: rust | agave | miri | cargo-deny
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -191,6 +191,23 @@ deny() {
   cargo deny check
 }
 
+# The TypeScript verifier of E-11 (D-93, D-97). `npm ci` installs the committed lock file exactly, so
+# the tree tested here is the tree the gate audited. The KAT file runs first, as it does on the Rust
+# side, then the whole suite; the network test skips itself unless CERTIMINING_DEVNET is set, which
+# CI never sets.
+ts() {
+  GROUP_FAILED=""
+  local node_version npm_version
+  node_version="$(node --version)"
+  npm_version="$(npm --version)"
+  echo "node $node_version, npm $npm_version"
+  check "ts supply chain" scripts/ts-gate.sh
+  check "ts typecheck" npm --prefix ts run typecheck
+  check "ts build" npm --prefix ts run build
+  check "ts vectors and packages" npm --prefix ts test
+  group_result ts
+}
+
 # CI only. `--no-self-update` keeps rustup from updating itself as a side effect.
 install_rust() { rustup toolchain install --no-self-update || rustup show; }
 install_miri() { rustup toolchain install "$MIRI_TOOLCHAIN" --profile minimal --component miri,rust-src --no-self-update; }
@@ -216,6 +233,7 @@ run() {
     checks) checks ;;
     miri) miri ;;
     deny) deny ;;
+    ts) ts ;;
     *) echo "unknown group: $1" >&2; return 2 ;;
   esac
 }
@@ -225,7 +243,7 @@ run() {
 # them runs and the summary names any that failed.
 all() {
   local failed=0 summary="" group code log
-  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny; do
+  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts; do
     log="$(mktemp)"
     echo "===== $group"
     run "$group" 2>&1 | tee "$log"
