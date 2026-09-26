@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-05: the vector generator.
 //!
 //! `cargo xtask gen-vectors` writes `vectors/*.json` and `vectors/MANIFEST.sha256`. Every value in

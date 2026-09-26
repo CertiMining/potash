@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-06: the fixed-capacity epoch tree of §1.4 and the positive vectors of §4.2 that belong to it.
 //!
 //! The structural cases run in every feature set against a stand-in hasher. The cases §4.2 names run

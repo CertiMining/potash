@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! TCU-02's own values, transcribed by hand from the specification.
 //!
 //! Nothing in this file is read from `certimining-core`. That is its purpose: the generator checks

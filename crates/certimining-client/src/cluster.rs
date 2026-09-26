@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The one implementation that reaches a cluster: §2.3's `publish` and `status` (D-84, D-110).
 //!
 //! `timestamp` is not here. It is OpenTimestamps, anchor B, and E-10's unit. Codex round one,

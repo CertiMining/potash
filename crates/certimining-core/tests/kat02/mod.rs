@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! KAT-02's five cases, read from RFC 8032 §7.1 (D-45), vendored byte for byte in
 //! `../data/rfc8032_7.1.txt`.
 //!

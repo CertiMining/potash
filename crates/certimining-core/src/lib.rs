@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `certimining-core`: digests and state rules for the CertiMining anchored log (TCU-02).
 //!
 //! E-01 provides the error space (§2.1), the digest types (§2.2) and the Keccak-256 hashers (§1.1).

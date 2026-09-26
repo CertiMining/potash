@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! INV-ANCH-05's transitions, on the runtime rather than on a map (E-10, D-118).
 //!
 //! `tests/fetch.rs` checks `status_of` against a stand-in cluster, which settles the decision. This

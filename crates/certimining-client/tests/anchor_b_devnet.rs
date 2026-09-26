@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-10's devnet half: a real epoch root, a real OpenTimestamps receipt, a real attachment.
 //!
 //! **Two stages, hours apart, and that is the design rather than a limitation.** D-112 spends the

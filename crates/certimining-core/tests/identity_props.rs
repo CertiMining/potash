@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-02's property tests (§3 E-02): canonicalization is total, never panics on any input,
 //! including invalid UTF-8, is idempotent, and gives the same answer through either entry point.
 

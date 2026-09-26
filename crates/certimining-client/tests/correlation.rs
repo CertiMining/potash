@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! §4.4's V-Z-01, the half that cannot run under LiteSVM: does an epoch's content move the slot its
 //! checkpoint lands in (D-85, D-111)?
 //!
