@@ -15,6 +15,13 @@ export const LOG_CONFIG_DISCRIMINATOR = accountDiscriminator("LogConfig");
 export const CHECKPOINT_DISCRIMINATOR = accountDiscriminator("CheckpointAccount");
 export const LOG_CONFIG_LEN = 68;
 export const CHECKPOINT_LEN = 106;
+/** §1.4: an epoch is a UTC day index, `floor(unix_seconds / 86400)`. */
+export const EPOCH_SECONDS = 86400n;
+export function utcDayIndex(unixSeconds) {
+    // Floor division, which for a negative timestamp is not truncation towards zero.
+    const q = unixSeconds / EPOCH_SECONDS;
+    return unixSeconds < 0n && q * EPOCH_SECONDS !== unixSeconds ? q - 1n : q;
+}
 function checkAccount(data, expectedLen, discriminator, what) {
     if (data.length !== expectedLen) {
         throw new PackageFailure("RootUnavailable", `${what} is ${data.length} bytes, and §2.4 fixes it at ${expectedLen}`);
@@ -33,6 +40,8 @@ export function decodeLogConfig(data) {
         lastEpoch: readU64le(data, 42),
         treeHeight: data[50],
         bump: data[51],
+        startEpoch: readU64le(data, 52),
+        reserved: data.slice(60, 68),
     };
 }
 export function decodeCheckpointAccount(data) {
@@ -47,6 +56,14 @@ export function decodeCheckpointAccount(data) {
         anchorKind: data[98],
         bump: data[99],
     };
+}
+export function placeEpoch(config, epoch) {
+    if (epoch < config.startEpoch)
+        return { kind: "before-log-start", startEpoch: config.startEpoch };
+    if (epoch <= config.lastEpoch) {
+        return { kind: "inside-published-range", startEpoch: config.startEpoch, lastEpoch: config.lastEpoch };
+    }
+    return { kind: "not-yet-published", lastEpoch: config.lastEpoch };
 }
 /** INV-ANCH-05: until anchor B is attached the client reports "single"; after, "dual". */
 export function anchorStatus(checkpoint) {

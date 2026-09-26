@@ -47,6 +47,11 @@ const MUTATIONS = [
   ["src/solana/pda.ts", "  for (let bump = 255; bump >= 0; bump--) {", "  for (let bump = 0; bump <= 255; bump++) {", "§2.4: the canonical bump"],
   ["src/solana/accounts.ts", "    root: data.slice(18, 50),", "    root: data.slice(17, 49),", "§2.4: the CheckpointAccount offsets"],
   ["src/solana/rpc.ts", "  if (checkpoint.epoch !== epoch) {", "  if (false) {", "fetching a root: the account answers for the epoch asked for"],
+  ["src/solana/accounts.ts", "    startEpoch: readU64le(data, 52),", "    startEpoch: readU64le(data, 51),", "§2.4: start_epoch sits at offset 52"],
+  ["src/solana/accounts.ts", "    reserved: data.slice(60, 68),", "    reserved: data.slice(52, 60),", "§2.4: the eight reserved bytes follow start_epoch"],
+  ["src/solana/accounts.ts", "  if (epoch < config.startEpoch) return { kind: \"before-log-start\", startEpoch: config.startEpoch };", "  if (false) return { kind: \"before-log-start\", startEpoch: config.startEpoch };", "INV-ANCH-02: an epoch before the log existed is not a gap"],
+  ["src/solana/accounts.ts", "  return unixSeconds < 0n && q * EPOCH_SECONDS !== unixSeconds ? q - 1n : q;", "  return q;", "§1.4: the epoch clock floors rather than truncating"],
+  ["src/solana/rpc.ts", "        \"EpochBeforeLogStart\",", "        \"CheckpointSequenceGap\",", "INV-ANCH-02: the two reasons are not reported alike"],
   ["test/handlers.ts", "  \"V-N-25\": vN25,", "", "the suite fails when a vector has no handler"],
 ];
 

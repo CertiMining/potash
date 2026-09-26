@@ -48,7 +48,7 @@ export declare class RegistryFailure extends Error {
  * JSON fields and the Borsh preimage". It is a property of the display copy a package ships
  * beside its bytes, and no §1.3 transition can produce it, so it takes a name and no number.
  */
-export declare const PACKAGE_FAILURES: readonly ["MalformedPackage", "JsonBorshMismatch", "RootUnavailable", "RootEpochMismatch", "ChainSegmentBroken"];
+export declare const PACKAGE_FAILURES: readonly ["MalformedPackage", "JsonBorshMismatch", "RootUnavailable", "RootEpochMismatch", "ChainSegmentBroken", "EpochBeforeLogStart", "CheckpointSequenceGap", "CheckpointNotYetPublished"];
 export type PackageFailureName = (typeof PACKAGE_FAILURES)[number];
 export declare class PackageFailure extends Error {
     failure: PackageFailureName;
