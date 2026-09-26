@@ -35,8 +35,8 @@ pub use anchor::{status_of, AnchorRef, AnchorStatus};
 #[cfg(feature = "cluster")]
 pub use cluster::PublishFailed;
 pub use fetch::{
-    checkpoint_address, config_address, decode_checkpoint, missing_epochs, root_for_epoch, Fetched,
-    Gaps, PublishedCheckpoint, Refused, RootSource, Unreachable,
+    checkpoint_address, config_address, decode_checkpoint, decode_config, root_for_epoch,
+    sequence_lag, Fetched, Lag, PublishedCheckpoint, Refused, RootSource, Unreachable,
 };
 pub use publish::{
     classify, settle, should_retry, Outcome, Settlement, CHECKPOINT_ALREADY_WRITTEN,

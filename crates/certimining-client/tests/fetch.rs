@@ -5,10 +5,10 @@
 
 use anchor_lang::prelude::Pubkey;
 use anchor_lang::{AnchorSerialize, Discriminator};
-use certimining_checkpoint::CheckpointAccount;
+use certimining_checkpoint::{CheckpointAccount, LogConfig};
 use certimining_client::{
-    checkpoint_address, decode_checkpoint, missing_epochs, root_for_epoch, Fetched, Refused,
-    RootSource, Unreachable,
+    checkpoint_address, config_address, decode_checkpoint, root_for_epoch, sequence_lag, Fetched,
+    Refused, RootSource, Unreachable,
 };
 use std::collections::HashMap;
 
@@ -52,6 +52,23 @@ impl Cluster {
         data[66..98].copy_from_slice(&receipt);
         data[98] = 1;
         self.put(address, owner, data);
+    }
+
+    /// The log's configuration, as `initialize` writes one.
+    fn configure(&mut self, start_epoch: u64, last_epoch: u64) {
+        let config = LogConfig {
+            schema_version: 1,
+            authority: PROGRAM,
+            last_epoch,
+            tree_height: 8,
+            bump: 255,
+            start_epoch,
+            reserved: [0u8; 8],
+        };
+        let mut data = LogConfig::DISCRIMINATOR.to_vec();
+        config.serialize(&mut data).expect("serializes");
+        data.resize(LogConfig::LEN, 0);
+        self.put(config_address(&PROGRAM), PROGRAM, data);
     }
 
     /// A checkpoint as the program writes one.
@@ -200,52 +217,84 @@ fn an_account_under_another_schema_or_discriminator_is_refused() {
     );
 }
 
+/// D-106 as amended, 26 Sep 2026. `publish_checkpoint` accepts `last_epoch + 1` and nothing else, so
+/// the published range is contiguous by construction and an interior gap cannot exist. What a stalled
+/// batcher shows is a sequence that has not reached the epochs a caller is asking about.
 #[test]
-fn a_gap_is_named_rather_than_noted() {
-    // INV-ANCH-02: a gap in the sequence is evidence of batcher failure, and the client must surface
-    // it. The function returns the epochs, so a caller cannot reduce it to a warning.
+fn a_sequence_that_has_not_reached_an_epoch_reports_lag_not_a_gap() {
     let mut cluster = Cluster::default();
-    for epoch in [1u64, 2, 4, 5, 7] {
+    cluster.configure(100, 104);
+    for epoch in 100..=104 {
         cluster.publish(epoch, [epoch as u8; 32]);
     }
-    let gaps = missing_epochs(&cluster, &PROGRAM, 1, 7).expect("the cluster answered");
-    assert_eq!(gaps.absent, vec![3, 6]);
-    assert!(gaps.refused.is_empty());
-    assert!(missing_epochs(&cluster, &PROGRAM, 1, 2)
-        .expect("answered")
-        .is_empty());
+
+    let lag = sequence_lag(&cluster, &PROGRAM, 100, 107).expect("the cluster answered");
+    assert_eq!(lag.start_epoch, 100);
+    assert_eq!(lag.last_published, 104);
+    assert_eq!(lag.not_yet_published, vec![105, 106, 107]);
+    assert_eq!(
+        lag.epochs_behind(),
+        3,
+        "the number a caller with a clock needs in order to rule"
+    );
+    assert!(lag.before_log_start.is_empty());
+    assert!(lag.refused.is_empty());
 }
 
-/// Codex round one, finding 7. A refused account was neither placed nor absent, and the loop only
-/// counted absences, so a caller holding no usable root for an epoch was told there were no gaps
-/// (D-106).
+/// An epoch before the log existed is not a gap and not a lag. A client that could not tell them
+/// apart would accuse a batcher of failing to publish before it was deployed (INV-ANCH-02, D-109).
 #[test]
-fn an_epoch_whose_account_was_refused_is_not_reported_as_fine() {
+fn an_epoch_before_the_log_started_is_neither_a_gap_nor_a_lag() {
     let mut cluster = Cluster::default();
-    cluster.publish(1, [1u8; 32]);
-    cluster.publish(2, [2u8; 32]);
-    // A third party places an account at epoch 3's derived address. Anyone can.
+    cluster.configure(100, 102);
+    for epoch in 100..=102 {
+        cluster.publish(epoch, [epoch as u8; 32]);
+    }
+
+    let lag = sequence_lag(&cluster, &PROGRAM, 97, 102).expect("the cluster answered");
+    assert_eq!(lag.before_log_start, vec![97, 98, 99]);
+    assert!(lag.not_yet_published.is_empty());
+    assert_eq!(
+        lag.epochs_behind(),
+        0,
+        "a log that has published everything asked of it"
+    );
+}
+
+/// An account a third party placed at a derived address is inside the published range and is still
+/// not a root this client will use. It is not a gap either: it is evidence about whoever placed it.
+#[test]
+fn an_epoch_inside_the_range_whose_account_was_refused_is_named_as_that() {
+    let mut cluster = Cluster::default();
+    cluster.configure(100, 102);
+    cluster.publish(100, [1u8; 32]);
+    cluster.publish(101, [2u8; 32]);
     cluster.put(
-        checkpoint_address(&PROGRAM, 3),
+        checkpoint_address(&PROGRAM, 102),
         Pubkey::new_unique(),
         vec![0u8; CheckpointAccount::LEN],
     );
 
-    let gaps = missing_epochs(&cluster, &PROGRAM, 1, 3).expect("the cluster answered");
+    let lag = sequence_lag(&cluster, &PROGRAM, 100, 102).expect("the cluster answered");
+    assert_eq!(lag.refused, vec![(102, Refused::NotTheProgram)]);
+    assert!(!lag.is_empty());
+}
+
+/// The condition the program's own monotonicity forbids. If an account inside the published range is
+/// absent, the configuration is not one this program wrote, and that is reported as a thing nobody
+/// can reason from rather than as a gap.
+#[test]
+fn an_absent_account_inside_the_published_range_is_an_impossible_state() {
+    let mut cluster = Cluster::default();
+    cluster.configure(100, 104);
+    cluster.publish(100, [1u8; 32]);
+    // 101 is deliberately not published, which `publish_checkpoint` could never have allowed.
+    let refused = sequence_lag(&cluster, &PROGRAM, 100, 104);
     assert!(
-        !gaps.is_empty(),
-        "an epoch with no usable root is never an empty result"
+        refused.is_err(),
+        "the client says it cannot reason from this, rather than inventing a gap"
     );
-    assert!(
-        gaps.absent.is_empty(),
-        "nothing is absent: something is there, and it was refused"
-    );
-    assert_eq!(gaps.refused, vec![(3, Refused::NotTheProgram)]);
-    assert_eq!(
-        gaps.without_a_root(),
-        vec![3],
-        "the caller asking only which epochs they cannot verify gets the same answer either way"
-    );
+    assert!(format!("{:?}", refused.unwrap_err()).contains("impossible"));
 }
 
 #[test]
@@ -257,8 +306,8 @@ fn a_cluster_nobody_can_ask_is_not_a_wall_of_gaps() {
         "an endpoint that will not answer is not an absent checkpoint"
     );
     assert!(
-        missing_epochs(&Offline, &PROGRAM, 1, 100).is_err(),
-        "and a hundred epochs nobody could ask about is not a hundred gaps"
+        sequence_lag(&Offline, &PROGRAM, 1, 100).is_err(),
+        "and a hundred epochs nobody could ask about is not a hundred of anything"
     );
 }
 

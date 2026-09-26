@@ -630,6 +630,7 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-23 | A record failing both (a) and (f) | `0x03`; the earlier condition decides |
 | V-N-24 | A record carrying `ext_commitment`, with a wrong `prev_head` | `0x0F`; the schema gate precedes (a) |
 | V-N-25 | A signature made by a key other than the `qp_key` the record claims, with no expected key supplied | `0x07` |
+| V-N-26 | `initialize` given a `start_epoch` that is not the UTC day index the on-chain clock reports — too low, too high, zero, or `u64::MAX` | `0x05` |
 
 ### 4.4 Privacy acceptance tests — these are the ones that matter
 

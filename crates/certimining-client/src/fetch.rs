@@ -122,6 +122,32 @@ pub fn decode_checkpoint(
     })
 }
 
+/// Places the log's configuration before believing it, on the same terms as a checkpoint (D-82).
+///
+/// A caller needs `start_epoch` and `last_epoch` to say where an epoch sits relative to the log
+/// (INV-ANCH-02), and an account that failed a check is not a configuration this client will use.
+pub fn decode_config(
+    program_id: &Pubkey,
+    owner: &Pubkey,
+    data: &[u8],
+) -> Result<LogConfig, Refused> {
+    if owner != program_id {
+        return Err(Refused::NotTheProgram);
+    }
+    if data.len() < LogConfig::LEN {
+        return Err(Refused::TooShort);
+    }
+    let (discriminator, body) = data.split_at(8);
+    if discriminator != LogConfig::DISCRIMINATOR {
+        return Err(Refused::NotACheckpoint);
+    }
+    let config = LogConfig::deserialize(&mut &*body).map_err(|_| Refused::Malformed)?;
+    if config.schema_version != certimining_checkpoint::SCHEMA_VERSION {
+        return Err(Refused::UnsupportedSchema);
+    }
+    Ok(config)
+}
+
 /// The root for an epoch: placed, refused, or absent, and an error when the cluster could not be
 /// asked at all.
 pub fn root_for_epoch<S: RootSource>(
@@ -139,60 +165,110 @@ pub fn root_for_epoch<S: RootSource>(
     }
 }
 
-/// Which epochs in `first..=last` the cluster holds no checkpoint for.
+/// How far the published sequence lags the epochs a caller asked about, and any epoch whose account
+/// was refused (D-106, amended 26 Sep 2026).
 ///
-/// A gap is evidence of batcher failure and INV-ANCH-02 requires the client to surface it. Returning
-/// the epochs rather than a boolean is deliberate: a caller that has to name the missing epochs cannot
-/// reduce a gap to a warning. **An unreachable cluster returns an error rather than a list**, because
-/// a list of epochs nobody could ask about is an accusation built out of a network fault.
-pub fn missing_epochs<S: RootSource>(
+/// **There is no gap arm, because an interior gap cannot happen.** `publish_checkpoint` accepts
+/// `last_epoch + 1` and nothing else, so the published range is contiguous from `start_epoch` to
+/// `last_epoch` by construction. The previous version of this function reported every absent account
+/// as a gap, which meant its only reachable answer was an epoch the sequence had not got to — a
+/// lagging batcher, reported under the name of something else. E-11's independent implementation
+/// found that from the specification alone, and D-80's rule applies to a client branch as much as to
+/// an error code: a condition no path can reach reads as coverage that does not exist.
+pub fn sequence_lag<S: RootSource>(
     source: &S,
     program_id: &Pubkey,
     first: u64,
     last: u64,
-) -> Result<Gaps, Unreachable> {
-    let mut gaps = Gaps::default();
+) -> Result<Lag, Unreachable> {
+    let raw = source.account(&config_address(program_id))?;
+    let config = match raw {
+        Some((owner, data)) => decode_config(program_id, &owner, &data).map_err(|reason| {
+            Unreachable(format!("the log's configuration was refused: {reason:?}"))
+        })?,
+        None => return Err(Unreachable(
+            "the log has no configuration account, so nothing can be said about where an epoch \
+                 sits relative to it"
+                .into(),
+        )),
+    };
+
+    let mut lag = Lag {
+        start_epoch: config.start_epoch,
+        last_published: config.last_epoch,
+        before_log_start: Vec::new(),
+        not_yet_published: Vec::new(),
+        refused: Vec::new(),
+    };
     for epoch in first..=last {
+        if epoch < config.start_epoch {
+            // Not a gap: a day the log did not exist for. A client that could not tell the two apart
+            // would accuse a batcher of failing to publish before it was deployed (INV-ANCH-02).
+            lag.before_log_start.push(epoch);
+            continue;
+        }
+        if epoch > config.last_epoch {
+            lag.not_yet_published.push(epoch);
+            continue;
+        }
+        // Inside the published range. The account must be there, and the only thing left to decide is
+        // whether it is one this client accepts.
         match root_for_epoch(source, program_id, epoch)? {
             Fetched::Placed(_) => {}
-            Fetched::Absent => gaps.absent.push(epoch),
-            Fetched::Refused(reason) => gaps.refused.push((epoch, reason)),
+            Fetched::Refused(reason) => lag.refused.push((epoch, reason)),
+            Fetched::Absent => {
+                return Err(Unreachable(format!(
+                    "epoch {epoch} is inside the published range {}..={} and its account is absent, \
+                     which `publish_checkpoint`'s own monotonicity makes impossible. Something other \
+                     than this program has written the log's configuration.",
+                    config.start_epoch, config.last_epoch
+                )))
+            }
         }
     }
-    Ok(gaps)
+    Ok(lag)
 }
 
-/// Every epoch in a range for which the caller has no usable root, with the two reasons kept apart.
+/// Where each epoch a caller asked about sits relative to the log, with the reasons kept apart.
 ///
-/// They are kept apart for the same reason `Unreachable` is not an absence (D-106). An epoch with
-/// nothing at its address is a gap in the on-chain sequence and so is evidence about the batcher
-/// (INV-ANCH-02). An epoch whose account was refused says something else entirely: a third party can
-/// place an account at a derived address, and one that fails the checks of D-82 is evidence about
-/// whoever placed it. Counting a refusal as "not missing" was worse than either, because it returned
-/// an empty list to a caller holding no root at all.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Gaps {
-    /// Epochs with nothing at the derived address.
-    pub absent: Vec<u64>,
-    /// Epochs whose account came back and failed a check, with the reason.
+/// They are kept apart for the same reason `Unreachable` is not an absence. An epoch before the log
+/// started is a day it did not exist for. An epoch past `last_published` is the sequence lagging,
+/// which is the batcher failure INV-ANCH-02 is about and the only one an on-chain read can show.
+/// An epoch whose account was refused is evidence about whoever placed that account, since a third
+/// party can put one at a derived address.
+///
+/// **`refused` is kept although the ruling said "lag and nothing else".** It is not a gap arm and it
+/// is reachable: dropping it would remove a working check on an account this client will not accept,
+/// which is a different condition from either lag or gap. Said here so the departure is visible.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lag {
+    /// The first epoch the log publishes, from its configuration.
+    pub start_epoch: u64,
+    /// The last epoch it has published.
+    pub last_published: u64,
+    /// Epochs asked about that precede the log's existence.
+    pub before_log_start: Vec<u64>,
+    /// Epochs asked about that the sequence has not reached.
+    pub not_yet_published: Vec<u64>,
+    /// Epochs inside the published range whose account failed a check.
     pub refused: Vec<(u64, Refused)>,
 }
 
-impl Gaps {
-    /// Whether every epoch in the range had a usable root.
+impl Lag {
+    /// Whether every epoch asked about had a usable root.
     pub fn is_empty(&self) -> bool {
-        self.absent.is_empty() && self.refused.is_empty()
+        self.before_log_start.is_empty()
+            && self.not_yet_published.is_empty()
+            && self.refused.is_empty()
     }
 
-    /// Every epoch without a usable root, whatever the reason, in ascending order.
-    pub fn without_a_root(&self) -> Vec<u64> {
-        let mut all: Vec<u64> = self
-            .absent
+    /// How many epochs the sequence is behind the highest epoch asked about, or zero if it is not.
+    pub fn epochs_behind(&self) -> u64 {
+        self.not_yet_published
             .iter()
             .copied()
-            .chain(self.refused.iter().map(|(e, _)| *e))
-            .collect();
-        all.sort_unstable();
-        all
+            .max()
+            .map(|highest| highest.saturating_sub(self.last_published))
+            .unwrap_or(0)
     }
 }

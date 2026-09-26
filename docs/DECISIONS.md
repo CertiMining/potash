@@ -1057,6 +1057,12 @@ run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
 **Decision.** `missing_epochs` returns `Gaps`, holding absences and refusals separately, for the reason `Unreachable` is already separate from both: an absence is evidence about the batcher under INV-ANCH-02, and an account a third party placed at a derived address is evidence about whoever placed it. `without_a_root` answers the caller who only wants to know which epochs they cannot verify.
 
+**Amended 26 Sep 2026: there is no gap arm, because an interior gap cannot happen.** E-11's independent implementation found it from the specification alone. `publish_checkpoint` accepts `last_epoch + 1` and nothing else, so the published range is contiguous from `start_epoch` to `last_epoch` by construction, and the only absence this function could ever report was an epoch the sequence had not reached — a lagging batcher, reported under the name of something else. D-80's rule applies to a client branch as much as to an error code: a condition no path can reach reads as coverage that does not exist.
+
+`missing_epochs` is replaced by `sequence_lag`, returning `Lag`. It reads the log's configuration, then places each epoch asked about: **before the log started**, which is a day it did not exist for and not a failure of anyone's; **past `last_published`**, which is the lag INV-ANCH-02 is actually about and the only batcher failure an on-chain read can show; or **refused**, an account inside the published range that failed D-82's checks. `epochs_behind` gives a caller with a clock the number it needs, and the client reads no clock itself, because §2.3 and INV-IFACE-01 keep clocks out of verification. An absent account *inside* the published range returns `Unreachable` naming the state as impossible, since reaching it means something other than this program wrote the configuration.
+
+**One departure from the ruling, recorded.** The instruction was "lag beyond `last_epoch` and nothing else". `refused` is kept, because it is not a gap arm and it is reachable: a third party can place an account at a derived address, and dropping the arm would remove a working check on an account this client will not accept. The code says so where the type is defined.
+
 ## D-107 · Deriving the address settles which account, not whether the answer is the chain's
 
 **Date:** 25 Sep 2026 · **Unit:** E-09 · **Class:** security necessity, as claim accuracy · **Status:** applied at S9 round 1 (Codex finding 8)

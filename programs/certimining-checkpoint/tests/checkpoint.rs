@@ -96,6 +96,11 @@ impl Log {
     }
 
     fn initialize(&mut self, height: u8) -> Result<(), u32> {
+        self.initialize_with(height, START)
+    }
+
+    /// `initialize` with a chosen `start_epoch`, for the one condition that judges it (V-N-26).
+    fn initialize_with(&mut self, height: u8, start_epoch: u64) -> Result<(), u32> {
         let ix = Instruction {
             program_id: self.program_id,
             accounts: certimining_checkpoint::accounts::Initialize {
@@ -112,7 +117,7 @@ impl Log {
             data: certimining_checkpoint::instruction::Initialize {
                 authority: anchor_lang::prelude::Pubkey::from(self.authority.pubkey().to_bytes()),
                 tree_height: height,
-                start_epoch: START,
+                start_epoch,
             }
             .data(),
         };
@@ -461,4 +466,25 @@ fn an_all_zero_receipt_digest_is_refused_so_the_write_happens_once() {
         Err(RECEIPT_ALREADY_ATTACHED),
         "zero to a value, exactly once"
     );
+}
+
+/// V-N-26. §1.4 makes an epoch a UTC day index and §2.4 holds `initialize` to the day index the
+/// on-chain clock reports, so `start_epoch` is stated by the operator and decided by the chain
+/// (D-109). E-11's independent implementation noticed that this condition had no test and no vector
+/// while the `tree_height` condition beside it has V-N-22, which is how a refusal path ships untested.
+#[test]
+fn v_n_26_a_start_epoch_that_is_not_todays_day_index_is_0x05() {
+    for wrong in [0u64, START - 1, START + 1, u64::MAX] {
+        let mut log = Log::new();
+        assert_eq!(
+            log.initialize_with(DEPLOYED_HEIGHT, wrong),
+            Err(MALFORMED_PAYLOAD),
+            "start_epoch {wrong} is not the day the chain reports, and the operator does not choose it"
+        );
+    }
+    // And the day the chain does report is accepted, so the refusal is about the value and not about
+    // the argument existing.
+    let mut log = Log::new();
+    log.initialize_with(DEPLOYED_HEIGHT, START)
+        .expect("today's day index is the one value this accepts");
 }
