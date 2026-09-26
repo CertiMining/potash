@@ -15,6 +15,7 @@ unsafe_code = "forbid"
 # a map, so a cluster is never needed to check the client's own decisions (D-84). `cluster` adds the
 # one implementation that does reach a network, on the Agave 4.2.2 line the deployment runs (D-15).
 default = []
+ots = ["dep:opentimestamps", "dep:bitcoin_hashes"]
 cluster = [
     "dep:solana-rpc-client",
     "dep:solana-commitment-config",
@@ -47,7 +48,19 @@ solana-message = { version = "=4.4.1", optional = true }
 solana-transaction = { version = "=4.1.6", optional = true }
 solana-signer = { version = "=3.0.1", optional = true }
 
+# Anchor B's receipts (D-115). This crate parses and verifies a receipt and cannot create one; the
+# reference client creates, and this checks what it produced before anything hashes it.
+opentimestamps = { version = "=0.2.0", optional = true }
+# SHA-256, for the one place anchor B forces it: an OTS receipt commits to the SHA-256 of the file
+# it stamped, so verifying that a receipt is this epoch's means computing that digest (D-119).
+# Already in the graph as `opentimestamps`' own dependency, so no crate arrives that the gate had
+# not already cleared.
+bitcoin_hashes = { version = "=0.12.0", optional = true }
+
 [dev-dependencies]
+# Keccak-256, so §2.4's receipt-digest construction is transcribed from the specification in the
+# test rather than taken from the function under test. Already in the graph through the engine.
+sha3 = "=0.10.8"
 # The cluster stand-in for tests that need one; the RPC itself is behind a trait (D-84).
 litesvm = "=0.16.0"
 solana-instruction = "=3.4.1"
