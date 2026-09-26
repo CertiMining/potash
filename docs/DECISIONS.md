@@ -1126,6 +1126,52 @@ Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
 **Ground.** Adding the vector now means a change to E-05's generator, which is Rust work inside the unit whose point is not touching Rust, while E-08 and E-09 are under review on the same base. The acceptance criteria for this unit are met without it, and the record says what the fixture is and is not.
 
 **Rejected.** Hand-authoring a fixture, which §4.2 forbids.
+## D-99 · `payload_uri` is an unauthenticated hint, and the document says so
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to the spec-only pull request (D-103)
+
+**The defect (E-11's SD-01).** §1.3's leaf preimage is 161 bytes and does not contain `payload_uri`. §2.5's package carries it, and INV-DISC-02's comparison therefore cannot reach it. **An issuer can release two packages for one record differing only in the pointer to the estimate, and both verify completely.**
+
+**Decision.** §2.5 and INV-DISC-02 say plainly that `payload_uri` is an unauthenticated hint, that `payload_digest` is the authenticated commitment to the payload, and that a counterparty checks fetched content against that digest rather than trusting the URI it was handed. No digest moves and no construction changes.
+
+**Ground.** The content is committed; only the pointer is not. §1.3 already says the engine resolves no URI and checks no host, so nothing in the system was ever relying on it. What was wrong was leaving a reader to infer that, seventeen days from a deadline, from the absence of a field in a table.
+
+**Rejected.** Putting `payload_uri` in the leaf preimage, which changes every committed digest, KAT-03 and both implementations. A second signature over the package, which is a new construction and new vectors.
+
+**Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
+
+## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-02).** §1.4 says real submissions are assigned in ascending order of submission identifier, and the identifier is `[u8; 16]`. The probe is first-free-upward, so the order decides who wins a contested slot and therefore **decides the root**. Two conforming implementations could produce different roots from one set of submissions. `V-P-06` is lexicographic; D-69's "ordinal counter" and INV-ENC-02's little-endian rule both point at numeric.
+
+**Decision.** Lexicographic over the sixteen bytes as stored, matching the committed vectors and both implementations. **The surprising half is written out rather than left for a reader to hit:** over a little-endian counter this is not ascending by count, because it sorts by the least significant byte first.
+
+**Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
+
+**Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
+
+## D-101 · Flags are recomputed only by a holder who has the chain
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
+
+**The defect (E-11's SD-03).** INV-DISC-03 says a verifier recomputes flags from the chain rather than trusting the supplied value. Bit 0 depends on whether any *earlier* record in the chain carried category 1 or 2; bit 1 on the *previous* record's category. §2.5's package carries one record. The invariant asked for a computation its own inputs make impossible.
+
+**Decision.** A verifier recomputes flags when it holds the chain context the computation needs, reports them as not recomputable when it does not, and **never refuses a package over a flag** either way.
+
+**Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
+
+## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
+
+**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026)
+
+**Decision.** D-99, D-100 and D-101 are amended into TCU-02 in a **spec-only pull request after both Codex rounds**, so the commits under review stay the commits under review.
+
+**And branches stop claiming version numbers.** Three branches were amending one document at once and two of them claimed v0.1.18. Each branch's amendment notes now say "on this branch, unmerged", the version line says `0.1.17 plus unmerged amendments on this branch`, and **the spec-only pull request assigns the next linear number to everything merged since, in merge order** — one renumbering pass, done once, rather than a running collision nobody owns.
+
+**Ground.** A version number is a claim about a document's identity, and a claim two siblings both make is worth nothing to a reader. The numbering is linear because the merged history is; the branches are not, so they do not get to number.
+
 ## D-104 · Existence is ownership and data, never a lamport balance
 
 **Date:** 25 Sep 2026 · **Unit:** E-08 · **Class:** security necessity · **Status:** applied at S9 round 1 (Codex finding 2)
@@ -1211,49 +1257,3 @@ Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
 **Why compression is honest here, and where it is not.** INV-ANCH-01's cadence is a day because a day is what hides filing rhythm from an observer. What this row measures is narrower: whether an epoch's *content* moves the slot its checkpoint lands in. That question is about the network's scheduling between submission and inclusion, which is seconds, not days, so a minute between epochs leaves it intact while a day would add 199 days of unrelated drift to the same measurement. What compression does cost is the diurnal variation a day-long cadence would sample — devnet is busier at some hours than others — so a 200-minute run sees one slice of that and a 200-day run would see all of it. A leak of the kind this row exists to catch produces a correlation near 1, far above either sampling regime's noise, which is why the bound is 0.2 and not something tighter.
 
 **What the run therefore establishes, and what it does not.** It establishes that over 200 consecutive epochs at one-minute spacing on one endpoint, landing delay did not follow record count or build time above the stated bound. It does not establish the same across a day's worth of network conditions, which is milestone 5's run, and it is not a proof that no content-dependent scheduling exists.
-
-## D-99 · `payload_uri` is an unauthenticated hint, and the document says so
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to the spec-only pull request (D-103)
-
-**The defect (E-11's SD-01).** §1.3's leaf preimage is 161 bytes and does not contain `payload_uri`. §2.5's package carries it, and INV-DISC-02's comparison therefore cannot reach it. **An issuer can release two packages for one record differing only in the pointer to the estimate, and both verify completely.**
-
-**Decision.** §2.5 and INV-DISC-02 say plainly that `payload_uri` is an unauthenticated hint, that `payload_digest` is the authenticated commitment to the payload, and that a counterparty checks fetched content against that digest rather than trusting the URI it was handed. No digest moves and no construction changes.
-
-**Ground.** The content is committed; only the pointer is not. §1.3 already says the engine resolves no URI and checks no host, so nothing in the system was ever relying on it. What was wrong was leaving a reader to infer that, seventeen days from a deadline, from the absence of a field in a table.
-
-**Rejected.** Putting `payload_uri` in the leaf preimage, which changes every committed digest, KAT-03 and both implementations. A second signature over the package, which is a new construction and new vectors.
-
-**Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
-
-## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
-
-**The defect (E-11's SD-02).** §1.4 says real submissions are assigned in ascending order of submission identifier, and the identifier is `[u8; 16]`. The probe is first-free-upward, so the order decides who wins a contested slot and therefore **decides the root**. Two conforming implementations could produce different roots from one set of submissions. `V-P-06` is lexicographic; D-69's "ordinal counter" and INV-ENC-02's little-endian rule both point at numeric.
-
-**Decision.** Lexicographic over the sixteen bytes as stored, matching the committed vectors and both implementations. **The surprising half is written out rather than left for a reader to hit:** over a little-endian counter this is not ascending by count, because it sorts by the least significant byte first.
-
-**Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
-
-**Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
-
-## D-101 · Flags are recomputed only by a holder who has the chain
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
-
-**The defect (E-11's SD-03).** INV-DISC-03 says a verifier recomputes flags from the chain rather than trusting the supplied value. Bit 0 depends on whether any *earlier* record in the chain carried category 1 or 2; bit 1 on the *previous* record's category. §2.5's package carries one record. The invariant asked for a computation its own inputs make impossible.
-
-**Decision.** A verifier recomputes flags when it holds the chain context the computation needs, reports them as not recomputable when it does not, and **never refuses a package over a flag** either way.
-
-**Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
-
-## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026)
-
-**Decision.** D-99, D-100 and D-101 are amended into TCU-02 in a **spec-only pull request after both Codex rounds**, so the commits under review stay the commits under review.
-
-**And branches stop claiming version numbers.** Three branches were amending one document at once and two of them claimed v0.1.18. Each branch's amendment notes now say "on this branch, unmerged", the version line says `0.1.17 plus unmerged amendments on this branch`, and **the spec-only pull request assigns the next linear number to everything merged since, in merge order** — one renumbering pass, done once, rather than a running collision nobody owns.
-
-**Ground.** A version number is a claim about a document's identity, and a claim two siblings both make is worth nothing to a reader. The numbering is linear because the merged history is; the branches are not, so they do not get to number.
