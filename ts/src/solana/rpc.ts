@@ -9,14 +9,21 @@ import { type CheckpointAccount, type LogConfig, decodeCheckpointAccount, decode
 import { deriveCheckpointAddress, deriveLogConfigAddress } from "./pda.ts";
 
 /** The deployment this verifier was written against (§"Fetching a root"). */
-// The announced devnet deployment. `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB` was announced
-// first and is superseded: its log was initialized under the pre-D-109 rule, so its sequence begins
-// at epoch 1 rather than a UTC day index, and its epoch 1 carries a receipt digest standing for no
-// OpenTimestamps receipt in a field that is write-once. Neither is repairable in place, which is why
-// there is a second address. Both are kept here because the superseded one is still readable by
-// anyone and is the account this verifier's own SPEC-DEFECTS D-15 was written against.
-export const DEVNET_PROGRAM_ID = "jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no";
-export const SUPERSEDED_PROGRAM_ID = "HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB";
+// The announced devnet deployment (D-88). Two earlier ones were retired; both are still readable on
+// devnet, and the reasons are below so a reader who finds three program ids knows what each was.
+export const DEVNET_PROGRAM_ID = "By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB";
+
+/// The two deployments this one replaced, newest first. D-88 records what each was; both are readable
+/// on devnet and neither should be verified against.
+///
+/// `jzJz…` was retired because a compressed privacy run spent 200 days of epoch numbering in 200
+/// minutes, leaving its sequence 209 days ahead of the calendar. `HS82…` was retired because its
+/// epoch 1 carries a receipt digest standing for no OpenTimestamps receipt in a write-once field, and
+/// because its log began at epoch 1 rather than a UTC day index.
+export const SUPERSEDED_PROGRAM_IDS = [
+  "jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no",
+  "HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB",
+] as const;
 export const DEVNET_RPC_URL = "https://api.devnet.solana.com";
 
 export type RpcOptions = {

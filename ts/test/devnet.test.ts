@@ -44,6 +44,28 @@ test("devnet: the log's configuration and its latest checkpoint decode as §2.4 
     );
   }
 
+  // A log that has published nothing has `last_epoch = start_epoch - 1` (§2.4, D-109), so
+  // `last_epoch` names a day before the log existed and there is no checkpoint to read. The test
+  // covered only the other case and failed against a freshly initialized deployment — where the
+  // verifier was right and the expectation was wrong. Both states are now asserted for what they are.
+  if (config.lastEpoch < config.startEpoch) {
+    console.log(
+      `  the log has published nothing yet: last_epoch ${config.lastEpoch} is the day before` +
+        ` start_epoch ${config.startEpoch}, so the first publication is epoch ${config.startEpoch}`,
+    );
+    assert.equal(config.lastEpoch, config.startEpoch - 1n, "§2.4: last_epoch is start_epoch - 1");
+    // And the epoch that would be first is genuinely absent, rather than something unreadable.
+    await assert.rejects(
+      () => fetchCheckpoint(config.startEpoch),
+      (e: unknown) => (e as { failure?: string }).failure === "CheckpointNotYetPublished",
+      "the sequence has not reached its own first epoch",
+    );
+    console.log(
+      `  first checkpoint address ${base58Encode(deriveCheckpointAddress(programId, config.startEpoch).address)}\n`,
+    );
+    return;
+  }
+
   const checkpoint = await fetchCheckpoint(config.lastEpoch);
   console.log(`  epoch ${checkpoint.epoch} root ${toHex(checkpoint.root)} slot ${checkpoint.publishedSlot}`);
   console.log(`  checkpoint address ${base58Encode(deriveCheckpointAddress(programId, config.lastEpoch).address)}\n`);

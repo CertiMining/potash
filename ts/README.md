@@ -221,12 +221,13 @@ tools/mutation-check.mjs the evidence that each test fails for the reason it nam
 
 ## The deployment this was run against
 
-`test/devnet.test.ts`, run by hand on 27 September 2026 against
-`jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no`, read `LogConfig` at
-`2Sw2YEQHc1AeouE91LyqFUL2BMMJEzKVnbob25DPA12E`: schema 1, `tree_height` 8, `start_epoch` 20721,
-`last_epoch` 20932, and the checkpoint for epoch 20932 carrying root `0x9f5f1e26…`. The address this
-code derives is the account the cluster answers for, at both accounts, which is the only check this
-repository has on the derivation SD-17 describes.
+The devnet test reads the announced deployment, `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB`, and
+confirms that the addresses this verifier derives are the accounts the cluster answers for — which is
+the only independent check on the derivation SD-17 records as unstated in the specification. Two
+earlier deployments were retired and are still readable; `src/solana/rpc.ts` names them with the
+reasons, and D-88 carries the full account. **Do not verify against a superseded log:** one has an
+epoch claiming an anchor it does not have, and the other has a sequence 209 days ahead of the
+calendar.
 
 `src/solana/rpc.ts` also keeps `SUPERSEDED_PROGRAM_ID`, the deployment announced first, whose log was
 initialized before §1.4's epoch clock and so begins at epoch 1 rather than at a day index. It is the
