@@ -134,12 +134,12 @@ upgrade the program.
 |---|---|
 | Cluster | Solana devnet |
 | Program | `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB` |
-| ProgramData | filled below at deploy |
+| ProgramData | `9yQQgxecM7d4spoKxH1UVxhBqzoYKbCfk9n8NSjJXX9K` |
 | Upgrade authority | `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz` (live, see above) |
 | Checkpoint authority | `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB` |
 | `tree_height` | 8, written once at `initialize` |
-| `start_epoch` | 20721, the UTC day index at `initialize` (D-109) |
-| Deployed in slot | 504032574 · 164,752 bytes · sha256 `9a56057db60ceb3ea032813703fd72cd42599507a8e3e9bf916fca13f5c1f040` from `c017d563ebe6496e506856c3ae36f0ac6abb51bd` |
+| `start_epoch` | 20723, the UTC day index at `initialize` (D-109) |
+| Deployed in slot | 504783809 · 164,752 bytes · sha256 `fa8b5f305abf4e7fd73df1207772eae73a49413dfbc94c95d1fc7a17c3785bb5` from `ade6a18` |
 
 **Two superseded deployments.** `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, announced 24 September, is superseded. Its epoch 1 carries a receipt digest standing for no OpenTimestamps receipt, written into a field that is write-once, so it claims an anchor it does not have and always will; and its log begins at epoch 1 rather than at a UTC day index, which the rule in §1.4 now forbids. Neither is repairable in place.
 
