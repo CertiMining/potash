@@ -2,8 +2,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/certimining-client",
     "crates/certimining-core",
     "crates/certimining-log",
+    "programs/certimining-checkpoint",
     "programs/core-harness",
     "xtask",
 ]

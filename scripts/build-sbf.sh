@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds the test-only harness program for the Solana target with the pinned toolchain (D-15):
-# Agave 4.2.2's cargo-build-sbf 4.1.0 with platform-tools v1.54. Output: target/deploy/core_harness.so
+# Builds the Solana programs with the pinned toolchain (D-15): Agave 4.2.2's cargo-build-sbf 4.1.0
+# with platform-tools v1.54. Outputs: target/deploy/core_harness.so, the test-only harness, and
+# target/deploy/certimining_checkpoint.so, the program of §2.4.
 #
 # cargo-build-sbf 4.x uninstalls any other rustup toolchain whose name contains "solana" before it
 # links its own (src/toolchain.rs, lines 384-411). It therefore runs against a project-private
@@ -35,5 +36,7 @@ if ! RUSTUP_HOME="$PRIVATE_RUSTUP_HOME" rustup toolchain list | grep -q '^potash
   RUSTUP_HOME="$PRIVATE_RUSTUP_HOME" rustup toolchain link potash-host "$(rustc --print sysroot)"
 fi
 
-PATH="$AGAVE_BIN:$PATH" RUSTUP_HOME="$PRIVATE_RUSTUP_HOME" RUSTUP_TOOLCHAIN=potash-host \
-  cargo build-sbf --manifest-path programs/core-harness/Cargo.toml
+for manifest in programs/core-harness/Cargo.toml programs/certimining-checkpoint/Cargo.toml; do
+  PATH="$AGAVE_BIN:$PATH" RUSTUP_HOME="$PRIVATE_RUSTUP_HOME" RUSTUP_TOOLCHAIN=potash-host \
+    cargo build-sbf --manifest-path "$manifest"
+done

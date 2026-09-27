@@ -102,10 +102,17 @@ kat02() {
     cargo test -p certimining-core --test kat02_ed25519
 }
 
-# KAT-01 inside the Solana runtime, through sol_keccak256 (D-08).
+# Inside the Solana runtime (D-08, D-87): KAT-01 through `sol_keccak256`, the engine's own committed
+# preimages for §2's runtime-equivalence claim, and the checkpoint program's own cases. Both programs
+# are built with the pinned toolchain first.
 kat01_onchain() {
-  scripts/build-sbf.sh &&
-    cargo test -p core-harness --test kat01_onchain -- --nocapture
+  scripts/build-sbf.sh || return 1
+  GROUP_FAILED=""
+  check "kat01 on chain" cargo test -p core-harness --test kat01_onchain -- --nocapture
+  check "runtime equivalence" cargo test -p core-harness --test runtime_equivalence -- --nocapture
+  check "checkpoint program" cargo test -p certimining-checkpoint
+  check "compute limits" cargo test -p certimining-checkpoint --test compute -- --nocapture
+  group_result kat01-onchain
 }
 
 # One command of a group, run whatever happened before it. A group used to chain with `&&`, which
@@ -151,6 +158,8 @@ checks() {
   check "test log, default" cargo test -p certimining-log
   check "test log, solana" cargo test -p certimining-log --no-default-features --features solana
   check "test log, all features" cargo test -p certimining-log --all-features
+  check "test client" cargo test -p certimining-client
+  check "client, cluster feature" cargo clippy -p certimining-client --all-targets --features cluster -- -D warnings
   check "bare metal core, no default features" cargo build -p certimining-core --target thumbv7em-none-eabihf --no-default-features
   check "bare metal core, default" cargo build -p certimining-core --target thumbv7em-none-eabihf
   check "bare metal log, no default features" cargo build -p certimining-log --target thumbv7em-none-eabihf --no-default-features
