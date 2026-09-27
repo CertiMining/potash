@@ -12,9 +12,9 @@
  */
 import { type Digest, base64Decode, bytesEqual, fromHex, readI64le, readU64le, toHex } from "./bytes.ts";
 import { type Failure, PackageFailure, RegistryFailure, describeFailure, isFailure } from "./errors.ts";
-import { advanceHead, computeFlags, type ChainState } from "./chain.ts";
+import { SCHEMA_VERSION, advanceHead, computeFlags, type ChainState } from "./chain.ts";
 import { ed25519Verify, keccak256 } from "./hash.ts";
-import { readTagged } from "./preimage.ts";
+import { genesisHeadPreimage, readTagged } from "./preimage.ts";
 import { TAG_LEAF } from "./tags.ts";
 import { type InclusionProof, verifyInclusion, verifyInclusionForHeight } from "./tree.ts";
 import { type PublishedRoot } from "./promise.ts";
@@ -88,6 +88,71 @@ export type VerifyOptions = {
    */
   chainContext?: { sawResource: boolean; previousCategory: number | null };
 };
+
+/**
+ * §2.5's field list. V-Z-05 passes only when a disclosure package holds "only the fields §2.5
+ * lists", and INV-DISC-01 says the package never contains the epoch key, sibling preimages or any
+ * other asset's data. Together those make the list exhaustive rather than illustrative, so a field
+ * outside it is refused: the risk is not a malformed shape but a leak in a corner nothing reads.
+ *
+ * "scalar" is a field §2.5 shows as a value; "scalars" is an array of them. Refusing a structure
+ * where §2.5 shows a value closes the remaining hiding place, a nested object under a field this
+ * verifier never has to read.
+ */
+type Shape = "scalar" | "scalars" | { [field: string]: Shape };
+
+const PACKAGE_SHAPE: { [field: string]: Shape } = {
+  schema: "scalar",
+  record: {
+    seq: "scalar",
+    category: "scalar",
+    effective_at: "scalar",
+    change_identified_at: "scalar",
+    payload_digest: "scalar",
+    assessment_digest: "scalar",
+    qp_key: "scalar",
+    payload_uri: "scalar",
+    flags: "scalar",
+  },
+  preimage_borsh: "scalar",
+  chain: { prev_head: "scalar", head: "scalar", genesis: "scalar" },
+  qp_signature: "scalar",
+  inclusion: { epoch: "scalar", height: "scalar", slot_index: "scalar", siblings: "scalars" },
+  anchor: { solana_tx: "scalar", solana_slot: "scalar", ots_receipt_digest: "scalar" },
+};
+
+function isContainer(value: unknown): boolean {
+  return value !== null && typeof value === "object";
+}
+
+/**
+ * Refuses the first field §2.5 does not list, naming its path. It says nothing about a listed field
+ * that is absent: §2.5 fixes what a package may carry, and the fields this verifier needs are
+ * required where it reads them.
+ */
+export function checkOnlyListedFields(value: unknown, shape: Shape, path: string): void {
+  if (shape === "scalar") {
+    if (isContainer(value)) {
+      throw new PackageFailure("UnlistedField", `${path} carries a structure where §2.5 shows a single value`);
+    }
+    return;
+  }
+  if (shape === "scalars") {
+    if (!Array.isArray(value)) throw new PackageFailure("MalformedPackage", `${path} is not an array`);
+    value.forEach((element, i) => checkOnlyListedFields(element, "scalar", `${path}[${i}]`));
+    return;
+  }
+  if (!isContainer(value) || Array.isArray(value)) {
+    throw new PackageFailure("MalformedPackage", `${path === "" ? "the package" : path} is not an object`);
+  }
+  for (const [field, child] of Object.entries(value as Record<string, unknown>)) {
+    const childShape = shape[field];
+    if (childShape === undefined) {
+      throw new PackageFailure("UnlistedField", `${path === "" ? "" : `${path}.`}${field} is not a field §2.5 lists`);
+    }
+    checkOnlyListedFields(child, childShape, path === "" ? field : `${path}.${field}`);
+  }
+}
 
 function must<T>(value: T | undefined | null, what: string): T {
   if (value === undefined || value === null) throw new PackageFailure("MalformedPackage", `missing ${what}`);
@@ -209,15 +274,13 @@ export function verifyDisclosurePackage(pkg: DisclosurePackage, options: VerifyO
     if (pkg.schema !== DISCLOSURE_SCHEMA) {
       throw new PackageFailure("MalformedPackage", `schema is ${JSON.stringify(pkg.schema)}, not ${DISCLOSURE_SCHEMA}`);
     }
+    // Only the fields §2.5 lists, at every level (INV-DISC-01, V-Z-05). Refused before anything
+    // else is read, because an epoch key in a corner is a leak whatever the rest of the package says.
+    checkOnlyListedFields(pkg, PACKAGE_SHAPE, "");
     const rec = must(pkg.record, "record");
     const chain = must(pkg.chain, "chain");
     const inclusion = must(pkg.inclusion, "inclusion");
-    for (const key of Object.keys(pkg)) {
-      if (!["schema", "record", "preimage_borsh", "chain", "qp_signature", "inclusion", "anchor"].includes(key)) {
-        notes.push(`package carries a field §2.5 does not list: ${key}`);
-      }
-    }
-    record("package shape", "pass");
+    record("package carries only the fields §2.5 lists", "pass");
 
     // 1 — the bytes. Everything downstream is derived from these, never from the display copy.
     let preimage: Uint8Array;
@@ -249,22 +312,40 @@ export function verifyDisclosurePackage(pkg: DisclosurePackage, options: VerifyO
     }
     record("QP signature verifies over the 161 preimage bytes", "pass");
 
-    // 5 — the chain segment.
+    // 5 — the chain segment, checked in the order §1.3 constructs it.
     const prevHead = hexField(must(chain.prev_head, "chain.prev_head"), "chain.prev_head", 32);
     const head = hexField(must(chain.head, "chain.head"), "chain.head", 32);
     const genesis = hexField(must(chain.genesis, "chain.genesis"), "chain.genesis", 32);
+
+    // h₀ = Keccak256(TAG_HEAD ‖ c ‖ schema_version). `c` is inside the bytes the QP signed, so the
+    // genesis head of this asset's chain is recomputable for every package, not only at seq 1.
+    // Without this the three chain fields can be replaced together — genesis, prev_head and head —
+    // leaving the preimage, the signature, the proof and the root untouched and every remaining
+    // relation holding for a chain that is not this asset's.
+    const expectedGenesis = keccak256(genesisHeadPreimage(fields.assetCommitment, SCHEMA_VERSION));
+    if (!bytesEqual(genesis, expectedGenesis)) {
+      throw new RegistryFailure(
+        "HeadMismatch",
+        `chain.genesis is not Keccak256(TAG_HEAD ‖ c ‖ ${SCHEMA_VERSION}) for the c this preimage carries`,
+      );
+    }
+    record("chain.genesis is this asset's genesis head under schema 1", "pass", toHex(expectedGenesis));
+
+    // Condition (a) at n = 0: a seq-1 record commits against h₀ itself.
+    if (fields.seq === 1n) {
+      if (!bytesEqual(prevHead, genesis)) {
+        throw new RegistryFailure("HeadMismatch", "the record is at seq 1 and prev_head is not the genesis head");
+      }
+      record("prev_head is the genesis head, as §1.3's condition (a) requires at seq 1", "pass");
+    } else {
+      record("chain.genesis reaches chain.prev_head", "skipped", "one package carries no intermediate leaves");
+    }
+
+    // hₙ₊₁ = Keccak256(TAG_HEAD ‖ hₙ ‖ leafₙ₊₁).
     if (!bytesEqual(advanceHead(prevHead, leaf), head)) {
       throw new RegistryFailure("HeadMismatch", "chain.head is not Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)");
     }
     record("chain.head follows from prev_head and the leaf", "pass");
-    if (fields.seq === 1n) {
-      if (!bytesEqual(prevHead, genesis)) {
-        throw new PackageFailure("ChainSegmentBroken", "the record is at seq 1 and prev_head is not chain.genesis");
-      }
-      record("chain.genesis is the predecessor of a seq-1 record", "pass");
-    } else {
-      record("chain.genesis reaches chain.prev_head", "skipped", "one package carries no intermediate leaves");
-    }
 
     // 6 — inclusion, against a root the caller obtained independently.
     const proof = parseProof(inclusion);

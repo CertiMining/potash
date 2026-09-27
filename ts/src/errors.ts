@@ -75,12 +75,17 @@ export const PACKAGE_FAILURES = [
   "JsonBorshMismatch",      // a §2.5 `record` field disagrees with `preimage_borsh` (INV-DISC-02)
   "RootUnavailable",        // the fetch failed, or the account is not the program's
   "RootEpochMismatch",      // the fetched checkpoint is for a different epoch than the proof claims
-  "ChainSegmentBroken",     // `chain.genesis` disagrees with `chain.prev_head` at seq 1
-  // INV-ANCH-02's three different reasons a checkpoint account can be absent. They are named apart
-  // because the invariant says so: an epoch before `start_epoch` is not a gap but a day the log did
-  // not exist for, and only the second of these is evidence of batcher failure.
+  // §2.5 lists what a package contains and §4.4's V-Z-05 passes only on "only the fields §2.5
+  // lists", so a field outside that list is refused rather than noted: INV-DISC-01's leak is the
+  // point, and an epoch key hidden in an unread corner is exactly what it forbids.
+  "UnlistedField",
+  // §1.4's three different reasons a checkpoint account can be absent, named apart because the
+  // section distinguishes them: the failure an on-chain read can show is lag, an epoch before
+  // `start_epoch` is a day the log did not exist for, and a refusal inside the published range is
+  // evidence about the response rather than about the log, since INV-ANCH-02 runs that range
+  // unbroken and only the owning program can allocate an address in it.
   "EpochBeforeLogStart",
-  "CheckpointSequenceGap",
+  "InconsistentChainView",
   "CheckpointNotYetPublished",
 ] as const;
 

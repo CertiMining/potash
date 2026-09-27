@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { concat, fromHex, toHex, u16le, u64le, utf8, base64Decode, base64Encode } from "../src/bytes.ts";
+import { concat, fromHex, toHex, u64le, utf8, base64Decode, base64Encode } from "../src/bytes.ts";
 import { RegistryFailure, PackageFailure, REGISTRY_CODES, codeName } from "../src/errors.ts";
 import { MAX_PREIMAGE_LEN, PreimageSink, prfPreimage } from "../src/preimage.ts";
 import { canonicalize, canonicalizeBytes } from "../src/canonical.ts";
@@ -22,12 +22,14 @@ import {
   anchorStatus,
   decodeCheckpointAccount,
   decodeLogConfig,
+  lagAgainst,
   placeEpoch,
   utcDayIndex,
 } from "../src/solana/accounts.ts";
 import { DEVNET_PROGRAM_ID, fetchCheckpoint, fetchRoot } from "../src/solana/rpc.ts";
 import { MAX_MERGE_DELAY, decodePromise, verifyPromise } from "../src/promise.ts";
 import { loadVector } from "./support.ts";
+import { checkpointBytes, logConfigBytes } from "./packages.ts";
 
 test("§2.4's published discriminators are SHA-256 of a published string, and these are they", () => {
   assert.equal(toHex(accountDiscriminator("LogConfig")), "0x1cf0757f1aa6bf37");
@@ -65,39 +67,6 @@ test("§2.4's PDAs derive deterministically, land off the curve, and depend on t
   }
   assert.throws(() => findProgramAddress([new Uint8Array(33)], programId), RangeError);
 });
-
-function checkpointBytes(fields: { epoch: bigint; root: Uint8Array; receipt?: Uint8Array }): Uint8Array {
-  const data = new Uint8Array(CHECKPOINT_LEN);
-  data.set(CHECKPOINT_DISCRIMINATOR, 0);
-  data.set(u16le(1), 8);
-  data.set(u64le(fields.epoch), 10);
-  data.set(fields.root, 18);
-  data.set(u64le(123456n), 50);
-  data.set(u64le(1760000000n), 58);
-  if (fields.receipt) data.set(fields.receipt, 66);
-  data[98] = fields.receipt ? 1 : 0;
-  data[99] = 254;
-  return data;
-}
-
-function logConfigBytes(fields: {
-  authority?: Uint8Array;
-  lastEpoch?: bigint;
-  treeHeight?: number;
-  startEpoch?: bigint;
-  reserved?: number;
-}): Uint8Array {
-  const data = new Uint8Array(LOG_CONFIG_LEN);
-  data.set(LOG_CONFIG_DISCRIMINATOR, 0);
-  data.set(u16le(1), 8);
-  if (fields.authority) data.set(fields.authority, 10);
-  data.set(u64le(fields.lastEpoch ?? 0n), 42);
-  data[50] = fields.treeHeight ?? 8;
-  data[51] = 254;
-  data.set(u64le(fields.startEpoch ?? 0n), 52);
-  if (fields.reserved !== undefined) data.fill(fields.reserved, 60, 68);
-  return data;
-}
 
 test("§2.4's CheckpointAccount decodes at the stated offsets, and refuses anything else", () => {
   const root = fromHex(`0x${"ab".repeat(32)}`, 32);
@@ -152,7 +121,7 @@ test("§1.4's epoch clock is floor(unix_seconds / 86400)", () => {
   assert.equal(utcDayIndex(-86400n), -1n);
 });
 
-test("INV-ANCH-02: an absent checkpoint is placed against the log's own life", () => {
+test("§1.4: an absent checkpoint is placed against the log's own life, and lag is a distance", () => {
   const config = decodeLogConfig(logConfigBytes({ startEpoch: 20354n, lastEpoch: 20360n }));
   // Before the log existed: not a gap.
   assert.deepEqual(placeEpoch(config, 20353n), { kind: "before-log-start", startEpoch: 20354n });
@@ -168,6 +137,13 @@ test("INV-ANCH-02: an absent checkpoint is placed against the log's own life", (
   const fresh = decodeLogConfig(logConfigBytes({ startEpoch: 20354n, lastEpoch: 20353n }));
   assert.deepEqual(placeEpoch(fresh, 20354n), { kind: "not-yet-published", lastEpoch: 20353n });
   assert.deepEqual(placeEpoch(fresh, 20353n), { kind: "before-log-start", startEpoch: 20354n });
+
+  // §1.4: the failure an on-chain read can show is lag, and the client reports the distance against
+  // a day index it is given, because judging it needs a clock the verifier does not hold.
+  assert.equal(lagAgainst(config, 20360n), 0n, "a sequence that has caught up");
+  assert.equal(lagAgainst(config, 20365n), 5n, "five days behind");
+  assert.equal(lagAgainst(config, 20359n), -1n, "a sequence cannot be ahead of the calendar, and the sign says so");
+  assert.equal(lagAgainst(decodeLogConfig(logConfigBytes({ startEpoch: 0n, lastEpoch: 1n })), 20722n), 20721n);
 });
 
 test("fetching a root speaks JSON-RPC and refuses an account that is not the one asked for", async () => {
@@ -218,7 +194,7 @@ test("fetching a root speaks JSON-RPC and refuses an account that is not the one
   );
 });
 
-test("INV-ANCH-02: an absent checkpoint is refused with the reason it is absent", async () => {
+test("§1.4: an absent checkpoint is refused with the reason it is absent", async () => {
   const programId = base58Decode(DEVNET_PROGRAM_ID);
   const configAddress = base58Encode(deriveLogConfigAddress(programId).address);
   const config = logConfigBytes({ startEpoch: 20354n, lastEpoch: 20360n });
@@ -242,7 +218,7 @@ test("INV-ANCH-02: an absent checkpoint is refused with the reason it is absent"
     );
   };
   await expect(20353n, "EpochBeforeLogStart", /not a gap/);
-  await expect(20357n, "CheckpointSequenceGap", /inside the published sequence 20354\.\.20360/);
+  await expect(20357n, "InconsistentChainView", /did not come from one view of the chain/);
   await expect(20400n, "CheckpointNotYetPublished", /has reached epoch 20360/);
   assert.equal(configReads, 3, "the configuration is read only when a checkpoint is missing");
 

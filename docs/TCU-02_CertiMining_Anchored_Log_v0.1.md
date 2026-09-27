@@ -518,6 +518,12 @@ LogConfig (PDA ["cm_cfg"])            offset  len        CheckpointAccount (PDA 
                                                                                  total  106
 ```
 
+**The program address, and how to derive it (added on this branch, unmerged).** A checkpoint lives at the program-derived address for `["cm_ckpt", epoch_le]` and the log's configuration at `["cm_cfg"]`, and this table named those seeds without saying how an address follows from them. **The derivation is Solana's, not this document's**, and it is cited rather than restated as though it were ours: the address is `SHA-256(seed₀ ‖ … ‖ seedₙ ‖ program_id ‖ bump ‖ "ProgramDerivedAddress")` for the largest single-byte `bump` from 255 downwards whose result is **not** a point on the Ed25519 curve, which is the canonical bump. See Solana's documentation for program-derived addresses; the constraints on seed count and length are that platform's too.
+
+Recording it closes the same gap the discriminator had. An implementer working from this document alone could produce neither, and E-11's verifier produced both from published platform convention rather than from here — which is legitimate and was not written down (D-90).
+
+**Where this document restates a platform convention, it cites the source rather than deriving it.** The specification defines the protocol; the platform defines the platform. That is the same scoping INV-PRIM-01 needed when it forbade a hash function two platform constructions require, and it applies wherever the two meet: Solana's addressing and account discriminators, and OpenTimestamps' receipt format.
+
 **The discriminator, and how to compute it (added on this branch, unmerged).** Both accounts open with Anchor's 8-byte account discriminator: the first eight bytes of `SHA-256("account:" ‖ N)`, where `N` is the account's struct name as this table gives it, taken as ASCII with no separator beyond the colon. For this program that is `LogConfig` → `1c f0 75 7f 1a a6 bf 37` and `CheckpointAccount` → `4d 11 99 cb 01 ec 47 59`. Before this branch this table named the field and its offset without saying how its bytes are derived, so an implementer working from this document alone could not produce or check them, and the only remaining option was to accept whatever an account carried. A reader is not required to trust the two constants: they are `SHA-256` of a published string, and the deployed accounts carry them.
 
 ### 2.5 Disclosure package (out of band)

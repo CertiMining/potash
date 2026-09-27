@@ -6,11 +6,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { base64Encode, fromHex, toHex } from "../src/bytes.ts";
 import { keccak256 } from "../src/hash.ts";
+import { RegistryFailure } from "../src/errors.ts";
+import { advanceHead } from "../src/chain.ts";
 import { verifyDisclosurePackage, findAssetCommitmentOutsidePreimage, readLeafPreimage } from "../src/disclosure.ts";
-import { leafPreimage } from "../src/preimage.ts";
+import { genesisHeadPreimage, leafPreimage } from "../src/preimage.ts";
 import { TAG_HEAD } from "../src/tags.ts";
+import { decodeCheckpointAccount, decodeLogConfig } from "../src/solana/accounts.ts";
+import { DEVNET_PROGRAM_ID, fetchRoot } from "../src/solana/rpc.ts";
 import { ASSET_COMMITMENT, GENESIS_HEAD, loadVector } from "./support.ts";
-import { clone, epochHoldingRecord, fullEpochHoldingRecord, packageFrom, recordLeaf, RECORD_SUBMISSION_ID } from "./packages.ts";
+import {
+  checkpointBytes,
+  clone,
+  epochHoldingRecord,
+  fullEpochHoldingRecord,
+  logConfigBytes,
+  packageFrom,
+  recordLeaf,
+  RECORD_SUBMISSION_ID,
+} from "./packages.ts";
 
 const built = epochHoldingRecord();
 const root = { epoch: built.epoch, root: built.root };
@@ -164,14 +177,24 @@ test("a preimage under another domain tag is 0x0B, and one of the wrong length i
   expectCode(short, root, 0x05, "MalformedPayload", "a truncated preimage");
 });
 
-test("a chain segment that does not hold is refused", () => {
+test("a chain segment that does not hold is refused, for each of §1.3's head constructions", () => {
+  // hₙ₊₁ = Keccak256(TAG_HEAD ‖ hₙ ‖ leafₙ₊₁).
   const badHead = clone(good);
   badHead.chain.head = `0x${"ab".repeat(32)}`;
   expectCode(badHead, root, 0x03, "HeadMismatch", "a head that does not follow from prev_head and the leaf");
 
+  // h₀ = Keccak256(TAG_HEAD ‖ c ‖ schema_version).
   const badGenesis = clone(good);
   badGenesis.chain.genesis = `0x${"cd".repeat(32)}`;
-  expectPackageFailure(badGenesis, root, "ChainSegmentBroken", "a seq-1 record whose predecessor is not the genesis");
+  expectCode(badGenesis, root, 0x03, "HeadMismatch", "a genesis that is not this asset's");
+
+  // Condition (a) at n = 0: prev_head must be h₀ for a seq-1 record. Here the genesis is the real
+  // one and prev_head is not it, so what fails is (a) and not the genesis value.
+  const badPrevHead = clone(good);
+  const orphanHead = keccak256(new TextEncoder().encode("some other chain's head"));
+  badPrevHead.chain.prev_head = toHex(orphanHead);
+  badPrevHead.chain.head = toHex(advanceHead(orphanHead, recordLeaf().leaf));
+  expectCode(badPrevHead, root, 0x03, "HeadMismatch", "a seq-1 record whose predecessor is not the genesis");
 });
 
 test("inclusion failures: a sibling altered, a short path, the wrong height, another epoch's root", () => {
@@ -229,12 +252,16 @@ test("a package that is not a §2.5 package at all is refused", () => {
   expectPackageFailure(unsafeInt, root, "MalformedPackage", "an integer JSON cannot carry exactly");
 });
 
-test("the verifier reports a field §2.5 does not list rather than ignoring it", () => {
+test("a field §2.5 does not list refuses the package, and is not merely reported", () => {
+  // This test asserted the opposite until an independent review pointed out that it was wrong:
+  // V-Z-05 passes only on "only the fields §2.5 lists", and §4.4 makes that a release gate of the
+  // same severity as a correctness failure, so accepting the package with a note is non-conforming.
   const extra = clone(good);
   (extra as any).epoch_key = `0x${"99".repeat(32)}`;
   const report = verifyDisclosurePackage(extra, { root, configuredHeight: 8 });
-  assert.equal(report.ok, true);
-  assert.equal(report.notes.some((n) => n.includes("epoch_key")), true);
+  assert.equal(report.ok, false, "a package carrying an epoch key was accepted");
+  assert.equal((report.failure as any).failure, "UnlistedField");
+  assert.match(report.failure!.message, /epoch_key/);
 });
 
 test("the leaf a package carries is the leaf the vector's own writer produces", () => {
@@ -245,4 +272,109 @@ test("the leaf a package carries is the leaf the vector's own writer produces", 
   assert.equal(toHex(keccak256(leafPreimage(ASSET_COMMITMENT, readLeafPreimage(preimage)))), v.expected.leaf);
   assert.equal(toHex(GENESIS_HEAD), v.inputs.record.prev_head);
   assert.equal(toHex(built.assignment.find((a) => toHex(a.submissionId) === toHex(RECORD_SUBMISSION_ID))!.submissionId), toHex(RECORD_SUBMISSION_ID));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Three findings from an independent review. Each test below was run against the code as it stood
+// before the fix and failed there; the mutations in tools/mutation-check.mjs keep them honest.
+// ---------------------------------------------------------------------------------------------
+
+test("FINDING 1: a package cannot invent its genesis", () => {
+  // §1.3: h₀ = Keccak256(TAG_HEAD ‖ c ‖ schema_version), and `c` is bytes 8..40 of the preimage,
+  // so the genesis head of this asset's chain is recomputable from what the package already carries.
+  const { preimage, leaf } = recordLeaf();
+  const c = readLeafPreimage(preimage).assetCommitment;
+  assert.equal(good.chain.genesis, toHex(keccak256(genesisHeadPreimage(c, 1))), "the assembled package is honest");
+
+  // An attacker rewrites genesis, prev_head and head together, leaving the signed preimage, the
+  // proof and the root untouched. Every relation inside the old check still holds.
+  const invented = clone(good);
+  const forgedGenesis = keccak256(new TextEncoder().encode("a chain that is not this asset's"));
+  invented.chain.genesis = toHex(forgedGenesis);
+  invented.chain.prev_head = toHex(forgedGenesis);
+  invented.chain.head = toHex(advanceHead(forgedGenesis, leaf));
+  assert.equal(invented.preimage_borsh, good.preimage_borsh, "the signed bytes are untouched");
+  assert.equal(invented.qp_signature, good.qp_signature, "the signature is untouched");
+  assert.deepEqual(invented.inclusion, good.inclusion, "the proof is untouched");
+  expectCode(invented, root, 0x03, "HeadMismatch", "an invented genesis", { configuredHeight: 8 });
+
+  // The genesis is checked for every package, not only at seq 1: it is a function of `c` alone.
+  const wrongGenesisOnly = clone(good);
+  wrongGenesisOnly.chain.genesis = toHex(forgedGenesis);
+  expectCode(wrongGenesisOnly, root, 0x03, "HeadMismatch", "a genesis that is not this asset's", { configuredHeight: 8 });
+
+  // A genesis computed under another schema version is not this verifier's genesis either.
+  const otherSchema = clone(good);
+  otherSchema.chain.genesis = toHex(keccak256(genesisHeadPreimage(c, 2)));
+  expectCode(otherSchema, root, 0x03, "HeadMismatch", "a genesis under schema 2", { configuredHeight: 8 });
+});
+
+test("FINDING 2: a field §2.5 does not list is refused, at every level", () => {
+  // §2.5 lists what a package contains; INV-DISC-01 says what it must never contain; §4.4's V-Z-05
+  // passes only when the package holds "only the fields §2.5 lists" and makes that a release gate.
+  const epochKey = `0x${"99".repeat(32)}`;
+
+  const topLevel = clone(good);
+  (topLevel as any).epoch_key = epochKey;
+  expectPackageFailure(topLevel, root, "UnlistedField", "an epoch key at the top level", { configuredHeight: 8 });
+
+  const nested = clone(good);
+  (nested.record as any).epoch_key = epochKey;
+  expectPackageFailure(nested, root, "UnlistedField", "an epoch key inside record", { configuredHeight: 8 });
+
+  for (const [container, field] of [["chain", "k_e"], ["inclusion", "sibling_preimages"], ["anchor", "epoch_key"]] as const) {
+    const pkg = clone(good);
+    (pkg as any)[container][field] = epochKey;
+    expectPackageFailure(pkg, root, "UnlistedField", `${container}.${field}`, { configuredHeight: 8 });
+  }
+
+  // Nor can anything hide inside a field §2.5 shows as a scalar.
+  const hidden = clone(good);
+  (hidden.anchor as any).solana_tx = { epoch_key: epochKey };
+  expectPackageFailure(hidden, root, "UnlistedField", "an object where §2.5 shows a string", { configuredHeight: 8 });
+
+  // The refusal names the path, and comes before any hashing: the leak is the point, not the shape.
+  const report = verifyDisclosurePackage(nested, { root, configuredHeight: 8 });
+  assert.match(report.failure!.message, /record\.epoch_key/);
+  assert.equal(report.checks.some((c) => c.name.startsWith("leaf")), false, "work was done before the package was refused");
+  assert.equal(report.notes.length, 0, "an unlisted field is a refusal, not a note");
+});
+
+test("FINDING 3: a checkpoint account under another schema version is refused", () => {
+  // §1.3's schema gate refuses a record whose schema_version is not 1 with 0x0F, before any
+  // condition is judged. An account is read the same way: decode, then the gate.
+  const root32 = fromHex(`0x${"ab".repeat(32)}`, 32);
+  for (const version of [0, 2, 65535]) {
+    const data = checkpointBytes({ epoch: 20361n, root: root32, schemaVersion: version });
+    assert.throws(
+      () => decodeCheckpointAccount(data),
+      (e: unknown) => e instanceof RegistryFailure && e.code === 0x0f && e.codeName === "UnsupportedSchemaVersion",
+      `checkpoint schema_version ${version}`,
+    );
+    assert.throws(
+      () => decodeLogConfig(logConfigBytes({ schemaVersion: version })),
+      (e: unknown) => e instanceof RegistryFailure && e.code === 0x0f,
+      `LogConfig schema_version ${version}`,
+    );
+  }
+  // Schema 1 still decodes, so the gate is the version and not the field's presence.
+  assert.equal(decodeCheckpointAccount(checkpointBytes({ epoch: 20361n, root: root32 })).schemaVersion, 1);
+
+  // And the gate holds through the fetch path, where the account arrives from a cluster.
+  const stub = (async () => ({
+    ok: true,
+    json: async () => ({
+      result: {
+        value: {
+          data: [base64Encode(checkpointBytes({ epoch: 20361n, root: root32, schemaVersion: 2 })), "base64"],
+          owner: DEVNET_PROGRAM_ID,
+        },
+      },
+    }),
+  }) as any) as unknown as typeof fetch;
+  return assert.rejects(
+    fetchRoot(20361n, { fetchImpl: stub }),
+    (e: unknown) => e instanceof RegistryFailure && e.code === 0x0f,
+    "a schema-2 checkpoint reached the caller",
+  );
 });

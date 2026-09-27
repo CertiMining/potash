@@ -8,10 +8,15 @@ another (owner's ruling, 26 Sep 2026).
 Each entry records a place where TCU-02 does not determine the answer, what was needed, what the
 document says, the readings available, and which vector or invariant forced the question.
 
-SD-01 to SD-13 were found against **v0.1.16**. All thirteen were re-read against **v0.1.18** and all
-thirteen still stand: the amendment touches §1.4, §2.4's `initialize` and `LogConfig`, and
-INV-ANCH-02, and none of those is the ground any of the thirteen rests on. SD-14 to SD-16 are new in
-v0.1.18 and come from the amendment itself.
+**Which text.** The version label on `spec/TCU-02_CertiMining_Anchored_Log_v0.1.md` has moved between
+rounds (0.1.16, then 0.1.18, now "0.1.14 plus unmerged amendments on this branch"), so the document
+is identified here by content: every entry below was last checked against the file whose SHA-256 is
+`de2f20ce8efaa8ab0c9f1b473ba04b6051cab33bf3493bc4089fbe54a88bbfef`, 740 lines.
+
+SD-01 to SD-13 were found against the first text read, SD-14 to SD-16 against the second, SD-17 and
+SD-18 against the current one. **SD-16 is resolved by the current text** and is kept, marked, because
+a resolved ambiguity is as much a result of this work as an open one. **SD-04 is corrected**: part of
+what it claimed was my error rather than the document's, which an independent review found.
 Nothing here was resolved by looking at another implementation. Where a committed vector settles a
 question the document leaves open, that is said plainly: a vector is evidence of what one
 implementation did, not of what the specification requires.
@@ -110,27 +115,37 @@ about.
 
 ## SD-04 · §2.5, §2.1 — no code is defined for a package whose own fields disagree
 
-**What was needed.** What a verifier returns when `chain.head` is not
-`Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)`, and what `chain.genesis` is for.
+**Corrected after review.** This entry previously also claimed that `chain.genesis` is reachable only
+at `seq` 1 and is otherwise not checkable from one package. That was wrong, and it was my error
+rather than the document's: §1.3 gives `h₀ = Keccak256(TAG_HEAD ‖ c ‖ schema_version)`, and `c` is
+bytes 8 to 39 of the preimage the package already carries, so this asset's genesis head is
+recomputable for **every** package. Until an independent review found it, the verifier checked only
+that `prev_head` equalled `genesis` at `seq` 1, which let all three chain fields be replaced together
+and report a valid segment for a chain that is not the asset's. The check is now unconditional and
+the claim is withdrawn. What remains undetermined is the part below.
 
-**What the document says.** §2.1's codes belong to §1.3's transition conditions, and D-80 says a
-code no path can return is a defect rather than a spare. §2.5 carries `genesis`, `prev_head` and
-`head`. INV-DISC-02 says the verifier "walks the chain segment". A package holds one leaf, so the
-only relation inside it is the single head step; `genesis` is reachable only when `seq` is 1.
+**What was needed.** Which code a verifier returns when a package's own chain fields do not hold:
+`chain.genesis` not being this asset's `h₀`, `prev_head` not being `h₀` at `seq` 1, or `chain.head`
+not being `Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)`.
+
+**What the document says.** §2.1's codes belong to §1.3's transition conditions, and D-80 says a code
+no path can return is a defect rather than a spare. §1.3 gives 0x03 when a record and a head do not
+agree, and its condition (a) is `prev_head = hₙ`, which at `n = 0` is exactly the `seq`-1 case.
+Nothing says whether those codes reach a package, and INV-DISC-02 requires only that a verifier
+"walks the chain segment" and fails closed on disagreement.
 
 **Candidate readings.**
-1. The head step is §1.3's own relation, so a disagreement is 0x03, the code §1.3 gives when a
-   record and a head do not agree.
-2. It is a package-level failure with no §2.1 code, like the JSON-versus-Borsh mismatch.
-3. `genesis` is decoration and is not checked at all.
+1. All three are §1.3 head relations, so all three are 0x03.
+2. A package is not a transition, so a package-level failure carrying no §2.1 code is the honest
+   answer, as it is for a JSON-versus-Borsh mismatch.
 
-**What forced the question.** Assembling a package whose `head` was wrong and having to name the
-failure.
+**What forced the question.** Naming the failure for each of the three relations.
 
-**What this verifier does.** 0x03 for the head step, reading 1. A named package-level failure,
-`ChainSegmentBroken`, for `prev_head ≠ genesis` at `seq = 1`, since no §2.1 condition covers it.
-For `seq > 1` the `genesis` field is reported as not checkable from one package, and the README
-says so.
+**What this verifier does.** Reading 1: 0x03 for all three, with a message naming which relation
+failed. The package-level name it used for one of them is gone, because under reading 1 no path
+reaches it any more and D-80's reasoning about a spare code applies to a spare failure name too. What
+is still uncheckable from one package is the **walk** from `genesis` to `prev_head` for a record past
+`seq` 1, since the intermediate leaves are not in the package. The genesis *value* is checked always.
 
 ---
 
@@ -384,7 +399,16 @@ verifier has to decide what to do with it.
 
 ## SD-16 · INV-ANCH-02 — the gap a client must surface cannot be the gap the invariant describes
 
-**New in v0.1.18.**
+**RESOLVED by the current text, and kept as a record.** §1.4 now answers it in terms: the failure an
+on-chain read can show is **lag**, `last_epoch` falling behind the current day index; an epoch before
+`start_epoch` is a day the log did not exist for; and an epoch whose account is refused inside the
+published range "is evidence about the response rather than about the log", because INV-ANCH-02 now
+says the sequence "runs unbroken to `last_epoch`" and only the owning program can allocate an address
+in that range. The sentence this entry was raised against, that a gap in the sequence is itself
+evidence of batcher failure, is gone. The verifier was changed to match: the middle placement is
+reported as an inconsistent view of the chain rather than as a batcher gap, and
+`lagAgainst(config, dayIndex)` reports the distance for a caller who holds a clock, since §1.4 leaves
+the ruling with them. What the entry said while it was open follows.
 
 **What was needed.** What a client looks for when INV-ANCH-02 says "a gap in the on-chain sequence is
 itself evidence of batcher failure and must surface in the client".
@@ -416,6 +440,78 @@ not rule on batcher failure, because that needs a clock the verifier does not ho
 
 ---
 
+## SD-17 · §2.4 — the seeds are named and the address derivation is not
+
+**New.**
+
+**What was needed.** How to turn `["cm_cfg"]` and `["cm_ckpt", epoch_le]` into the 32-byte addresses a
+JSON-RPC call asks for. INV-DISC-02 requires the root to be fetched independently, and this unit puts
+address derivation inside the verifier rather than in an SDK, because it is the step that decides
+which account is even being read.
+
+**What the document says.** §2.4 names the seeds, in that notation, and nothing else. It does not say
+that a program address is `SHA-256(seeds ‖ bump ‖ program_id ‖ "ProgramDerivedAddress")`, that the
+marker is that literal ASCII string, that the inputs are concatenated in that order, that the bump is
+searched downward from 255, or that a candidate is rejected unless it lies off the Ed25519 curve. It
+gives neither the program id nor the base58 alphabet the id and the addresses are written in.
+
+**Why this is the gap the discriminator had.** §2.4's own discriminator paragraph exists because "an
+implementer working from this document alone could not produce or check them, and the only remaining
+option was to accept whatever an account carried". That holds word for word of the address: an
+implementer confined to this document cannot compute it, and the remaining option is to accept an
+address someone hands them, for the step that selects the account. The discriminator gap was closed
+with four lines of arithmetic. This one is open.
+
+**What this verifier does.** Implements the derivation from **published Solana platform conventions**,
+which are knowledge of the platform and not of this document or the sandbox. That is legitimate and is
+now recorded, here and in README.md's provenance section, so a reader can see which parts of the
+verifier the specification determines and which it does not. The derivation is at least self-checking
+against the deployment: the address this code derives is the account the cluster answers for, which
+the devnet test demonstrates.
+
+**Amendment that would close it.** Four lines in §2.4, in the form the discriminator paragraph
+already uses: the hash input and its order, the marker string, the descending bump search, the
+off-curve requirement, and the program id of the deployment.
+
+---
+
+**Answered on the branch while this was being written (26 Sep 2026).** §2.4 now states the derivation
+and cites it as Solana's rather than restating it as this document's: the SHA-256 construction, the
+`"ProgramDerivedAddress"` marker, the descending canonical bump, the off-curve requirement. D-90's
+independence claim is narrowed to the constructions this system defines, with platform conventions
+named as platform conventions. The general rule recorded with it: the specification defines the
+protocol, the platform defines the platform, and where the specification restates a platform
+convention it cites the source.
+
+## SD-18 · §1.4, §2.4 — a sequence published ahead of the calendar is neither forbidden nor detected
+
+**New.**
+
+**What was needed.** What a client does with a log whose `last_epoch` is greater than the current UTC
+day index.
+
+**What the document says.** §1.4 defines lag, the sequence falling behind the calendar, and gives the
+ruling to whoever holds the clock. `publish_checkpoint` accepts `e = last_epoch + 1` and checks
+nothing against the clock, so nothing in §2.4 stops a batcher publishing a year of epochs in one
+afternoon, and nothing says what the resulting labels mean. INV-ANCH-01 fixes one publication time
+per epoch, which such a log violates, and no check sees it.
+
+**What forced the question.** The deployment. On the day this entry was written the log reported
+`start_epoch` 20721 and `last_epoch` 20932 against a current day index of 20723, so its sequence
+stands 209 days ahead of the calendar and `lagAgainst` returns a negative number.
+
+**Candidate readings.** A negative lag is a conformance failure a client should surface as loudly as
+lag; or it is outside what an on-chain read can judge, as lag itself is, and belongs to the clock
+holder; or the epoch label is simply not the publication day, and a distance in either direction
+carries no verdict.
+
+**What this verifier does.** Reports the signed distance and rules on nothing, because §1.4 gives the
+ruling to the clock holder in the one direction it describes and is silent on the other. It does not
+refuse a root for an epoch whose day has not arrived: that would need a clock, and §2.3 and
+INV-IFACE-01 keep clocks out of verification.
+
+---
+
 ## Minor observations
 
 - **§4.3's record vectors omit `c`.** Their `chain` blocks carry `head`, `seq` and
@@ -443,6 +539,15 @@ not rule on batcher failure, because that needs a clock the verifier does not ho
   lengthens `initialize`'s instruction data by eight bytes, and neither figure is recorded anywhere
   a regression could be checked against. V-Z-01's closed byte list is about `publish_checkpoint`
   only, so nothing catches a change here.
+- **§1.3 names NFKD and not a Unicode version.** The decomposition tables are the runtime's, so two
+  conforming implementations built on different Unicode versions can canonicalize a character
+  assigned between those versions differently, and produce different asset commitments for one
+  spelling. RES-06 names canonicalization as the identity attack surface without naming this part of
+  it. It is the same class of hazard as SD-07: a standard named without the choice inside it pinned.
+- **"Only the fields §2.5 lists" fixes one direction and not the other.** V-Z-05's pass condition
+  makes the list exhaustive, so a field outside it is refused. Neither it nor §2.5 says whether every
+  listed field must be *present*, and `anchor` is the one a verifier never has to read. This verifier
+  refuses the superset and is silent on the subset, requiring only the fields it reads.
 - **§2.5's example package is not labelled schema 1.** The `record` block carries no
   `schema_version`, and the schema gate of §1.3 is about the chain's version rather than the
   package's. A package produced under a later schema would be distinguishable only by the `schema`

@@ -51,7 +51,16 @@ const MUTATIONS = [
   ["src/solana/accounts.ts", "    reserved: data.slice(60, 68),", "    reserved: data.slice(52, 60),", "§2.4: the eight reserved bytes follow start_epoch"],
   ["src/solana/accounts.ts", "  if (epoch < config.startEpoch) return { kind: \"before-log-start\", startEpoch: config.startEpoch };", "  if (false) return { kind: \"before-log-start\", startEpoch: config.startEpoch };", "INV-ANCH-02: an epoch before the log existed is not a gap"],
   ["src/solana/accounts.ts", "  return unixSeconds < 0n && q * EPOCH_SECONDS !== unixSeconds ? q - 1n : q;", "  return q;", "§1.4: the epoch clock floors rather than truncating"],
-  ["src/solana/rpc.ts", "        \"EpochBeforeLogStart\",", "        \"CheckpointSequenceGap\",", "INV-ANCH-02: the two reasons are not reported alike"],
+  ["src/solana/rpc.ts", "        \"EpochBeforeLogStart\",", "        \"InconsistentChainView\",", "§1.4: the three reasons are not reported alike"],
+  ["src/solana/accounts.ts", "  return currentDayIndex - config.lastEpoch;", "  return config.lastEpoch - currentDayIndex;", "§1.4: lag is the distance the sequence stands behind"],
+  // The three findings an independent review raised.
+  ["src/disclosure.ts", "    if (!bytesEqual(genesis, expectedGenesis)) {", "    if (false) {", "finding 1: a package cannot invent its genesis"],
+  ["src/disclosure.ts", "    const expectedGenesis = keccak256(genesisHeadPreimage(fields.assetCommitment, SCHEMA_VERSION));", "    const expectedGenesis = keccak256(genesisHeadPreimage(fields.assetCommitment, 2));", "finding 1: the genesis is recomputed under schema 1"],
+  ["src/disclosure.ts", "      if (!bytesEqual(prevHead, genesis)) {", "      if (false) {", "finding 1: condition (a) at n = 0"],
+  ["src/disclosure.ts", "    checkOnlyListedFields(pkg, PACKAGE_SHAPE, \"\");", "    void PACKAGE_SHAPE;", "finding 2: a field §2.5 does not list refuses the package"],
+  ["src/disclosure.ts", "    if (childShape === undefined) {", "    if (childShape === undefined && path === \"\") {", "finding 2: an unlisted field nested inside a listed one"],
+  ["src/disclosure.ts", "    if (isContainer(value)) {\n      throw new PackageFailure(\"UnlistedField\", `${path} carries a structure where §2.5 shows a single value`);", "    if (false) {\n      throw new PackageFailure(\"UnlistedField\", `${path} carries a structure where §2.5 shows a single value`);", "finding 2: nothing hides inside a field §2.5 shows as a value"],
+  ["src/solana/accounts.ts", "  if (schemaVersion !== SCHEMA_VERSION) {", "  if (false) {", "finding 3: an account under another schema version is refused"],
   ["test/handlers.ts", "  \"V-N-25\": vN25,", "", "the suite fails when a vector has no handler"],
 ];
 

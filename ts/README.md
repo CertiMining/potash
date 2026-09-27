@@ -1,9 +1,14 @@
 # TCU-02 disclosure-package verifier (TypeScript)
 
-An independent verifier for the §2.5 disclosure package of *TCU-02 — CertiMining Anchored Log*,
-v0.1.18. It was written from the specification in `../spec/` and from the committed vectors in
-`../vectors/`, and from nothing else. No other implementation of this specification was read while
-it was built, which is the only reason agreement between the two carries any information.
+An independent verifier for the §2.5 disclosure package of *TCU-02 — CertiMining Anchored Log*. It
+was written from the specification in `../spec/` and from the committed vectors in `../vectors/`,
+with the one exception the provenance section below states. No other implementation of this
+specification was read while it was built, which is the only reason agreement between the two
+carries any information.
+
+The document's version label has moved between rounds, so the text this was last checked against is
+identified by content: SHA-256 `de2f20ce8efaa8ab0c9f1b473ba04b6051cab33bf3493bc4089fbe54a88bbfef`,
+740 lines.
 
 It satisfies INV-DISC-01, INV-DISC-02, INV-DISC-03 and INV-IFACE-01, and it reproduces every
 committed vector.
@@ -15,10 +20,16 @@ committed vector.
 Given a §2.5 package, a root and, when the caller has it, the log's configured height, the verifier
 runs these in this order and stops at the first that fails.
 
-1. **The package is a §2.5 package.** `schema` is `certimining/v1/disclosure`, every field named in
-   §2.5 is present and of the right shape, hex fields are hex of the right length, integers are
-   exactly representable, and `preimage_borsh` is strict base64. A field §2.5 does not list is
-   reported and does not refuse the package.
+1. **The package is a §2.5 package, and carries only what §2.5 lists.** `schema` is
+   `certimining/v1/disclosure`; the fields the verifier reads are present and of the right shape; hex
+   fields are hex of the right length; integers are exactly representable; `preimage_borsh` is strict
+   base64. **A field §2.5 does not list refuses the package**, at any depth, naming its path, and so
+   does a structure where §2.5 shows a single value, which is the last place something could hide.
+   §4.4's V-Z-05 passes only when a package holds "only the fields §2.5 lists", INV-DISC-01 says the
+   package never contains the epoch key or sibling preimages, and §4.4 makes that a release gate of
+   the same severity as a correctness failure, so accepting such a package with a note is not
+   conforming. Refused before anything else is read, because a leak is a leak whatever the rest of
+   the package says.
 2. **`preimage_borsh` is a §1.3 leaf preimage.** 161 bytes, opening with `CMv1LEAF`. Another tag is
    `0x0B` (V-N-09); another length is `0x05`.
 3. **The display copy agrees with the bytes.** Every field is derived from the preimage and
@@ -30,8 +41,12 @@ runs these in this order and stops at the first that fails.
 4. **The leaf.** `Keccak256` of those 161 bytes, recomputed rather than taken from the package.
 5. **The qualified person's signature**, Ed25519 over the 161 preimage bytes under the `qp_key` the
    *preimage* carries, never the JSON's copy (INV-ENC-03). Absent is `0x06`, bad is `0x07`.
-6. **The chain segment.** `chain.head` must be `Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)`, else
-   `0x03`. When `seq` is 1, `prev_head` must be `chain.genesis`, else `ChainSegmentBroken`.
+6. **The chain segment**, for each of §1.3's head constructions, all three failing with `0x03`.
+   `chain.genesis` must be `Keccak256(TAG_HEAD ‖ c ‖ schema_version)` for the `c` the preimage
+   carries, which pins it for **every** package and not only at `seq` 1: without that, `genesis`,
+   `prev_head` and `head` can be replaced together and every remaining relation still holds for a
+   chain that is not the asset's. At `seq` 1, `prev_head` must be that genesis head, which is §1.3's
+   condition (a) at `n = 0`. And `chain.head` must be `Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)`.
 7. **Inclusion**, against a root the caller obtained independently. The verifier applies `TAG_MTL0`
    to the leaf itself, walks `height` siblings by the bits of `slot_index`, and compares with the
    root. A sibling count that is not `height`, a `slot_index` outside the tree, a height outside
@@ -59,27 +74,34 @@ No Solana SDK is on the path.
   is implemented as `utcDayIndex`.
 - The 8-byte Anchor discriminators are **computed** from `SHA-256("account:" ‖ N)` rather than
   copied from §2.4's table, and a test asserts they equal the two constants the table publishes.
-- A fetched account is refused unless it is owned by the program, carries the right discriminator,
-  is exactly the length §2.4 fixes, and answers for the epoch that was asked for.
-- **An absent checkpoint is refused with the reason it is absent**, which is what INV-ANCH-02 asks a
-  client to distinguish. An epoch before `start_epoch` is `EpochBeforeLogStart`, a day the log did
-  not exist for and not a gap. An epoch inside `start_epoch .. last_epoch` is
-  `CheckpointSequenceGap`. An epoch past `last_epoch` is `CheckpointNotYetPublished`, carrying
-  `last_epoch` so a caller holding a clock can measure the lag. Reporting the three alike would
-  accuse a batcher of failing to publish before it was deployed. The log's configuration is read
-  only when a checkpoint is missing, or not at all when the caller passes one in.
+- A fetched account is refused unless it is owned by the program, carries the right discriminator, is
+  exactly the length §2.4 fixes, and answers for the epoch that was asked for.
+- **An account whose `schema_version` is not 1 is refused with `0x0F`**, after the length and the
+  discriminator and before any field is read as meaning anything. §1.3 refuses a record under another
+  schema version that way, and an account is no different in kind: schema 2 may put other values at
+  these offsets, and reading them as schema 1 is how a verifier asserts something it cannot support.
+- **An absent checkpoint is refused with the reason it is absent**, which is what §1.4 asks a client
+  to distinguish. An epoch before `start_epoch` is `EpochBeforeLogStart`, a day the log did not exist
+  for, and reporting it as a failure would accuse a batcher of not publishing before it was deployed.
+  An epoch inside `start_epoch .. last_epoch` is `InconsistentChainView`: INV-ANCH-02 runs that range
+  unbroken and only the owning program can allocate an address in it, so an absent account is
+  evidence about the response rather than about the log. An epoch past `last_epoch` is
+  `CheckpointNotYetPublished`. The failure an on-chain read can show is lag, and `lagAgainst(config,
+  dayIndex)` reports it as a signed distance against a day index the caller supplies, because judging
+  it needs a clock the verifier does not hold. The log's configuration is read only when a checkpoint
+  is missing, or not at all when the caller passes one in.
 
 ## What it does not check
 
 - **`payload_uri`.** It is in §2.5's `record` block and not in §1.3's leaf preimage, so nothing
   binds it to the signature and no comparison can reach it. SPEC-DEFECTS.md SD-01.
 - **`chain.genesis` for a record past `seq` 1.** One package carries no intermediate leaves, so
-  the genesis cannot be walked forward to `prev_head`. D-4.
+  the genesis cannot be walked forward to `prev_head`. SD-04.
 - **`flags`, unless the caller supplies chain context.** Bits 0 and 1 are properties of earlier
-  records. D-3.
+  records. SD-03.
 - **The `anchor` block.** `solana_tx`, `solana_slot` and `ots_receipt_digest` are not checked
   against anything. Publication provenance enters through the checkpoint account the verifier
-  fetches for `inclusion.epoch`, which is the seam §2.3 leaves to the caller. D-12.
+  fetches for `inclusion.epoch`, which is the seam §2.3 leaves to the caller. SD-12.
 - **`published_unix` against the epoch a checkpoint names.** §1.4 gives the epoch an arithmetic
   meaning, and nothing relates it to the publication timestamp beside it. INV-ANCH-01 licenses the
   landing time to vary and INV-ANCH-02 contemplates a batcher that lags, so a root published today
@@ -87,14 +109,59 @@ No Solana SDK is on the path.
 - **Whether `start_epoch` is the day index the chain reported at `initialize`.** That is a rule on
   `initialize`, and it cannot be re-derived from the account, which does not record the slot it was
   written in. The verifier reads the field and reports it rather than refusing a log that predates
-  the rule. D-15.
+  the rule. SD-15.
 - **Whether the batcher is behind.** Measuring the lag of `last_epoch` against today needs a clock,
-  and the verifier holds none. It reports `last_epoch` and leaves the judgement to the caller. D-16.
+  and the verifier holds none. It reports the distance through `lagAgainst` and leaves the judgement to the caller. SD-16, SD-18.
 - **Whether the root is the one the honest batcher published.** The verifier checks that the
   account at the derived address answers for that epoch. It cannot check that the authority
   published a root over a tree it honestly built, which INV-GOV-02 and RES-03 already say.
 - **Anything §0 excludes.** Asset equivocation, NI 43-101 compliance, whether the estimate is
   accurate, and whether the log is complete.
+
+## Where each part comes from
+
+Almost all of this verifier is determined by the specification. Four things are not, and are in it
+because they are published conventions of the platform the log is anchored to. A counterparty
+checking this work should know which is which, because the second group is knowledge that did not
+come from `../spec/` or `../vectors/` and cannot be checked against them.
+
+**From the specification.** Every digest and preimage, with its tag, field order and width (§1.2,
+§1.3, §1.4, §1.6); the PRF construction and its three use codes; slot assignment, probing, padding
+and the complete tree (§1.4); canonical tenure (§1.3); the state machine, its four stages and the
+order of its six conditions (§1.3); which condition returns which code, and the code space itself
+(§2.1); the disclosure package's fields, the order the checks run in, and what each failure means
+(§2.5, INV-DISC-01, INV-DISC-02, INV-DISC-03); the promise policy and the rebuttal window (§1.6,
+D-72, D-74); heights, capacities and bounds (§1.8); the account layouts, offsets and lengths, and the
+discriminator, which §2.4 states as `SHA-256("account:" ‖ N)` and this code computes rather than
+copies (§2.4); the epoch clock, `start_epoch`, the three placements of an absent checkpoint and lag
+(§1.4, INV-ANCH-02); and the Anchor error offset of 6000 (§2.1).
+
+**From published platform conventions, not from the sandbox.**
+
+1. **Program-address derivation.** §2.4 names the seeds, `["cm_cfg"]` and `["cm_ckpt", epoch_le]`, and
+   stops there. That a program address is `SHA-256(seeds ‖ bump ‖ program_id ‖ "ProgramDerivedAddress")`
+   with the bump searched downward from 255 and every on-curve candidate rejected, and that a seed is
+   at most 32 bytes with at most 16 of them, is Solana's published convention. It is the step that
+   decides which account is read, so it matters most and is recorded as SPEC-DEFECTS.md SD-17. Its one
+   independent check is that the addresses this code derives are the accounts the cluster answers for.
+2. **Base58 with the Bitcoin alphabet**, for turning those 32 bytes into the text an RPC call carries.
+   §2.4 gives no textual encoding for an address.
+3. **The JSON-RPC surface**: the `getAccountInfo` method, its `{encoding: "base64", commitment}`
+   parameter, the `result.value.data` and `result.value.owner` response shape, and the convention that
+   an account's owner is the program that may write it. The specification asks a verifier to fetch a
+   root from Solana and says nothing about the wire.
+4. **The devnet program id and RPC URL** in `src/solana/rpc.ts`. Neither appears in the document; both
+   are deployment configuration.
+
+**Published values that the document names without carrying.** Keccak-256's answers for the empty
+string and `"abc"`, and RFC 8032 §7.1's TEST 1 and TEST 2, which §4.1 requires as KAT-01 and KAT-02
+(SD-10). The Keccak-256 and Ed25519 implementations themselves are the two dependencies below, pinned
+and checked against those values before anything else runs.
+
+**One platform detail inside a specified algorithm.** §1.3 names Unicode NFKD and not a Unicode
+version, and the decomposition tables are the runtime's. Two conforming implementations on different
+Unicode versions can canonicalize a newly assigned character differently, which is recorded with the
+minor observations in SPEC-DEFECTS.md.
 
 ## How to run it
 
@@ -154,17 +221,22 @@ tools/mutation-check.mjs the evidence that each test fails for the reason it nam
 
 ## The deployment this was run against
 
-`test/devnet.test.ts`, run by hand on 26 September 2026 against
-`HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, read `LogConfig` at
-`DEoAdvXnMNYxuboN1MXUJRUynbixzF42DCBPUV6wvafw`: schema 1, `tree_height` 8, **`start_epoch` 0**,
-`last_epoch` 1, and one checkpoint at epoch 1 carrying the root `0xabab…ab`.
+`test/devnet.test.ts`, run by hand on 27 September 2026 against
+`jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no`, read `LogConfig` at
+`2Sw2YEQHc1AeouE91LyqFUL2BMMJEzKVnbob25DPA12E`: schema 1, `tree_height` 8, `start_epoch` 20721,
+`last_epoch` 20932, and the checkpoint for epoch 20932 carrying root `0x9f5f1e26…`. The address this
+code derives is the account the cluster answers for, at both accounts, which is the only check this
+repository has on the derivation SD-17 describes.
 
-`start_epoch` 0 is not a value a conforming `initialize` under v0.1.18 could write, and
-`last_epoch` 1 with today at day 20722 is the state §1.4's amendment exists to prevent: the first
-publishable epoch is 2 January 1970 and the current day is some twenty thousand transactions away,
-so INV-ANCH-01's daily cadence is unreachable. The deployment predates the amendment. The verifier
-reads it rather than refusing it, for the reason D-15 gives, and the devnet test prints the state
-instead of asserting conformance.
+`src/solana/rpc.ts` also keeps `SUPERSEDED_PROGRAM_ID`, the deployment announced first, whose log was
+initialized before §1.4's epoch clock and so begins at epoch 1 rather than at a day index. It is the
+account SD-15 was written against and is still readable by anyone, which is why it is recorded rather
+than deleted.
+
+One thing the current log shows that nothing in the document forbids or detects: `last_epoch` 20932
+against a current day index of 20723 puts its sequence 209 days **ahead** of the calendar, so
+`lagAgainst` returns a negative number. The verifier reports the distance and rules on nothing. See
+SD-18.
 
 ## Dependencies
 
@@ -218,9 +290,9 @@ signature path should be set against real data rather than guessed.
 ## Evidence that the tests fail for the reasons they name
 
 `node tools/mutation-check.mjs` breaks one thing at a time, runs the suite, restores the file, and
-reports. It carries 37 mutations, one per property the suite claims to hold, from the hash family
-and the leaf field order to the slot assignment order, the condition ordering of §1.3, the
-JSON-versus-Borsh ordering, §2.4's account offsets including `start_epoch`, INV-ANCH-02's three
-placements, §1.4's flooring clock, and the handler table that makes "every vector" enforced rather
-than claimed. All 37 are caught. A mutation that leaves the suite green is printed
+reports. It carries 45 mutations, one per property the suite claims to hold, from the hash family and the leaf
+field order to the slot assignment order, the condition ordering of §1.3, the JSON-versus-Borsh
+ordering, §2.4's account offsets including `start_epoch`, §1.4's three placements and its flooring
+clock, the genesis recomputation, the field list at every depth, the account schema gate, and the
+handler table that makes "every vector" enforced rather than claimed. All 45 are caught. A mutation that leaves the suite green is printed
 as a failure of the script, which is how the one hole found during development was closed.

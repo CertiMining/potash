@@ -83,10 +83,14 @@ export async function fetchLogConfig(options: RpcOptions = {}): Promise<LogConfi
 }
 
 /**
- * Names the reason a checkpoint account is absent, which INV-ANCH-02 requires a client to do:
- * an epoch before `start_epoch` is a day the log did not exist for and is not a gap, an epoch the
- * sequence has already reached and cannot answer for is the gap that is evidence of failure, and
- * an epoch past `last_epoch` is one the sequence has not reached yet.
+ * Names the reason a checkpoint account is absent, which §1.4 requires a client to distinguish.
+ *
+ * An epoch before `start_epoch` is a day the log did not exist for, and reporting it as a failure
+ * would accuse a batcher of not publishing before it was deployed. Inside the published range
+ * INV-ANCH-02 runs unbroken and only the owning program can allocate an address there, so an
+ * absent account is evidence about the response rather than about the log: the answers did not come
+ * from one view of the chain. Past `last_epoch` the sequence has not reached the epoch, and the
+ * failure an on-chain read can show is lag, which needs a clock the verifier does not hold.
  */
 async function refuseMissingCheckpoint(epoch: bigint, options: RpcOptions): Promise<never> {
   let config: LogConfig;
@@ -109,13 +113,15 @@ async function refuseMissingCheckpoint(epoch: bigint, options: RpcOptions): Prom
       );
     case "inside-published-range":
       throw new PackageFailure(
-        "CheckpointSequenceGap",
-        `epoch ${epoch} lies inside the published sequence ${placement.startEpoch}..${placement.lastEpoch} and has no checkpoint account`,
+        "InconsistentChainView",
+        `epoch ${epoch} lies inside the published sequence ${placement.startEpoch}..${placement.lastEpoch}, which runs unbroken, ` +
+          "so an absent account means these answers did not come from one view of the chain",
       );
     case "not-yet-published":
       throw new PackageFailure(
         "CheckpointNotYetPublished",
-        `the sequence has reached epoch ${placement.lastEpoch}; epoch ${epoch} has not been published`,
+        `the sequence has reached epoch ${placement.lastEpoch}; epoch ${epoch} has not been published. ` +
+          "Lag is measured against a day index the caller supplies, with lagAgainst",
       );
   }
 }

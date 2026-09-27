@@ -6,7 +6,8 @@
  * point the section makes about not being required to trust the two values.
  */
 import { type Digest, readI64le, readU16le, readU64le, toHex, utf8 } from "../bytes.ts";
-import { PackageFailure } from "../errors.ts";
+import { PackageFailure, RegistryFailure } from "../errors.ts";
+import { SCHEMA_VERSION } from "../chain.ts";
 import { sha256 } from "../hash.ts";
 
 export function accountDiscriminator(structName: string): Uint8Array {
@@ -55,6 +56,13 @@ export type CheckpointAccount = {
   bump: number;
 };
 
+/**
+ * Length, then discriminator, then the schema gate, in §1.3's own order: a buffer is decoded before
+ * it is judged, and a version this engine does not implement is refused with 0x0F before any field
+ * is read as meaning anything. §1.3 refuses a record under another schema version that way, and an
+ * account is not different in kind: schema 2 may put other values at these offsets, and reading
+ * them as schema 1 is how a verifier ends up asserting something it cannot support.
+ */
 function checkAccount(data: Uint8Array, expectedLen: number, discriminator: Uint8Array, what: string): void {
   if (data.length !== expectedLen) {
     throw new PackageFailure("RootUnavailable", `${what} is ${data.length} bytes, and §2.4 fixes it at ${expectedLen}`);
@@ -63,6 +71,10 @@ function checkAccount(data: Uint8Array, expectedLen: number, discriminator: Uint
     if (data[i] !== discriminator[i]) {
       throw new PackageFailure("RootUnavailable", `${what} carries ${toHex(data.subarray(0, 8))}, not ${toHex(discriminator)}`);
     }
+  }
+  const schemaVersion = readU16le(data, 8);
+  if (schemaVersion !== SCHEMA_VERSION) {
+    throw new RegistryFailure("UnsupportedSchemaVersion", `${what} carries schema_version ${schemaVersion}`);
   }
 }
 
@@ -104,6 +116,15 @@ export type EpochPlacement =
   | { kind: "before-log-start"; startEpoch: bigint }
   | { kind: "inside-published-range"; startEpoch: bigint; lastEpoch: bigint }
   | { kind: "not-yet-published"; lastEpoch: bigint };
+
+/**
+ * §1.4: "the client reports the distance and the ruling belongs to whoever holds the clock". The
+ * day index is an argument because §2.3 and INV-IFACE-01 keep clocks out of verification; a
+ * positive result is the number of days the sequence stands behind that day.
+ */
+export function lagAgainst(config: LogConfig, currentDayIndex: bigint): bigint {
+  return currentDayIndex - config.lastEpoch;
+}
 
 export function placeEpoch(config: LogConfig, epoch: bigint): EpochPlacement {
   if (epoch < config.startEpoch) return { kind: "before-log-start", startEpoch: config.startEpoch };

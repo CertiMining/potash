@@ -88,3 +88,52 @@ export function packageFrom(built: BuiltEpoch): DisclosurePackage {
 export function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
+
+// --- §2.4 account bytes, built here so both test files judge one layout -------------------------
+
+import { u16le, u64le } from "../src/bytes.ts";
+import {
+  CHECKPOINT_DISCRIMINATOR,
+  CHECKPOINT_LEN,
+  LOG_CONFIG_DISCRIMINATOR,
+  LOG_CONFIG_LEN,
+} from "../src/solana/accounts.ts";
+
+export function checkpointBytes(fields: {
+  epoch: bigint;
+  root: Uint8Array;
+  receipt?: Uint8Array;
+  schemaVersion?: number;
+}): Uint8Array {
+  const data = new Uint8Array(CHECKPOINT_LEN);
+  data.set(CHECKPOINT_DISCRIMINATOR, 0);
+  data.set(u16le(fields.schemaVersion ?? 1), 8);
+  data.set(u64le(fields.epoch), 10);
+  data.set(fields.root, 18);
+  data.set(u64le(123456n), 50);
+  data.set(u64le(1760000000n), 58);
+  if (fields.receipt) data.set(fields.receipt, 66);
+  data[98] = fields.receipt ? 1 : 0;
+  data[99] = 254;
+  return data;
+}
+
+export function logConfigBytes(fields: {
+  authority?: Uint8Array;
+  lastEpoch?: bigint;
+  treeHeight?: number;
+  startEpoch?: bigint;
+  reserved?: number;
+  schemaVersion?: number;
+}): Uint8Array {
+  const data = new Uint8Array(LOG_CONFIG_LEN);
+  data.set(LOG_CONFIG_DISCRIMINATOR, 0);
+  data.set(u16le(fields.schemaVersion ?? 1), 8);
+  if (fields.authority) data.set(fields.authority, 10);
+  data.set(u64le(fields.lastEpoch ?? 0n), 42);
+  data[50] = fields.treeHeight ?? 8;
+  data[51] = 254;
+  data.set(u64le(fields.startEpoch ?? 0n), 52);
+  if (fields.reserved !== undefined) data.fill(fields.reserved, 60, 68);
+  return data;
+}
