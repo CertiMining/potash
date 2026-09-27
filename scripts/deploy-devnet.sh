@@ -107,7 +107,11 @@ echo
 echo "DEPLOYED BUT NOT INITIALIZED."
 echo "Until \`initialize\` runs, whoever calls it first owns this log (D-79). Run it now:"
 echo
-echo "  cargo test -p certimining-client --features cluster --test devnet -- --ignored --nocapture"
+echo "  CERTIMINING_RPC=https://api.devnet.solana.com \\"
+echo "    cargo test -p certimining-client --features cluster --test initialize -- --ignored --nocapture"
 echo
-echo "and confirm LogConfig.authority is the checkpoint key you intended before announcing the id."
+echo "That harness initializes and does nothing else, and it reads the log back to confirm the"
+echo "authority and start_epoch the program actually wrote. The other cluster harnesses refuse the"
+echo "announced program id: devnet.rs writes placeholder anchor data into a write-once field, and"
+echo "correlation.rs spends one epoch number a minute, which §1.4 makes a UTC day index."
 exit 1

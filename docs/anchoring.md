@@ -133,15 +133,19 @@ upgrade the program.
 | | |
 |---|---|
 | Cluster | Solana devnet |
-| Program | `jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no` |
-| ProgramData | `FKoiBxtiotM3y6MU61kh511mPp2CeJBNsGbL2QcrDojc` |
+| Program | `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB` |
+| ProgramData | filled below at deploy |
 | Upgrade authority | `5uxZGvtkipqzLWjyNfFGEMxGFfd3FPveti4uQE7FdCXz` (live, see above) |
 | Checkpoint authority | `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB` |
 | `tree_height` | 8, written once at `initialize` |
 | `start_epoch` | 20721, the UTC day index at `initialize` (D-109) |
 | Deployed in slot | 504032574 · 164,752 bytes · sha256 `9a56057db60ceb3ea032813703fd72cd42599507a8e3e9bf916fca13f5c1f040` from `c017d563ebe6496e506856c3ae36f0ac6abb51bd` |
 
-**A superseded deployment.** `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB` was announced on 24 September and is superseded. Its epoch 1 carries a receipt digest standing for no OpenTimestamps receipt, written into a field that is write-once, so it claims an anchor it does not have and always will; and its log begins at epoch 1 rather than at a UTC day index, which the rule in §1.4 now forbids. Neither is repairable in place, and the address above replaces it.
+**Two superseded deployments.** `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, announced 24 September, is superseded. Its epoch 1 carries a receipt digest standing for no OpenTimestamps receipt, written into a field that is write-once, so it claims an anchor it does not have and always will; and its log begins at epoch 1 rather than at a UTC day index, which the rule in §1.4 now forbids. Neither is repairable in place.
+
+`jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no`, announced 25 September, is superseded too, and for a reason of ours rather than the chain's: V-Z-01's landing-delay gate published 200 consecutive epochs against it at one a minute, and §1.4 makes an epoch a UTC day index, so its sequence now runs 209 days ahead of the calendar. `publish_checkpoint` is monotone, so that cannot be walked back. The gate's measurement is unaffected — it measured whether epoch *content* moves a landing slot, which numbering does not enter — and the rule that prevents a third supersession is in the code: every compressed harness refuses the announced program id, and a separate `initialize` harness exists because those refusals left nothing able to start the announced log.
+
+The address above replaces both. D-88 carries all three with what each one was.
 
 Devnet runs Agave 4.3.0 while this repository pins 4.2.2, so the suite that proves the program's
 behaviour and the cluster that runs it are not the same version. D-86 makes that a thing to measure
