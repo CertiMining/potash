@@ -1,2 +1,12 @@
 /target
 .DS_Store
+
+# Dependency trees and build output, at the ROOT so they apply on every branch.
+#
+# These lived in `ts/.gitignore`, and `ts/` exists only on the TypeScript verifier's branch. Switching
+# away from that branch left its `node_modules` in the working tree as untracked files, no ignore rule
+# covered them here, and `git add -A` committed 783 vendored files and 30 generated ones onto this
+# branch — from where they reached every branch above it. A branch-local ignore rule cannot cover an
+# artefact that appears on other branches (S9-E11-08).
+node_modules/
+ts/dist/
