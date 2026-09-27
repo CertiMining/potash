@@ -34,11 +34,15 @@ fi
 
 echo "----- nothing that should never be committed"
 # Dependency trees, build output, keys, and anything with a secret's shape.
+# `.ots` receipts are deliberately committed — D-116 has a person commit them, and E-10's tests carry a
+# real Bitcoin-confirmed one as a fixture — so they are not banned. The first version of this list
+# banned them and failed on a legitimate fixture.
 banned="$(git ls-files \
-  | grep -E '(^|/)(node_modules|dist|target)/|\.so$|\.ots$|(^|/)\.env|keypair.*\.json$|id_rsa|\.pem$' \
-  | grep -v '^anchors/' || true)"
+  | grep -E '(^|/)(node_modules|dist|target)/|\.so$|(^|/)\.env|keypair.*\.json$|id_rsa|\.pem$' \
+  || true)"
 if [ -n "$banned" ]; then
-  fail "$(printf '%s' "$banned" | wc -l | tr -d ' ') tracked files that do not belong in a repository:"
+  # `wc -l` counts newlines, and the last line of this list has none, so it reported 0 for one file.
+  fail "$(printf '%s\n' "$banned" | grep -c . | tr -d ' ') tracked files that do not belong in a repository:"
   printf '%s\n' "$banned" | head -10 | sed 's/^/        /' >&2
 else
   note "no dependency trees, build output or key-shaped files tracked"
