@@ -185,8 +185,11 @@ fn fresh_log(height: u8) -> (LiteSVM, Keypair, Keypair) {
     svm.add_program(certimining_checkpoint::ID, &program)
         .expect("load the program");
     pin_the_clock(&mut svm);
-    let payer = Keypair::new();
-    let authority = Keypair::new();
+    // Fixed seeds, not fresh keys. V-Z-01 compares transactions across independent logs, and a random
+    // payer would put a different pubkey in every message — a difference §4.4's list does not permit
+    // and that has nothing to do with what is being measured.
+    let payer = Keypair::new_from_array([0x11; 32]);
+    let authority = Keypair::new_from_array([0x22; 32]);
     svm.airdrop(&payer.pubkey(), 100_000_000_000).expect("fund");
     let program_id = certimining_checkpoint::ID;
     let (config, _) = Pubkey::find_program_address(&[LogConfig::SEED], &program_id);
@@ -252,26 +255,33 @@ fn root_for(records: usize) -> [u8; 32] {
 #[test]
 fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
     let counts = [0usize, 1, 128, 255];
-    let (mut svm, authority, payer) = fresh_log(8);
 
+    // **One epoch, four logs.** The previous shape published counts 0, 1, 128 and 255 as epochs
+    // START..START+3 on one log, which varied the record count and the epoch number together — so a
+    // byte that moved with the epoch was indistinguishable from one that moved with the count. The
+    // new program id exposed it: the checkpoint address is epoch-derived, Solana orders writable keys
+    // by pubkey value, and two keys swapped position, which the comparison read as a leak.
+    //
+    // Each count now publishes **the same epoch** on its own log, with the same payer and authority.
+    // Everything except the root is therefore identical by construction, and §4.4's list narrows to
+    // the signatures, the recent blockhash, and the root argument — the checkpoint address and the
+    // epoch cannot differ because they are the same. That is a stricter test than the one it replaces.
     let mut seen: Vec<(usize, Published)> = Vec::new();
-    for (index, records) in counts.iter().enumerate() {
-        let epoch = START + index as u64;
+    for records in counts.iter() {
+        let (mut svm, authority, payer) = fresh_log(8);
         seen.push((
             *records,
-            publish_epoch(&mut svm, &authority, &payer, epoch, root_for(*records)),
+            publish_epoch(&mut svm, &authority, &payer, START, root_for(*records)),
         ));
     }
 
-    // In a second order, on a second log, because an order-dependent footprint is still a footprint.
-    let (mut svm2, authority2, payer2) = fresh_log(8);
-    let reversed: Vec<usize> = counts.iter().rev().copied().collect();
+    // In the reverse order too, on four more logs: an order-dependent footprint is still a footprint.
     let mut seen_reversed: Vec<(usize, Published)> = Vec::new();
-    for (index, records) in reversed.iter().enumerate() {
-        let epoch = START + index as u64;
+    for records in counts.iter().rev() {
+        let (mut svm, authority, payer) = fresh_log(8);
         seen_reversed.push((
             *records,
-            publish_epoch(&mut svm2, &authority2, &payer2, epoch, root_for(*records)),
+            publish_epoch(&mut svm, &authority, &payer, START, root_for(*records)),
         ));
     }
 
@@ -289,8 +299,14 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
                 first.transaction.len(),
                 "the transaction's length does not move with the record count ({records})"
             );
-            // The byte-exact half, for the transaction as well as the account. Every byte that
-            // differs must lie inside a window §4.4's list names.
+            assert_eq!(
+                published.account.len(),
+                CheckpointAccount::LEN,
+                "§2.4: 106 bytes, always"
+            );
+
+            // The byte-exact half. With the epoch held equal, every byte outside §4.4's list must be
+            // identical across record counts.
             for (offset, (a, b)) in first
                 .transaction
                 .iter()
@@ -307,13 +323,8 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
                     );
                 }
             }
-            assert_eq!(
-                published.account.len(),
-                CheckpointAccount::LEN,
-                "§2.4: 106 bytes, always"
-            );
 
-            // The closed list: every byte that differs must be one §4.4 permits.
+            // And the account the program wrote, against the same closed list.
             for (offset, (a, b)) in first
                 .account
                 .iter()
@@ -323,8 +334,8 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
                 if a != b {
                     assert!(
                         permitted.contains(&offset),
-                        "V-Z-01: byte {offset} differs between an epoch of {} records and one of \
-                         {records}, and §4.4's list does not permit it",
+                        "V-Z-01: account byte {offset} differs between an epoch of {} records and \
+                         one of {records}, and §4.4's list does not permit it",
                         group[0].0
                     );
                 }

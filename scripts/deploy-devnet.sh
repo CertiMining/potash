@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 URL="https://api.devnet.solana.com"
 AGAVE_BIN="${POTASH_AGAVE_BIN:-$HOME/.local/share/potash/agave/v4.2.2/solana-release/bin}"
 KEYS="$HOME/.config/certimining"
-PROGRAM_KEY="${POTASH_PROGRAM_KEY:-$KEYS/program-id-2.json}"
+PROGRAM_KEY="${POTASH_PROGRAM_KEY:-}"   # found below, by matching declare_id!
 PAYER_KEY="$KEYS/deploy-keypair.json"
 SO="target/deploy/certimining_checkpoint.so"
 
@@ -24,10 +24,29 @@ version="$("$AGAVE_BIN/solana" --version)"
 grep -q 'solana-cli 4.2.2' <<<"$version" || { echo "deploy: expected the Agave 4.2.2 CLI, got: $version" >&2; exit 1; }
 
 # Both keys must exist and be owner-readable only before anything is spent.
-for k in "$PROGRAM_KEY" "$PAYER_KEY"; do
+for k in "$PAYER_KEY"; do
   [ -f "$k" ] || { echo "deploy: $k is missing. The keys live outside the repository (S6)." >&2; exit 1; }
   [ "$(stat -f '%OLp' "$k")" = "600" ] || { echo "deploy: $k is not mode 0600." >&2; exit 1; }
 done
+
+# The address keypair is found by matching `declare_id!`, not named by a default that has to be
+# edited on every redeploy. That default was one deploy behind and the mismatch guard caught it, which
+# is the guard working and also a step nobody should have to remember (three deployments, D-88).
+declared="$(grep -o 'declare_id!("[^"]*"' programs/certimining-checkpoint/src/lib.rs | cut -d'"' -f2)"
+if [ -z "$PROGRAM_KEY" ]; then
+  for candidate in "$KEYS"/*.json; do
+    [ -f "$candidate" ] || continue
+    if [ "$("$AGAVE_BIN/solana-keygen" pubkey "$candidate" 2>/dev/null)" = "$declared" ]; then
+      PROGRAM_KEY="$candidate"
+      break
+    fi
+  done
+fi
+[ -n "$PROGRAM_KEY" ] || {
+  echo "deploy: no keypair in $KEYS has the public key declare_id! names ($declared)." >&2
+  echo "        Generate the address key off-repo first, or set POTASH_PROGRAM_KEY." >&2
+  exit 1; }
+echo "address key: $(basename "$PROGRAM_KEY")"
 
 program_id="$("$AGAVE_BIN/solana-keygen" pubkey "$PROGRAM_KEY")"
 payer_id="$("$AGAVE_BIN/solana-keygen" pubkey "$PAYER_KEY")"
@@ -36,9 +55,9 @@ payer_id="$("$AGAVE_BIN/solana-keygen" pubkey "$PAYER_KEY")"
 # copied over the other would silently collapse the separation D-88 exists to keep.
 [ "$program_id" != "$payer_id" ] || { echo "deploy: the address key and the payer key are the same key (D-88)." >&2; exit 1; }
 
-# The id on the cluster must be the id the code was compiled against, or every PDA in the test suite
-# addresses a different program than the one just deployed.
-declared="$(grep -o 'declare_id!("[^"]*"' programs/certimining-checkpoint/src/lib.rs | cut -d'"' -f2)"
+# Now that the address key is known, hold it to the same handling as the payer.
+[ "$(stat -f '%OLp' "$PROGRAM_KEY")" = "600" ] || { echo "deploy: $PROGRAM_KEY is not mode 0600." >&2; exit 1; }
+# Belt and braces: the key was selected by matching, so this can only fail if the file changed since.
 [ "$program_id" = "$declared" ] || { echo "deploy: declare_id! says $declared, the keypair says $program_id" >&2; exit 1; }
 
 # GUARD (owner's ruling, 24 Sep 2026): the address key is never funded and never signs after this
@@ -107,7 +126,11 @@ echo
 echo "DEPLOYED BUT NOT INITIALIZED."
 echo "Until \`initialize\` runs, whoever calls it first owns this log (D-79). Run it now:"
 echo
-echo "  cargo test -p certimining-client --features cluster --test devnet -- --ignored --nocapture"
+echo "  CERTIMINING_RPC=https://api.devnet.solana.com \\"
+echo "    cargo test -p certimining-client --features cluster --test initialize -- --ignored --nocapture"
 echo
-echo "and confirm LogConfig.authority is the checkpoint key you intended before announcing the id."
+echo "That harness initializes and does nothing else, and it reads the log back to confirm the"
+echo "authority and start_epoch the program actually wrote. The other cluster harnesses refuse the"
+echo "announced program id: devnet.rs writes placeholder anchor data into a write-once field, and"
+echo "correlation.rs spends one epoch number a minute, which §1.4 makes a UTC day index."
 exit 1

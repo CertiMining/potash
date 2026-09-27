@@ -60,6 +60,31 @@ fn today_utc() -> u64 {
         / 86_400
 }
 
+/// The announced deployment is named in one file and this harness may not touch it.
+///
+/// **Why a measurement harness is as dangerous here as one that writes placeholder data.** This
+/// publishes one epoch per minute, and §1.4 makes an epoch a UTC day index, so 200 epochs spends 200
+/// days of numbering in 200 minutes. The first compressed run went against the announced deployment
+/// and left its sequence 209 days ahead of the calendar, which violates INV-ANCH-01's cadence on a
+/// live log and cannot be undone: `publish_checkpoint` is monotone and never goes back. The refusal
+/// `devnet.rs` already carried is therefore this harness's too — every compressed run targets a
+/// throwaway program id (owner's ruling, 27 Sep 2026).
+fn refuse_the_announced_deployment(program_id: &str) {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../ANNOUNCED_PROGRAM_ID");
+    let announced = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("{path}: {e}"))
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+        .expect("the file names one address")
+        .to_string();
+    assert_ne!(
+        program_id, announced,
+        "this harness spends one epoch number per minute and must never target the announced \
+         deployment. Deploy a throwaway program id and point declare_id! at it for this run."
+    );
+}
+
 /// A real epoch at `H = 8` holding `records` real leaves, and how long it took to build.
 fn build(epoch: u64, records: usize) -> (Digest, Duration) {
     let key: Digest = [0x5a; 32];
@@ -111,6 +136,8 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
     let rpc = cluster.rpc();
     let program_id = Pubkey::from(certimining_checkpoint::ID.to_bytes());
     let config = Pubkey::from(config_address(&certimining_checkpoint::ID).to_bytes());
+
+    refuse_the_announced_deployment(&program_id.to_string());
 
     println!("program:  {program_id}");
     println!("endpoint: {url}");
