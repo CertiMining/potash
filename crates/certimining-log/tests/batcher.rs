@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-07: the batcher, its promises, the overflow queue, and §4.2's V-P-10.
 //!
 //! Written before the implementation (D-65, S4): the batcher seals epoch trees, so the rule that

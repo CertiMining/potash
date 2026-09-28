@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `core-harness`: a test-only Solana program. It returns the Keccak-256 of its instruction data,
 //! computed by certimining-core's `SolanaKeccak`, so KAT-01 can check the on-chain path (D-08).
 //! It is test infrastructure and is never deployed (D-17).

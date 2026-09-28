@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Deploys programs/certimining-checkpoint to devnet with the pinned toolchain of D-15 and the keys S6
 # keeps outside this repository. Public halves only: no secret reaches the terminal, a log or a commit.
 #

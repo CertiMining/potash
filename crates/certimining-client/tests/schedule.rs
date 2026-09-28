@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-09: the publication schedule (§1.5, INV-ANCH-01, D-83).
 //!
 //! The property under test is that publication time is a function of the epoch and of nothing else.
