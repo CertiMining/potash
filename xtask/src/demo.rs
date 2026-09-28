@@ -216,8 +216,13 @@ pub fn gen_demo(dir: &Path) {
     files.insert("tampered.json".into(), tampered);
     files.insert("root.json".into(), root);
 
-    // The rule this unit's own review produced, applied to the artifacts that produced it.
+    // The rule this unit's own review produced, applied to the artifacts that produced it — and to
+    // the pages beside them. A review put a listed program id into `demo/app.js` and watched
+    // `gen-demo` succeed, because a generator inspects what it writes and nothing else. Running the
+    // surface scan here as well means the command that produces fixtures cannot report success over a
+    // tree carrying a live value somewhere it never looked.
     crate::live_values::check_list_shape(&repo_root());
+    crate::live_values::check_synthetic_surface(&repo_root());
     let mut pending: Vec<(String, String)> = files
         .iter()
         .map(|(name, value)| (name.clone(), to_text(value)))

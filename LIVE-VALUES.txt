@@ -14,6 +14,14 @@
 #
 # One value per line, then two spaces, then what it is. Hex is lowercase. Matching is
 # case-insensitive, so a false positive is possible and fails generation, which is the safe direction.
+#
+# **This list is checked against the chain, not remembered.** Its first version was assembled by hand
+# from what I could recall of the session that produced it, and it omitted two of the five signatures
+# the deployment holds: epoch 20723's publication, which a review found, and the `initialize` that
+# started the log, which nothing had noticed. A list of live values built from memory has the same
+# defect as a fixture built from memory. `scripts/live-values-from-chain.sh` asks devnet what touched
+# the known accounts and names anything missing here; **run it after every publish cycle**, because
+# each one adds a signature and, on a new epoch, a checkpoint address.
 
 By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  program id, announced deployment
 0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee  program id, announced deployment, as bytes
@@ -30,6 +38,9 @@ EKRAiF8Z4jWCc8pDeEr9QSLWo4Tjg5oBmnepA359i9N5  checkpoint address, epoch 20724
 0x8ab166bab0ffffa380ff1929cdb24c58bf0043741944739f217d3bb968f02891  published root, epoch 20724
 0xb0191834ee402a4f4e961a7f3974865b2c6f8c184835e18706e0974515a1cdf7  attached receipt digest, epoch 20723
 0x5b6f5fd971c3bc05e2164c35bf357dbbe73595b5f326a579739d4c0f16e89cf8  attached receipt digest, epoch 20724
+5cxt6xvi2nLVu7oP73YMw3xdesX84afRcxke7SkiBDsoGJFDCHK6BPDpF8u6my8RUuMD3LjNADggmF5JXPLEzhwF  deploy signature, announced deployment
+5DaRprPLekNCpsvSYgrwapTBjpqpKg4gWy2tKopfQMCrLY5wZHXdZSEQqgVgajQMyHuZRmGmRE4iNXAGGbhBRcpG  initialize signature
+MFjCafKz5oqJgoFGJXrndydiAAueG7BqA8ynSbWEVeRpoAT8VGpX7GrM6eBTpshzwRNMtZkLzYq6tN3ZDnCserT  publish_checkpoint signature, epoch 20723
 3FZwuXqkSZs71PQYXsW2VG1YGCeLw65RsUXmxg2MrA5AkaSUe9LfAJMXdxVvosEDWeH2SfAEFoiBddd1xxBLzbjZ  publish_checkpoint signature, epoch 20724
 5GQKE7N92h9yScJDqLsMV2hx5vogGsHdZGMrZGvpifEhwaGBBDLNj21HUpE4G5LEbZNHXsShyV3Yw3DJvhSMzmGm  attach_anchor_receipt signature, epoch 20723
 3ri9n1YSk4twGAUNJmgHrnqsxkCperoi8VegevtGYAg5Zrje2DtjbsHhfNEHGnACkX7VT6ggVRpmtrXdynhq1SQA  attach_anchor_receipt signature, epoch 20724
