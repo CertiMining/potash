@@ -12,7 +12,7 @@
  */
 import { type Digest, base64Decode, bytesEqual, fromHex, readI64le, readU64le, toHex } from "./bytes.ts";
 import { type Failure, PackageFailure, RegistryFailure, describeFailure, isFailure } from "./errors.ts";
-import { SCHEMA_VERSION, advanceHead, computeFlags, type ChainState } from "./chain.ts";
+import { CATEGORY_MAX, CATEGORY_MIN, SCHEMA_VERSION, advanceHead, computeFlags, type ChainState } from "./chain.ts";
 import { ed25519Verify, keccak256 } from "./hash.ts";
 import { genesisHeadPreimage, readTagged } from "./preimage.ts";
 import { TAG_LEAF } from "./tags.ts";
@@ -169,6 +169,21 @@ function isPlainObject(value: unknown): boolean {
 }
 
 /**
+ * A field must be a plain data property.
+ *
+ * The prototype check above is not enough on its own: a plain object may carry an own getter, and a
+ * getter is invoked once by the walk below and again by the readers after it. One that returned a
+ * conforming record to the walk and a record carrying `epoch_key` to everything else would leave this
+ * verifier reporting the closed-field check as passed while the package leaked the field INV-DISC-01
+ * exists to keep out — the exact condition §4.4's V-Z-05 makes a release gate. `JSON.parse` cannot
+ * produce an accessor, so `verifyDisclosureJson` was never exposed; the typed object API was.
+ */
+function isDataProperty(container: object, field: string): boolean {
+  const d = Object.getOwnPropertyDescriptor(container, field);
+  return d !== undefined && "value" in d;
+}
+
+/**
  * Refuses the first field §2.5 does not list, naming its path. It says nothing about a listed field
  * that is absent: §2.5 fixes what a package may carry, and the fields this verifier needs are
  * required where it reads them.
@@ -195,6 +210,9 @@ export function checkOnlyListedFields(value: unknown, shape: Shape, path: string
     // be bypassed by choice of name alone. Those names survive a JSON round trip as own properties.
     if (!Object.hasOwn(shape, field)) {
       throw new PackageFailure("UnlistedField", `${path === "" ? "" : `${path}.`}${field} is not a field §2.5 lists`);
+    }
+    if (!isDataProperty(value as object, field)) {
+      throw new PackageFailure("MalformedPackage", `${path === "" ? "" : `${path}.`}${field} is an accessor, and what this walk inspects must be what the checks below read`);
     }
     checkOnlyListedFields(child, shape[field]!, path === "" ? field : `${path}.${field}`);
   }
@@ -242,13 +260,27 @@ export function readLeafPreimage(preimage: Uint8Array): LeafFromBytes {
     throw new RegistryFailure("MalformedPayload", `leaf preimage is ${preimage.length} bytes, and §1.3 fixes it at ${LEAF_PREIMAGE_LEN}`);
   }
   const body = readTagged(preimage, TAG_LEAF);
+  const seq = readU64le(body, 32);
+  const category = body[136]!;
+  // §1.3's conditions are about a record a chain accepted, and a package describing one it could not
+  // have is not a package of a valid record. Condition (b) is `seq = n + 1`, so the lowest sequence a
+  // conforming chain ever holds is 1 and `seq` 0 is 0x04. `category` is a u8, so a value outside 0–4
+  // is representable and §1.3 gives it 0x05 (V-N-07b). Inclusion proves the leaf was in the published
+  // tree; it says nothing about whether `AssetChain::apply` would have taken it, so without these a
+  // counterparty is told a record is valid when the state machine would have refused it.
+  if (seq === 0n) {
+    throw new RegistryFailure("SequenceOutOfOrder", "the preimage carries seq 0, and §1.3's condition (b) makes the first sequence 1");
+  }
+  if (category < CATEGORY_MIN || category > CATEGORY_MAX) {
+    throw new RegistryFailure("MalformedPayload", `the preimage carries category ${category}, and §1.3 allows ${CATEGORY_MIN} to ${CATEGORY_MAX}`);
+  }
   return {
     assetCommitment: body.slice(0, 32),
-    seq: readU64le(body, 32),
+    seq,
     payloadDigest: body.slice(40, 72),
     assessmentDigest: body.slice(72, 104),
     qpKey: body.slice(104, 136),
-    category: body[136]!,
+    category,
     effectiveAt: readI64le(body, 137),
     changeIdentifiedAt: readI64le(body, 145),
   };

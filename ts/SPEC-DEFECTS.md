@@ -578,6 +578,13 @@ input and the report says which.
 position only at `seq` 1 and otherwise carries the issuer's attestation, or a field in §2.5 that makes
 the segment real.
 
+**Resolved by D-129 (28 Sep 2026), the first way.** §0 now says that the architecture asserts a signed
+record existed and was included in a stated epoch, and that position in a chain is established only
+when the holder also holds the chain segment back to genesis or to a head they already trust. The
+package is not extended: a package carrying its own chain segment is filed as a design question for
+after the submission deadline. Reading 1 above is therefore the document's reading as well as this
+verifier's, and the two no longer disagree.
+
 ---
 
 ## Minor observations

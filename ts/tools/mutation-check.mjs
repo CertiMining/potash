@@ -61,6 +61,12 @@ const MUTATIONS = [
   ["src/disclosure.ts", "    if (!Object.hasOwn(shape, field)) {", "    if (!Object.hasOwn(shape, field) && path === \"\") {", "finding 2: an unlisted field nested inside a listed one"],
   ["src/disclosure.ts", "    if (isContainer(value)) {\n      throw new PackageFailure(\"UnlistedField\", `${path} carries a structure where §2.5 shows a single value`);", "    if (false) {\n      throw new PackageFailure(\"UnlistedField\", `${path} carries a structure where §2.5 shows a single value`);", "finding 2: nothing hides inside a field §2.5 shows as a value"],
   ["src/solana/accounts.ts", "  if (schemaVersion !== SCHEMA_VERSION) {", "  if (false) {", "finding 3: an account under another schema version is refused"],
+  // The third review round.
+  ["src/disclosure.ts", "  if (seq === 0n) {", "  if (false) {", "round 3: a package at seq 0 is refused"],
+  ["src/disclosure.ts", "  if (category < CATEGORY_MIN || category > CATEGORY_MAX) {", "  if (false) {", "round 3: a category outside 0..=4 is refused"],
+  ["src/disclosure.ts", "    if (!isDataProperty(value as object, field)) {", "    if (false) {", "round 3: an accessor field is refused"],
+  ["src/disclosure.ts", "  return d !== undefined && \"value\" in d;", "  return d !== undefined;", "round 3: isDataProperty rejects a getter, not merely a missing field"],
+
   // The second review round.
   ["src/disclosure.ts", "      record(\"prev_head is the chain's head at seq − 1\", \"unestablished\", chainPosition.detail);", "      record(\"prev_head is the chain's head at seq − 1\", \"pass\", chainPosition.detail);", "finding 1: an unestablished chain position is not reported as passing"],
   ["src/disclosure.ts", "      chainPosition = {\n        established: false,\n        detail:", "      chainPosition = {\n        established: true,\n        detail:", "finding 1: the report says the chain position was not established"],

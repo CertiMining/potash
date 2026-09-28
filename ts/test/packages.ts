@@ -57,7 +57,7 @@ export function fullEpochHoldingRecord(): BuiltEpoch {
 export function signedPackageAt(
   seq: bigint,
   prevHead: Uint8Array,
-  options: { epoch?: bigint } = {},
+  options: { epoch?: bigint; category?: number } = {},
 ): { pkg: DisclosurePackage; root: { epoch: bigint; root: Uint8Array }; leaf: Uint8Array } {
   const v = loadVector("V-P-05");
   const epoch = options.epoch ?? BigInt(v.inputs.epoch);
@@ -66,7 +66,7 @@ export function signedPackageAt(
     payloadDigest: fromHex("0x2222222222222222222222222222222222222222222222222222222222222222", 32),
     assessmentDigest: fromHex("0x3333333333333333333333333333333333333333333333333333333333333333", 32),
     qpKey: QP_KEY,
-    category: 2,
+    category: options.category ?? 2,
     effectiveAt: 1700000000n,
     changeIdentifiedAt: 1699999900n,
   };

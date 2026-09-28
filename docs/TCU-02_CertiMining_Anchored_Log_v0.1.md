@@ -11,7 +11,7 @@
 
 **TCU-01 is withdrawn.** It put typed records on-chain — categories, effective dates, QP keys, pledge relationships — which publishes the timing of material change identification at an identified asset. That is incompatible with the selective disclosure regime it claims to serve and unsellable into a sector that treats confidentiality as existential. Nothing from TCU-01's on-chain surface survives; its off-chain state machine (§1.4 there) survives unchanged and is reused here.
 
-**What this asserts.** That a record existed, unaltered, in a stated position of a stated asset's chain, at a time bounded by a Solana slot and a Bitcoin block.
+**What this asserts.** That a signed record existed, unaltered, and was included in a stated epoch, at a time bounded by a Solana slot and a Bitcoin block. **Position in a chain is established only when the holder also holds the chain segment back to genesis, or back to a head they already trust** — one disclosure package carries the issuer's signed statement of its position and no evidence for it, because §1.3's leaf preimage covers neither `prev_head` nor `head` and an inclusion proof binds only the leaf (D-129, SD-19). A package that carried its own chain segment is a design question filed for after the submission deadline, not a gap in this text.
 
 **What this does not assert.** NI 43-101 compliance, the accuracy of the estimate, the honesty of the assayer, the existence of the mineralization, or that the log is complete.
 

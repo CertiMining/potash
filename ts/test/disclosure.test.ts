@@ -386,6 +386,61 @@ test("FINDING 3: a checkpoint account under another schema version is refused", 
 });
 
 
+test("ROUND 3: a package describing a record schema 1 could not hold is refused", () => {
+  // Inclusion proves a leaf was in the published tree. It says nothing about whether the state machine
+  // would have accepted the record, so without these two checks a counterparty is told that a record
+  // is valid when §1.3 says no conforming chain ever held it.
+
+  // §1.3's condition (b) is `seq = n + 1`, so the lowest sequence a chain reaches is 1.
+  const zero = signedPackageAt(0n, GENESIS_HEAD);
+  expectCode(zero.pkg, zero.root, 0x04, "SequenceOutOfOrder", "a package at seq 0", { configuredHeight: 8 });
+
+  // `category` is a u8, so 5 and 255 are representable; §1.3 gives both 0x05 (V-N-07b).
+  for (const category of [5, 255]) {
+    const bad = signedPackageAt(1n, GENESIS_HEAD, { category });
+    expectCode(bad.pkg, bad.root, 0x05, "MalformedPayload", `a package at category ${category}`, {
+      configuredHeight: 8,
+    });
+  }
+
+  // The bounds themselves still verify, so the check refuses what §1.3 refuses and nothing wider.
+  for (const category of [0, 4]) {
+    const fine = signedPackageAt(1n, GENESIS_HEAD, { category });
+    const report = verifyDisclosurePackage(fine.pkg, { root: fine.root, configuredHeight: 8 });
+    assert.equal(report.ok, true, `category ${category} should verify: ${report.failure?.message}`);
+  }
+});
+
+test("ROUND 3: a field that is an accessor is refused, not walked once and read again", () => {
+  // The walk inspects each field once and the checks below read it again. A getter can answer those
+  // two reads differently, which would leave the closed-field check reporting `pass` while the package
+  // carried `epoch_key` — the field INV-DISC-01 exists to exclude and §4.4's V-Z-05 gates on.
+  const built = signedPackageAt(1n, GENESIS_HEAD);
+  const clean = JSON.parse(JSON.stringify(built.pkg));
+  let reads = 0;
+  const trap: any = {};
+  for (const key of Object.keys(clean)) if (key !== "record") trap[key] = clean[key];
+  Object.defineProperty(trap, "record", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      reads += 1;
+      return reads === 1 ? clean.record : { ...clean.record, epoch_key: `0x${"99".repeat(32)}` };
+    },
+  });
+
+  const report = verifyDisclosurePackage(trap, { root: built.root, configuredHeight: 8 });
+  assert.equal(report.ok, false, "a package whose record is a getter was accepted");
+  assert.equal((report.failure as any).failure, "MalformedPackage", report.failure?.message);
+  assert.match(report.failure!.message, /accessor/);
+  const walk = report.checks.find((c) => c.name.includes("only the fields"));
+  assert.notEqual(walk?.status, "pass", "the closed-field check reported a pass it had not established");
+
+  // A plain data property is untouched by the rule.
+  const plain = verifyDisclosurePackage(clean, { root: built.root, configuredHeight: 8 });
+  assert.equal(plain.ok, true, plain.failure?.message);
+});
+
 test("FINDING 1: a record past seq 1 cannot establish its chain position from one package", () => {
   // §1.3's leaf preimage covers c, seq, the two digests, qp_key, category and the two dates. It does
   // not cover prev_head or head, so nothing signs them; and INV-STATE-02 recomputes hₙ from h_m and
