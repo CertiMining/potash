@@ -37,9 +37,11 @@ inside the Solana runtime and outside it, across every committed preimage.
 - The landing-delay correlation above ran **once**, over 200 consecutive epochs at one epoch per
   minute on one endpoint. A day-long cadence would sample network conditions this run did not. That
   run is filed for after the submission deadline.
-- Anchor B has not completed a cycle on the deployed log. A root is submitted to the OpenTimestamps
-  calendars and the receipt is not yet carried by a Bitcoin block, so the deployed epoch reads
-  `single`. That wait is the design, not a fault: see below.
+- Anchor B has completed **two** cycles on the deployed log, epochs 20723 and 20724, carried by
+  Bitcoin blocks 968,917 and 968,923. Both read `dual` and both receipts are committed under
+  `anchors/epochs/`. Two cycles are two instances, not a measured latency, and the daily cadence
+  INV-ANCH-01 asks for has run for two days rather than for a period worth quoting.
+  `docs/anchoring.md` carries the roots, the slots and the digests.
 - There is no fuzz or property harness yet.
 - The count-hiding property is computational, not information-theoretic, and rests on the batcher's
   key custody. Both are stated in Appendix A of the specification as RES-09 and RES-03.
