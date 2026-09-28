@@ -1,17 +1,19 @@
 # TCU-02 disclosure-package verifier (TypeScript)
 
 An independent verifier for the §2.5 disclosure package of *TCU-02 — CertiMining Anchored Log*. It
-was written from the specification in `../spec/` and from the committed vectors in `../vectors/`,
+was written from the specification in `../docs/` and from the committed vectors in `../vectors/`,
 with the one exception the provenance section below states. No other implementation of this
 specification was read while it was built, which is the only reason agreement between the two
 carries any information.
 
 The document's version label has moved between rounds, so the text this was last checked against is
-identified by content: SHA-256 `de2f20ce8efaa8ab0c9f1b473ba04b6051cab33bf3493bc4089fbe54a88bbfef`,
-740 lines.
+identified by content: SHA-256 `3e59f5ace0d70616df88d51f7bd7f39f78636c76b08c9b93027997c0e8bb90b7`,
+754 lines.
 
-It satisfies INV-DISC-01, INV-DISC-02, INV-DISC-03 and INV-IFACE-01, and it reproduces every
-committed vector.
+It satisfies INV-DISC-01, INV-DISC-03 and INV-IFACE-01 and reproduces every committed vector. It
+satisfies INV-DISC-02 as far as a §2.5 package allows: the chain-segment walk that invariant asks
+for has no content for a record past `seq` 1, and rather than reporting the step as passing, the
+result says the position is not established. SPEC-DEFECTS.md SD-19.
 
 ---
 
@@ -29,7 +31,12 @@ runs these in this order and stops at the first that fails.
    package never contains the epoch key or sibling preimages, and §4.4 makes that a release gate of
    the same severity as a correctness failure, so accepting such a package with a note is not
    conforming. Refused before anything else is read, because a leak is a leak whatever the rest of
-   the package says.
+   the package says. Membership is tested with `Object.hasOwn` against the list written in the source,
+   never by indexing it, because `constructor`, `__proto__` and `toString` all survive a JSON round
+   trip as own property names and would otherwise find something inherited from `Object.prototype`;
+   and every container must be a plain object, so the fields the walk inspects are the fields the
+   checks below use. `verifyDisclosureJson(text, options)` is the entry point for the form a package
+   actually arrives in.
 2. **`preimage_borsh` is a §1.3 leaf preimage.** 161 bytes, opening with `CMv1LEAF`. Another tag is
    `0x0B` (V-N-09); another length is `0x05`.
 3. **The display copy agrees with the bytes.** Every field is derived from the preimage and
@@ -47,6 +54,17 @@ runs these in this order and stops at the first that fails.
    `prev_head` and `head` can be replaced together and every remaining relation still holds for a
    chain that is not the asset's. At `seq` 1, `prev_head` must be that genesis head, which is §1.3's
    condition (a) at `n = 0`. And `chain.head` must be `Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)`.
+
+   **What that establishes, and what it does not.** §1.3's leaf preimage covers neither `prev_head`
+   nor `head`, so no signature binds them, and the proof binds only the leaf. At `seq` 1 the position
+   is established, because `h₀` follows from the signed `c`. At any higher `seq` it is not: the head
+   relation holds for an arbitrary `prev_head` as readily as for the real one, and recomputing the
+   true head would need the intervening leaves, which INV-STATE-02 requires and one package does not
+   carry. The report says so rather than passing: `chainPosition.established` is `false` with the
+   reason, the check line reads `unestablished`, and a note records that the record's position rests
+   on its own word. A caller holding the previous head may pass it as `chainContext.expectedPrevHead`,
+   the way §2.2 supplies `expected_qp_key` and §2.3 an observed epoch, and then the position is
+   established against that input and the report says which. SPEC-DEFECTS.md SD-19.
 7. **Inclusion**, against a root the caller obtained independently. The verifier applies `TAG_MTL0`
    to the leaf itself, walks `height` siblings by the bits of `slot_index`, and compares with the
    root. A sibling count that is not `height`, a `slot_index` outside the tree, a height outside
@@ -95,8 +113,10 @@ No Solana SDK is on the path.
 
 - **`payload_uri`.** It is in §2.5's `record` block and not in §1.3's leaf preimage, so nothing
   binds it to the signature and no comparison can reach it. SPEC-DEFECTS.md SD-01.
-- **`chain.genesis` for a record past `seq` 1.** One package carries no intermediate leaves, so
-  the genesis cannot be walked forward to `prev_head`. SD-04.
+- **Where a record past `seq` 1 sits in its chain**, unless the caller supplies the head it expects.
+  Nothing signs `prev_head` and no proof binds it, so the claim rests on the QP's signature over `seq`
+  and `c`, which is an attestation and not a proof. The result states this rather than implying it.
+  SD-19, SD-04.
 - **`flags`, unless the caller supplies chain context.** Bits 0 and 1 are properties of earlier
   records. SD-03.
 - **The `anchor` block.** `solana_tx`, `solana_slot` and `ots_receipt_digest` are not checked
@@ -123,7 +143,7 @@ No Solana SDK is on the path.
 Almost all of this verifier is determined by the specification. Four things are not, and are in it
 because they are published conventions of the platform the log is anchored to. A counterparty
 checking this work should know which is which, because the second group is knowledge that did not
-come from `../spec/` or `../vectors/` and cannot be checked against them.
+come from `../docs/` or `../vectors/` and cannot be checked against them.
 
 **From the specification.** Every digest and preimage, with its tag, field order and width (§1.2,
 §1.3, §1.4, §1.6); the PRF construction and its three use codes; slot assignment, probing, padding
@@ -133,24 +153,139 @@ order of its six conditions (§1.3); which condition returns which code, and the
 (§2.5, INV-DISC-01, INV-DISC-02, INV-DISC-03); the promise policy and the rebuttal window (§1.6,
 D-72, D-74); heights, capacities and bounds (§1.8); the account layouts, offsets and lengths, and the
 discriminator, which §2.4 states as `SHA-256("account:" ‖ N)` and this code computes rather than
-copies (§2.4); the epoch clock, `start_epoch`, the three placements of an absent checkpoint and lag
-(§1.4, INV-ANCH-02); and the Anchor error offset of 6000 (§2.1).
+copies (§2.4); **the program-derived address**, which §2.4 now states in full — the hash input
+`SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖ "ProgramDerivedAddress" )`, the largest bump from
+255 downwards whose result is off the Ed25519 curve, and the seed constraints it leaves to the
+platform by name (SD-17, resolved; the two addresses its correction note publishes are pinned as a
+known-answer test, including the erroneous order as a negative control); the epoch clock,
+`start_epoch`, the three placements of an absent checkpoint and lag (§1.4, INV-ANCH-02); and the
+Anchor error offset of 6000 (§2.1).
 
 **From published platform conventions, not from the sandbox.**
 
-1. **Program-address derivation.** §2.4 names the seeds, `["cm_cfg"]` and `["cm_ckpt", epoch_le]`, and
-   stops there. That a program address is `SHA-256(seeds ‖ bump ‖ program_id ‖ "ProgramDerivedAddress")`
-   with the bump searched downward from 255 and every on-curve candidate rejected, and that a seed is
-   at most 32 bytes with at most 16 of them, is Solana's published convention. It is the step that
-   decides which account is read, so it matters most and is recorded as SPEC-DEFECTS.md SD-17. Its one
-   independent check is that the addresses this code derives are the accounts the cluster answers for.
-2. **Base58 with the Bitcoin alphabet**, for turning those 32 bytes into the text an RPC call carries.
+1. **Base58 with the Bitcoin alphabet**, for turning those 32 bytes into the text an RPC call carries.
    §2.4 gives no textual encoding for an address.
-3. **The JSON-RPC surface**: the `getAccountInfo` method, its `{encoding: "base64", commitment}`
+2. **The JSON-RPC surface**: the `getAccountInfo` method, its `{encoding: "base64", commitment}`
    parameter, the `result.value.data` and `result.value.owner` response shape, and the convention that
    an account's owner is the program that may write it. The specification asks a verifier to fetch a
    root from Solana and says nothing about the wire.
-4. **The devnet program id and RPC URL** in `src/solana/rpc.ts`. Neither appears in the document; both
+3. **The devnet program id and RPC URL** in `src/solana/rpc.ts`. Neither appears in the document; both
+   are deployment configuration.
+
+**Published values that the document names without carrying.** Keccak-256's answers for the empty
+string and `"abc"`, and RFC 8032 §7.1's TEST 1 and TEST 2, which §4.1 requires as KAT-01 and KAT-02
+(SD-10). The Keccak-256 and Ed25519 implementations themselves are the two dependencies below, pinned
+and checked against those values before anything else runs.
+
+**One platform detail inside a specified algorithm.** §1.3 names Unicode NFKD and not a Unicode
+version, and the decomposition tables are the runtime's. Two conforming implementations on different
+Unicode versions can canonicalize a newly assigned character differently, which is recorded with the
+minor observations in SPEC-DEFECTS.md.
+
+## How to run it
+
+```
+npm ci                 # installs the two runtime dependencies and the two dev ones, from the lock file
+npm test               # KAT-01 and KAT-02 first, then everything else; no network
+npm run typecheck      # tsc --noEmit over src and test
+npm run build          # emits dist/: src only, no Node types, ES modules for a browser
+npm run test:net       # adds the devnet test, which npm test skips
+node tools/mutation-check.mjs   # breaks one thing at a time and checks the suite goes red
+```
+
+`npm test` runs `node --test test/kat.test.ts` first and stops if it fails, which is what §4.1 asks
+of KAT-01. The devnet test is skipped unless `CERTIMINING_DEVNET=1`, so it never runs in CI and
+never runs by default.
+
+There is no build step for the tests. Node runs the TypeScript sources directly, and the sources
+are written so that every type annotation is erasable (`erasableSyntaxOnly`), which is checked by
+`npm run typecheck`.
+
+### One code path, two runtimes
+
+`src/` uses no Node API. It builds under `tsconfig.build.json`, which sets `"types": []` and so
+removes Node's type declarations altogether, and the emitted `dist/` contains no `process`,
+`Buffer`, `require` or `__dirname`. Hex, base64 and base58 are written out rather than taken from a
+platform, so what the verifier refuses is the same in both runtimes. `fetch`, `TextEncoder`,
+`TextDecoder` and `performance` are the only platform APIs used, and both runtimes have all four.
+Node's `fs`, `path`, `crypto` and `os` appear in `test/` only.
+
+## Layout
+
+```
+src/bytes.ts             hex, strict base64, little-endian integers, UTF-8
+src/errors.ts            §2.1's codes, and the package-level failures that carry no code
+src/tags.ts              §1.2's domain tags
+src/hash.ts              Keccak-256, Ed25519 (RFC 8032), and SHA-256 walled off for §2.4
+src/preimage.ts          every §1.2/§1.3/§1.4/§1.6 writer, through one 256-byte sink (0x0C)
+src/canonical.ts         §1.3's canonical tenure
+src/chain.ts             §1.3's commitment, genesis, leaf, and the four-stage transition
+src/tree.ts              §1.4's PRF, slot assignment, padding, build, proof, pure verifier
+src/promise.ts           §1.6's SPI, its policy, and D-72's window
+src/disclosure.ts        §2.5's package and INV-DISC-02's verifier
+src/solana/base58.ts     addresses in and out
+src/solana/pda.ts        §2.4's program-derived addresses
+src/solana/accounts.ts   §2.4's two layouts, their computed discriminators, §1.4's epoch clock
+src/solana/rpc.ts        getAccountInfo over fetch, and the two fetches a verifier needs
+test/kat.test.ts         §4.1's KAT-01 and KAT-02; runs first
+test/vectors.test.ts     the manifest, the enumeration, and every committed vector
+test/handlers.ts         one handler per vector
+test/disclosure.test.ts  assembled §2.5 packages, right and wrong in each way INV-DISC-02 names
+test/packages.ts         how those packages are assembled
+test/units.test.ts       §2.4, §1.6's policy, canonicalization, the preimage ceiling, encodings
+test/perf.test.ts        §4.4a
+test/devnet.test.ts      the one test that touches a network; skipped by default
+tools/mutation-check.mjs the evidence that each test fails for the reason it names
+```
+
+## The deployment this was run against
+
+`test/devnet.test.ts`, skipped by default, runs against the announced devnet deployment named in
+`src/solana/rpc.ts`, currently `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB`. Its `LogConfig` is at
+`CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7`, bump 250, which is the address §2.4's corrected
+program-address paragraph publishes, and `test/units.test.ts` pins it as a known-answer test rather
+than leaving the derivation checked only by a network call.
+
+Two earlier deployments were retired and are recorded in `src/solana/rpc.ts` as
+`SUPERSEDED_PROGRAM_ID`s rather than deleted, because both remain readable by anyone: one whose log
+began at epoch 1 instead of a UTC day index and whose epoch 1 carries a receipt digest standing for no
+receipt in a write-once field, and one whose sequence ran 209 days ahead of the calendar after a
+compressed privacy run. Neither should be verified against. The second is the observation behind
+SD-18, which stands: nothing in the document forbids a sequence running ahead of the calendar or gives
+a client anything to detect it with.
+
+## Where each part comes from
+
+Almost all of this verifier is determined by the specification. Four things are not, and are in it
+because they are published conventions of the platform the log is anchored to. A counterparty
+checking this work should know which is which, because the second group is knowledge that did not
+come from `../docs/` or `../vectors/` and cannot be checked against them.
+
+**From the specification.** Every digest and preimage, with its tag, field order and width (§1.2,
+§1.3, §1.4, §1.6); the PRF construction and its three use codes; slot assignment, probing, padding
+and the complete tree (§1.4); canonical tenure (§1.3); the state machine, its four stages and the
+order of its six conditions (§1.3); which condition returns which code, and the code space itself
+(§2.1); the disclosure package's fields, the order the checks run in, and what each failure means
+(§2.5, INV-DISC-01, INV-DISC-02, INV-DISC-03); the promise policy and the rebuttal window (§1.6,
+D-72, D-74); heights, capacities and bounds (§1.8); the account layouts, offsets and lengths, and the
+discriminator, which §2.4 states as `SHA-256("account:" ‖ N)` and this code computes rather than
+copies (§2.4); **the program-derived address**, which §2.4 now states in full — the hash input
+`SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖ "ProgramDerivedAddress" )`, the largest bump from
+255 downwards whose result is off the Ed25519 curve, and the seed constraints it leaves to the
+platform by name (SD-17, resolved; the two addresses its correction note publishes are pinned as a
+known-answer test, including the erroneous order as a negative control); the epoch clock,
+`start_epoch`, the three placements of an absent checkpoint and lag (§1.4, INV-ANCH-02); and the
+Anchor error offset of 6000 (§2.1).
+
+**From published platform conventions, not from the sandbox.**
+
+1. **Base58 with the Bitcoin alphabet**, for turning those 32 bytes into the text an RPC call carries.
+   §2.4 gives no textual encoding for an address.
+2. **The JSON-RPC surface**: the `getAccountInfo` method, its `{encoding: "base64", commitment}`
+   parameter, the `result.value.data` and `result.value.owner` response shape, and the convention that
+   an account's owner is the program that may write it. The specification asks a verifier to fetch a
+   root from Solana and says nothing about the wire.
+3. **The devnet program id and RPC URL** in `src/solana/rpc.ts`. Neither appears in the document; both
    are deployment configuration.
 
 **Published values that the document names without carrying.** Keccak-256's answers for the empty
@@ -291,9 +426,10 @@ signature path should be set against real data rather than guessed.
 ## Evidence that the tests fail for the reasons they name
 
 `node tools/mutation-check.mjs` breaks one thing at a time, runs the suite, restores the file, and
-reports. It carries 45 mutations, one per property the suite claims to hold, from the hash family and the leaf
+reports. It carries 51 mutations, one per property the suite claims to hold, from the hash family and the leaf
 field order to the slot assignment order, the condition ordering of §1.3, the JSON-versus-Borsh
-ordering, §2.4's account offsets including `start_epoch`, §1.4's three placements and its flooring
-clock, the genesis recomputation, the field list at every depth, the account schema gate, and the
-handler table that makes "every vector" enforced rather than claimed. All 45 are caught. A mutation that leaves the suite green is printed
+ordering, §2.4's account offsets and its program-address input order, §1.4's three placements and its
+flooring clock, the genesis recomputation, the field list at every depth and the way its membership is
+tested, the account schema gate, the honesty of the chain-position report, and the handler table that
+makes "every vector" enforced rather than claimed. All 51 are caught. A mutation that leaves the suite green is printed
 as a failure of the script, which is how the one hole found during development was closed.

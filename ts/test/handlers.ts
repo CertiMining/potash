@@ -343,8 +343,8 @@ const vP06b: Handler = (v) => {
   const epoch = big(v.inputs.epoch);
   for (const h of v.inputs.heights) {
     const height = num(h);
+    assert.ok(Object.hasOwn(v.expected, `H${height}`), `no expected block for H${height}`);
     const expected = v.expected[`H${height}`];
-    assert.ok(expected !== undefined, `no expected block for H${height}`);
     checkBuilt(v, expected, height, epoch, masterKey);
   }
   // The same leaf set at two heights: the proof length tracks H exactly and the roots differ.
@@ -538,6 +538,7 @@ const vN20: Handler = (v) => refuseRecord(v, v.inputs.record, v.expected, "a seq
 
 const vN21: Handler = (v) => {
   for (const raw of v.inputs.raw_tenures) {
+    assert.ok(Object.hasOwn(v.expected, raw), `the vector has no expectation for ${JSON.stringify(raw)}`);
     expectRefusal(() => canonicalize(raw), v.expected[raw], `tenure ${JSON.stringify(raw)}`);
     expectRefusal(() => canonicalizeBytes(utf8(raw)), v.expected[raw], `tenure bytes ${JSON.stringify(raw)}`);
   }

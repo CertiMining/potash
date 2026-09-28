@@ -11,12 +11,13 @@ document says, the readings available, and which vector or invariant forced the 
 **Which text.** The version label on `spec/TCU-02_CertiMining_Anchored_Log_v0.1.md` has moved between
 rounds (0.1.16, then 0.1.18, now "0.1.14 plus unmerged amendments on this branch"), so the document
 is identified here by content: every entry below was last checked against the file whose SHA-256 is
-`de2f20ce8efaa8ab0c9f1b473ba04b6051cab33bf3493bc4089fbe54a88bbfef`, 740 lines.
+`3e59f5ace0d70616df88d51f7bd7f39f78636c76b08c9b93027997c0e8bb90b7`, 754 lines.
 
 SD-01 to SD-13 were found against the first text read, SD-14 to SD-16 against the second, SD-17 and
-SD-18 against the current one. **SD-16 is resolved by the current text** and is kept, marked, because
-a resolved ambiguity is as much a result of this work as an open one. **SD-04 is corrected**: part of
-what it claimed was my error rather than the document's, which an independent review found.
+SD-18 against the third, SD-19 against the current one. **SD-16 and SD-17 are resolved by the current
+text** and are kept, marked, because a resolved ambiguity is as much a result of this work as an open
+one. **SD-04 is corrected**: part of what it claimed was my error rather than the document's, which an
+independent review found.
 Nothing here was resolved by looking at another implementation. Where a committed vector settles a
 question the document leaves open, that is said plainly: a vector is evidence of what one
 implementation did, not of what the specification requires.
@@ -442,7 +443,22 @@ not rule on batcher failure, because that needs a clock the verifier does not ho
 
 ## SD-17 · §2.4 — the seeds are named and the address derivation is not
 
-**New.**
+**RESOLVED by the current text, and kept as a record.** §2.4 now carries a program-address paragraph
+that states the derivation in full: the hash input `SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖
+"ProgramDerivedAddress" )`, the largest single-byte bump from 255 downwards whose result is not a
+point on the Ed25519 curve, and the fact that the derivation is Solana's and is cited rather than
+restated as the document's own, with the seed count and length constraints left to that platform
+explicitly. An implementer working from the document alone can now produce and check an address.
+
+**Worth recording about the fix.** The first version of that paragraph wrote `… ‖ program_id ‖ bump ‖
+…`, with the bump and the program id the wrong way round, which the document's own correction note
+says would have derived `4wmoJSgJ…` where the log's configuration is actually at `CZM6Lnv…` at bump
+250, so an implementer following it could not have fetched the log. This verifier was unaffected,
+because its derivation came from the platform rather than from the paragraph, and nothing in its suite
+caught the document's error: there was no expected value to check against. There is now. Both
+addresses the correction publishes, the right one and the erroneous one, are pinned as a
+known-answer test, so the suite would fail if either this code or that paragraph moved again. What
+the entry said while it was open follows.
 
 **What was needed.** How to turn `["cm_cfg"]` and `["cm_ckpt", epoch_le]` into the 32-byte addresses a
 JSON-RPC call asks for. INV-DISC-02 requires the root to be fetched independently, and this unit puts
@@ -510,6 +526,58 @@ ruling to the clock holder in the one direction it describes and is silent on th
 refuse a root for an epoch whose day has not arrived: that would need a clock, and §2.3 and
 INV-IFACE-01 keep clocks out of verification.
 
+**Since recorded.** `src/solana/rpc.ts` now says the observed instance had a benign cause: a
+compressed privacy run spent 200 days of epoch numbering in 200 minutes, and that deployment was
+retired for it. The entry stands as written, because the cause of one instance is not a check: the
+document still neither forbids a sequence running ahead of the calendar nor gives a client anything
+to detect it with.
+
+---
+
+## SD-19 · §2.5, INV-DISC-02 — what one package establishes about a record's place in its chain
+
+**New.**
+
+**What was needed.** What a verifier concludes about `prev_head` and `head` for a record past `seq` 1.
+
+**What the document says.** INV-DISC-02 requires a conforming verifier to walk "the chain segment".
+§2.5's package carries one record, one 161-byte preimage, and the three values `prev_head`, `head` and
+`genesis`. §1.3's leaf preimage table does not include `prev_head` or `head`, so the QP's signature
+covers neither, and the inclusion proof binds only the leaf, which is the digest of those 161 bytes.
+INV-STATE-02 recomputes `hₙ` from `h_m` and the leaves between, which one package does not carry.
+
+**So the walk is vacuous wherever it could matter.** At `seq` 1 there is something to check: `h₀`
+follows from the signed `c`, so `prev_head` is pinned. At any higher `seq` the only relation available
+is `head = Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)`, and both of those values come from the package
+itself, so it holds for an arbitrary `prev_head` as readily as for the real one. A correctly signed,
+correctly included record at `seq` 7 can name any predecessor it likes. §0 nonetheless states that
+this architecture asserts a record existed "in a stated position of a stated asset's chain".
+
+**Candidate readings.**
+1. A package at `seq` > 1 is not verifiable as to position, and a verifier must say so. The position
+   claim rests on the QP's signature over `seq` and `c`, which is an attestation and not a proof.
+2. §2.5 is incomplete and a package for a record past `seq` 1 should carry the intervening leaves, or
+   the head of the previous package, so that the segment INV-DISC-02 names exists. Nothing in §2.5
+   provides for that, and no vector is a §2.5 package.
+3. The position is established by the signature alone, in which case "walks the chain segment" is
+   describing a check with no content for the case that motivates it.
+
+**What forced the question.** An independent review pointed out that this verifier recorded the step
+as skipped and then accepted `prev_head` as given, which reported a chain segment as verified when one
+of the two relations had not been checked at all.
+
+**What this verifier does.** Reading 1, stated in the result rather than implied. `chainPosition`
+carries `established: false` with the reason for any `seq` > 1, the check line reports
+`unestablished` rather than `pass`, and a note says the record's position rests on its own word.
+Internal inconsistency still refuses with 0x03, because INV-DISC-02 fails closed on disagreement. A
+caller who holds the previous head may supply it, following the pattern §2.2 uses for
+`expected_qp_key` and §2.3 for an observed epoch, and then the position is established against that
+input and the report says which.
+
+**Amendment that would close it.** Either a sentence in INV-DISC-02 saying that a package establishes
+position only at `seq` 1 and otherwise carries the issuer's attestation, or a field in §2.5 that makes
+the segment real.
+
 ---
 
 ## Minor observations
@@ -539,6 +607,11 @@ INV-IFACE-01 keep clocks out of verification.
   lengthens `initialize`'s instruction data by eight bytes, and neither figure is recorded anywhere
   a regression could be checked against. V-Z-01's closed byte list is about `publish_checkpoint`
   only, so nothing catches a change here.
+- **§2.4's correction publishes two addresses without naming the program id they came from.** The
+  note gives `CZM6Lnv…` and `4wmoJSgJ…` "against the announced deployment" and no program id, so a
+  reader cannot reproduce either from the document alone. This verifier's test uses the announced id
+  from `src/solana/rpc.ts`, and both 32-byte values reproducing under it is itself evidence that it is
+  the right one; the paragraph should say so in one clause. **Resolved:** §2.4 now names `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB` beside the two addresses, and points at `ANNOUNCED_PROGRAM_ID` as the record of where the program lives. That sentence was written outside the sandbox, like the program ids themselves.
 - **§1.3 names NFKD and not a Unicode version.** The decomposition tables are the runtime's, so two
   conforming implementations built on different Unicode versions can canonicalize a character
   assigned between those versions differently, and produce different asset commitments for one

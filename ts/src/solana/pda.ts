@@ -2,16 +2,15 @@
  * §2.4's program-derived addresses. Address derivation is the step that decides which account is
  * even being read, so it lives here rather than in an SDK the counterparty would have to trust.
  *
- * **Provenance.** §2.4 names the seeds, `["cm_cfg"]` and `["cm_ckpt", epoch_le]`, and nothing else.
- * Everything below — that a program address is
- * `SHA-256(seeds ‖ bump ‖ program_id ‖ "ProgramDerivedAddress")`, that the marker is that literal
- * ASCII string, that the inputs are concatenated in that order, that the bump is searched downward
- * from 255, that a candidate is rejected unless it lies off the Ed25519 curve, and that a seed is at
- * most 32 bytes with at most 16 of them — is a published Solana platform convention and does not come
- * from the specification or the committed vectors. It is recorded as SPEC-DEFECTS.md SD-17 and in
- * README.md's provenance section, because a reader cannot check it against anything in this
- * repository. Its one independent check is that the addresses it derives are the accounts the cluster
- * answers for, which `test/devnet.test.ts` demonstrates.
+ * **Provenance.** §2.4 now states the derivation, citing Solana as its author rather than restating it
+ * as the document's own: the hash input `SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖
+ * "ProgramDerivedAddress" )`, and the largest single-byte bump from 255 downwards whose result is not
+ * a point on the Ed25519 curve. The seed count and length constraints below are the platform's, which
+ * the paragraph says in terms. Through the first version of that paragraph the derivation was absent
+ * from the document and this code had it from platform knowledge, which SPEC-DEFECTS.md SD-17 records;
+ * the version after that printed `… ‖ program_id ‖ bump ‖ …`, the wrong way round, and could not have
+ * fetched the log. Both addresses the correction publishes are pinned in `test/units.test.ts`, the
+ * right one and the erroneous one, so neither this code nor that paragraph can move again unnoticed.
  */
 import { concat, u64le, utf8 } from "../bytes.ts";
 import { isOnCurve, sha256 } from "../hash.ts";

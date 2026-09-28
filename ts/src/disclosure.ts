@@ -62,6 +62,23 @@ export type FlagReport = {
   note: string;
 };
 
+/**
+ * What a verifier holding **one** record can say about where that record sits in its chain.
+ *
+ * §1.3's leaf preimage covers `c`, `seq`, the two digests, `qp_key`, `category` and the two dates.
+ * It does not cover `prev_head` or `head`, so no signature binds them, and the inclusion proof binds
+ * only the leaf, which is the digest of those 161 bytes. INV-STATE-02 recomputes `hₙ` from `h_m` and
+ * the leaves between, which one package does not carry. So `prev_head` is pinned in exactly two
+ * cases: at `seq` 1, where it must be `h₀` and `h₀` follows from the signed `c`; and when the caller
+ * supplies the head it expects, the way §2.2 supplies `expected_qp_key` and §2.3 an observed epoch.
+ * Otherwise the head step is an arithmetic relation between two values the package chose itself, and
+ * reporting it as a passing chain check would tell a reader something that was never established.
+ */
+export type ChainPosition = {
+  established: boolean;
+  detail: string;
+};
+
 export type DisclosureReport = {
   ok: boolean;
   failure?:
@@ -71,8 +88,13 @@ export type DisclosureReport = {
   leaf?: Digest | undefined;
   fields?: LeafFromBytes | undefined;
   flags?: FlagReport | undefined;
-  /** Each check the verifier ran, in the order it ran them. */
-  checks: Array<{ name: string; status: "pass" | "fail" | "skipped"; detail?: string }>;
+  /** What this package establishes about the record's place in its chain, and what it does not. */
+  chainPosition: ChainPosition;
+  /**
+   * Each check the verifier ran, in the order it ran them. `unestablished` is not a weaker pass: it
+   * says the check's subject cannot be settled from what a package carries.
+   */
+  checks: Array<{ name: string; status: "pass" | "fail" | "skipped" | "unestablished"; detail?: string }>;
   notes: string[];
 };
 
@@ -86,7 +108,17 @@ export type VerifyOptions = {
    * recomputed and a mismatch is reported as a discrepancy (INV-DISC-03); absent, flags are
    * reported as not recomputable, because one package does not carry its own history.
    */
-  chainContext?: { sawResource: boolean; previousCategory: number | null };
+  chainContext?: {
+    sawResource: boolean;
+    previousCategory: number | null;
+    /**
+     * The head the caller expects this record to commit against, if they hold it — from the previous
+     * package, or from their own copy of the chain. Supplied, `prev_head` is judged against it and a
+     * disagreement is 0x03, which is §1.3's condition (a); absent, the chain position is reported as
+     * not established rather than as passing.
+     */
+    expectedPrevHead?: Uint8Array;
+  };
 };
 
 /**
@@ -126,6 +158,17 @@ function isContainer(value: unknown): boolean {
 }
 
 /**
+ * A container must be a plain object, so that the fields this walk inspects are the fields the
+ * readers below go on to use. A package arrives as JSON text and `JSON.parse` produces exactly
+ * this; anything else would let a prototype carry fields the walk never sees.
+ */
+function isPlainObject(value: unknown): boolean {
+  if (!isContainer(value) || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
  * Refuses the first field §2.5 does not list, naming its path. It says nothing about a listed field
  * that is absent: §2.5 fixes what a package may carry, and the fields this verifier needs are
  * required where it reads them.
@@ -142,15 +185,18 @@ export function checkOnlyListedFields(value: unknown, shape: Shape, path: string
     value.forEach((element, i) => checkOnlyListedFields(element, "scalar", `${path}[${i}]`));
     return;
   }
-  if (!isContainer(value) || Array.isArray(value)) {
-    throw new PackageFailure("MalformedPackage", `${path === "" ? "the package" : path} is not an object`);
+  if (!isPlainObject(value)) {
+    throw new PackageFailure("MalformedPackage", `${path === "" ? "the package" : path} is not a plain object`);
   }
   for (const [field, child] of Object.entries(value as Record<string, unknown>)) {
-    const childShape = shape[field];
-    if (childShape === undefined) {
+    // Membership is tested against the shape written above, with `Object.hasOwn`, and never by
+    // indexing it: `shape["constructor"]`, `shape["__proto__"]` and `shape["toString"]` all find
+    // something inherited from `Object.prototype`, so indexing would let §2.5's closure and V-Z-05
+    // be bypassed by choice of name alone. Those names survive a JSON round trip as own properties.
+    if (!Object.hasOwn(shape, field)) {
       throw new PackageFailure("UnlistedField", `${path === "" ? "" : `${path}.`}${field} is not a field §2.5 lists`);
     }
-    checkOnlyListedFields(child, childShape, path === "" ? field : `${path}.${field}`);
+    checkOnlyListedFields(child, shape[field]!, path === "" ? field : `${path}.${field}`);
   }
 }
 
@@ -264,7 +310,8 @@ export function verifyDisclosurePackage(pkg: DisclosurePackage, options: VerifyO
   let fields: LeafFromBytes | undefined;
   let flags: FlagReport | undefined;
 
-  const record = (name: string, status: "pass" | "skipped", detail?: string): void => {
+  let chainPosition: ChainPosition = { established: false, detail: "verification did not reach the chain segment" };
+  const record = (name: string, status: "pass" | "skipped" | "unestablished", detail?: string): void => {
     checks.push(detail === undefined ? { name, status } : { name, status, detail });
   };
 
@@ -331,21 +378,53 @@ export function verifyDisclosurePackage(pkg: DisclosurePackage, options: VerifyO
     }
     record("chain.genesis is this asset's genesis head under schema 1", "pass", toHex(expectedGenesis));
 
-    // Condition (a) at n = 0: a seq-1 record commits against h₀ itself.
+    // Is `prev_head` the chain's head at seq − 1? Nothing in the package signs it or anchors it, so
+    // there are exactly two ways to know (see ChainPosition), and otherwise the answer is that this
+    // package does not establish it.
+    const expectedPrevHead = options.chainContext?.expectedPrevHead;
+    if (expectedPrevHead !== undefined && !bytesEqual(prevHead, expectedPrevHead)) {
+      throw new RegistryFailure("HeadMismatch", "prev_head is not the head the caller expects this record to commit against");
+    }
     if (fields.seq === 1n) {
       if (!bytesEqual(prevHead, genesis)) {
         throw new RegistryFailure("HeadMismatch", "the record is at seq 1 and prev_head is not the genesis head");
       }
-      record("prev_head is the genesis head, as §1.3's condition (a) requires at seq 1", "pass");
+      chainPosition = {
+        established: true,
+        detail: "the record is at seq 1 and prev_head is the genesis head, which follows from the signed c",
+      };
+      record("prev_head is the chain's head at seq − 1", "pass", "at seq 1 that head is h₀, and h₀ follows from c");
+    } else if (expectedPrevHead !== undefined) {
+      chainPosition = {
+        established: true,
+        detail: "prev_head is the head the caller supplied, so the position holds relative to that input",
+      };
+      record("prev_head is the chain's head at seq − 1", "pass", "against the head the caller supplied");
     } else {
-      record("chain.genesis reaches chain.prev_head", "skipped", "one package carries no intermediate leaves");
+      chainPosition = {
+        established: false,
+        detail:
+          `the record is at seq ${fields.seq} and nothing here pins prev_head: §1.3's leaf preimage does not ` +
+          "cover it, so no signature binds it; the proof binds only the leaf; and INV-STATE-02 needs the leaves " +
+          "between h₀ and it, which one package does not carry",
+      };
+      record("prev_head is the chain's head at seq − 1", "unestablished", chainPosition.detail);
+      notes.push(
+        `chain position not established: this package places the record at seq ${fields.seq} on its own word. ` +
+          "Supply the expected prev_head, or the chain, to close it.",
+      );
     }
 
-    // hₙ₊₁ = Keccak256(TAG_HEAD ‖ hₙ ‖ leafₙ₊₁).
+    // hₙ₊₁ = Keccak256(TAG_HEAD ‖ hₙ ‖ leafₙ₊₁). Both values come from the package, so this is
+    // internal consistency, which INV-DISC-02 still requires; it is not evidence about the chain.
     if (!bytesEqual(advanceHead(prevHead, leaf), head)) {
       throw new RegistryFailure("HeadMismatch", "chain.head is not Keccak256(TAG_HEAD ‖ prev_head ‖ leaf)");
     }
-    record("chain.head follows from prev_head and the leaf", "pass");
+    record(
+      "chain.head is consistent with prev_head and the leaf",
+      "pass",
+      "an internal relation between two values the package supplies",
+    );
 
     // 6 — inclusion, against a root the caller obtained independently.
     const proof = parseProof(inclusion);
@@ -387,7 +466,7 @@ export function verifyDisclosurePackage(pkg: DisclosurePackage, options: VerifyO
       if (discrepancy) notes.push(`flag discrepancy: package declares ${declared}, the chain gives ${recomputed}`);
     }
 
-    return { ok: true, leaf, fields, flags, checks, notes };
+    return { ok: true, leaf, fields, flags, chainPosition, checks, notes };
   } catch (e) {
     if (!isFailure(e)) throw e; // a bug here must not be mistaken for a refusal
     const failure: Failure = e;
@@ -401,10 +480,34 @@ export function verifyDisclosurePackage(pkg: DisclosurePackage, options: VerifyO
       leaf,
       fields,
       flags,
+      chainPosition,
       checks,
       notes,
     };
   }
+}
+
+/**
+ * A package arrives as JSON text. This parses it and verifies it, which is the path that guarantees
+ * the object the field walk inspects is the object the readers use: `JSON.parse` yields plain
+ * objects with no accessors and no prototype of its own. `verifyDisclosurePackage` accepts an
+ * already-parsed package for callers who have one, and expects it to be JSON-derived for the same
+ * reason.
+ */
+export function verifyDisclosureJson(text: string, options: VerifyOptions): DisclosureReport {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    return {
+      ok: false,
+      failure: { kind: "package", failure: "MalformedPackage", message: `MalformedPackage: ${(e as Error).message}` },
+      chainPosition: { established: false, detail: "the package did not parse" },
+      checks: [{ name: "package parses as JSON", status: "fail" }],
+      notes: [],
+    };
+  }
+  return verifyDisclosurePackage(parsed as DisclosurePackage, options);
 }
 
 /**

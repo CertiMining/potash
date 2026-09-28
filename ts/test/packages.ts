@@ -11,9 +11,11 @@ import { base64Encode, fromHex, toHex } from "../src/bytes.ts";
 import { keccak256 } from "../src/hash.ts";
 import { advanceHead } from "../src/chain.ts";
 import { leafPreimageOf } from "../src/chain.ts";
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { buildEpoch, proofFor, type BuiltEpoch } from "../src/tree.ts";
+import { genesisHeadPreimage, leafPreimage } from "../src/preimage.ts";
 import type { DisclosurePackage } from "../src/disclosure.ts";
-import { GENESIS_HEAD, ASSET_COMMITMENT, loadVector, recordFromJson } from "./support.ts";
+import { GENESIS_HEAD, ASSET_COMMITMENT, QP_KEY, RFC8032_TEST_SECRET, loadVector, recordFromJson } from "./support.ts";
 
 export const RECORD_SUBMISSION_ID = fromHex("0x02000000000000000000000000000000", 16);
 
@@ -44,6 +46,66 @@ export function fullEpochHoldingRecord(): BuiltEpoch {
     { submissionId: RECORD_SUBMISSION_ID, leaf },
   ];
   return buildEpoch(BigInt(v.inputs.epoch), Number(v.inputs.height), fromHex(v.inputs.master_key, 32), real);
+}
+
+/**
+ * A package at an arbitrary sequence number, with a valid QP signature and a real inclusion proof,
+ * and with `prev_head` whatever the caller says. Nothing in §1.3's leaf preimage covers `prev_head`,
+ * so a package like this is exactly as well signed and as well anchored as an honest one: that is
+ * the point of the test it serves.
+ */
+export function signedPackageAt(
+  seq: bigint,
+  prevHead: Uint8Array,
+  options: { epoch?: bigint } = {},
+): { pkg: DisclosurePackage; root: { epoch: bigint; root: Uint8Array }; leaf: Uint8Array } {
+  const v = loadVector("V-P-05");
+  const epoch = options.epoch ?? BigInt(v.inputs.epoch);
+  const fields = {
+    seq,
+    payloadDigest: fromHex("0x2222222222222222222222222222222222222222222222222222222222222222", 32),
+    assessmentDigest: fromHex("0x3333333333333333333333333333333333333333333333333333333333333333", 32),
+    qpKey: QP_KEY,
+    category: 2,
+    effectiveAt: 1700000000n,
+    changeIdentifiedAt: 1699999900n,
+  };
+  const preimage = leafPreimage(ASSET_COMMITMENT, fields);
+  const leaf = keccak256(preimage);
+  const signature = ed25519.sign(preimage, RFC8032_TEST_SECRET);
+  const built = buildEpoch(epoch, Number(v.inputs.height), fromHex(v.inputs.master_key, 32), [
+    { submissionId: RECORD_SUBMISSION_ID, leaf },
+  ]);
+  const proof = proofFor(built, RECORD_SUBMISSION_ID);
+  const pkg: DisclosurePackage = {
+    schema: "certimining/v1/disclosure",
+    record: {
+      seq: seq.toString(),
+      category: fields.category,
+      effective_at: fields.effectiveAt.toString(),
+      change_identified_at: fields.changeIdentifiedAt.toString(),
+      payload_digest: toHex(fields.payloadDigest),
+      assessment_digest: toHex(fields.assessmentDigest),
+      qp_key: toHex(fields.qpKey),
+      payload_uri: "ipfs://bafyexamplepayload",
+      flags: 0,
+    },
+    preimage_borsh: base64Encode(preimage),
+    chain: {
+      prev_head: toHex(prevHead),
+      head: toHex(advanceHead(prevHead, leaf)),
+      genesis: toHex(keccak256(genesisHeadPreimage(ASSET_COMMITMENT, 1))),
+    },
+    qp_signature: toHex(signature),
+    inclusion: {
+      epoch: proof.epoch.toString(),
+      height: proof.height,
+      slot_index: proof.slotIndex,
+      siblings: proof.siblings.map((s) => toHex(s)),
+    },
+    anchor: { solana_tx: "5".repeat(64), solana_slot: 0, ots_receipt_digest: `0x${"00".repeat(32)}` },
+  };
+  return { pkg, root: { epoch: built.epoch, root: built.root }, leaf };
 }
 
 export function packageFrom(built: BuiltEpoch): DisclosurePackage {

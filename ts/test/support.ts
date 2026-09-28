@@ -20,6 +20,12 @@ export const ASSET_COMMITMENT = fromHex("0xb98ec7078b78f238301c0fbe1089665cf5fc7
 export const GENESIS_HEAD = fromHex("0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c", 32);
 /** RFC 8032 §7.1's published specification test key, which the vectors' notes name. */
 export const QP_KEY = fromHex("0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", 32);
+/**
+ * Its private half, which RFC 8032 §7.1 publishes, so every signature the vectors carry is
+ * reproducible and a test can mint new ones. Signing is a test-side concern: the verifier holds no
+ * key and has nowhere to put one.
+ */
+export const RFC8032_TEST_SECRET = fromHex("0x9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", 32);
 
 export function vectorFiles(): string[] {
   return readdirSync(VECTORS_DIR).filter((f) => f.endsWith(".json")).sort();

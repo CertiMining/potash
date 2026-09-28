@@ -58,9 +58,16 @@ const MUTATIONS = [
   ["src/disclosure.ts", "    const expectedGenesis = keccak256(genesisHeadPreimage(fields.assetCommitment, SCHEMA_VERSION));", "    const expectedGenesis = keccak256(genesisHeadPreimage(fields.assetCommitment, 2));", "finding 1: the genesis is recomputed under schema 1"],
   ["src/disclosure.ts", "      if (!bytesEqual(prevHead, genesis)) {", "      if (false) {", "finding 1: condition (a) at n = 0"],
   ["src/disclosure.ts", "    checkOnlyListedFields(pkg, PACKAGE_SHAPE, \"\");", "    void PACKAGE_SHAPE;", "finding 2: a field §2.5 does not list refuses the package"],
-  ["src/disclosure.ts", "    if (childShape === undefined) {", "    if (childShape === undefined && path === \"\") {", "finding 2: an unlisted field nested inside a listed one"],
+  ["src/disclosure.ts", "    if (!Object.hasOwn(shape, field)) {", "    if (!Object.hasOwn(shape, field) && path === \"\") {", "finding 2: an unlisted field nested inside a listed one"],
   ["src/disclosure.ts", "    if (isContainer(value)) {\n      throw new PackageFailure(\"UnlistedField\", `${path} carries a structure where §2.5 shows a single value`);", "    if (false) {\n      throw new PackageFailure(\"UnlistedField\", `${path} carries a structure where §2.5 shows a single value`);", "finding 2: nothing hides inside a field §2.5 shows as a value"],
   ["src/solana/accounts.ts", "  if (schemaVersion !== SCHEMA_VERSION) {", "  if (false) {", "finding 3: an account under another schema version is refused"],
+  // The second review round.
+  ["src/disclosure.ts", "      record(\"prev_head is the chain's head at seq − 1\", \"unestablished\", chainPosition.detail);", "      record(\"prev_head is the chain's head at seq − 1\", \"pass\", chainPosition.detail);", "finding 1: an unestablished chain position is not reported as passing"],
+  ["src/disclosure.ts", "      chainPosition = {\n        established: false,\n        detail:", "      chainPosition = {\n        established: true,\n        detail:", "finding 1: the report says the chain position was not established"],
+  ["src/disclosure.ts", "    if (expectedPrevHead !== undefined && !bytesEqual(prevHead, expectedPrevHead)) {", "    if (false) {", "finding 1: a prev_head the caller did not expect is 0x03"],
+  ["src/disclosure.ts", "    if (!Object.hasOwn(shape, field)) {", "    if (shape[field] === undefined) {", "finding 2: membership is tested with Object.hasOwn, not by indexing"],
+  ["src/disclosure.ts", "  if (!isPlainObject(value)) {", "  if (!isContainer(value) || Array.isArray(value)) {", "finding 2: a container's fields must be its own"],
+  ["src/solana/pda.ts", "  const address = sha256(concat([...seeds, programId, PDA_MARKER]));", "  const address = sha256(concat([...seeds, PDA_MARKER, programId]));", "§2.4: the program address hashes seeds, bump, program id, marker, in that order"],
   ["test/handlers.ts", "  \"V-N-25\": vN25,", "", "the suite fails when a vector has no handler"],
 ];
 

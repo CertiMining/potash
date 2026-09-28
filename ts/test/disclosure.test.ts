@@ -8,7 +8,12 @@ import { base64Encode, fromHex, toHex } from "../src/bytes.ts";
 import { keccak256 } from "../src/hash.ts";
 import { RegistryFailure } from "../src/errors.ts";
 import { advanceHead } from "../src/chain.ts";
-import { verifyDisclosurePackage, findAssetCommitmentOutsidePreimage, readLeafPreimage } from "../src/disclosure.ts";
+import {
+  verifyDisclosureJson,
+  verifyDisclosurePackage,
+  findAssetCommitmentOutsidePreimage,
+  readLeafPreimage,
+} from "../src/disclosure.ts";
 import { genesisHeadPreimage, leafPreimage } from "../src/preimage.ts";
 import { TAG_HEAD } from "../src/tags.ts";
 import { decodeCheckpointAccount, decodeLogConfig } from "../src/solana/accounts.ts";
@@ -17,6 +22,7 @@ import { ASSET_COMMITMENT, GENESIS_HEAD, loadVector } from "./support.ts";
 import {
   checkpointBytes,
   clone,
+  signedPackageAt,
   epochHoldingRecord,
   fullEpochHoldingRecord,
   logConfigBytes,
@@ -377,4 +383,126 @@ test("FINDING 3: a checkpoint account under another schema version is refused", 
     (e: unknown) => e instanceof RegistryFailure && e.code === 0x0f,
     "a schema-2 checkpoint reached the caller",
   );
+});
+
+
+test("FINDING 1: a record past seq 1 cannot establish its chain position from one package", () => {
+  // §1.3's leaf preimage covers c, seq, the two digests, qp_key, category and the two dates. It does
+  // not cover prev_head or head, so nothing signs them; and INV-STATE-02 recomputes hₙ from h_m and
+  // the leaves between, which one package does not carry. So for seq > 1 an arbitrary prev_head is
+  // exactly as well signed and as well anchored as the real one.
+  const invented = signedPackageAt(7n, keccak256(new TextEncoder().encode("not this chain's head at six")));
+  const report = verifyDisclosurePackage(invented.pkg, { root: invented.root, configuredHeight: 8 });
+
+  // What is established, is: the signature holds, the leaf is in the anchored tree, the genesis is
+  // this asset's. What is not, must not be reported as passing.
+  assert.equal(report.chainPosition.established, false, "a seq-7 package claimed an established chain position");
+  assert.match(report.chainPosition.detail, /prev_head/);
+  const step = report.checks.find((c) => c.name.includes("prev_head"));
+  assert.ok(step !== undefined, "no check line speaks about prev_head");
+  assert.equal(step.status, "unestablished", `the prev_head line reports "${step.status}"`);
+  assert.equal(report.checks.some((c) => c.status === "pass" && /prev_head is the chain/.test(c.name)), false);
+  assert.ok(
+    report.notes.some((n) => /chain position/i.test(n)),
+    "the notes do not tell a reader the chain position was not established",
+  );
+
+  // At seq 1 the genesis head follows from `c`, so the position is established and says so.
+  const first = verifyDisclosurePackage(good, { root, configuredHeight: 8 });
+  assert.equal(first.ok, true);
+  assert.equal(first.chainPosition.established, true);
+
+  // A caller who holds the previous package can close the gap, the way §2.2 closes the QP key's with
+  // `expected_qp_key` and §2.3 closes the observed epoch's: by supplying what the artifact cannot.
+  const real = signedPackageAt(7n, fromHex(`0x${"5c".repeat(32)}`, 32));
+  const withExpected = verifyDisclosurePackage(real.pkg, {
+    root: real.root,
+    configuredHeight: 8,
+    chainContext: { sawResource: true, previousCategory: 2, expectedPrevHead: fromHex(`0x${"5c".repeat(32)}`, 32) },
+  });
+  assert.equal(withExpected.ok, true, JSON.stringify(withExpected.failure));
+  assert.equal(withExpected.chainPosition.established, true, "a supplied prev_head did not establish the position");
+
+  // And a supplied prev_head that disagrees is condition (a) failing: 0x03.
+  expectCode(real.pkg, real.root, 0x03, "HeadMismatch", "a prev_head the caller did not expect", {
+    configuredHeight: 8,
+    chainContext: { sawResource: true, previousCategory: 2, expectedPrevHead: fromHex(`0x${"ee".repeat(32)}`, 32) },
+  });
+
+  // Internal inconsistency still refuses: a head that does not follow from prev_head and the leaf.
+  const broken = clone(invented.pkg);
+  broken.chain.head = `0x${"ab".repeat(32)}`;
+  expectCode(broken, invented.root, 0x03, "HeadMismatch", "a head that does not follow", { configuredHeight: 8 });
+});
+
+test("FINDING 2: the field allow-list cannot be bypassed by an inherited property name", () => {
+  // §2.5's closure and V-Z-05 must not depend on what the language happens to put on an object. Each
+  // of these names survives a JSON round trip as an own property, and indexing the shape with it
+  // finds something inherited from Object.prototype rather than nothing.
+  const names = ["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty", "isPrototypeOf"];
+  // Three value shapes, because each took a different path through the walk: an empty object reached
+  // the end of the loop and was accepted outright, a single value was refused as malformed rather
+  // than as unlisted, and a populated object was caught one level too deep, at its child's name.
+  const values: unknown[] = [{}, `0x${"99".repeat(32)}`, { epoch_key: `0x${"99".repeat(32)}` }];
+
+  for (const name of names) {
+    for (const container of [null, "record", "chain", "inclusion", "anchor"] as const) {
+      for (const value of values) {
+        const text =
+          container === null
+            ? JSON.stringify({ ...good, [name]: value })
+            : JSON.stringify({ ...good, [container]: { ...(good as any)[container], [name]: value } });
+        const pkg = JSON.parse(text);
+        const target = container === null ? pkg : pkg[container];
+        assert.ok(Object.hasOwn(target, name), `${name} did not survive the JSON round trip`);
+
+        const where = container === null ? name : `${container}.${name}`;
+        const report = verifyDisclosurePackage(pkg, { root, configuredHeight: 8 });
+        assert.equal(report.ok, false, `${where} carrying ${JSON.stringify(value)} was accepted`);
+        assert.equal(
+          (report.failure as any).failure,
+          "UnlistedField",
+          `${where}: refused as ${(report.failure as any).failure}, which is not what it is`,
+        );
+        // The refusal names the unlisted field itself, not one of its children: the field is the
+        // problem, and a message pointing a level deeper would send a reader to the wrong place.
+        assert.match(report.failure!.message, new RegExp(`^UnlistedField: ${where.replace(".", "\\.")} `), where);
+      }
+    }
+  }
+});
+
+test("FINDING 2: a container's fields must be its own, not its prototype's", () => {
+  // If the fields live on a prototype, the walk sees an empty object while the readers below find
+  // them by ordinary property access: what was checked and what was used would not be the same
+  // object. §2.5's list can only close a package whose fields the walk can see.
+  const onPrototype = Object.create(good) as typeof good;
+  assert.equal(Object.keys(onPrototype).length, 0, "the fields are inherited, not own");
+  assert.equal(onPrototype.schema, "certimining/v1/disclosure", "and they are still readable by property access");
+  expectPackageFailure(onPrototype, root, "MalformedPackage", "a package whose fields are inherited", {
+    configuredHeight: 8,
+  });
+
+  const recordOnPrototype = { ...good, record: Object.create(good.record) as typeof good.record };
+  expectPackageFailure(recordOnPrototype, root, "MalformedPackage", "a record whose fields are inherited", {
+    configuredHeight: 8,
+  });
+});
+
+
+test("a package arriving as JSON text verifies through the same path", () => {
+  // The form a package actually travels in. Parsing here is what guarantees the object the field walk
+  // inspects is the object the checks use: no accessors, no prototype of its own.
+  const ok = verifyDisclosureJson(JSON.stringify(good), { root, configuredHeight: 8 });
+  assert.equal(ok.ok, true, JSON.stringify(ok.failure));
+  assert.equal(ok.chainPosition.established, true);
+
+  const leaked = verifyDisclosureJson(JSON.stringify({ ...good, constructor: {} }), { root, configuredHeight: 8 });
+  assert.equal(leaked.ok, false);
+  assert.equal((leaked.failure as any).failure, "UnlistedField");
+
+  const notJson = verifyDisclosureJson("{ not json", { root, configuredHeight: 8 });
+  assert.equal(notJson.ok, false);
+  assert.equal((notJson.failure as any).failure, "MalformedPackage");
+  assert.equal(notJson.chainPosition.established, false);
 });

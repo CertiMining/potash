@@ -10,18 +10,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { fromHex, toHex } from "../src/bytes.ts";
+import { toHex } from "../src/bytes.ts";
 import { keccak256 } from "../src/hash.ts";
 import { advanceHead, applyRecord, commit, genesisHead, leafPreimageOf, type ChainState, type RecordLeafInput } from "../src/chain.ts";
 import { buildEpoch, proofFor, verifyInclusion } from "../src/tree.ts";
-import { ASSET_COMMITMENT, QP_KEY } from "./support.ts";
-
-/**
- * RFC 8032 §7.1's test-1 secret key, whose public half is the `qp_key` every vector carries. Its
- * private half is published in the RFC, which is why the vectors' own notes call it reproducible.
- * Signing is a test-side concern: the verifier holds no key and has nowhere to put one.
- */
-const RFC8032_TEST_SECRET = fromHex("0x9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", 32);
+import { ASSET_COMMITMENT, QP_KEY, RFC8032_TEST_SECRET } from "./support.ts";
 
 const RECORDS = 1000;
 

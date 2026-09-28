@@ -54,6 +54,9 @@ export class RegistryFailure extends Error {
   detail: string | undefined;
 
   constructor(name: RegistryCodeName, detail?: string) {
+    // The only object in this file indexed by a variable, and the variable is always a literal from
+    // this repository: no code name ever comes out of a package or an account. Were that to change,
+    // this lookup would need `Object.hasOwn` for the reason `checkOnlyListedFields` does.
     const code = REGISTRY_CODES[name];
     super(`${formatCode(code)} ${name}${detail ? `: ${detail}` : ""}`);
     this.name = "RegistryFailure";

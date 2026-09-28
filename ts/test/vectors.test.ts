@@ -47,7 +47,9 @@ test("MANIFEST.sha256 covers the vector directory and every digest matches", () 
 
 test("every *.json vector has a handler", () => {
   const files = vectorFiles();
-  const missing = files.map((f) => f.replace(/\.json$/, "")).filter((id) => HANDLERS[id] === undefined);
+  // `Object.hasOwn`, not indexing: a vector file named `constructor.json` or `toString.json` would
+  // otherwise find something on Object.prototype and this guard would report itself satisfied.
+  const missing = files.map((f) => f.replace(/\.json$/, "")).filter((id) => !Object.hasOwn(HANDLERS, id));
   assert.deepEqual(missing, [], `vectors with no handler: ${missing.join(", ")}`);
 
   const extra = Object.keys(HANDLERS).filter((id) => !files.includes(`${id}.json`));
@@ -61,8 +63,9 @@ for (const file of vectorFiles()) {
   test(`${id}: ${loadVector(id).description ?? ""}`.trim(), () => {
     const vector = loadVector(id);
     assert.equal(vector.id, id, "the vector's own id disagrees with its filename");
+    assert.ok(Object.hasOwn(HANDLERS, id), `no handler for ${id}`);
     const handler = HANDLERS[id];
-    assert.ok(handler !== undefined, `no handler for ${id}`);
-    handler(vector);
+    assert.equal(typeof handler, "function", `the handler for ${id} is not a function`);
+    handler!(vector);
   });
 }

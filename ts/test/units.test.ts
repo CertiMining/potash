@@ -11,7 +11,14 @@ import { canonicalize, canonicalizeBytes } from "../src/canonical.ts";
 import { assetCommitment, isWellFormedPayloadUri } from "../src/chain.ts";
 import { isOnCurve, sha256 } from "../src/hash.ts";
 import { base58Decode, base58Encode } from "../src/solana/base58.ts";
-import { createProgramAddress, deriveCheckpointAddress, deriveLogConfigAddress, findProgramAddress } from "../src/solana/pda.ts";
+import {
+  PDA_MARKER,
+  SEED_LOG_CONFIG,
+  createProgramAddress,
+  deriveCheckpointAddress,
+  deriveLogConfigAddress,
+  findProgramAddress,
+} from "../src/solana/pda.ts";
 import {
   CHECKPOINT_DISCRIMINATOR,
   CHECKPOINT_LEN,
@@ -66,6 +73,39 @@ test("§2.4's PDAs derive deterministically, land off the curve, and depend on t
     assert.equal(createProgramAddress([utf8("cm_ckpt"), u64le(20361n), Uint8Array.of(bump)], programId), null);
   }
   assert.throws(() => findProgramAddress([new Uint8Array(33)], programId), RangeError);
+});
+
+test("§2.4's program address reproduces both addresses the corrected paragraph publishes", () => {
+  // §2.4 now states the derivation:
+  //   SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖ "ProgramDerivedAddress" )
+  // for the largest single-byte bump from 255 downwards whose result is not on the Ed25519 curve.
+  // Its correction note publishes two addresses for "the announced deployment": the right order
+  // gives CZM6Lnv… at bump 250, and the order it first printed, with the bump after the program id,
+  // gives 4wmoJSg… at bump 255. The paragraph names that deployment's program id, and it is the
+  // announced one this verifier already held in src/solana/rpc.ts; both 32-byte values reproducing
+  // under it is itself evidence that it is the right one.
+  const announced = base58Decode("By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB");
+
+  const derived = deriveLogConfigAddress(announced);
+  assert.equal(base58Encode(derived.address), "CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7", "LogConfig address");
+  assert.equal(derived.bump, 250, "the canonical bump is not 255 here, which is what makes this a real check");
+  assert.equal(isOnCurve(derived.address), false);
+
+  // Every bump above the canonical one must be on the curve, which is what "largest from 255
+  // downwards whose result is not a point" means.
+  for (let bump = 255; bump > derived.bump; bump--) {
+    assert.equal(
+      createProgramAddress([SEED_LOG_CONFIG, Uint8Array.of(bump)], announced),
+      null,
+      `bump ${bump} should have been rejected as on-curve`,
+    );
+  }
+
+  // The order the document first printed, kept as a negative control: reordering the concatenation
+  // must not reproduce the real address, and does reproduce the one the correction names.
+  const wrongOrder = sha256(concat([SEED_LOG_CONFIG, announced, Uint8Array.of(255), PDA_MARKER]));
+  assert.equal(base58Encode(wrongOrder), "4wmoJSgJCv4Kv9BVwwbSabgEQm23oRsgYte12HH4teHa", "the erroneous order");
+  assert.notEqual(base58Encode(wrongOrder), base58Encode(derived.address));
 });
 
 test("§2.4's CheckpointAccount decodes at the stated offsets, and refuses anything else", () => {
