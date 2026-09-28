@@ -518,7 +518,15 @@ LogConfig (PDA ["cm_cfg"])            offset  len        CheckpointAccount (PDA 
                                                                                  total  106
 ```
 
-**The program address, and how to derive it (added on this branch, unmerged).** A checkpoint lives at the program-derived address for `["cm_ckpt", epoch_le]` and the log's configuration at `["cm_cfg"]`, and this table named those seeds without saying how an address follows from them. **The derivation is Solana's, not this document's**, and it is cited rather than restated as though it were ours: the address is `SHA-256(seed₀ ‖ … ‖ seedₙ ‖ program_id ‖ bump ‖ "ProgramDerivedAddress")` for the largest single-byte `bump` from 255 downwards whose result is **not** a point on the Ed25519 curve, which is the canonical bump. See Solana's documentation for program-derived addresses; the constraints on seed count and length are that platform's too.
+**The program address, and how to derive it (added on this branch, unmerged).** A checkpoint lives at the program-derived address for `["cm_ckpt", epoch_le]` and the log's configuration at `["cm_cfg"]`, and this table named those seeds without saying how an address follows from them. **The derivation is Solana's, not this document's**, and it is cited rather than restated as though it were ours: **the bump is the last seed, not a field after the program id.** The address is
+
+```
+SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖ "ProgramDerivedAddress" )
+```
+
+for the largest single-byte `bump` from 255 downwards whose result is **not** a point on the Ed25519 curve, which is the canonical bump.
+
+*Corrected on this branch.* The first version of this paragraph wrote `… ‖ program_id ‖ bump ‖ …`, with the bump and the program id the wrong way round. That is not a typographical detail: against the announced deployment the wrong order derives `4wmoJSgJCv4Kv9BVwwbSabgEQm23oRsgYte12HH4teHa` at bump 255, while the log's configuration is actually at `CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7` at bump 250. **An implementer following the erroneous text could not have fetched the log** — which is precisely the failure this paragraph was added to prevent, reintroduced by the paragraph itself. Found by E-11's second review round and checked against the live cluster rather than against another implementation. See Solana's documentation for program-derived addresses; the constraints on seed count and length are that platform's too.
 
 Recording it closes the same gap the discriminator had. An implementer working from this document alone could produce neither, and E-11's verifier produced both from published platform convention rather than from here — which is legitimate and was not written down (D-90).
 
