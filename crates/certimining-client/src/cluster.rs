@@ -94,17 +94,41 @@ impl Cluster {
     pub fn attach(
         &self,
         epoch: u64,
-        root: &Digest,
         receipt: &[u8],
         payer: &dyn Signer,
         authority: &dyn Signer,
     ) -> Result<(Digest, crate::BitcoinClaim), AttachRefused> {
-        let claim = crate::verify_receipt(receipt, root).map_err(AttachRefused::Receipt)?;
+        // **The root comes from the chain, not from the caller.** An earlier version took it as an
+        // argument and verified the receipt against whatever was handed in, which checks that a
+        // receipt and a digest agree and not that either is this epoch's. A caller holding a receipt
+        // for some other root would have attached it to this epoch and the check would have passed.
+        let found = crate::root_for_epoch(self, &self.program_id, epoch)
+            .map_err(|e| AttachRefused::Cluster(format!("{e:?}")))?;
+        let published = match &found {
+            Fetched::Placed(c) => c.root,
+            other => return Err(AttachRefused::NotPublished(format!("{other:?}"))),
+        };
+
+        // What this establishes: the receipt commits to the root this epoch actually carries, and it
+        // carries a Bitcoin attestation rather than only a calendar's promise — which is what D-112
+        // spends the single write-once opportunity on.
+        //
+        // **What it cannot establish**: that the attestation is true. Verifying one means recomputing
+        // the operations to that block's merkle root, which needs a source of Bitcoin headers this
+        // crate does not have (#48). So this refuses a receipt that does not even claim Bitcoin, and
+        // a forged claim would pass. The claim is returned rather than swallowed so a caller sees
+        // what it is authorising on.
+        let claim = crate::verify_receipt(receipt, &published).map_err(AttachRefused::Receipt)?;
         let digest = crate::receipt_digest::<certimining_core::NativeKeccak>(receipt)
             .ok_or(AttachRefused::TooLong)?;
+
+        // The program this client was pointed at, the way `publish` and `status` do it. Deriving from
+        // the compiled-in id instead would have sent a Cluster aimed at a superseded deployment to
+        // the announced one.
+        let program = solana_pubkey::Pubkey::from(self.program_id.to_bytes());
         let metas = certimining_checkpoint::accounts::Attach {
-            config: crate::config_address(&certimining_checkpoint::ID),
-            checkpoint: crate::checkpoint_address(&certimining_checkpoint::ID, epoch),
+            config: crate::config_address(&self.program_id),
+            checkpoint: crate::checkpoint_address(&self.program_id, epoch),
             authority: Pubkey::from(authority.pubkey().to_bytes()),
         }
         .to_account_metas(None)
@@ -116,7 +140,7 @@ impl Cluster {
         })
         .collect();
         let ix = solana_instruction::Instruction {
-            program_id: solana_pubkey::Pubkey::from(certimining_checkpoint::ID.to_bytes()),
+            program_id: program,
             accounts: metas,
             data: certimining_checkpoint::instruction::AttachAnchorReceipt {
                 epoch,
@@ -301,6 +325,8 @@ pub enum AttachRefused {
     Receipt(crate::ReceiptRefused),
     /// The receipt is longer than the digest's u16 length prefix can encode.
     TooLong,
+    /// The epoch carries no root on chain, so there is nothing for a receipt to be about.
+    NotPublished(String),
     /// The cluster refused or could not be reached.
     Cluster(String),
 }

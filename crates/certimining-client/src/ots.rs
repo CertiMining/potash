@@ -236,6 +236,9 @@ impl AnchorB for ReferenceClient {
     }
 
     fn upgrade(&self, pending: &PendingReceipt) -> Result<Option<Digest>, String> {
+        // The pin is checked here too. Gating only `submit` left the half that decides whether a
+        // receipt is Bitcoin-carrying running on whatever executable the path resolved to.
+        self.check_version()?;
         // The reference client exits non-zero while a timestamp is merely pending — "Failed!
         // Timestamp not complete" — and that is the expected state for hours rather than a fault.
         // The exit status is therefore not the verdict: the receipt on disk is read and verified, and

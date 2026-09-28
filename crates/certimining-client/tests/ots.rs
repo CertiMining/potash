@@ -129,6 +129,30 @@ mod key_handling {
         assert!(refuse_a_readable_key(&key_at(0o600)).is_ok());
     }
 
+    /// Every mode, because "0600 and nothing else" is the claim and two samples do not make it.
+    ///
+    /// D-117's record said this sweep existed before it did: the sentence was written from a
+    /// reviewer's own verification and described their work as though it described these tests. The
+    /// test is here now so the record is true rather than trimmed to fit.
+    #[test]
+    fn exactly_0600_is_accepted_across_every_mode() {
+        let mut accepted = Vec::new();
+        for mode in 0o000..=0o777u32 {
+            if refuse_a_readable_key(&key_at(mode)).is_ok() {
+                accepted.push(mode);
+            }
+        }
+        assert_eq!(
+            accepted,
+            vec![0o600],
+            "modes accepted: {:?}",
+            accepted
+                .iter()
+                .map(|m| format!("{m:o}"))
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn a_key_anyone_can_read_is_refused() {
         let refused = refuse_a_readable_key(&key_at(0o644));

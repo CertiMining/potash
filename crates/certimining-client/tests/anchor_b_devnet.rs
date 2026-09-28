@@ -142,7 +142,7 @@ fn stage_two_attach_once_bitcoin_confirms() {
     // Building the instruction here by hand is what let a pending receipt reach a write-once field:
     // the rule D-112 states was only ever the order this harness called things in.
     let (attached, claim) = cluster
-        .attach(epoch, &root, &bytes, &payer, &authority)
+        .attach(epoch, &bytes, &payer, &authority)
         .unwrap_or_else(|e| panic!("epoch {epoch}: {e:?}"));
     assert_eq!(
         attached, digest,

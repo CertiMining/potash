@@ -1203,13 +1203,18 @@ version, and a missing executable is a refusal rather than a pass.
 
 **What production would need, recorded so no text implies this is the end state.** An OS keychain removes the file; a remote signer removes the key from the host altogether. Both are out of scope before 12 October and neither is pretended to be present.
 
-**What exists on this branch, stated plainly (28 Sep 2026).** There is no worker binary. `E-10` builds
-the anchor-B client and its harnesses, and `refuse_a_readable_key` is exercised by unit tests across
-every mode from `0000` to `0777` and called by the integration harness that reads the checkpoint
-authority. It is not called at the start of a long-running process, because no such process exists yet.
-The decision stands as the rule a worker must follow; the worker itself is filed for after the
-submission deadline, and this note is here so that nobody reads the heading as a description of
-something running.
+**Amended 28 Sep 2026: this decision describes a worker that does not exist, and is written in the
+future tense now.** Read it as the rule a worker must follow when one is built (#49), not as a
+description of something running. E-10 builds the anchor-B client and its harnesses and no binary:
+`refuse_a_readable_key` is called by the integration harness that reads the checkpoint authority, and
+there is no startup path to refuse at.
+
+**A correction to this note's own first version.** It claimed the helper was "exercised by unit tests
+across every mode from `0000` to `0777`". It was not — the tests covered `0600` and `0644`. That
+sentence was written from a reviewer's verification sweep and described their work as though it
+described these tests, which is the kind of borrowing this repository has now been caught at twice. The
+sweep exists as a test as of this head, so the claim is true because it was made true rather than
+trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is accepted.
 
 ## D-118 · Silent degradation is a test, not a sentence
 
