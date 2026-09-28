@@ -20,8 +20,7 @@ use std::path::Path;
 
 use certimining_core::{
     AssetChain, AssetId, AssetIdentity, ChainState, Digest, GenesisHeadPreimage, Hasher,
-    LeafPreimage, NativeKeccak,
-    PayloadUri, Preimage, PreimageBuf, RecordLeafInput, SubmissionId,
+    LeafPreimage, NativeKeccak, PayloadUri, Preimage, PreimageBuf, RecordLeafInput, SubmissionId,
 };
 use certimining_log::{BuiltEpoch, EpochTree, InclusionVerifier, ProofVerifier};
 use ed25519_dalek::{Signer as _, SigningKey};
@@ -107,12 +106,13 @@ pub fn gen_demo(dir: &Path) {
         id[..8].copy_from_slice(&3u64.to_le_bytes());
         id
     };
-    let built =
-        <BuiltEpoch as EpochTree>::build::<NativeKeccak>(DEMO_EPOCH, DEMO_HEIGHT, &DEMO_MASTER_KEY, &[(
-            submission_id,
-            leaf,
-        )])
-        .expect("the epoch builds");
+    let built = <BuiltEpoch as EpochTree>::build::<NativeKeccak>(
+        DEMO_EPOCH,
+        DEMO_HEIGHT,
+        &DEMO_MASTER_KEY,
+        &[(submission_id, leaf)],
+    )
+    .expect("the epoch builds");
     let proof = built.proof(&submission_id).expect("the epoch holds it");
 
     // Generation fails rather than writing a package a verifier would refuse: the proof has to verify
@@ -128,14 +128,7 @@ pub fn gen_demo(dir: &Path) {
         "the proof does not verify against the root this fixture ships"
     );
 
-    let package = disclosure_json(
-        last,
-        &preimage,
-        heads[2],
-        heads[3],
-        genesis,
-        &proof,
-    );
+    let package = disclosure_json(last, &preimage, heads[2], heads[3], genesis, &proof);
 
     // Scene 3's input. One byte of the signed preimage is flipped and nothing else moves, so the
     // failure a viewer sees is the one §1.3's condition (c) describes rather than a malformed file.
@@ -248,7 +241,11 @@ pub fn gen_demo(dir: &Path) {
     fs::set_permissions(&manifest_path, fs::Permissions::from_mode(FILE_MODE))
         .expect("the mode can be set");
 
-    println!("wrote {} fixtures and MANIFEST.sha256 to {}", files.len(), dir.display());
+    println!(
+        "wrote {} fixtures and MANIFEST.sha256 to {}",
+        files.len(),
+        dir.display()
+    );
     for name in files.keys() {
         println!("  {name}");
     }
@@ -368,7 +365,7 @@ fn digest_of<P: Preimage>(p: &P) -> Digest {
 /// digest on both sides, so a wrong encoder fails a test rather than producing a plausible fixture.
 fn base64(bytes: &[u8]) -> String {
     const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b = [
             chunk[0],
