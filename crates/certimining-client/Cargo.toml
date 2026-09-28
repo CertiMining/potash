@@ -64,6 +64,10 @@ bitcoin_hashes = { version = "=0.12.0", optional = true }
 sha3 = "=0.10.8"
 # The cluster stand-in for tests that need one; the RPC itself is behind a trait (D-84).
 litesvm = "=0.16.0"
+# Reading V-P-12, the only vector this crate consumes: §2.4's program addresses, which the client
+# derives and the vector states. Already in the lock file for xtask, so no crate enters the graph
+# that the licence and advisory gates had not already seen. JSON stays out of the library (D-57).
+serde_json = "=1.0.151"
 solana-instruction = "=3.4.1"
 solana-keypair = "=3.1.2"
 solana-message = "=4.4.1"

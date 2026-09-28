@@ -68,6 +68,7 @@ const MUTATIONS = [
   ["src/disclosure.ts", "    if (!Object.hasOwn(shape, field)) {", "    if (shape[field] === undefined) {", "finding 2: membership is tested with Object.hasOwn, not by indexing"],
   ["src/disclosure.ts", "  if (!isPlainObject(value)) {", "  if (!isContainer(value) || Array.isArray(value)) {", "finding 2: a container's fields must be its own"],
   ["src/solana/pda.ts", "  const address = sha256(concat([...seeds, programId, PDA_MARKER]));", "  const address = sha256(concat([...seeds, PDA_MARKER, programId]));", "§2.4: the program address hashes seeds, bump, program id, marker, in that order"],
+  ["src/solana/pda.ts", "  for (let bump = 255; bump >= 0; bump--) {", "  for (let bump = 0; bump <= 255; bump++) {", "§2.4: the canonical bump is the largest off-curve one, searched downwards"],
   ["test/handlers.ts", "  \"V-N-25\": vN25,", "", "the suite fails when a vector has no handler"],
 ];
 

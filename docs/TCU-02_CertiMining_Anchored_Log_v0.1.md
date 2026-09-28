@@ -633,6 +633,7 @@ Twenty-six days to the deadline. The engine is the submission; the ordering belo
 | V-P-08 | Rust core vs TS verifier, all of the above | Byte-identical digests and identical accept/reject |
 | V-P-09 | Record with zero `assessment_digest` and zero `change_identified_at` | Accepted; absence recorded (INV-STATE-05) |
 | V-P-10 | SPI satisfied at `promised_epoch + 2` | Valid; at +3, `0x14` |
+| V-P-12 | §2.4's derivation applied to `["cm_cfg"]` and `["cm_ckpt", epoch_le]` against the announced program id *(added on this branch, unmerged)* | The address and canonical bump this section publishes, every higher bump on the curve, and the order this section first printed reproducing the wrong answer it names and not the right one |
 
 Digest values are produced by E-05 and committed with a manifest hash. None are authored by hand and none appear in this document.
 

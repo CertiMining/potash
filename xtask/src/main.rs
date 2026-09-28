@@ -119,6 +119,7 @@ fn gen_vectors(dir: &Path) {
 
     let mut files: BTreeMap<String, Value> = BTreeMap::new();
     positives(&mut files);
+    program_addresses(&mut files);
     negatives(&mut files);
     trees(&mut files);
     promises(&mut files);
@@ -482,6 +483,187 @@ fn positives(files: &mut BTreeMap<String, Value>) {
                 "asserted": "INV-STATE-06a: the flag does not change the leaf digest",
             }),
             &[TEST_KEY_NOTE],
+        ),
+    );
+}
+
+// ------------------------------------------------- §2.4's program addresses, from §2.4's own text
+
+/// Base58 with the Bitcoin alphabet, enough to read the addresses §2.4 prints.
+///
+/// **This is not specification content.** §2.4 gives no textual encoding for an address; base58 is the
+/// platform's, and it is implemented here for one reason only — so `spec.rs` can hold the addresses
+/// the document prints, character for character, instead of a byte array nobody can compare against
+/// the page. Every value this decoder produces is checked against a derivation, so a wrong decoder
+/// fails generation rather than writing a wrong answer into a vector.
+fn base58_decode(text: &str) -> [u8; 32] {
+    const ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    let mut bytes: Vec<u8> = Vec::with_capacity(32);
+    for c in text.bytes() {
+        let value = ALPHABET
+            .iter()
+            .position(|a| *a == c)
+            .unwrap_or_else(|| panic!("{text}: {} is not a base58 digit", c as char))
+            as u32;
+        let mut carry = value;
+        for byte in bytes.iter_mut().rev() {
+            carry += 58 * (*byte as u32);
+            *byte = (carry & 0xff) as u8;
+            carry >>= 8;
+        }
+        while carry > 0 {
+            bytes.insert(0, (carry & 0xff) as u8);
+            carry >>= 8;
+        }
+    }
+    // Leading '1's are leading zero bytes, which the loop above cannot produce.
+    let zeros = text.bytes().take_while(|b| *b == b'1').count();
+    let mut out = vec![0u8; zeros];
+    out.extend_from_slice(&bytes);
+    assert_eq!(out.len(), 32, "{text}: {} bytes, not 32", out.len());
+    out.try_into().expect("32 bytes")
+}
+
+/// Is a 32-byte value a point on the Ed25519 curve? §2.4 requires that a program address is **not**.
+///
+/// A verifying key is exactly a compressed curve point, so the library's own parser answers this: it
+/// decompresses and fails on anything that is not on the curve.
+fn is_on_curve(bytes: &[u8; 32]) -> bool {
+    ed25519_dalek::VerifyingKey::from_bytes(bytes).is_ok()
+}
+
+/// One candidate address at one bump, exactly as §2.4 prints it:
+/// `SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖ "ProgramDerivedAddress" )`, which is an address
+/// only when the result is off the curve.
+fn create_program_address(seeds: &[&[u8]], bump: u8, program_id: &[u8; 32]) -> Option<[u8; 32]> {
+    use sha2::{Digest as _, Sha256};
+    let mut h = Sha256::new();
+    for seed in seeds {
+        h.update(seed);
+    }
+    h.update([bump]);
+    h.update(program_id);
+    h.update(spec::PDA_MARKER);
+    let out: [u8; 32] = h.finalize().into();
+    if is_on_curve(&out) {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+/// The canonical bump is the largest from 255 downwards whose candidate is off the curve.
+fn find_program_address(seeds: &[&[u8]], program_id: &[u8; 32]) -> ([u8; 32], u8) {
+    for bump in (0..=255u8).rev() {
+        if let Some(address) = create_program_address(seeds, bump, program_id) {
+            return (address, bump);
+        }
+    }
+    panic!("no bump in 0..=255 gives an off-curve address");
+}
+
+/// V-P-12: the addresses §2.4 publishes, re-derived from the algorithm §2.4 prints.
+///
+/// This vector exists because the paragraph that states the derivation got it wrong once, in a way
+/// no test could catch: there was no expected value anywhere. Now there is one on each side of the
+/// arithmetic — the right order must reproduce what the document says the log's configuration is at,
+/// and the order the document first printed must reproduce the address it names as the wrong answer.
+fn program_addresses(files: &mut BTreeMap<String, Value>) {
+    let program_id = base58_decode(spec::ANNOUNCED_PROGRAM_ID);
+    let published = base58_decode(spec::ANNOUNCED_LOG_CONFIG);
+
+    let (config, config_bump) = find_program_address(&[spec::SEED_LOG_CONFIG], &program_id);
+    assert_eq!(
+        config, published,
+        "§2.4's derivation does not reproduce the address §2.4 publishes for the log's configuration"
+    );
+    assert_eq!(
+        config_bump,
+        spec::ANNOUNCED_LOG_CONFIG_BUMP,
+        "§2.4 says the canonical bump is {}, and the derivation reaches {config_bump}",
+        spec::ANNOUNCED_LOG_CONFIG_BUMP
+    );
+
+    // The bump is canonical only if every larger one is on the curve. Without this the test would
+    // pass for a derivation that stopped at the first bump it liked.
+    for bump in (config_bump + 1)..=255 {
+        assert!(
+            create_program_address(&[spec::SEED_LOG_CONFIG], bump, &program_id).is_none(),
+            "bump {bump} is above the canonical one and must be on the curve"
+        );
+    }
+
+    // The order §2.4 first printed, kept as a negative control: `… ‖ program_id ‖ bump ‖ marker`.
+    let erroneous = {
+        use sha2::{Digest as _, Sha256};
+        let mut h = Sha256::new();
+        h.update(spec::SEED_LOG_CONFIG);
+        h.update(program_id);
+        h.update([spec::ERRONEOUS_ORDER_BUMP]);
+        h.update(spec::PDA_MARKER);
+        let out: [u8; 32] = h.finalize().into();
+        out
+    };
+    assert_eq!(
+        erroneous,
+        base58_decode(spec::ERRONEOUS_ORDER_LOG_CONFIG),
+        "the wrong order does not reproduce the address §2.4 names as its wrong answer"
+    );
+    assert_ne!(erroneous, config, "the two orders must not agree");
+
+    // The checkpoint seeds, which are the two-seed shape. §2.4 publishes no checkpoint address, so
+    // this case's expected value is derived here rather than copied, and its independent check is
+    // that the announced deployment answers for it: epoch 20723's checkpoint account exists at this
+    // address and is owned by that program, which the devnet harness reads.
+    const LIVE_EPOCH: u64 = 20_723;
+    let (checkpoint, checkpoint_bump) = find_program_address(
+        &[spec::SEED_CHECKPOINT, &LIVE_EPOCH.to_le_bytes()],
+        &program_id,
+    );
+
+    files.insert(
+        "V-P-12.json".into(),
+        vector(
+            "V-P-12",
+            "§4.2",
+            "§2.4's program-address derivation, applied to the seeds §2.4 names against the announced deployment. The log's configuration address and its canonical bump are the values §2.4 publishes; the order §2.4 first printed, which had the bump after the program id, is carried as a negative control that must not be reproduced.",
+            json!({
+                "program_id": hex(&program_id),
+                "program_id_base58": spec::ANNOUNCED_PROGRAM_ID,
+                "marker": "ProgramDerivedAddress",
+                "cases": [
+                    { "name": "cm_cfg", "seeds": [hex(spec::SEED_LOG_CONFIG)] },
+                    {
+                        "name": "cm_ckpt",
+                        "seeds": [hex(spec::SEED_CHECKPOINT), hex(&LIVE_EPOCH.to_le_bytes())],
+                        "epoch": LIVE_EPOCH.to_string(),
+                    },
+                ],
+            }),
+            json!({
+                "cm_cfg": {
+                    "address": hex(&config),
+                    "address_base58": spec::ANNOUNCED_LOG_CONFIG,
+                    "bump": config_bump.to_string(),
+                    "source": "published in §2.4",
+                },
+                "cm_ckpt": {
+                    "address": hex(&checkpoint),
+                    "bump": checkpoint_bump.to_string(),
+                    "source": "derived here; §2.4 publishes no checkpoint address",
+                },
+                "erroneous_order": {
+                    "address": hex(&erroneous),
+                    "address_base58": spec::ERRONEOUS_ORDER_LOG_CONFIG,
+                    "bump": spec::ERRONEOUS_ORDER_BUMP.to_string(),
+                    "asserted": "seeds ‖ program_id ‖ bump ‖ marker, which no conforming derivation produces",
+                },
+                "asserted": "every bump above the canonical one is a point on the Ed25519 curve",
+            }),
+            &[
+                "base58 is a platform encoding and no part of the specification. The addresses are normative here as the 32 bytes; the base58 spellings are the form §2.4 prints and are carried so a reader can compare this file with the page.",
+                "The announced deployment answers for both derived addresses: the log's configuration is 68 bytes at the first, and epoch 20723's checkpoint is 106 bytes at the second, both owned by that program id.",
+            ],
         ),
     );
 }

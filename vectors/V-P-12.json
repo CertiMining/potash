@@ -1,0 +1,51 @@
+{
+  "description": "§2.4's program-address derivation, applied to the seeds §2.4 names against the announced deployment. The log's configuration address and its canonical bump are the values §2.4 publishes; the order §2.4 first printed, which had the bump after the program id, is carried as a negative control that must not be reproduced.",
+  "expected": {
+    "asserted": "every bump above the canonical one is a point on the Ed25519 curve",
+    "cm_cfg": {
+      "address": "0xabb9dc3b417c0d0fe2b99d109e5d1b0b8b71c7e693c20e756cabdf7e6d30d6fc",
+      "address_base58": "CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7",
+      "bump": "250",
+      "source": "published in §2.4"
+    },
+    "cm_ckpt": {
+      "address": "0xee4d543bd97a4e39c47cf3e12e017b329fe9d1b5bd0ee7bb9942f98206bb612f",
+      "bump": "255",
+      "source": "derived here; §2.4 publishes no checkpoint address"
+    },
+    "erroneous_order": {
+      "address": "0x3a9b13fb717cea9dd15858dd68f911f28d74ed6a7c8ee3b6d59cd0dde789059d",
+      "address_base58": "4wmoJSgJCv4Kv9BVwwbSabgEQm23oRsgYte12HH4teHa",
+      "asserted": "seeds ‖ program_id ‖ bump ‖ marker, which no conforming derivation produces",
+      "bump": "255"
+    }
+  },
+  "id": "V-P-12",
+  "inputs": {
+    "cases": [
+      {
+        "name": "cm_cfg",
+        "seeds": [
+          "0x636d5f636667"
+        ]
+      },
+      {
+        "epoch": "20723",
+        "name": "cm_ckpt",
+        "seeds": [
+          "0x636d5f636b7074",
+          "0xf350000000000000"
+        ]
+      }
+    ],
+    "marker": "ProgramDerivedAddress",
+    "program_id": "0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee",
+    "program_id_base58": "By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB"
+  },
+  "notes": [
+    "base58 is a platform encoding and no part of the specification. The addresses are normative here as the 32 bytes; the base58 spellings are the form §2.4 prints and are carried so a reader can compare this file with the page.",
+    "The announced deployment answers for both derived addresses: the log's configuration is 68 bytes at the first, and epoch 20723's checkpoint is 106 bytes at the second, both owned by that program id."
+  ],
+  "schema_version": "1",
+  "spec": "§4.2"
+}

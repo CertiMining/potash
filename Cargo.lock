@@ -977,6 +977,7 @@ dependencies = [
  "certimining-log",
  "litesvm",
  "opentimestamps",
+ "serde_json",
  "sha3",
  "solana-commitment-config",
  "solana-instruction",

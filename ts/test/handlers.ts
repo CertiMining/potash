@@ -30,6 +30,14 @@ import {
 } from "../src/preimage.ts";
 import { TAG_HEAD, TAG_LEAF } from "../src/tags.ts";
 import {
+  PDA_MARKER,
+  createProgramAddress,
+  findProgramAddress,
+} from "../src/solana/pda.ts";
+import { base58Encode } from "../src/solana/base58.ts";
+import { sha256 } from "../src/hash.ts";
+import { concat } from "../src/bytes.ts";
+import {
   buildEpoch,
   epochKey,
   paddingLeaf,
@@ -241,6 +249,44 @@ const vP11: Handler = (v) => {
 
   // INV-STATE-06a: the flag does not change the leaf digest.
   assert.equal(toHex(flagged.leaf), toHex(seen.leaf), "a flag changed the leaf digest");
+};
+
+const vP12: Handler = (v) => {
+  // The vector's addresses are normative as bytes; base58 is the platform's encoding and is checked
+  // here too, because the spellings are how a reader compares this file with §2.4's page.
+  const programId = fromHex(v.inputs.program_id, 32);
+  assert.equal(base58Encode(programId), v.inputs.program_id_base58, "the program id's two spellings disagree");
+  assert.equal(toHex(PDA_MARKER), toHex(utf8(v.inputs.marker)), "the marker is not the string the vector names");
+
+  for (const kase of v.inputs.cases as Array<{ name: string; seeds: string[] }>) {
+    const seeds = kase.seeds.map((s) => fromHex(s));
+    const expected = v.expected[kase.name];
+    assert.ok(expected !== undefined, `the vector has no expectation for ${kase.name}`);
+    const derived = findProgramAddress(seeds, programId);
+    assertBytes(derived.address, expected.address, `${kase.name}: address`);
+    assert.equal(derived.bump, num(expected.bump), `${kase.name}: canonical bump`);
+    if (expected.address_base58 !== undefined) {
+      assert.equal(base58Encode(derived.address), expected.address_base58, `${kase.name}: base58`);
+    }
+    // Canonical means largest: every bump above it must be on the curve, which is what
+    // createProgramAddress reports by returning null.
+    for (let bump = 255; bump > derived.bump; bump--) {
+      assert.equal(
+        createProgramAddress([...seeds, Uint8Array.of(bump)], programId),
+        null,
+        `${kase.name}: bump ${bump} is above the canonical one and should be on the curve`,
+      );
+    }
+  }
+
+  // The order §2.4 first printed. It must reproduce the wrong answer the section names, and must not
+  // be what a conforming derivation produces.
+  const wrong = v.expected.erroneous_order;
+  const seeds = (v.inputs.cases as Array<{ name: string; seeds: string[] }>)[0]!.seeds.map((s) => fromHex(s));
+  const reordered = sha256(concat([...seeds, programId, Uint8Array.of(num(wrong.bump)), PDA_MARKER]));
+  assertBytes(reordered, wrong.address, "the erroneous order");
+  assert.equal(base58Encode(reordered), wrong.address_base58, "the erroneous order's base58");
+  assert.notEqual(toHex(reordered), v.expected.cm_cfg.address, "the two orders must not agree");
 };
 
 // ---------------------------------------------------------------- epoch trees
@@ -579,6 +625,7 @@ export const HANDLERS: Record<string, Handler> = {
   "V-P-09": vP09,
   "V-P-10": vP10,
   "V-P-11": vP11,
+  "V-P-12": vP12,
   "V-N-01": vN01,
   "V-N-02": vN02,
   "V-N-03": vN03,
