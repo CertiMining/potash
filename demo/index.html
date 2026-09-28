@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CertiMining — three scenes</title>
+<script type="importmap">
+{
+  "imports": {
+    "@noble/hashes/": "./build/vendor/@noble/hashes/",
+    "@noble/curves/": "./build/vendor/@noble/curves/"
+  }
+}
+</script>
+<style>
+  :root {
+    --ink: #17191c; --paper: #fbfaf8; --rule: #d8d4cc; --muted: #5d6066;
+    --differs: #b4531a; --differs-bg: #fdeee2; --good: #1d6b3f; --bad: #9c2323;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8e6e1; --paper: #16181b; --rule: #33373d; --muted: #9ba0a8;
+      --differs: #f0a06a; --differs-bg: #3a2515; --good: #74c69d; --bad: #e58b8b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8e6e1; --paper: #16181b; --rule: #33373d; --muted: #9ba0a8;
+    --differs: #f0a06a; --differs-bg: #3a2515; --good: #74c69d; --bad: #e58b8b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 16px/1.55 ui-serif, Georgia, "Times New Roman", serif;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 2.5rem 16px 6rem; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 1.25rem; margin-bottom: 2rem; }
+  h1 { font-size: 1.7rem; margin: 0 0 .4rem; letter-spacing: -.01em; }
+  h2 { font-size: 1.15rem; margin: 0 0 .3rem; }
+  .lede, .sub { color: var(--muted); margin: 0; }
+  .sub { font-size: .9rem; }
+  section { border-top: 1px solid var(--rule); padding-top: 1.75rem; margin-top: 2.25rem; }
+  section:first-of-type { border-top: 0; margin-top: 0; }
+  .scene-no {
+    font: 600 .72rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); display: block; margin-bottom: .45rem;
+  }
+  .verdict {
+    margin: 1rem 0; padding: .8rem 1rem; border-left: 3px solid var(--rule);
+    background: color-mix(in srgb, var(--ink) 4%, transparent); font-size: .95rem;
+  }
+  .verdict.good { border-left-color: var(--good); }
+  .verdict.bad { border-left-color: var(--bad); font-weight: 600; }
+  .control { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin: 1.1rem 0; }
+  .control input[type=range] { flex: 1 1 18rem; min-width: 12rem; accent-color: var(--ink); }
+  .control output { font: 600 1.1rem var(--mono); min-width: 3.2rem; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  @media (max-width: 46rem) { .cols { grid-template-columns: 1fr; } }
+  .panel h3 { font: 600 .8rem/1.3 var(--mono); margin: 0 0 .45rem; color: var(--muted); }
+  .bytes { font: .68rem/1.5 var(--mono); word-break: break-all; }
+  .byte { padding: 0 .04em; }
+  .byte.differs { background: var(--differs-bg); color: var(--differs); font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: 1rem 0; }
+  th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--rule); }
+  th { font: 600 .74rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  td.mono, .mono { font: .8rem/1.5 var(--mono); }
+  td.differs { color: var(--differs); font-weight: 700; }
+  .checks { list-style: none; padding: 0; margin: 1rem 0; font-size: .92rem; }
+  .check { padding: .3rem 0; border-bottom: 1px solid var(--rule); }
+  .check .status {
+    display: inline-block; min-width: 8.5rem; font: 600 .7rem var(--mono);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .check.pass .status { color: var(--good); }
+  .check.fail .status { color: var(--bad); }
+  .check.unestablished .status, .check.skipped .status { color: var(--differs); }
+  .check .detail { font-size: .85rem; color: var(--muted); margin: .25rem 0 .1rem 8.5rem; }
+  .note {
+    font-size: .88rem; color: var(--muted); border-left: 2px solid var(--differs);
+    padding-left: .8rem; margin: .8rem 0;
+  }
+  .limit {
+    font-size: .88rem; background: color-mix(in srgb, var(--ink) 5%, transparent);
+    padding: .85rem 1rem; margin: 1.25rem 0 0;
+  }
+  .limit strong { font-variant: all-small-caps; letter-spacing: .04em; }
+  footer { border-top: 1px solid var(--rule); margin-top: 3rem; padding-top: 1.25rem; font-size: .85rem; color: var(--muted); }
+  code { font: .85em var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>A log that shows the filing and hides the filer</h1>
+  <p class="lede">
+    Three scenes, computed in this browser. Nothing here is precomputed: the epoch trees are built as
+    you move the control, and the verifier that checks the disclosure package is the same independent
+    TypeScript implementation the repository ships.
+  </p>
+  <p class="sub" id="selfcheck">computing…</p>
+</header>
+
+<section>
+  <span class="scene-no">Scene one</span>
+  <h2>The public view does not say how much you filed</h2>
+  <p>
+    Every epoch is a Merkle tree of fixed height 8 — 256 slots, always full, real submissions in
+    pseudorandom slots and the rest padding under the epoch key. One record or two hundred and
+    fifty-five, the chain sees one 32-byte root.
+  </p>
+  <p>
+    Move the count. The left column is one record and never changes; the right is whatever you choose.
+    Everything except the record count is held fixed on purpose — the epoch, the slot, the timestamp
+    and the receipt digest are all fields §4.4 permits to differ, so letting them move too would show
+    two causes at once and prove neither.
+  </p>
+  <p class="sub">
+    Build time is wall-clock in your browser and is not something the chain shows. It is in the table
+    because V-Z-01 varies it deliberately: a slower epoch must not land in a later slot, which is
+    measured on devnet rather than here.
+  </p>
+
+  <div class="control">
+    <label for="count">Real records in the epoch</label>
+    <input type="range" id="count" min="0" max="255" value="255" step="1">
+    <output id="count-label">255</output>
+  </div>
+
+  <div class="verdict" id="s1-verdict">building…</div>
+
+  <table>
+    <thead><tr><th>Shape</th><th id="s1-left-count">1 record</th><th id="s1-right-count">—</th></tr></thead>
+    <tbody id="s1-shape"></tbody>
+  </table>
+
+  <div class="cols">
+    <div class="panel">
+      <h3>CheckpointAccount — 106 bytes</h3>
+      <div class="bytes" id="s1-account-a"></div>
+    </div>
+    <div class="panel">
+      <h3>CheckpointAccount — 106 bytes</h3>
+      <div class="bytes" id="s1-account-b"></div>
+    </div>
+  </div>
+
+  <div class="cols" style="margin-top:1.25rem">
+    <div class="panel">
+      <h3>publish_checkpoint instruction — 48 bytes</h3>
+      <div class="bytes" id="s1-ix-a"></div>
+    </div>
+    <div class="panel">
+      <h3>publish_checkpoint instruction — 48 bytes</h3>
+      <div class="bytes" id="s1-ix-b"></div>
+    </div>
+  </div>
+
+  <p class="limit">
+    <strong>What this shows, and what it does not.</strong>
+    It shows that the record count moves no byte outside the closed list §4.4's V-Z-01 fixes, for the
+    counts you try. It is a demonstration, not the test: the test is
+    <code>programs/certimining-checkpoint/tests/privacy.rs</code>, which runs against the real program
+    under LiteSVM and treats any byte outside that list as a failure. Count-hiding also rests on the
+    padding being indistinguishable from real leaves, which is <em>computational</em> — an adversary
+    who recovered the epoch key could tell them apart (RES-09) — and on the batcher keeping that key,
+    which is a custody assumption, not a proof (RES-03). The key is published in this demo so the page
+    can build epochs at all; in a deployment it never leaves the batcher.
+  </p>
+</section>
+
+<section>
+  <span class="scene-no">Scene two</span>
+  <h2>A counterparty verifies, offline, without asking anyone</h2>
+  <p>
+    A disclosure package is one record and its proof. The verifier recomputes the leaf from the signed
+    bytes, checks the qualified person's signature over those bytes, and walks the proof to a root it
+    obtained separately — here from <code>fixtures/root.json</code>, standing in for a fetch from
+    Solana so that this runs offline.
+  </p>
+  <p class="sub">Root verified against: <span class="mono" id="s2-root">—</span></p>
+
+  <div class="verdict" id="s2-verdict">verifying…</div>
+  <div id="s2-report"></div>
+
+  <p class="limit">
+    <strong>Read the line that does not say “pass”.</strong>
+    This package is the third record of its chain, and nothing in a package binds
+    <code>prev_head</code>: §1.3's signed preimage does not cover it, and the proof binds only the
+    leaf. So a verifier can confirm the record exists, unaltered, carrying the qualified person's
+    signed statement of its position — and cannot confirm from this file alone that the position is
+    the one it claims. The verifier says so rather than reporting a pass. A counterparty holding the
+    previous head closes it; the demo ships the harder case on purpose.
+  </p>
+</section>
+
+<section>
+  <span class="scene-no">Scene three</span>
+  <h2>One byte moves, and the log notices</h2>
+  <p>
+    The same package, with the low bit of <code>payload_digest</code> flipped — in the signed preimage
+    and in the hex displayed beside it, so the two halves still agree and the file is not merely
+    malformed. The signature is what refuses it.
+  </p>
+
+  <div class="verdict" id="s3-verdict">verifying…</div>
+  <div id="s3-report"></div>
+
+  <table>
+    <thead><tr><th>Field</th><th>As committed</th><th>As altered</th></tr></thead>
+    <tbody id="s3-compare"></tbody>
+  </table>
+  <p class="sub">The epoch root, unchanged throughout: <span class="mono" id="s3-root">—</span></p>
+
+  <p class="limit">
+    <strong>Detection, not prevention.</strong>
+    Nothing here stopped the alteration. What the architecture provides is that an altered record no
+    longer matches what was committed, and that the commitment — the epoch root, anchored on Solana
+    and in a Bitcoin block — did not move. It says nothing about who made the change, and it does not
+    make the underlying estimate true: a log can prove that a filing existed and was not edited
+    afterwards. It cannot prove the filing was honest, cannot prevent the same tenure being pledged
+    twice, and asserts no regulatory compliance.
+  </p>
+</section>
+
+<footer>
+  <p>
+    Fixtures are generated by <code>cargo xtask gen-demo</code> and checked against
+    <code>fixtures/MANIFEST.sha256</code> before any scene runs, so a scene cannot be tuned by editing
+    a file. Identifiers are synthetic and <code>DEMO0000</code> is not a registry. The signing key is
+    the public half of RFC 8032 §7.1's TEST 1 key, whose private half that document publishes: it
+    stands for no qualified person and credentials nobody.
+  </p>
+  <p class="mono" id="fixture-digests">checking fixtures…</p>
+</footer>
+
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

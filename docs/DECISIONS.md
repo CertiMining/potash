@@ -1510,3 +1510,47 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 **Decision.** A status section near the top of the README, in S9's own words — **not audited** — followed by what is measured and what is not. The measured half names the figure and the threshold. The unmeasured half names the landing-delay run's single compressed execution, anchor B's incomplete cycle on the deployed log, the absent fuzz harness, and count-hiding resting on batcher key custody.
 
 **Ground (the owner's).** This is the sentence that keeps the entry honest to a judge. The README is the first page a reader meets and until this unit the repository had no page that said any of it; the disclosure of the live upgrade authority lived in `docs/anchoring.md`, which a reader arrives at only by already knowing to look.
+
+## D-124 · The demo is a page that runs the real verifier, with a terminal demo as the stated fallback
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** cost judgment · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** A static page and a small build step, so `ts/` runs in the viewer's browser and Scene 2 is verification rather than a recording of one. **Condition the owner attached:** the build's new dependency must clear the licence gate at S1; if it cannot, the terminal demo is the fallback, and it is recorded on the issue **as a fallback rather than as a downgrade**.
+
+**Ground.** Scene 2's whole claim is that a counterparty verifies for themselves. A page showing precomputed results demonstrates nothing a screenshot would not, and issue #44 already records that the browser path is typechecked and never executed. Running it closes #44 by doing it.
+
+**What S1 found.** No bundler is needed, so the condition's risk does not arise. `tsc -p tsconfig.build.json` already emits browser-shaped ES modules; the only thing a browser cannot resolve is the three bare specifiers `@noble/hashes/sha3.js`, `@noble/hashes/sha2.js` and `@noble/curves/ed25519.js`. Both packages are plain ES modules whose internal imports are all relative, so one import map with two prefix entries resolves the whole graph, and the build step is a copy. Zero new dependencies, and the licence gate sees nothing new.
+
+## D-125 · Scene 1 builds both epochs live and lets the viewer choose the count
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** Build the epochs in the page and diff them in front of the viewer: the instruction bytes, the account bytes and the transaction length side by side, every differing byte highlighted and labelled with what fixes it — the epoch number, the publication schedule, or a pseudorandom digest. **The owner's addition: the control is a choice of any record count from 0 to 255, not a toggle between two values.** Two fixed points prove two points; a range the viewer sweeps proves the claim.
+
+**Ground.** The acceptance criterion says the scene renders the control rather than asserting it. A demo that asserts a property the repository tests is the weaker of the two artefacts. A two-value toggle invites the reading that those two values were chosen because they work.
+
+**Stated on screen as a limit.** This shows count-hiding against the closed list of permitted bytes §4.4's V-Z-01 fixes, not against every possible observer, and V-Z-02's padding indistinguishability is computational (RES-09).
+
+## D-126 · Fixtures are generated, committed and hash-pinned
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** `cargo xtask` generates the demo's fixtures into `demo/fixtures/`, committed and manifest-hashed the way `vectors/` is, and the demo refuses to run when a fixture's hash does not match. Tenure identifiers are synthetic and carry a stated fake registry code, which goes in the record so that nobody later reads it as real.
+
+**Ground.** §4.2 forbids hand-authored vectors and the same reasoning reaches a demo: a fixture that can be edited quietly is a scene that can be made to look better than the engine is. The hash check is what turns "synthetic" from a claim into something a reader can confirm.
+
+## D-127 · The qualified-person key is labelled wherever it appears
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** Every appearance of the signing key, in the interface and in the fixture files, names it as RFC 8032 §7.1's published specification test key and notes that its private half is published. Not once in a legend.
+
+**Ground.** RES-04 records that a QP key carries no credential. A demo is the one place that gets misread, and a label one scroll away from the misreading does not prevent it.
+
+## D-128 · Scene 3 states what detection is and what it is not
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** Scene 3 says on screen that the altered record no longer matches what was committed and the log's root is unchanged, so the alteration is **detectable** — not prevented, and not evidence of who made it — together with §0's asset-equivocation limit.
+
+**Ground.** §4.6 makes overclaiming a merge gate and `scripts/claim-check.sh` runs over the demo like any other artefact. A demonstration of detection is exactly where a viewer infers prevention.

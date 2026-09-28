@@ -219,6 +219,10 @@ ts() {
   check "ts typecheck" npm --prefix ts run typecheck
   check "ts build" npm --prefix ts run build
   check "ts vectors and packages" npm --prefix ts test
+  # E-14's demo shares this group because it shares the runtime and the verifier it is built on: the
+  # footprint Scene 1 diffs is round-tripped through the verifier's own account decoder, so a layout
+  # that drifted from §2.4 fails here rather than on screen.
+  check "demo fixtures and footprint" node --test "demo/test/*.test.mjs"
   group_result ts
 }
 

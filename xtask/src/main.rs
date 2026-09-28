@@ -21,6 +21,7 @@
 //! Being a tool rather than shipped code, this crate may panic: a generator that cannot produce a
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
+mod demo;
 mod spec;
 
 use std::collections::BTreeMap;
@@ -78,8 +79,18 @@ fn main() {
                 .unwrap_or_else(|| repo_root().join("vectors"));
             gen_vectors(&dir);
         }
+        // E-14's demo fixtures (D-126). A separate command: the demo's scenes are not conformance
+        // vectors, and regenerating one must not be able to rewrite the other.
+        Some("gen-demo") => {
+            let dir = args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| repo_root().join("demo/fixtures"));
+            demo::gen_demo(&dir);
+        }
         other => {
             eprintln!("usage: cargo xtask gen-vectors [destination directory]");
+            eprintln!("       cargo xtask gen-demo [destination directory]");
             if let Some(cmd) = other {
                 eprintln!("unknown command: {cmd}");
             }
