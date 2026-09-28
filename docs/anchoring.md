@@ -156,3 +156,30 @@ Every invariant this program enforces is enforced by *this* program, and whoever
 replace it. That is a trust assumption of the same kind as RES-03's batcher-key custody, and it is
 written where a reader meets the claims rather than left to be inferred. Burning the authority is a
 decision for a deployment claiming permanence, and it is recorded for after the deadline.
+
+## The first complete cycle, on the announced log
+
+Anchor B's design is two stages hours apart (D-112), and this is one instance of it arriving as
+described rather than an argument that it will.
+
+| | Epoch 20723 | Epoch 20724 |
+|---|---|---|
+| Root | `0xdc349df9f57964294692bebc3b192906a40b43b3de2d2414a73b581bdc6d0791` | `0x8ab166bab0ffffa380ff1929cdb24c58bf0043741944739f217d3bb968f02891` |
+| Anchor A, slot | 504985662 | 504997440 |
+| Anchor B | Bitcoin block 968,917 | submitted to the calendars, not yet confirmed |
+| Status | `dual` | `single` |
+
+Epoch 20723's receipt is committed at `anchors/epochs/20723.ots`, 1,459 bytes, sha256
+`5ed1e32037c11847f81566927c33a36824ec22e569cc3a1092bc64524b302c08`. It is the upgraded receipt, so
+`ots verify` reaches a Bitcoin block header rather than a calendar's promise, and the digest attached
+on chain, `0xb0191834ee402a4f4e961a7f3974865b2c6f8c184835e18706e0974515a1cdf7`, is
+`Keccak256(TAG_RCPT ‖ len ‖ receipt)` over exactly those bytes. A reader can recompute it from the
+committed file; nothing here has to be taken on this document's word.
+
+Epoch 20724 is the first publication whose epoch number and publication day are the same UTC day,
+which is what §1.4's rule and INV-ANCH-01's cadence produce together once a log is running. Epoch
+20723 was published inside day 20724, an hour and a half after midnight UTC, because a log's first
+publishable epoch is its `start_epoch` and that day had already turned.
+
+The receipt is committed by a person, never by the worker (D-116), so a run that produces one does not
+thereby gain write access to the public record.
