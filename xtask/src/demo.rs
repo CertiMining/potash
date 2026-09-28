@@ -26,6 +26,8 @@ use certimining_log::{BuiltEpoch, EpochTree, InclusionVerifier, ProofVerifier};
 use ed25519_dalek::{Signer as _, SigningKey};
 use serde_json::{json, Map, Value};
 
+use crate::repo_root;
+
 type Chain = AssetChain<NativeKeccak, certimining_core::DalekVerifier>;
 
 /// RFC 8032 §7.1's TEST 1 secret key, whose public half every fixture carries as `qp_key`. Its
@@ -213,6 +215,15 @@ pub fn gen_demo(dir: &Path) {
     files.insert("disclosure.json".into(), package);
     files.insert("tampered.json".into(), tampered);
     files.insert("root.json".into(), root);
+
+    // The rule this unit's own review produced, applied to the artifacts that produced it.
+    crate::live_values::check_list_shape(&repo_root());
+    let mut pending: Vec<(String, String)> = files
+        .iter()
+        .map(|(name, value)| (name.clone(), to_text(value)))
+        .collect();
+    pending.push(("README.md".to_string(), sidecar.clone()));
+    crate::live_values::refuse_live_values(&repo_root(), &pending);
 
     let mut manifest = String::new();
     for (name, value) in &files {

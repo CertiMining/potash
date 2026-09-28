@@ -1,0 +1,11 @@
+# Artifacts that carry a live value legitimately, one per line: the file, two spaces, the value, two
+# spaces, and why. Anything not recorded here fails generation.
+#
+# The distinction the rule draws: an artifact whose *subject* is the announced deployment may name it;
+# an artifact that merely looks more concrete for carrying one may not.
+
+V-P-12.json  By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  §2.4's derivation is checked against this deployment, which is the vector's whole subject
+V-P-12.json  0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee  the same program id, as the bytes the derivation hashes
+V-P-12.json  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address §2.4 publishes and the derivation must reproduce
+V-P-12.json  0xabb9dc3b417c0d0fe2b99d109e5d1b0b8b71c7e693c20e756cabdf7e6d30d6fc  the same address, as bytes
+V-P-12.json  H3ERVV7P3yNQxXXJrzVvmS2Nzh9qBd283kcAgMHzHDNn  the two-seed case, answered for by the cluster, which is the check

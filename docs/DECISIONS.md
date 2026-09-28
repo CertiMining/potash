@@ -1541,6 +1541,16 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **The hash check alone does not carry that.** A manifest is as editable as the file it covers, so editing both passes every check the demo itself runs. What closes it is regeneration: CI runs `cargo xtask gen-demo` into a temporary directory and diffs the result against the committed set, exactly as the `vectors` group already does, so a fixture that the engine would not produce fails the build. The demo's own hash check stays, because it catches a fixture edited after a clone and needs no Rust toolchain.
 
+**And no fixture carries a value that exists on chain (owner, 28 Sep 2026).** This unit's review found
+the demo's `anchor` block holding the announced log's real transaction signature and slot beside a root
+built here and published nowhere — and the signature and the slot were not even from the same
+publication. `LIVE-VALUES.txt` lists every program id, address, root, receipt digest and signature the
+deployment holds, and both generators refuse to emit a file containing one unless the pair is recorded
+in `LIVE-VALUES.exempt` with a reason. V-P-12 is exempted, because §2.4's derivation against the
+announced deployment is that vector's whole subject; a fixture that merely looked more concrete for
+carrying one is the defect the rule exists for.
+
+
 ## D-127 · The qualified-person key is labelled wherever it appears
 
 **Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
@@ -1548,6 +1558,21 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 **Decision.** Every appearance of the signing key, in the interface and in the fixture files, names it as RFC 8032 §7.1's published specification test key and notes that its private half is published. Not once in a legend.
 
 **Ground.** RES-04 records that a QP key carries no credential. A demo is the one place that gets misread, and a label one scroll away from the misreading does not prevent it.
+
+**Amended 28 Sep 2026, after review, at the owner's ruling (D-130 option 1).** The label cannot go in
+the package file. §2.5 fixes what a disclosure package contains and INV-DISC-01 makes that list
+closed, so a conforming verifier refuses the first field the section does not list — demonstrated when
+the generator first emitted a `_notes` array and the verifier refused the fixture. A package carrying
+its own label is a package nobody can verify, which would cost Scene 2 the thing it exists to show.
+
+**The package is a closed contract and stays one.** The label therefore lives in the fixture
+*directory*, in `demo/fixtures/README.md`, which the manifest covers, and on screen at every
+appearance. "Not once in a legend" still binds the interface, where the risk of misreading is.
+
+**The miss was procedural and is recorded as such.** The collision between this decision and §2.5 was
+found while building, and the sidecar was chosen without putting it to the owner. The call was right;
+bringing it at the time was the obligation, and a review had to surface it instead.
+
 
 ## D-128 · Scene 3 states what detection is and what it is not
 

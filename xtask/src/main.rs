@@ -22,6 +22,7 @@
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
 mod demo;
+mod live_values;
 mod spec;
 
 use std::collections::BTreeMap;
@@ -152,6 +153,15 @@ fn gen_vectors(dir: &Path) {
             name
         ));
     };
+
+    // No synthetic artifact carries a value that exists on chain (owner, 28 Sep 2026). Checked before
+    // a byte is written, so a fabricated provenance never reaches the working tree at all.
+    live_values::check_list_shape(&repo_root());
+    let pending: Vec<(String, String)> = files
+        .iter()
+        .map(|(name, value)| (name.clone(), to_text(value)))
+        .collect();
+    live_values::refuse_live_values(&repo_root(), &pending);
 
     for (name, value) in &files {
         write(name, &to_text(value), &mut manifest);
