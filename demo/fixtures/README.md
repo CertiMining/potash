@@ -33,3 +33,12 @@ manifest covers, rather than inside the packages.
   so what refuses this package is the QP signature rather than an internal inconsistency.
 - `root.json` — the epoch root a counterparty fetches from Solana, so the demo runs offline,
   with the chain's heads for display.
+
+## The anchor block is a placeholder
+
+This epoch was built for the demo and published nowhere, so `anchor.solana_tx`,
+`anchor.solana_slot` and `anchor.ots_receipt_digest` are visibly empty values rather than a
+real transaction. §2.5 carries that block and nothing in the section says how a verifier
+checks it (SPEC-DEFECTS.md SD-12), so the verifier does not, and the page says so. The
+announced log's own anchoring is real and is recorded in `docs/anchoring.md`; it does not
+belong in a fixture whose root it does not anchor.

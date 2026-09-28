@@ -196,7 +196,16 @@ pub fn gen_demo(dir: &Path) {
             "- `tampered.json` — the same package with the low bit of `payload_digest` flipped: byte\n  {TAMPERED_OFFSET} of the preimage, and the hex the JSON displays beside it. The two halves still agree,\n  so what refuses this package is the QP signature rather than an internal inconsistency.\n"
         ));
         s.push_str("- `root.json` \u{2014} the epoch root a counterparty fetches from Solana, so the demo runs offline,\n");
-        s.push_str("  with the chain's heads for display.\n");
+        s.push_str("  with the chain's heads for display.\n\n");
+        s.push_str("## The anchor block is a placeholder\n\n");
+        s.push_str(
+            "This epoch was built for the demo and published nowhere, so `anchor.solana_tx`,\n",
+        );
+        s.push_str("`anchor.solana_slot` and `anchor.ots_receipt_digest` are visibly empty values rather than a\n");
+        s.push_str("real transaction. \u{a7}2.5 carries that block and nothing in the section says how a verifier\n");
+        s.push_str("checks it (SPEC-DEFECTS.md SD-12), so the verifier does not, and the page says so. The\n");
+        s.push_str("announced log's own anchoring is real and is recorded in `docs/anchoring.md`; it does not\n");
+        s.push_str("belong in a fixture whose root it does not anchor.\n");
         s
     };
 
@@ -292,13 +301,17 @@ fn disclosure_json(
             "slot_index": proof.slot_index,
             "siblings": proof.siblings.iter().map(|s| hex(s)).collect::<Vec<String>>(),
         },
-        // §2.5's anchor block carries provenance nothing in a package says how to check (SD-12). The
-        // values here are the announced log's real ones for this epoch, and the page says that a
-        // counterparty checks them against the chain and the receipt, not against the package.
+        // §2.5's anchor block carries provenance that nothing in a package says how to check (SD-12),
+        // and this epoch was never published anywhere: it is built here for the demo. **The values are
+        // therefore placeholders and are visibly so.** An earlier version of this file carried the
+        // announced log's real transaction, slot and receipt digest beside this synthetic root, which
+        // asserted an anchoring that had never happened — the transaction named there published epoch
+        // 20723's root, not this one. A fixture may not claim provenance it does not have, however
+        // much more concrete it looks.
         "anchor": {
-            "solana_tx": "3FZwuXqkSZs71PQYXsW2VG1YGCeLw65RsUXmxg2MrA5AkaSUe9LfAJMXdxVvosEDWeH2SfAEFoiBddd1xxBLzbjZ",
-            "solana_slot": 504985662u64,
-            "ots_receipt_digest": "0xb0191834ee402a4f4e961a7f3974865b2c6f8c184835e18706e0974515a1cdf7",
+            "solana_tx": "1".repeat(64),
+            "solana_slot": 0u64,
+            "ots_receipt_digest": format!("0x{}", "00".repeat(32)),
         },
     })
 }

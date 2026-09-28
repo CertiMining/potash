@@ -1537,7 +1537,9 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **Decision.** `cargo xtask` generates the demo's fixtures into `demo/fixtures/`, committed and manifest-hashed the way `vectors/` is, and the demo refuses to run when a fixture's hash does not match. Tenure identifiers are synthetic and carry a stated fake registry code, which goes in the record so that nobody later reads it as real.
 
-**Ground.** §4.2 forbids hand-authored vectors and the same reasoning reaches a demo: a fixture that can be edited quietly is a scene that can be made to look better than the engine is. The hash check is what turns "synthetic" from a claim into something a reader can confirm.
+**Ground.** §4.2 forbids hand-authored vectors and the same reasoning reaches a demo: a fixture that can be edited quietly is a scene that can be made to look better than the engine is.
+
+**The hash check alone does not carry that.** A manifest is as editable as the file it covers, so editing both passes every check the demo itself runs. What closes it is regeneration: CI runs `cargo xtask gen-demo` into a temporary directory and diffs the result against the committed set, exactly as the `vectors` group already does, so a fixture that the engine would not produce fails the build. The demo's own hash check stays, because it catches a fixture edited after a clone and needs no Rust toolchain.
 
 ## D-127 · The qualified-person key is labelled wherever it appears
 
@@ -1553,4 +1555,6 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **Decision.** Scene 3 says on screen that the altered record no longer matches what was committed and the log's root is unchanged, so the alteration is **detectable** — not prevented, and not evidence of who made it — together with §0's asset-equivocation limit.
 
-**Ground.** §4.6 makes overclaiming a merge gate and `scripts/claim-check.sh` runs over the demo like any other artefact. A demonstration of detection is exactly where a viewer infers prevention.
+**Ground.** §4.6 makes overclaiming a merge gate. A demonstration of detection is exactly where a viewer infers prevention.
+
+**Where the gate actually is, as of this branch.** `scripts/claim-check.sh` and §4.6's list of banned phrasings arrived with E-15 and live on `e-10/anchor-b`; this unit is stacked on `e-11/ts-verifier` and carries neither, so **the gate does not run over the demo here** and the earlier wording of this ground, which said it did, was wrong. The demo is checked by hand against the 24 phrasings in E-15's list, and the gate reaches it when the branches meet on `main`. Recorded rather than papered over: a decision that asserts a check is running is worth no more than the check.

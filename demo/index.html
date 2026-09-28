@@ -113,7 +113,8 @@
     Move the count. The left column is one record and never changes; the right is whatever you choose.
     Everything except the record count is held fixed on purpose — the epoch, the slot, the timestamp
     and the receipt digest are all fields §4.4 permits to differ, so letting them move too would show
-    two causes at once and prove neither.
+    two causes at once and prove neither. Those fixed values are synthetic: this epoch was built here
+    and published nowhere.
   </p>
   <p class="sub">
     Build time is wall-clock in your browser and is not something the chain shows. It is in the table
@@ -158,10 +159,15 @@
 
   <p class="limit">
     <strong>What this shows, and what it does not.</strong>
-    It shows that the record count moves no byte outside the closed list §4.4's V-Z-01 fixes, for the
-    counts you try. It is a demonstration, not the test: the test is
+    It compares two artefacts — the <code>CheckpointAccount</code> and the
+    <code>publish_checkpoint</code> instruction data — and shows that the record count moves no byte
+    outside the closed list §4.4's V-Z-01 fixes, for the counts you try. <strong>It does not build a
+    transaction.</strong> V-Z-01 also fixes the serialized transaction and its length, and a
+    count-dependent byte in that wrapper would be invisible here while this page still reported a
+    pass. That half is compared in
     <code>programs/certimining-checkpoint/tests/privacy.rs</code>, which runs against the real program
-    under LiteSVM and treats any byte outside that list as a failure. Count-hiding also rests on the
+    under LiteSVM, builds the whole transaction, and treats any byte outside the list as a failure.
+    The test is the authority; this is a demonstration. Count-hiding also rests on the
     padding being indistinguishable from real leaves, which is <em>computational</em> — an adversary
     who recovered the epoch key could tell them apart (RES-09) — and on the batcher keeping that key,
     which is a custody assumption, not a proof (RES-03). The key is published in this demo so the page
@@ -179,6 +185,12 @@
     Solana so that this runs offline.
   </p>
   <p class="sub">Root verified against: <span class="mono" id="s2-root">—</span></p>
+  <p class="sub">
+    The package's <code>anchor</code> block is <em>not</em> checked here and is a placeholder in this
+    fixture: §2.5 carries that block and says nothing about how a verifier checks it, so this verifier
+    does not pretend to. The announced log's own anchoring is real and is recorded in
+    <code>docs/anchoring.md</code>; it does not belong in a fixture whose root it does not anchor.
+  </p>
 
   <div class="verdict" id="s2-verdict">verifying…</div>
   <div id="s2-report"></div>
@@ -215,11 +227,19 @@
   <p class="limit">
     <strong>Detection, not prevention.</strong>
     Nothing here stopped the alteration. What the architecture provides is that an altered record no
-    longer matches what was committed, and that the commitment — the epoch root, anchored on Solana
-    and in a Bitcoin block — did not move. It says nothing about who made the change, and it does not
-    make the underlying estimate true: a log can prove that a filing existed and was not edited
-    afterwards. It cannot prove the filing was honest, cannot prevent the same tenure being pledged
-    twice, and asserts no regulatory compliance.
+    longer matches what was committed, and that the commitment — the epoch root — did not move. On the
+    announced log a published root is carried by a Solana slot and a Bitcoin block;
+    <em>this</em> root is not, because this epoch was built for the demo and published nowhere, which
+    is why the package's anchor block above is empty.
+  </p>
+  <p class="limit">
+    <strong>And what detection still leaves open.</strong>
+    It says nothing about who made the change. It does not make the underlying estimate true: a log
+    can show that a filing existed and was not edited afterwards, not that it was honest.
+    <strong>Asset equivocation is the sharp one</strong> — an issuer can run two chains for the same
+    tenure, disclose whichever suits a given counterparty, and both packages verify, because a
+    counterparty holding one package cannot see the other. Nothing here prevents the same tenure being
+    pledged twice, and nothing here asserts regulatory compliance.
   </p>
 </section>
 

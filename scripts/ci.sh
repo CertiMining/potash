@@ -95,6 +95,26 @@ vectors() {
   [ "$failed" -eq 0 ] || return 1
 
   echo "vectors: $(grep -c . "$dir/MANIFEST.sha256") files verified by hash, mode and regeneration"
+
+  # E-14's demo fixtures, held to the same standard (D-126). A manifest is as editable as the file it
+  # covers, so hashes alone would let a scene be tuned by changing both; regeneration is what makes the
+  # engine the author. The generator refuses a directory that already holds files, so it writes into a
+  # fresh one and the committed set is diffed against that.
+  if [ -d demo/fixtures ]; then
+    tmp="$(mktemp -d)" || return 1
+    if ! cargo xtask gen-demo "$tmp/demo" >/dev/null; then
+      rm -rf "$tmp"
+      echo "vectors: the demo fixture generator failed" >&2
+      return 1
+    fi
+    if ! diff -r demo/fixtures "$tmp/demo"; then
+      rm -rf "$tmp"
+      echo "vectors: the committed demo fixtures are not what the engine produces" >&2
+      return 1
+    fi
+    rm -rf "$tmp"
+    echo "vectors: $(grep -c . demo/fixtures/MANIFEST.sha256) demo fixtures verified by regeneration"
+  fi
 }
 
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).

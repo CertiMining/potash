@@ -53,9 +53,12 @@ const FIXED = {
   epoch: 20723n,
   height: 8,
   masterKey: fromHex("0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", 32),
-  publishedSlot: 504985662n,
+  // Synthetic, and visibly so. An earlier version held the announced log's real slot and receipt
+  // digest here, which put values a reader might recognise into an account that was never published.
+  // Nothing claimed they were real, which is not the same as their not looking it.
+  publishedSlot: 500000000n,
   publishedUnix: 1790500000n,
-  receiptDigest: fromHex("0xb0191834ee402a4f4e961a7f3974865b2c6f8c184835e18706e0974515a1cdf7", 32),
+  receiptDigest: fromHex(`0x${"ab".repeat(32)}`, 32),
   anchorKind: 1,
   bump: 255,
 };
@@ -165,11 +168,15 @@ function renderScene1() {
   } else {
     verdict.classList.add("good");
     const named = fields.length === 0 ? "nothing at all" : fields.join(", ");
+    const why =
+      a.count === b.count
+        ? "the same record count builds the same tree, so there is nothing to differ"
+        : fields.length === 0
+          ? "two different record counts produced the same root, which at 256 bits is a collision and not something this page should have found"
+          : "every one of them a field §4.4's closed list permits, because a Merkle root is a digest";
     text(
       verdict,
-      `${plural(a.count)} against ${plural(b.count)}: identical length, identical field layout, and the only bytes that differ are in ${named} — ${
-        fields.length === 0 ? "the two roots collided, which at 256 bits means you found the same set twice" : "every one of them a field §4.4's closed list permits, because a Merkle root is a digest"
-      }.`,
+      `${plural(a.count)} against ${plural(b.count)}: the account and the instruction data are the same length with the same field layout, and the only bytes that differ are in ${named} — ${why}.`,
     );
   }
 }
