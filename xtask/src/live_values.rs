@@ -92,7 +92,14 @@ pub fn refuse_live_values(root: &Path, files: &[(String, String)]) {
             if !lower.contains(&v.lower) {
                 continue;
             }
-            if allowed.contains(&(name.clone(), v.lower.clone())) {
+            // An exemption may be recorded under the artifact's own file name, which is how the
+            // generator knows it, or under its repository path, which is how the tree walk does.
+            // Either spelling exempts the same file, so a pair written once keeps working whichever
+            // side finds it.
+            let basename = name.rsplit('/').next().unwrap_or(name).to_string();
+            if allowed.contains(&(name.clone(), v.lower.clone()))
+                || allowed.contains(&(basename, v.lower.clone()))
+            {
                 continue;
             }
             found.push(format!("  {name} carries {} ({})", v.value, v.what));
@@ -132,5 +139,69 @@ pub fn check_list_shape(root: &Path) {
             known.contains(&value),
             "LIVE-VALUES.exempt: {file} exempts {value:?}, which LIVE-VALUES.txt does not list"
         );
+    }
+}
+
+/// Every file in the synthetic surface, checked the way a generated one is.
+///
+/// **Why generation alone was not enough.** The rule names three things — synthetic artifacts,
+/// fixtures, and **page constants** — and the generator only ever sees the second. A review put a live
+/// receipt digest into `demo/app.js` and watched `gen-demo`, the vectors gate and every test pass,
+/// because a hand-written page is not something a generator inspects. The gate has to look at the
+/// working tree as well as at what it is about to write.
+///
+/// The surface is named rather than inferred. A tree-wide scan would need an allow-list holding
+/// `docs/anchoring.md`, `ANNOUNCED_PROGRAM_ID`, `README.md`, the deploy script, the cluster harnesses
+/// and the program's own `declare_id!` — every one of which holds live values because its subject is
+/// the deployment — and an allow-list that long is a gate that no longer refuses anything. What is
+/// scanned is what is synthetic by nature: the demo and the vectors.
+pub fn check_synthetic_surface(root: &Path) {
+    check_list_shape(root);
+    let mut files: Vec<(String, String)> = Vec::new();
+    for dir in ["demo", "vectors"] {
+        collect(&root.join(dir), root, &mut files);
+    }
+    assert!(
+        files.len() > 10,
+        "the synthetic surface is {} files, which means the walk found nothing and would pass anything",
+        files.len()
+    );
+    refuse_live_values(root, &files);
+    println!(
+        "live-values: {} files in the synthetic surface carry no value that exists on chain",
+        files.len()
+    );
+}
+
+/// Everything readable as text under `dir`, keyed by the name the exemption list uses: the file's own
+/// name for a generated artifact, and its repository-relative path otherwise.
+fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Build output is not committed and is a copy of dependencies that legitimately hold nothing
+        // of ours; `node_modules` likewise.
+        if name == "build" || name == "node_modules" || name == "dist" || name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            collect(&path, root, out);
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue; // not text; nothing to read a base58 string out of
+        };
+        let relative = path
+            .strip_prefix(root)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| name.clone());
+        // A generated artifact is exempted by its own file name, which is how the generator records
+        // it; anything else is exempted by path. Both spellings are offered so an exemption written
+        // for a generated file keeps working when the tree is scanned.
+        out.push((relative, text));
     }
 }

@@ -1550,6 +1550,16 @@ in `LIVE-VALUES.exempt` with a reason. V-P-12 is exempted, because §2.4's deriv
 announced deployment is that vector's whole subject; a fixture that merely looked more concrete for
 carrying one is the defect the rule exists for.
 
+**And over the working tree, not only over what a generator writes.** The rule names three things and
+a generator only ever sees one of them: a review put a live receipt digest into `demo/app.js` and
+watched `gen-demo`, the vectors gate and every test pass, because a hand-written page is not something
+a generator inspects. `cargo xtask check-live-values` scans the synthetic surface — `demo/` and
+`vectors/`, excluding build output — and runs in the `vectors` group. The surface is named rather than
+inferred: a tree-wide scan would need an allow-list holding `docs/anchoring.md`,
+`ANNOUNCED_PROGRAM_ID`, the deploy script, the cluster harnesses and the program's own `declare_id!`,
+every one of which holds live values because its subject is the deployment, and an allow-list that long
+is a gate that refuses nothing.
+
 
 ## D-127 · The qualified-person key is labelled wherever it appears
 

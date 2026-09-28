@@ -80,6 +80,11 @@ fn main() {
                 .unwrap_or_else(|| repo_root().join("vectors"));
             gen_vectors(&dir);
         }
+        // The synthetic surface, scanned in the working tree rather than only at generation. A page
+        // constant is not something a generator sees.
+        Some("check-live-values") => {
+            live_values::check_synthetic_surface(&repo_root());
+        }
         // E-14's demo fixtures (D-126). A separate command: the demo's scenes are not conformance
         // vectors, and regenerating one must not be able to rewrite the other.
         Some("gen-demo") => {
@@ -92,6 +97,7 @@ fn main() {
         other => {
             eprintln!("usage: cargo xtask gen-vectors [destination directory]");
             eprintln!("       cargo xtask gen-demo [destination directory]");
+            eprintln!("       cargo xtask check-live-values");
             if let Some(cmd) = other {
                 eprintln!("unknown command: {cmd}");
             }

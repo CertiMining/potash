@@ -115,6 +115,11 @@ vectors() {
     rm -rf "$tmp"
     echo "vectors: $(grep -c . demo/fixtures/MANIFEST.sha256) demo fixtures verified by regeneration"
   fi
+
+  # The same rule over the working tree, not only over what a generator is about to write. A page
+  # constant is hand-written and no generator ever sees it, which is how a live receipt digest reached
+  # demo/app.js and passed everything.
+  cargo xtask check-live-values || return 1
 }
 
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).
