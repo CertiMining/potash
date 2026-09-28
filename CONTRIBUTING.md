@@ -115,6 +115,33 @@ number linearly, and two of them both claimed `v0.1.18`. A branch's version line
 in-text notes say "on this branch, unmerged" or "before this branch". One spec-only pull request
 assigns the next linear number to everything merged since, in merge order.
 
+## No live value in a synthetic artifact
+
+**No value from a live deployment appears in any synthetic artifact, fixture, or page constant, ever.**
+Not a program id, not an address, not a published root, not a receipt digest, not a transaction
+signature. A synthetic artifact that carries one is asserting a provenance it does not have, and a
+reader who recognises the value is the person it misleads.
+
+This rule exists because E-14's demo fixture carried the announced log's real transaction signature and
+slot in its `anchor` block, beside an epoch root built for the demo and published nowhere — and the
+signature and the slot came from two different publications. It was written that way because real
+values looked more concrete. **Fabricated provenance is the worst class of defect this repository can
+hold, and it is the kind an author cannot see in their own work**, which is what an independent review
+round is for.
+
+The distinction to draw is about subject, not about intent. An artifact whose subject *is* the
+announced deployment may name it — V-P-12 checks §2.4's derivation against that deployment and a vector
+that could not name it would check nothing. An artifact that merely looked better for carrying a piece
+of one may not.
+
+**Where it is enforced.** `LIVE-VALUES.txt` lists what the deployment holds and `LIVE-VALUES.exempt`
+records the pairs that are legitimate, with a reason each. `cargo xtask gen-vectors` and
+`cargo xtask gen-demo` scan every file before writing a byte and fail on an unrecorded match, and an
+exemption naming a value the list does not hold fails too rather than sitting dead. Both files and the
+check arrive with E-14; on this branch the rule is the rule and the gate is not here yet, which is
+recorded rather than implied. Slot numbers and block heights are deliberately out of scope: they are
+plain integers, and a list of them would fire on every counter in the corpus.
+
 ## A dependency no gate covers
 
 Anchor B's receipts are created and upgraded by the **OpenTimestamps reference client**, pinned at
