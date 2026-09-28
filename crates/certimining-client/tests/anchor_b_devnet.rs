@@ -15,18 +15,15 @@
 //! ```
 #![cfg(all(feature = "cluster", feature = "ots"))]
 
-use anchor_lang::{InstructionData, ToAccountMetas};
+// The instruction is no longer built here: `Cluster::attach` builds it, after reading the receipt.
+// The imports that are gone from this list are the ones that let a pending receipt through.
 use certimining_client::cluster::Cluster;
 use certimining_client::{
-    checkpoint_address, config_address, receipt_digest, refuse_a_readable_key, AnchorB,
-    AnchorStatus, Fetched, PendingReceipt, ReferenceClient,
+    receipt_digest, refuse_a_readable_key, AnchorB, AnchorStatus, Fetched, PendingReceipt,
+    ReferenceClient,
 };
 use certimining_core::{Digest, NativeKeccak};
 use solana_keypair::Keypair;
-use solana_message::Message;
-use solana_pubkey::Pubkey;
-use solana_signer::Signer;
-use solana_transaction::Transaction;
 
 fn key(name: &str) -> Keypair {
     let home = std::env::var("HOME").expect("HOME");
@@ -141,37 +138,17 @@ fn stage_two_attach_once_bitcoin_confirms() {
 
     let payer = key("deploy-keypair.json");
     let authority = key("checkpoint-authority.json");
-    let metas = certimining_checkpoint::accounts::Attach {
-        config: config_address(&certimining_checkpoint::ID),
-        checkpoint: checkpoint_address(&certimining_checkpoint::ID, epoch),
-        authority: anchor_lang::prelude::Pubkey::from(authority.pubkey().to_bytes()),
-    }
-    .to_account_metas(None)
-    .into_iter()
-    .map(|m| solana_instruction::AccountMeta {
-        pubkey: Pubkey::from(m.pubkey.to_bytes()),
-        is_signer: m.is_signer,
-        is_writable: m.is_writable,
-    })
-    .collect();
-    let ix = solana_instruction::Instruction {
-        program_id: Pubkey::from(certimining_checkpoint::ID.to_bytes()),
-        accounts: metas,
-        data: certimining_checkpoint::instruction::AttachAnchorReceipt {
-            epoch,
-            receipt_digest: digest,
-            kind: 1,
-        }
-        .data(),
-    };
-    let rpc = cluster.rpc();
-    let message = Message::new(&[ix], Some(&payer.pubkey()));
-    let tx = Transaction::new(
-        &[&payer, &authority],
-        message,
-        rpc.get_latest_blockhash().expect("blockhash"),
+    // Through `Cluster::attach`, which reads the receipt and refuses one Bitcoin has not carried.
+    // Building the instruction here by hand is what let a pending receipt reach a write-once field:
+    // the rule D-112 states was only ever the order this harness called things in.
+    let (attached, claim) = cluster
+        .attach(epoch, &root, &bytes, &payer, &authority)
+        .unwrap_or_else(|e| panic!("epoch {epoch}: {e:?}"));
+    assert_eq!(
+        attached, digest,
+        "the guarded path digested different bytes"
     );
-    let signature = rpc.send_and_confirm_transaction(&tx).expect("attach lands");
+    let signature = format!("Bitcoin block {}", claim.height);
     println!("attached 0x{} for epoch {epoch}: {signature}", hex(&digest));
 
     assert_eq!(

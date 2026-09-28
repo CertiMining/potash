@@ -1151,6 +1151,15 @@ The arm stays, because it is reachable — but for the other reason. Inside the 
 
 **Rejected.** Attaching the pending receipt's digest, which would make the stored artefact stop matching the chain the moment it is upgraded — breaking the one thing the digest is for. Keeping both and attaching the pending one, which would make `dual` mean "a calendar promised to timestamp this".
 
+**Where the rule actually lived, until a review looked (28 Sep 2026).** Nothing enforced it. The
+program cannot: an upgraded receipt's digest and a pending one's are both 32 non-zero bytes, and
+`attach_anchor_receipt` refuses only all-zero. The client offered no attachment API at all, so the
+harness built the instruction itself and the rule was the order it happened to call `upgrade` and
+attach in. A reviewer attached a genuine pending receipt and the epoch read `dual` with nothing behind
+it but a calendar's promise — permanently, because the field is write-once. `Cluster::attach` is the
+guard now: it reads the receipt, refuses one that carries no Bitcoin attestation, and digests the bytes
+itself rather than accepting a digest a caller has already computed.
+
 ## D-113 · `TAG_RCPT`, and a reserved tag left reserved
 
 **Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026, amending the proposal)
@@ -1160,6 +1169,11 @@ The arm stays, because it is reachable — but for the other reason. Inside the 
 **Decision.** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)`, with `TAG_RCPT = b"CMv1RCPT"` **new in v0.1.18**, `len` a `u16` (INV-ENC-04) and the tag first (INV-ENC-01).
 
 **The owner's amendment, and why it is the better answer.** The proposal was to spend `TAG_CKPT` here — declared in §1.2, required of a writer by E-03, and consumed by nothing, which E-11 recorded as a defect. The owner ruled a new tag instead. `TAG_CKPT` stays declared and unconsumed, and its resolution — a checkpoint preimage, or retirement — is filed for after the deadline. Reusing a reserved tag for the first construction that needs one is how a tag stops naming anything in particular, and the cost of a new eight-byte constant is nothing.
+
+**The pin is checked now (28 Sep 2026).** A reviewer put a fake `ots` reporting `v9.9.9` on the
+configured path and completed a submission with it: the version was pinned in prose and asked of
+nothing. `ReferenceClient::check_version` runs before a submission and refuses anything but the pinned
+version, and a missing executable is a refusal rather than a pass.
 
 ## D-114 · `timestamp` is split, because it cannot return what it promises
 
@@ -1188,6 +1202,14 @@ The arm stays, because it is reachable — but for the other reason. Inside the 
 **Ground.** D-88 makes this the only key that runs unattended and separates it from the upgrade authority for exactly that reason. A requirement that is documented and not enforced is a requirement until the first hurried afternoon.
 
 **What production would need, recorded so no text implies this is the end state.** An OS keychain removes the file; a remote signer removes the key from the host altogether. Both are out of scope before 12 October and neither is pretended to be present.
+
+**What exists on this branch, stated plainly (28 Sep 2026).** There is no worker binary. `E-10` builds
+the anchor-B client and its harnesses, and `refuse_a_readable_key` is exercised by unit tests across
+every mode from `0000` to `0777` and called by the integration harness that reads the checkpoint
+authority. It is not called at the start of a long-running process, because no such process exists yet.
+The decision stands as the rule a worker must follow; the worker itself is filed for after the
+submission deadline, and this note is here so that nobody reads the heading as a description of
+something running.
 
 ## D-118 · Silent degradation is a test, not a sentence
 

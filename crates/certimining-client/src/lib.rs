@@ -42,7 +42,7 @@ pub use fetch::{
 };
 pub use ots::{receipt_digest, refuse_a_readable_key, AnchorB, PendingReceipt, ReceiptRefused};
 #[cfg(feature = "ots")]
-pub use ots::{verify_receipt, ReferenceClient};
+pub use ots::{verify_receipt, BitcoinClaim, ReferenceClient};
 pub use publish::{
     classify, settle, should_retry, Outcome, Settlement, CHECKPOINT_ALREADY_WRITTEN,
 };

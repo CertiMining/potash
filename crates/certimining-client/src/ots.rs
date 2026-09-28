@@ -66,8 +66,25 @@ pub fn receipt_digest<H: Hasher>(receipt: &[u8]) -> Option<Digest> {
 /// rather than assuming their length, because assuming it is how a fixture stops being usable and a
 /// caller stops being checked. This is the second place SHA-256 is unavoidable, after §2.4's address
 /// and discriminator derivations, and INV-PRIM-01 still forbids it in terms.
+/// The Bitcoin attestation a receipt carries — **the height the receipt names, not a height this
+/// code has checked.**
+///
+/// Verifying an attestation means recomputing the operations from the start digest and comparing the
+/// result with that block's merkle root, which needs a source of Bitcoin headers. This crate has
+/// none, so what `verify_receipt` establishes is that the receipt parses, commits to this epoch's
+/// root, and carries a Bitcoin attestation rather than only a calendar's promise. **A forged receipt
+/// naming a block it never reached passes that.** The type exists so a caller cannot mistake one for
+/// the other: it hands back the claim, labelled as a claim. Real verification against Bitcoin is
+/// filed for after the submission deadline.
 #[cfg(feature = "ots")]
-pub fn verify_receipt(receipt: &[u8], stamped: &[u8]) -> Result<(), ReceiptRefused> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitcoinClaim {
+    /// The block height the receipt names. Unchecked.
+    pub height: u32,
+}
+
+#[cfg(feature = "ots")]
+pub fn verify_receipt(receipt: &[u8], stamped: &[u8]) -> Result<BitcoinClaim, ReceiptRefused> {
     use opentimestamps::attestation::Attestation;
     use opentimestamps::ser::DetachedTimestampFile;
     use opentimestamps::timestamp::{Step, StepData};
@@ -85,17 +102,16 @@ pub fn verify_receipt(receipt: &[u8], stamped: &[u8]) -> Result<(), ReceiptRefus
 
     // A receipt is a tree of operations ending in attestations. A calendar's `Pending` attestation
     // is a promise; only `Bitcoin` is the anchor (D-112).
-    fn confirmed(step: &Step) -> bool {
-        if let StepData::Attestation(Attestation::Bitcoin { .. }) = step.data {
-            return true;
+    fn confirmed(step: &Step) -> Option<u32> {
+        if let StepData::Attestation(Attestation::Bitcoin { height }) = step.data {
+            return Some(height as u32);
         }
-        step.next.iter().any(confirmed)
+        step.next.iter().find_map(confirmed)
     }
 
-    if confirmed(&parsed.timestamp.first_step) {
-        Ok(())
-    } else {
-        Err(ReceiptRefused::NotYetConfirmed)
+    match confirmed(&parsed.timestamp.first_step) {
+        Some(height) => Ok(BitcoinClaim { height }),
+        None => Err(ReceiptRefused::NotYetConfirmed),
     }
 }
 
@@ -138,6 +154,32 @@ impl ReferenceClient {
         self.receipts.join(format!("{epoch}.root.ots"))
     }
 
+    /// The version D-113 pins. A different client may write a receipt this code then treats as the
+    /// pinned one's output; the executable is whatever the path says, so the pin has to be checked
+    /// rather than assumed.
+    pub const PINNED_VERSION: &'static str = "0.7.2";
+
+    /// Refuses an executable that is not the pinned version, before it is asked to do anything.
+    ///
+    /// `ots --version` prints `v0.7.2`. A fake reporting `v9.9.9` previously completed a submission,
+    /// because nothing ever asked.
+    pub fn check_version(&self) -> Result<String, String> {
+        let printed = self.run(&[std::ffi::OsStr::new("--version")])?;
+        let found = printed.trim().to_string();
+        if found
+            .split_whitespace()
+            .any(|w| w.trim_start_matches('v') == Self::PINNED_VERSION)
+        {
+            Ok(found)
+        } else {
+            Err(format!(
+                "{}: reports {found:?}, and D-113 pins opentimestamps-client v{}",
+                self.executable.display(),
+                Self::PINNED_VERSION
+            ))
+        }
+    }
+
     fn run(&self, args: &[&std::ffi::OsStr]) -> Result<String, String> {
         let out = std::process::Command::new(&self.executable)
             .args(args)
@@ -159,6 +201,7 @@ impl ReferenceClient {
 #[cfg(feature = "ots")]
 impl AnchorB for ReferenceClient {
     fn submit(&self, epoch: u64, root: &Digest) -> Result<PendingReceipt, String> {
+        self.check_version()?;
         std::fs::create_dir_all(&self.receipts).map_err(|e| e.to_string())?;
         // The client stamps a file and takes no raw digest, so the root is written to one. The file
         // holds the 32 root bytes and nothing else, which is what the receipt then commits to
@@ -202,7 +245,7 @@ impl AnchorB for ReferenceClient {
         let bytes = std::fs::read(&pending.path).map_err(|e| e.to_string())?;
         // Checked by an implementation that did not write it, before anything hashes it (D-115).
         match verify_receipt(&bytes, &pending.root) {
-            Ok(()) => receipt_digest::<certimining_core::NativeKeccak>(&bytes)
+            Ok(_claim) => receipt_digest::<certimining_core::NativeKeccak>(&bytes)
                 .ok_or_else(|| "the receipt is too long to encode a u16 length".to_string())
                 .map(Some),
             Err(ReceiptRefused::NotYetConfirmed) => Ok(None),

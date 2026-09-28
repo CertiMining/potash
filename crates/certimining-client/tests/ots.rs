@@ -66,7 +66,27 @@ mod verified_by_another_implementation {
     fn a_bitcoin_confirmed_receipt_verifies_against_what_it_stamped() {
         // D-115: the receipt was produced by the reference client and is read here by the
         // OpenTimestamps project's own Rust library, which cannot create one.
-        assert_eq!(verify_receipt(RECEIPT, STAMPED), Ok(()));
+        let claim = verify_receipt(RECEIPT, STAMPED).expect("this receipt carries Bitcoin");
+        assert!(
+            claim.height > 0,
+            "a Bitcoin attestation names a block height"
+        );
+    }
+
+    #[test]
+    fn the_returned_height_is_the_receipts_claim_and_not_a_checked_fact() {
+        // The type is the whole point of this test. Verifying an attestation would mean recomputing
+        // the operations to that block's merkle root, which needs a header source this crate does not
+        // have, so a receipt naming a block it never reached passes. `BitcoinClaim` exists so that a
+        // caller receives the claim labelled as one; a review found this function reading as though it
+        // had consulted Bitcoin.
+        let claim = verify_receipt(RECEIPT, STAMPED).expect("carries Bitcoin");
+        // Nothing in this crate can contradict the height, which is exactly what is being recorded.
+        assert_eq!(
+            claim,
+            verify_receipt(RECEIPT, STAMPED).expect("carries Bitcoin"),
+            "the claim is read from the receipt and is stable"
+        );
     }
 
     #[test]
@@ -122,5 +142,60 @@ mod key_handling {
     #[test]
     fn a_key_that_is_not_there_is_refused_rather_than_assumed_fine() {
         assert!(refuse_a_readable_key(std::path::Path::new("/nonexistent/key.json")).is_err());
+    }
+}
+
+/// D-113's pin, enforced rather than assumed.
+///
+/// The executable is whatever the configured path points at. A review built a fake reporting
+/// `v9.9.9` and completed a submission with it, because nothing ever asked the client what it was.
+#[cfg(feature = "ots")]
+mod the_pinned_client {
+    use certimining_client::ReferenceClient;
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    fn fake(dir: &std::path::Path, prints: &str) -> std::path::PathBuf {
+        let path = dir.join("ots");
+        let mut f = std::fs::File::create(&path).expect("the fake can be written");
+        writeln!(f, "#!/bin/sh\necho '{prints}'").expect("script");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("mode");
+        path
+    }
+
+    fn client(exe: std::path::PathBuf, receipts: std::path::PathBuf) -> ReferenceClient {
+        ReferenceClient {
+            executable: exe,
+            receipts,
+        }
+    }
+
+    #[test]
+    fn a_client_reporting_another_version_is_refused() {
+        let dir = std::env::temp_dir().join(format!("cm-ots-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+        let c = client(fake(&dir, "v9.9.9"), dir.join("receipts"));
+        let err = c
+            .check_version()
+            .expect_err("a fake version must be refused");
+        assert!(err.contains("9.9.9"), "{err}");
+        assert!(err.contains(ReferenceClient::PINNED_VERSION), "{err}");
+
+        let ok = client(fake(&dir, "v0.7.2"), dir.join("receipts"));
+        assert!(
+            ok.check_version().is_ok(),
+            "the pinned version must be accepted"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_executable_that_is_not_there_is_refused_rather_than_ignored() {
+        let c = client(
+            std::path::PathBuf::from("/nonexistent/ots"),
+            std::env::temp_dir(),
+        );
+        assert!(c.check_version().is_err(), "a missing client is not a pass");
     }
 }
