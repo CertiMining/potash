@@ -166,10 +166,10 @@ impl ReferenceClient {
     pub fn check_version(&self) -> Result<String, String> {
         let printed = self.run(&[std::ffi::OsStr::new("--version")])?;
         let found = printed.trim().to_string();
-        if found
-            .split_whitespace()
-            .any(|w| w.trim_start_matches('v') == Self::PINNED_VERSION)
-        {
+        // The **whole** report must be the pinned version. Accepting any whitespace-delimited token
+        // let `v9.9.9 v0.7.2` through, which is a client free to be anything as long as it also
+        // mentions the right number somewhere — the pin asking to be told what it wanted to hear.
+        if found.trim_start_matches('v') == Self::PINNED_VERSION {
             Ok(found)
         } else {
             Err(format!(

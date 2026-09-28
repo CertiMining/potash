@@ -1181,7 +1181,7 @@ version, and a missing executable is a refusal rather than a pass.
 
 **The defect.** §2.3 declared `fn timestamp(&self, root: Digest) -> Result<ReceiptDigest>`, synchronous. Under D-112 that digest does not exist for hours, so a conforming implementation would block on a Bitcoin confirmation.
 
-**Decision.** `submit(root) -> PendingReceipt` returns at once; `upgrade(&PendingReceipt) -> Option<ReceiptDigest>` returns `None` until Bitcoin has confirmed. The worker submits on the epoch cadence and sweeps pending receipts on its own timer. §2.3 is amended.
+**Decision.** `submit(root) -> PendingReceipt` returns at once; `upgrade(&PendingReceipt) -> Option<ReceiptDigest>` returns `None` until Bitcoin has confirmed. A worker would submit on the epoch cadence and sweep pending receipts on its own timer — *would*, because none exists yet (D-117, [issue #49](https://github.com/CertiMining/potash/issues/49)); the cycle is presently run by hand. §2.3 is amended.
 
 **Ground.** A blocking `timestamp` would couple anchor B's latency to the publication schedule, and INV-ANCH-01 says publication time depends on nothing but the schedule. Two anchors whose timing is coupled are less independent than two anchors, which is the property the second one exists to provide.
 
@@ -1204,8 +1204,10 @@ version, and a missing executable is a refusal rather than a pass.
 **What production would need, recorded so no text implies this is the end state.** An OS keychain removes the file; a remote signer removes the key from the host altogether. Both are out of scope before 12 October and neither is pretended to be present.
 
 **Amended 28 Sep 2026: this decision describes a worker that does not exist, and is written in the
-future tense now.** Read it as the rule a worker must follow when one is built (#49), not as a
-description of something running. E-10 builds the anchor-B client and its harnesses and no binary:
+future tense now.** Read it as the rule a worker must follow when one is built — tracked as
+[issue #49](https://github.com/CertiMining/potash/issues/49), *An anchor-B worker binary, so D-117
+describes something that runs* — and not as a description of something running. A review looked for
+`#49` in the tree and found nothing, because the earlier note named the number without linking it. E-10 builds the anchor-B client and its harnesses and no binary:
 `refuse_a_readable_key` is called by the integration harness that reads the checkpoint authority, and
 there is no startup path to refuse at.
 

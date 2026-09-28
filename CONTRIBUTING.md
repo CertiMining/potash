@@ -115,6 +115,28 @@ number linearly, and two of them both claimed `v0.1.18`. A branch's version line
 in-text notes say "on this branch, unmerged" or "before this branch". One spec-only pull request
 assigns the next linear number to everything merged since, in merge order.
 
+## Rewriting a stacked branch
+
+Units stack: E-14 sits on E-11, E-15 sat on E-10. When the branch underneath moves, the one above is
+rebased, and a rebase means a force push. The question came up at every rebase, so it is settled here.
+
+**`--force-with-lease` is allowed on a stacked branch when no review round is open against its posted
+head and nobody else commits to it. Never on a branch whose head is under review** (owner, 28 Sep
+2026).
+
+The reason for the second half is what a review round is: a reviewer is reading a specific commit, and
+moving the ground under them wastes the round and produces findings against text that no longer
+exists. That is the same failure as reviewing a branch mid-rebase, which is why a head is posted and
+then left alone until the charter comes back.
+
+`--force-with-lease` rather than `--force`, always: it refuses when the remote has moved since the
+last fetch, which is exactly the case where somebody else has committed and the first condition no
+longer holds.
+
+A branch nobody has reviewed and nobody else touches is yours to rewrite. `scripts/merge-ready.sh`
+refuses a branch that is behind its base, so the rebase is not optional — the choice is when, not
+whether.
+
 ## No live value in a synthetic artifact
 
 **No value from a live deployment appears in any synthetic artifact, fixture, or page constant, ever.**

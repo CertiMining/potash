@@ -211,6 +211,22 @@ mod the_pinned_client {
             "the pinned version must be accepted"
         );
 
+        // A report that merely *contains* the pinned version is not the pinned version. The first
+        // parser split on whitespace and accepted any matching token, so `v9.9.9 v0.7.2` passed: a
+        // pin asking to be told what it wanted to hear.
+        for smuggled in [
+            "v9.9.9 v0.7.2",
+            "v0.7.2 v9.9.9",
+            "not-ots v0.7.2",
+            "v0.7.2-modified",
+        ] {
+            let c = client(fake(&dir, smuggled), dir.join("receipts"));
+            assert!(
+                c.check_version().is_err(),
+                "{smuggled:?} was accepted as the pinned client"
+            );
+        }
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

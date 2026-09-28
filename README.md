@@ -11,9 +11,12 @@ Every decision behind the build: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ## Status: not audited
 
-No external review has completed. One independent review round has been answered on the Anchor
-program and the anchor client; a second has not run, and the OpenTimestamps worker and the TypeScript
-verifier have had none. Treat every figure below as measured by the people who wrote the code.
+No external audit has completed, and no figure below was measured by anyone outside this project.
+What has run is independent review, in rounds, against posted heads: two on the Anchor program and the
+anchor client, two on anchor B, three on the TypeScript verifier, and two on the demo. Each round
+found defects in the previous round's fixes, which is the reason for counting them rather than
+declaring the work reviewed. There is no OpenTimestamps worker to review: the daily cycle is run by
+hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
 
 **What is measured.** These are numbers this repository produces and checks, not estimates.
 
@@ -117,7 +120,7 @@ taken by default.
 |---|---|
 | `crates/certimining-core` | digests, encodings, the record state machine. `no_std`, no Solana dependency |
 | `crates/certimining-log` | the epoch tree, inclusion proofs, the batcher, inclusion promises |
-| `crates/certimining-client` | fetching a root, the publish path, anchor B's worker |
+| `crates/certimining-client` | fetching a root, the publish path, and the anchor-B client a worker would use. There is no worker: the daily cycle is run by hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)) |
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |

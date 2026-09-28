@@ -38,7 +38,7 @@ echo "----- nothing that should never be committed"
 # real Bitcoin-confirmed one as a fixture — so they are not banned. The first version of this list
 # banned them and failed on a legitimate fixture.
 banned="$(git ls-files \
-  | grep -E '(^|/)(node_modules|dist|target)/|\.so$|(^|/)\.env|keypair.*\.json$|id_rsa|\.pem$' \
+  | grep -E '(^|/)(node_modules|dist|target|build)/|\.so$|(^|/)\.env|keypair.*\.json$|id_rsa|\.pem$' \
   || true)"
 if [ -n "$banned" ]; then
   # `wc -l` counts newlines, and the last line of this list has none, so it reported 0 for one file.
