@@ -154,15 +154,23 @@ impl ReferenceClient {
         self.receipts.join(format!("{epoch}.root.ots"))
     }
 
-    /// What the pinned client prints, byte for byte.
+    /// What the pinned client writes to **stdout**, byte for byte, newline included.
     ///
-    /// `~/.local/share/potash/ots-venv/bin/ots --version` writes `v0.7.2\n`, so this is the trimmed
-    /// report and not a number to be recognised inside one. Two earlier versions of this check were
-    /// looser and both were wrong: the first accepted any whitespace-delimited token, so
-    /// `v9.9.9 v0.7.2` passed; the second stripped leading `v` characters before comparing, so
-    /// `0.7.2` and `vv0.7.2` passed as well. A pin that accepts a family of spellings is a pin on
-    /// none of them.
-    pub const PINNED_REPORT: &'static str = "v0.7.2";
+    /// `~/.local/share/potash/ots-venv/bin/ots --version | od -c` shows `v 0 . 7 . 2 \n`. Four
+    /// versions of this check were wrong before this one, each looser than it looked:
+    ///
+    /// 1. The version was pinned in prose and asked of nothing, so a client reporting `v9.9.9` ran.
+    /// 2. The report was split on whitespace and any matching token accepted, so `v9.9.9 v0.7.2`
+    ///    passed.
+    /// 3. Leading `v` characters were stripped, so `0.7.2` and `vv0.7.2` passed.
+    /// 4. The report was `trim()`ed before comparison, so every whitespace framing passed — no
+    ///    newline, CRLF, doubled newlines, leading or trailing spaces, tabs, vertical tabs, form
+    ///    feeds, non-breaking spaces — **and** the merged stdout/stderr text meant a client could
+    ///    write the report entirely to stderr, or split it across the two streams.
+    ///
+    /// So: the raw bytes of stdout, compared to these. A pin that accepts a family of spellings is a
+    /// pin on none of them.
+    pub const PINNED_REPORT: &'static [u8] = b"v0.7.2\n";
 
     /// The version number alone, for messages.
     pub const PINNED_VERSION: &'static str = "0.7.2";
@@ -172,18 +180,31 @@ impl ReferenceClient {
     /// `ots --version` prints `v0.7.2`. A fake reporting `v9.9.9` previously completed a submission,
     /// because nothing ever asked.
     pub fn check_version(&self) -> Result<String, String> {
-        let printed = self.run(&[std::ffi::OsStr::new("--version")])?;
-        let found = printed.trim().to_string();
-        // Exact equality with the report the pinned client prints. Anything else is another client.
-        if found == Self::PINNED_REPORT {
-            Ok(found)
+        // **stdout alone, unmodified.** `run` merges stderr into its result, which is right for
+        // `stamp` and `upgrade`, where the client reports progress on both; it is wrong here,
+        // because it lets the version arrive on the wrong stream or across both.
+        let out = std::process::Command::new(&self.executable)
+            .args([std::ffi::OsStr::new("--version")])
+            .output()
+            .map_err(|e| format!("{}: {e}", self.executable.display()))?;
+        if !out.status.success() {
+            return Err(format!(
+                "{}: --version exited {}",
+                self.executable.display(),
+                out.status
+            ));
+        }
+        let found = String::from_utf8_lossy(&out.stdout).into_owned();
+        if out.stdout == Self::PINNED_REPORT {
+            Ok(found.trim().to_string())
         } else {
             Err(format!(
-                "{}: reports {found:?}, and D-113 pins opentimestamps-client v{} \
-                 whose --version prints exactly {:?}",
+                "{}: --version wrote {:?} to stdout, and D-113 pins opentimestamps-client v{}, \
+                 whose --version writes exactly {:?}",
                 self.executable.display(),
+                found,
                 Self::PINNED_VERSION,
-                Self::PINNED_REPORT
+                String::from_utf8_lossy(Self::PINNED_REPORT)
             ))
         }
     }

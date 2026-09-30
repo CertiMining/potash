@@ -179,10 +179,33 @@ mod the_pinned_client {
     use std::io::Write as _;
     use std::os::unix::fs::PermissionsExt as _;
 
+    /// A fake whose output is `echo`ed, so it always ends in a newline. Kept for the cases where the
+    /// framing is not what is under test.
     fn fake(dir: &std::path::Path, prints: &str) -> std::path::PathBuf {
+        raw_fake(dir, &format!("{prints}\n"), "")
+    }
+
+    /// A fake that writes **exactly** these bytes to stdout and stderr.
+    ///
+    /// `echo` appends a newline and cannot omit one, which is why the earlier tests could not see
+    /// that the check `trim()`ed its input: every fake they built was already correctly framed. This
+    /// writes the bytes through `printf '%b'` with the octal escapes spelled out, so a test can say
+    /// "no trailing newline", "CRLF", "a tab in front" or "on stderr instead".
+    fn raw_fake(dir: &std::path::Path, stdout: &str, stderr: &str) -> std::path::PathBuf {
         let path = dir.join("ots");
+        let escape = |s: &str| -> String {
+            s.bytes()
+                .map(|b| format!("\\{:03o}", b))
+                .collect::<String>()
+        };
         let mut f = std::fs::File::create(&path).expect("the fake can be written");
-        writeln!(f, "#!/bin/sh\necho '{prints}'").expect("script");
+        writeln!(
+            f,
+            "#!/bin/sh\nprintf '%b' '{}'\nprintf '%b' '{}' >&2",
+            escape(stdout),
+            escape(stderr)
+        )
+        .expect("script");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("mode");
         path
     }
@@ -231,6 +254,46 @@ mod the_pinned_client {
             assert!(
                 c.check_version().is_err(),
                 "{smuggled:?} was accepted as the pinned client"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The framing, which a review found the previous check discarded.
+    ///
+    /// `check_version` compared `printed.trim()`, so every one of these passed, and none of them is
+    /// the pinned client: the bytes it writes are `v0.7.2\n` on stdout and nothing on stderr.
+    #[test]
+    fn only_the_exact_bytes_on_stdout_are_accepted() {
+        let dir = std::env::temp_dir().join(format!("cm-ots-raw-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a temporary directory");
+
+        let exact = client(raw_fake(&dir, "v0.7.2\n", ""), dir.join("receipts"));
+        assert!(
+            exact.check_version().is_ok(),
+            "the pinned client's own output must be accepted"
+        );
+
+        for (stdout, stderr, what) in [
+            ("v0.7.2", "", "no trailing newline"),
+            ("v0.7.2\r\n", "", "CRLF"),
+            ("v0.7.2\n\n", "", "two trailing newlines"),
+            ("\nv0.7.2\n", "", "a leading newline"),
+            (" v0.7.2\n", "", "a leading space"),
+            ("v0.7.2 \n", "", "a trailing space"),
+            ("\tv0.7.2\n", "", "a leading tab"),
+            ("v0.7.2\t\n", "", "a trailing tab"),
+            ("\u{b}v0.7.2\n", "", "a vertical tab"),
+            ("\u{c}v0.7.2\n", "", "a form feed"),
+            ("\u{a0}v0.7.2\n", "", "a non-breaking space"),
+            ("", "v0.7.2\n", "the report on stderr instead"),
+            ("v0.7.", "2\n", "the report split across both streams"),
+        ] {
+            let c = client(raw_fake(&dir, stdout, stderr), dir.join("receipts"));
+            assert!(
+                c.check_version().is_err(),
+                "{what}: stdout {stdout:?}, stderr {stderr:?} was accepted as the pinned client"
             );
         }
 

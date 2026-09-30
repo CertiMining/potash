@@ -162,13 +162,16 @@ decision for a deployment claiming permanence, and it is recorded for after the 
 Anchor B's design is two stages hours apart (D-112), and this is one instance of it arriving as
 described rather than an argument that it will.
 
-| | Epoch 20723 | Epoch 20724 |
-|---|---|---|
-| Root | `0xdc349df9f57964294692bebc3b192906a40b43b3de2d2414a73b581bdc6d0791` | `0x8ab166bab0ffffa380ff1929cdb24c58bf0043741944739f217d3bb968f02891` |
-| Anchor A, slot | 504985662 | 504997440 |
-| Anchor B | Bitcoin block 968,917 | Bitcoin block 968,923 |
-| Receipt | `anchors/epochs/20723.ots` | `anchors/epochs/20724.ots` |
-| Status | `dual` | `dual` |
+| | Epoch 20723 | Epoch 20724 | Epoch 20725 |
+|---|---|---|---|
+| Root | `0xdc349df9…0d0791` | `0x8ab166ba…f02891` | `0x0d872549…a86443` |
+| Anchor A, slot | 504985662 | 504997440 | 505533854 |
+| Anchor B | Bitcoin block 968,917 | Bitcoin block 968,923 | Bitcoin block 969,173 |
+| Receipt | `anchors/epochs/20723.ots` | `anchors/epochs/20724.ots` | `anchors/epochs/20725.ots` |
+| Status | `dual` | `dual` | `dual` |
+
+Full roots, and the transactions that carry them, are in `LIVE-VALUES.txt` on the demo's branch, which
+is checked against the chain by `scripts/live-values-from-chain.py` after every cycle.
 
 Both receipts are committed and both are the upgraded ones, so `ots verify` reaches a Bitcoin block
 header rather than a calendar's promise. Each attached digest is `Keccak256(TAG_RCPT ‖ len ‖ receipt)`
