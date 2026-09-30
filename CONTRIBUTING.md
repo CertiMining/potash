@@ -198,7 +198,7 @@ rather than only a calendar's promise (`crates/certimining-client/src/ots.rs`, `
 
 **Not "verified".** Checking the attestation against Bitcoin means recomputing the path to a block's
 merkle root, which needs a header source this client does not have
-([#48](https://github.com/CertiMining/potash/issues/48)); the function's own documentation says a
+(H-12, [#48](https://github.com/CertiMining/potash/issues/48)); the function's own documentation says a
 forged attestation passes. That does not make the dependency safe, and it does not make a receipt
 proven. It makes the artefact *parseable and partly checkable* by something that did not produce it.
 
