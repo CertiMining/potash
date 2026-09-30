@@ -181,6 +181,23 @@ check arrive with E-14; on this branch the rule is the rule and the gate is not 
 recorded rather than implied. Slot numbers and block heights are deliberately out of scope: they are
 plain integers, and a list of them would fire on every counter in the corpus.
 
+## Filing to Post-deadline hardening
+
+A defect found before the submission deadline that is not going to be fixed before it goes to the
+**Post-deadline hardening** milestone, and it goes there as an issue titled `H-nn · …`, numbered in
+filing order. H-01 to H-17 exist. The number is part of the title rather than a label, so it appears
+wherever the issue is linked, and a decision or a comment that defers something says which H it
+deferred to — `docs/DECISIONS.md` and the unit records do that by linking the issue and naming it.
+
+**What goes there, under the shipping posture:** a Medium or a Low from a review round, a defect whose
+fix would ripple past the unit that found it, and a question that should not be decided quickly
+because a deadline is not a reason to decide it at all (H-16 is one of those). **What does not:** a
+High against code, which reopens its unit, and anything touching §4.4's privacy tests or a claim the
+repository makes about itself. Those two do not bend.
+
+An H issue states what was found, how it was found, and what would close it. A deferred defect with no
+reproduction is a note, and a note is not a filing.
+
 ## A dependency no gate covers
 
 Anchor B's receipts are created and upgraded by the **OpenTimestamps reference client**, pinned at
