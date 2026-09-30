@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! KAT-01's five cases, read from the Keccak team's round-3 known-answer file (D-10), which is
 //! vendored byte for byte in `../data/ShortMsgKAT_256.txt`. Shared by the off-chain test in this
 //! crate and the on-chain test in `programs/core-harness`.

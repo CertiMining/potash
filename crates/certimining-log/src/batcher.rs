@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The batcher: submission intake, promises, epoch sealing and the overflow queue (§1.6, §2.3).
 //!
 //! The batcher holds three things a counterparty never sees: the master key it seals with, the epoch it

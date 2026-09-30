@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `certimining-client`: publishing checkpoints on the epoch cadence, and fetching a root by epoch
 //! without an indexer (§1.5, §2.3).
 //!
@@ -28,6 +29,7 @@ mod anchor;
 #[cfg(feature = "cluster")]
 pub mod cluster;
 mod fetch;
+mod ots;
 mod publish;
 mod schedule;
 
@@ -38,6 +40,9 @@ pub use fetch::{
     checkpoint_address, config_address, decode_checkpoint, decode_config, root_for_epoch,
     sequence_lag, Fetched, Lag, PublishedCheckpoint, Refused, RootSource, Unreachable,
 };
+pub use ots::{receipt_digest, refuse_a_readable_key, AnchorB, PendingReceipt, ReceiptRefused};
+#[cfg(feature = "ots")]
+pub use ots::{verify_receipt, BitcoinClaim, ReferenceClient};
 pub use publish::{
     classify, settle, should_retry, Outcome, Settlement, CHECKPOINT_ALREADY_WRITTEN,
 };

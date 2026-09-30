@@ -1140,3 +1140,179 @@ The arm stays, because it is reachable — but for the other reason. Inside the 
 **Why compression is honest here, and where it is not.** INV-ANCH-01's cadence is a day because a day is what hides filing rhythm from an observer. What this row measures is narrower: whether an epoch's *content* moves the slot its checkpoint lands in. That question is about the network's scheduling between submission and inclusion, which is seconds, not days, so a minute between epochs leaves it intact while a day would add 199 days of unrelated drift to the same measurement. What compression does cost is the diurnal variation a day-long cadence would sample — devnet is busier at some hours than others — so a 200-minute run sees one slice of that and a 200-day run would see all of it. A leak of the kind this row exists to catch produces a correlation near 1, far above either sampling regime's noise, which is why the bound is 0.2 and not something tighter.
 
 **What the run therefore establishes, and what it does not.** It establishes that over 200 consecutive epochs at one-minute spacing on one endpoint, landing delay did not follow record count or build time above the stated bound. It does not establish the same across a day's worth of network conditions, which is milestone 5's run, and it is not a proof that no content-dependent scheduling exists.
+
+## D-112 · Anchor B commits to the upgraded receipt, and `single` until then is the budget
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**The interaction that forces this.** An OpenTimestamps receipt changes: it is issued with calendar attestations and replaced by `ots upgrade` once a Bitcoin block confirms it. `receipt_digest` is write-once (INV-ANCH-03). There is one opportunity to commit to a receipt, and it is spent on the upgraded one.
+
+**Decision.** `attach_anchor_receipt` carries the digest of the **upgraded, Bitcoin-carrying receipt**, and nothing else is ever attached. An epoch reads `single` for the hours between publication and confirmation. §1.5 now says in its own words that this window is INV-ANCH-04's budgeted latency arriving as designed, not degradation: a client reporting `single` there is reporting that no Bitcoin-anchored receipt exists yet, which is true. What INV-ANCH-05 forbids is `dual` on the strength of a calendar's promise.
+
+**Rejected.** Attaching the pending receipt's digest, which would make the stored artefact stop matching the chain the moment it is upgraded — breaking the one thing the digest is for. Keeping both and attaching the pending one, which would make `dual` mean "a calendar promised to timestamp this".
+
+**Where the rule actually lived, until a review looked (28 Sep 2026).** Nothing enforced it. The
+program cannot: an upgraded receipt's digest and a pending one's are both 32 non-zero bytes, and
+`attach_anchor_receipt` refuses only all-zero. The client offered no attachment API at all, so the
+harness built the instruction itself and the rule was the order it happened to call `upgrade` and
+attach in. A reviewer attached a genuine pending receipt and the epoch read `dual` with nothing behind
+it but a calendar's promise — permanently, because the field is write-once. `Cluster::attach` is the
+guard now: it reads the receipt, refuses one that carries no Bitcoin attestation, and digests the bytes
+itself rather than accepting a digest a caller has already computed.
+
+## D-113 · `TAG_RCPT`, and a reserved tag left reserved
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026, amending the proposal)
+
+**The gap.** §2.4 fixed `receipt_digest` at 32 bytes and said the program never parses the receipt, and no version of this document ever said what function produced those bytes. Two conforming implementations could disagree about every receipt — the same class of gap E-11 found in §2.4's account discriminator.
+
+**Decision.** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)`, with `TAG_RCPT = b"CMv1RCPT"` **added on this branch, unmerged**, `len` a `u16` (INV-ENC-04) and the tag first (INV-ENC-01).
+
+**The owner's amendment, and why it is the better answer.** The proposal was to spend `TAG_CKPT` here — declared in §1.2, required of a writer by E-03, and consumed by nothing, which E-11 recorded as a defect. The owner ruled a new tag instead. `TAG_CKPT` stays declared and unconsumed, and its resolution — a checkpoint preimage, or retirement — is filed for after the deadline. Reusing a reserved tag for the first construction that needs one is how a tag stops naming anything in particular, and the cost of a new eight-byte constant is nothing.
+
+**The pin is checked now (28-29 Sep 2026), after three versions of the check.** The version was
+pinned in prose and asked of nothing, so a fake `ots` reporting `v9.9.9` completed a submission. The
+first fix split the report on whitespace and accepted any matching token, so `v9.9.9 v0.7.2` passed.
+The second stripped leading `v` characters, so `0.7.2` and `vv0.7.2` passed. The check is now exact
+equality with what the pinned client prints — `crates/certimining-client/src/ots.rs`,
+`ReferenceClient::check_version` — and `~/.local/share/potash/ots-venv/bin/ots --version | od -c`
+shows those bytes are `v 0 . 7 . 2 \n`. Both `submit` and `upgrade` call it; a missing executable is a
+refusal rather than a pass. Eight rejected spellings and the accepted one are in
+`crates/certimining-client/tests/ots.rs`, module `the_pinned_client`; run
+`cargo test -p certimining-client --features cluster,ots --test ots`.
+
+## D-114 · `timestamp` is split, because it cannot return what it promises
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**The defect.** §2.3 declared `fn timestamp(&self, root: Digest) -> Result<ReceiptDigest>`, synchronous. Under D-112 that digest does not exist for hours, so a conforming implementation would block on a Bitcoin confirmation.
+
+**Decision.** `submit(root) -> PendingReceipt` returns at once; `upgrade(&PendingReceipt) -> Option<ReceiptDigest>` returns `None` until the receipt carries a Bitcoin attestation — which is the receipt's own claim and not a fact this crate checks against Bitcoin, because it has no header source (`crates/certimining-client/src/ots.rs`, `BitcoinClaim`; H-12, [issue #48](https://github.com/CertiMining/potash/issues/48)). A worker would submit on the epoch cadence and sweep pending receipts on its own timer — *would*, because none exists yet (D-117, H-13, [issue #49](https://github.com/CertiMining/potash/issues/49)); the cycle is presently run by hand. §2.3 is amended.
+
+**Ground.** A blocking `timestamp` would couple anchor B's latency to the publication schedule, and INV-ANCH-01 says publication time depends on nothing but the schedule. Two anchors whose timing is coupled are less independent than two anchors, which is the property the second one exists to provide.
+
+## D-116 · Receipts are written outside the repository and committed by a person
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**Decision.** A worker writes `anchors/epochs/<epoch>.ots` into a working directory outside the repository, and a person commits them — which is how the spec's own stamp under `anchors/` got there. **No worker exists** (D-117, H-13, [issue #49](https://github.com/CertiMining/potash/issues/49)): the cycle is run by hand, and `anchors/epochs/20723.ots` and `20724.ots` were committed by a person from `~/.local/share/potash/receipts/`.
+
+**Ground.** Issue #10 requires receipts stored and retrievable, and a public repository is the retrievable store this project already has. What it does not require is an unattended process holding write access to the public record: that is a governance change, and the one key that runs unattended is the one D-88 deliberately kept away from anything structural.
+
+## D-117 · The worker refuses to start on a key it should not read
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**Decision, in the future tense because it describes something unbuilt.** A worker will read the checkpoint authority at start from `~/.config/certimining/checkpoint-authority.json` at mode 0600, outside the repository, never logged and never printed, and **will refuse to start if the mode is anything else**, as `scripts/deploy-devnet.sh` already refuses. A review found this paragraph still in the present tense while the amendment below said no worker exists; the amendment was correct and this sentence was not.
+
+**Ground.** D-88 makes this the only key that runs unattended and separates it from the upgrade authority for exactly that reason. A requirement that is documented and not enforced is a requirement until the first hurried afternoon.
+
+**What production would need, recorded so no text implies this is the end state.** An OS keychain removes the file; a remote signer removes the key from the host altogether. Both are out of scope before 12 October and neither is pretended to be present.
+
+**Amended 28 Sep 2026: this decision describes a worker that does not exist, and is written in the
+future tense now.** Read it as the rule a worker must follow when one is built — tracked as
+H-13, [issue #49](https://github.com/CertiMining/potash/issues/49), *An anchor-B worker binary, so D-117
+describes something that runs* — and not as a description of something running. A review looked for
+`#49` in the tree and found nothing, because the earlier note named the number without linking it. E-10 builds the anchor-B client and its harnesses and no binary:
+`refuse_a_readable_key` is called by the integration harness that reads the checkpoint authority, and
+there is no startup path to refuse at.
+
+**A correction to this note's own first version.** It claimed the helper was "exercised by unit tests
+across every mode from `0000` to `0777`". It was not — the tests covered `0600` and `0644`. That
+sentence was written from a reviewer's verification sweep and described their work as though it
+described these tests, which is the kind of borrowing this repository has now been caught at twice. The
+sweep exists as a test as of this head, so the claim is true because it was made true rather than
+trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is accepted.
+
+## D-118 · Silent degradation is a test, not a sentence
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity · **Status:** settled at S0 (owner, 25 Sep 2026)
+
+**Decision.** `status` reads the checkpoint account and nothing else (D-110). E-10 adds the transitions under LiteSVM: an epoch with no receipt is `Single` however old it is, an epoch whose worker failed is `Single`, and only a non-zero attached digest is `Dual`. **A mutation that makes a missing receipt report `Dual` must fail the suite**, which is what turns issue #10's "silent degradation fails review" into something a reviewer can check.
+
+**The rule underneath it.** A worker must never surface its own submission state as chain state — *must*, because none exists (D-117, H-13, [issue #49](https://github.com/CertiMining/potash/issues/49)) and the rule binds the one that is built. `Single` is a fact about the checkpoint account, not about what the worker believes it has sent, and the two diverge exactly when something has gone wrong.
+
+## D-115 · The reference client makes the receipt; a different implementation verifies it
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment, with a security gain in the verification half · **Status:** settled at S1 (owner, 25 Sep 2026)
+
+**Decision.** The OpenTimestamps reference client creates and upgrades receipts. The `opentimestamps` crate — the OpenTimestamps project's own Rust library, MIT OR Apache-2.0 — **parses** each receipt before anything hashes it, and this repository checks the parsed result: that the start digest is the root that was stamped, and that a Bitcoin attestation is present rather than only a calendar's promise. Checking the attestation against Bitcoin needs a header source this crate does not have (H-12, [#48](https://github.com/CertiMining/potash/issues/48)), so "verifies" overstated it and is not used here. The owner's reason, in his words: *it makes the receipt checkable by something that did not produce it.*
+
+**What S1 found, which decided the shape.** Three Rust candidates carry an allowed licence or fail on one. `opentimestamps` 0.2.0 is the official library and **does not create timestamps and does not upgrade them**: crates.io describes it as "Rust library for parsing, verifying, and serializing OpenTimestamps timestamps". **A review found the crate exposes no verification function**, which this repository's own use corroborates: `crates/certimining-client/src/ots.rs`, `verify_receipt`, parses with `DetachedTimestampFile::from_reader` and then walks `Step` and `StepData` by hand rather than calling anything named verify. What the crate gives is parsing; the checking is ours. `opentimestamps-client` 0.1.0 does both, and its own README states it "does not follow the code quality standards, security standards, Code of Conduct, or Ethics standards" of its author's organisation, and is unaffiliated with the OpenTimestamps project. `opentimestamps-cli` 0.2.0 was recorded here as publishing no licence. **That is wrong** — `curl -s https://crates.io/api/v1/crates/opentimestamps-cli` returns `"license": "non-standard"` for 0.2.0, which is what crates.io reports when a crate declares a `license-file` rather than an SPDX expression, and a review found LGPL-3.0-or-later text in the packaged crate. What the original note actually described was not inspecting it: "fails the gate without further inspection" is the sentence admitting that.
+
+**The conclusion drawn from that was therefore also wrong.** This said the only implementations able to create and upgrade were the Python reference client and a 0.1.0 personal project; a review found that `opentimestamps-cli`'s source exposes both. The choice of the Python client stands on the other reasons above — it is the reference implementation and the one the calendars are operated against — and not on a field of two. Whether an LGPL-3.0-or-later crate clears D-89's closed licence list is a question that was never asked and is filed rather than answered here, because the deadline is not a reason to decide a licence question quickly (H-16, [issue #52](https://github.com/CertiMining/potash/issues/52)).
+
+Resting anchor B — one of the two anchors the integrity claim stands on — on a project that disclaims its own security standards was not a trade worth making, and the official crate covers the half it is good at.
+
+**What this costs, stated rather than absorbed.** The Python client is a pinned runtime dependency outside Cargo, so it is outside `cargo deny` and outside `ts-gate`. That is a third supply-chain surface, and it is named in CONTRIBUTING rather than left for a reader to notice. Verification does not make that dependency safe. It makes the artefact it produces checkable by something else.
+
+**Rejected.** The Python client alone, where nothing of ours checks a receipt before hashing it. `opentimestamps-client` 0.1.0 for everything, which is in-toolchain and gate-covered and rests anchor B on a project disclaiming its own security standards. Writing the calendar protocol ourselves, which is the one part of this unit where a bug stays invisible until a counterparty tries to verify.
+
+## D-119 · A receipt commits to SHA-256 of what was stamped, and INV-PRIM-01 still forbids SHA-256
+
+**Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** security necessity, as claim accuracy · **Status:** **ruled — see D-102 and D-119 below, settled by the owner 25 Sep 2026.** This entry is the flag as it was raised and is kept for the history; its "awaiting the owner" line was left standing after the ruling landed, which a review caught.
+
+**What S2 found.** The OpenTimestamps reference client stamps a **file** and offers no option to timestamp a raw digest. The worker therefore writes the 32 root bytes to a file and stamps that, and the receipt's start digest is `SHA-256(root)` rather than the root. Verification compares against that, and `verify_receipt` takes the stamped bytes rather than assuming their length, because assuming it is how a fixture stops being usable and a caller stops being checked.
+
+**Why this is recorded rather than decided.** INV-PRIM-01 says "One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. ... Any copy claiming otherwise is wrong and blocks submission." **This is the second construction that needs SHA-256 and cannot avoid it.** The first is §2.4's program address and account discriminator, which E-11's independent implementation found and recorded as its defect D-8; the proposed scoping is this repository's **D-102**, which the owner ruled the same day — the next entry in this file. Anchor B does not create a new conflict, it meets the same one from another direction — and it is the stronger instance, because a Solana address derivation is at least arguably outside "the system" while a receipt for an epoch root plainly is not.
+
+**What is true meanwhile.** No log digest uses SHA-256. Every record, head, node, PRF output, promise and root is Keccak-256, and `receipt_digest` itself is Keccak-256 over the receipt. SHA-256 appears only inside formats this system consumes rather than defines: Solana's addresses, and OpenTimestamps' own commitment. INV-PRIM-01 as written does not say that, and until D-102 is ruled the document forbids what two units require.
+
+## D-102 and D-119 · INV-PRIM-01 is scoped to this system's own digests
+
+**Date:** 25 Sep 2026 · **Units:** E-11 (found it), E-10 (met it again) · **Class:** security necessity, as claim accuracy · **Status:** settled at S9 (owner, 25 Sep 2026)
+
+**The defect, found twice from two directions.** INV-PRIM-01 read "One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. ... Any copy claiming otherwise is wrong and blocks submission." Two constructions the architecture cannot avoid require SHA-256. **E-11's independent TypeScript verifier met it first**, from the address side: a Solana program-derived address and an Anchor account discriminator are SHA-256 by construction, so no verifier can fetch a root without it, and INV-IFACE-01 requires a counterparty to fetch one themselves. **E-10 met it from the receipt side**: an OpenTimestamps receipt commits to SHA-256 of the bytes stamped, because that is the OTS format, and the reference client offers no raw-digest option. The second is the harder instance: a Solana address derivation is at least arguably outside "the system", and a receipt for an epoch root plainly is not.
+
+**Decision (the owner's).** The invariant is scoped to this system's own digests. Every digest this system computes and commits to is Keccak-256 — records, heads, nodes, PRF outputs, promises, roots, and `receipt_digest` itself. Digests produced by external systems the design anchors to or runs on are consumed in their native format, and **this system never computes one**. **Both exceptions are named**, OpenTimestamps receipts and Solana address and discriminator derivation, rather than left as a general licence to reach for another hash function. The "blocks submission" sentence stays, scoped to this system's own constructions.
+
+**Ground (the owner's).** The invariant was written to stop mixed hash families inside the chain, the tree and the preimages, and scoped this way it still does exactly that. It was never meant to forbid an external anchor's format or a runtime's address derivation, and as written it forbade two things the architecture cannot avoid.
+
+**What is unchanged.** No log digest uses SHA-256. Nothing in `certimining-core` or `certimining-log` computes one — `grep -rn "sha2\|Sha256" crates/certimining-core/src crates/certimining-log/src` returns nothing. The two uses live in the client: program-address and discriminator derivation, and the start digest an OpenTimestamps receipt carries.
+
+**Corrected 29 Sep 2026: an earlier version of this entry said neither output "enters a preimage of ours", and that is false.** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)` hashes the whole receipt, and a receipt contains its own SHA-256 start digest, so that digest is literally inside a Keccak preimage this system computes — `crates/certimining-client/src/ots.rs`, `receipt_digest`, which takes the receipt bytes entire. A review found it.
+
+**What the scoping actually says, restated so it is true.** This system computes no SHA-256 of its own and derives no digest from one. It commits to external artefacts **opaquely**: `receipt_digest` hashes a receipt as bytes, without parsing it, so what is inside those bytes — a start digest, a merkle path, an attestation — is not a field this system reads or reasons about. That is a weaker and accurate statement of the same intent: INV-PRIM-01 exists to stop mixed hash families inside the chain, the tree and the preimages, and hashing an opaque blob does not mix families in the sense that matters. Claiming nothing external ever reaches a preimage was both untrue and stronger than the invariant needs.
+
+## D-120 · The repository is dual licensed, MIT or Apache-2.0
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** owner's ruling · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**Decision.** `MIT OR Apache-2.0`, at the recipient's option. `LICENSE`, `LICENSE-MIT` and `LICENSE-APACHE` are at the repository root, every crate manifest declares it, and every source file carries `SPDX-License-Identifier: MIT OR Apache-2.0`.
+
+**What this replaces.** D-13 said the project's own crates are `publish = false` and declare no licence. That left the repository with no licence at all, which means all rights reserved: nobody could legally use, copy or adapt any of it, including a reviewer who cloned it. D-13 is superseded in this respect and otherwise unchanged.
+
+**Ground.** It matches every dependency already in the graph — each one is MIT, Apache-2.0 or both — so no licence-combination question arises.
+
+**Revisit at milestone 5** if counsel's screen says otherwise. R3 is still standing.
+
+## D-121 · The claim gate tells a denial from a claim by hashing the denial
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** security necessity · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**The problem.** §4.6 forbids any artifact in the repository from claiming fraud prevention, double-pledge prevention or regulatory compliance. §0 and §4.6 contain those words, because naming a claim is how a document forbids it. A grep for the nouns fails on the text that bans the claim.
+
+**Decision.** Two checks in `scripts/claim-check.sh`, run in the `checks` group.
+
+1. **Banned phrasings** — constructions a denial never uses. **The list is versioned in §4.6 of the specification** at the owner's condition, not only in the script, and the script reads it from there, so there is one copy and an independent reader of the document knows exactly what is forbidden.
+2. **The bare nouns**, where every occurrence must appear in `docs/claim-denials.txt` **as a SHA-256 of its trimmed line**. Editing a denial changes its hash and withdraws the exemption. A hash matching no line in the repository also fails, because that means a denial moved and nobody noticed.
+
+**Ground (the owner's).** An exemption that survives edits is how a claim eventually lands beside a denial.
+
+**Three probes, and two holes they found.** A banned phrasing added to a document fails the check. A denial edited by two words loses its exemption and fails. **A claim written into the specification itself did not fail**, because the phrasing check exempted the whole specification rather than only §4.6's list block — the exemption is now the list block alone. And a claim in a **new, untracked** file did not fail, because the gate read `git ls-files`; it reads untracked-but-not-ignored files now. The gate also checks itself, which is why its own header describes the banned phrasings instead of quoting them: a quoted example is indistinguishable from a claim.
+
+## D-122 · E-15 branches from the anchor-B branch
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** cost judgment · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**Decision.** `e-15/readme-and-scope` is cut from `e-10/anchor-b`.
+
+**Ground.** The README has to describe anchor B as it is — a root submitted to the calendars, a receipt not yet carried by a Bitcoin block, an epoch reading `single`. Only that branch holds anchor B, so anywhere else the README would describe it in the future tense or not at all. The cost is a stack three deep on a base that has not been reviewed.
+
+## D-123 · The README says "not audited" at the top, and splits measured from unmeasured
+
+**Date:** 26 Sep 2026 · **Unit:** E-15 · **Class:** security necessity · **Status:** settled at S0 (owner, 26 Sep 2026)
+
+**Decision.** A status section near the top of the README, in S9's own words — **not audited** — followed by what is measured and what is not. The measured half names the figure and the threshold. The unmeasured half names the landing-delay run's single compressed execution, anchor B's incomplete cycle on the deployed log, the absent fuzz harness, and count-hiding resting on batcher key custody.
+
+**Ground (the owner's).** This is the sentence that keeps the entry honest to a judge. The README is the first page a reader meets and until this unit the repository had no page that said any of it; the disclosure of the live upgrade authority lived in `docs/anchoring.md`, which a reader arrives at only by already knowing to look.

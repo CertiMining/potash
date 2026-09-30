@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The one implementation that reaches a cluster: §2.3's `publish` and `status` (D-84, D-110).
 //!
 //! `timestamp` is not here. It is OpenTimestamps, anchor B, and E-10's unit. Codex round one,
@@ -75,6 +76,89 @@ impl Cluster {
                 }
             }
         }
+    }
+
+    /// Attaches a receipt, and refuses one Bitcoin has not carried yet.
+    ///
+    /// **This is the guard D-112 needed and did not have.** `receipt_digest` is write-once
+    /// (INV-ANCH-03), and the program cannot tell an upgraded receipt from a pending one — both are
+    /// 32 non-zero bytes. The rule that the single opportunity is spent on a Bitcoin-carrying receipt
+    /// is therefore a client rule, and until now it lived only in the order a test harness happened to
+    /// call things in. An operator who attached after `submit` and before `upgrade` would have burned
+    /// the field on a calendar's promise, permanently, and the epoch would have read `dual` while
+    /// nothing outside OpenTimestamps' servers stood behind it.
+    ///
+    /// The receipt is read here rather than taken as a digest, because a caller who has already
+    /// hashed it has already made the decision this function exists to make.
+    #[cfg(feature = "ots")]
+    pub fn attach(
+        &self,
+        epoch: u64,
+        receipt: &[u8],
+        payer: &dyn Signer,
+        authority: &dyn Signer,
+    ) -> Result<(Digest, crate::BitcoinClaim), AttachRefused> {
+        // **The root comes from the chain, not from the caller.** An earlier version took it as an
+        // argument and verified the receipt against whatever was handed in, which checks that a
+        // receipt and a digest agree and not that either is this epoch's. A caller holding a receipt
+        // for some other root would have attached it to this epoch and the check would have passed.
+        let found = crate::root_for_epoch(self, &self.program_id, epoch)
+            .map_err(|e| AttachRefused::Cluster(format!("{e:?}")))?;
+        let published = match &found {
+            Fetched::Placed(c) => c.root,
+            other => return Err(AttachRefused::NotPublished(format!("{other:?}"))),
+        };
+
+        // What this establishes: the receipt commits to the root this epoch actually carries, and it
+        // carries a Bitcoin attestation rather than only a calendar's promise — which is what D-112
+        // spends the single write-once opportunity on.
+        //
+        // **What it cannot establish**: that the attestation is true. Verifying one means recomputing
+        // the operations to that block's merkle root, which needs a source of Bitcoin headers this
+        // crate does not have (#48). So this refuses a receipt that does not even claim Bitcoin, and
+        // a forged claim would pass. The claim is returned rather than swallowed so a caller sees
+        // what it is authorising on.
+        let claim = crate::verify_receipt(receipt, &published).map_err(AttachRefused::Receipt)?;
+        let digest = crate::receipt_digest::<certimining_core::NativeKeccak>(receipt)
+            .ok_or(AttachRefused::TooLong)?;
+
+        // The program this client was pointed at, the way `publish` and `status` do it. Deriving from
+        // the compiled-in id instead would have sent a Cluster aimed at a superseded deployment to
+        // the announced one.
+        let program = solana_pubkey::Pubkey::from(self.program_id.to_bytes());
+        let metas = certimining_checkpoint::accounts::Attach {
+            config: crate::config_address(&self.program_id),
+            checkpoint: crate::checkpoint_address(&self.program_id, epoch),
+            authority: Pubkey::from(authority.pubkey().to_bytes()),
+        }
+        .to_account_metas(None)
+        .into_iter()
+        .map(|m| solana_instruction::AccountMeta {
+            pubkey: solana_pubkey::Pubkey::from(m.pubkey.to_bytes()),
+            is_signer: m.is_signer,
+            is_writable: m.is_writable,
+        })
+        .collect();
+        let ix = solana_instruction::Instruction {
+            program_id: program,
+            accounts: metas,
+            data: certimining_checkpoint::instruction::AttachAnchorReceipt {
+                epoch,
+                receipt_digest: digest,
+                kind: 1,
+            }
+            .data(),
+        };
+        let blockhash = self
+            .rpc()
+            .get_latest_blockhash()
+            .map_err(|e| AttachRefused::Cluster(e.to_string()))?;
+        let message = Message::new(&[ix], Some(&payer.pubkey()));
+        let tx = Transaction::new(&[payer, authority], message, blockhash);
+        self.rpc()
+            .send_and_confirm_transaction(&tx)
+            .map_err(|e| AttachRefused::Cluster(e.to_string()))?;
+        Ok((digest, claim))
     }
 
     /// One attempt. `Err(None)` is a submission that never reached the program.
@@ -231,4 +315,18 @@ fn program_error_code(rendered: &str) -> Option<u32> {
         .find(|c: char| !c.is_ascii_hexdigit())
         .unwrap_or(hex.len());
     u32::from_str_radix(&hex[..end], 16).ok()
+}
+
+/// Why an attachment was refused before anything reached the cluster.
+#[cfg(feature = "ots")]
+#[derive(Debug)]
+pub enum AttachRefused {
+    /// The receipt does not carry a Bitcoin attestation yet, or does not commit to this root.
+    Receipt(crate::ReceiptRefused),
+    /// The receipt is longer than the digest's u16 length prefix can encode.
+    TooLong,
+    /// The epoch carries no root on chain, so there is nothing for a receipt to be about.
+    NotPublished(String),
+    /// The cluster refused or could not be reached.
+    Cluster(String),
 }

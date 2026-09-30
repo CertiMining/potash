@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 use crate::Digest;
 
 /// Keccak-256 over the concatenation of `parts`, without allocating (D-05).

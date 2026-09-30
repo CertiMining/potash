@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-06: §1.1's PRF, its three use codes and the widths D-59 fixes.
 //!
 //! Every expected preimage here is assembled from the specification's own literals: the tag as

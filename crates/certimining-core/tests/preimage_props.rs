@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-03's property tests: the writers are total, their lengths are fixed by the field widths of
 //! §1.3 and §1.6, the tag reader never panics on any buffer, and the sink never exceeds its
 //! capacity.

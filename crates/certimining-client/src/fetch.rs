@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Fetching a root by epoch, without an indexer (D-82).
 //!
 //! This is the read half that §2.3's `status` is built on, and it is not itself `AnchorClient`.

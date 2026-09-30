@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Deploys programs/certimining-checkpoint to devnet with the pinned toolchain of D-15 and the keys S6
 # keeps outside this repository. Public halves only: no secret reaches the terminal, a log or a commit.
 #
@@ -6,7 +7,9 @@
 #   program-id.json          the address in declare_id!. Nobody funds it; it signs once here, never
 #                            again. Afterwards it holds only the program account's own rent.
 #   deploy-keypair.json      pays the deploy and holds the upgrade authority, which is disclosed, not burned.
-#   checkpoint-authority.json  signs publish and attach, unattended. It does not appear in this script.
+#   checkpoint-authority.json  signs publish and attach. It is the key a worker would run with,
+#                            which is why D-117 governs its mode; no worker exists yet and the cycle
+#                            is run by hand. It does not appear in this script.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

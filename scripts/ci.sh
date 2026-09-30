@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # The CI pipeline as one script (S8). Each CI job runs one group. `scripts/ci.sh all` runs every group
 # in CI's order, stops at a KAT-01 failure as CI does, and prints each group's test counts and exit
 # code, so a local run is CI verbatim.
@@ -112,6 +113,9 @@ kat01_onchain() {
   check "runtime equivalence" cargo test -p core-harness --test runtime_equivalence -- --nocapture
   check "checkpoint program" cargo test -p certimining-checkpoint
   check "compute limits" cargo test -p certimining-checkpoint --test compute -- --nocapture
+  # INV-ANCH-05's transitions run the real program under LiteSVM, so they need the artefact this
+  # group builds (E-10, D-118).
+  check "anchor status transitions" cargo test -p certimining-client --test anchor_status
   group_result kat01-onchain
 }
 
@@ -145,6 +149,9 @@ group_result() {
 # no_std proof (D-14, D-61).
 checks() {
   GROUP_FAILED=""
+  # §4.6's claim gate (E-15, D-121). First, because a claim in the repository is a merge blocker of
+  # the same severity as a failing test and costs a second to find.
+  check "claims" scripts/claim-check.sh
   check "fmt" cargo fmt --all --check
   check "clippy, no default features" cargo clippy --workspace --all-targets --no-default-features -- -D warnings
   check "clippy, default" cargo clippy --workspace --all-targets -- -D warnings
@@ -158,8 +165,15 @@ checks() {
   check "test log, default" cargo test -p certimining-log
   check "test log, solana" cargo test -p certimining-log --no-default-features --features solana
   check "test log, all features" cargo test -p certimining-log --all-features
-  check "test client" cargo test -p certimining-client
+  # The client's tests that need no compiled program. `anchor_status` loads the .so and runs in
+  # kat01-onchain instead, because `checks` installs no Agave toolchain and builds no artefact — CI
+  # found that by failing where a local run had passed against a stale target directory.
+  check "test client" cargo test -p certimining-client --test fetch --test schedule
   check "client, cluster feature" cargo clippy -p certimining-client --all-targets --features cluster -- -D warnings
+  # Anchor B (E-10). The unit tests read a committed receipt from disk and reach no calendar, so CI
+  # needs no OpenTimestamps client and no network.
+  check "client, ots feature" cargo clippy -p certimining-client --all-targets --features ots -- -D warnings
+  check "anchor b" cargo test -p certimining-client --features ots --test ots
   check "bare metal core, no default features" cargo build -p certimining-core --target thumbv7em-none-eabihf --no-default-features
   check "bare metal core, default" cargo build -p certimining-core --target thumbv7em-none-eabihf
   check "bare metal log, no default features" cargo build -p certimining-log --target thumbv7em-none-eabihf --no-default-features

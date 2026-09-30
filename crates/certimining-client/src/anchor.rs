@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! §2.3's `AnchorClient`, the parts this unit owns (D-110).
 //!
 //! The trait names three operations. `publish` and `status` belong to anchor A and are here;

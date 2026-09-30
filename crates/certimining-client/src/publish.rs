@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Submitting a checkpoint, and deciding what its outcome means (§1.5, issue #9).
 //!
 //! The decision is separated from the network on purpose. What a client should do about a failed

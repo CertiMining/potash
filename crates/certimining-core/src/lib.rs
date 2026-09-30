@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `certimining-core`: digests and state rules for the CertiMining anchored log (TCU-02).
 //!
 //! E-01 provides the error space (§2.1), the digest types (§2.2) and the Keccak-256 hashers (§1.1).
@@ -39,7 +40,7 @@ pub use preimage::{
     check_tag, read_tag, AssetPreimage, GenesisHeadPreimage, LeafPreimage, NodePreimage,
     PaddingPreimage, Preimage, PreimageBuf, PreimageSink, RealLeafPreimage, SpiPreimage,
     StepHeadPreimage, SubmissionId, MAX_PREIMAGE_LEN, TAG_HEAD, TAG_LEAF, TAG_MTL0, TAG_MTN1,
-    TAG_PAD, TAG_SPI,
+    TAG_PAD, TAG_RCPT, TAG_SPI,
 };
 pub use prf::{
     epoch_key, padding_prf, slot_seed, PrfPreimage, MAX_PRF_INPUT_LEN, PRF_USE_EPOCH_KEY,

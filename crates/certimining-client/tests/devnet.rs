@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! D-86's devnet column: the same assertions the LiteSVM suite makes, against a real cluster.
 //!
 //! **Ignored by default and never part of CI.** It needs a deployed program, a funded key and a
@@ -248,7 +249,15 @@ fn the_devnet_column_matches_the_litesvm_column() {
         "D-80: a republished epoch is 0x0E on devnet as it is under LiteSVM, and this said {rendered}"
     );
 
-    // The receipt, for real, and its compute.
+    // **A raw attach, deliberately, and the one place that is true.** This harness measures the
+    // program's behaviour and compute against a throwaway deployment, so it writes a synthetic digest
+    // straight through `AttachAnchorReceipt` rather than through `Cluster::attach`. The guarded path
+    // reads a receipt and refuses one Bitcoin has not carried, and there is no receipt here to read.
+    //
+    // A review was right that "no harness reaches the instruction around the guard" was false as a
+    // structural claim, and it is not claimed now. What is true is narrower and is enforced above:
+    // this harness refuses the address in `ANNOUNCED_PROGRAM_ID`, so the raw path cannot reach the
+    // announced log, where the field is write-once and a synthetic digest would be permanent.
     let attach = solana_instruction::Instruction {
         program_id,
         accounts: metas(

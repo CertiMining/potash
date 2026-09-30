@@ -95,6 +95,130 @@ signature in the set. No generated key and no real key belongs in this repositor
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
 
+## Editing the specification
+
+**Every scripted edit to `docs/TCU-02_CertiMining_Anchored_Log_v0.1.md` asserts that it matched.**
+A `str.replace` whose search string has gone stale changes nothing and reports nothing, so the file
+keeps its old text while the commit message describes the new one. That happened: two edits meant to
+move the version line matched nothing, the line sat at `0.1.15` through four commits, and the
+document carried §1.4's epoch clock, §2.4's `start_epoch`, INV-ANCH-02's start clause and V-N-26
+without saying so. The content was right every time; the claim was only ever in the commit messages.
+
+**Assert the match, write, then read the file back.** Asserting before the write is necessary and not
+sufficient, which three incidents have now shown. Twice the assertion was there and the text still did
+not move; the third time a script made four substitutions, asserted on the fifth, raised — and
+discarded all four, because the single `write_text` came after them. A run that ends in an exception
+has written nothing, and an assertion that guards a write it never reaches guards nothing.
+
+So:
+
+1. **Assert the match before replacing.** In Python, `assert old in s` before `s.replace(old, new, 1)`.
+2. **Write after every substitution, not once at the end.** A later mismatch then cannot silently
+   discard an earlier success.
+3. **Read the file back and confirm the new text is in it.** `grep -c` on the result, not the exit
+   code of the tool that was supposed to produce it.
+4. **For anything a viewer sees, check the artifact as served**, not the file on disk — load the page
+   and look for the sentence. The fourth step is what caught the discarded edits; it is a rule rather
+   than a reflex because the first three had all passed.
+
+With
+`sed -i`, check the file afterwards rather than trusting the exit code, which is zero for a pattern
+that matched nothing. The same holds for `docs/DECISIONS.md` and for any file whose text is the
+record rather than the code.
+
+**Branches do not number the specification (D-103).** Three branches amending one document cannot
+number linearly, and two of them both claimed `v0.1.18`. A branch's version line reads
+`0.1.14 plus unmerged amendments on this branch`, where `0.1.14` is what `main` holds, and its
+in-text notes say "on this branch, unmerged" or "before this branch". One spec-only pull request
+assigns the next linear number to everything merged since, in merge order.
+
+## Rewriting a stacked branch
+
+Units stack: E-14 sits on E-11, E-15 sat on E-10. When the branch underneath moves, the one above is
+rebased, and a rebase means a force push. The question came up at every rebase, so it is settled here.
+
+**`--force-with-lease` is allowed on a stacked branch when no review round is open against its posted
+head and nobody else commits to it. Never on a branch whose head is under review** (owner, 28 Sep
+2026).
+
+The reason for the second half is what a review round is: a reviewer is reading a specific commit, and
+moving the ground under them wastes the round and produces findings against text that no longer
+exists. That is the same failure as reviewing a branch mid-rebase, which is why a head is posted and
+then left alone until the charter comes back.
+
+`--force-with-lease` rather than `--force`, always: it refuses when the remote has moved since the
+last fetch, which is exactly the case where somebody else has committed and the first condition no
+longer holds.
+
+A branch nobody has reviewed and nobody else touches is yours to rewrite. `scripts/merge-ready.sh`
+refuses a branch that is behind its base, so the rebase is not optional — the choice is when, not
+whether.
+
+## No live value in a synthetic artifact
+
+**No value from a live deployment appears in any synthetic artifact, fixture, or page constant, ever.**
+Not a program id, not an address, not a published root, not a receipt digest, not a transaction
+signature. A synthetic artifact that carries one is asserting a provenance it does not have, and a
+reader who recognises the value is the person it misleads.
+
+This rule exists because E-14's demo fixture carried the announced log's real transaction signature and
+slot in its `anchor` block, beside an epoch root built for the demo and published nowhere — and the
+signature and the slot came from two different publications. It was written that way because real
+values looked more concrete. **Fabricated provenance is the worst class of defect this repository can
+hold, and it is the kind an author cannot see in their own work**, which is what an independent review
+round is for.
+
+The distinction to draw is about subject, not about intent. An artifact whose subject *is* the
+announced deployment may name it — V-P-12 checks §2.4's derivation against that deployment and a vector
+that could not name it would check nothing. An artifact that merely looked better for carrying a piece
+of one may not.
+
+**Where it is enforced.** `LIVE-VALUES.txt` lists what the deployment holds and `LIVE-VALUES.exempt`
+records the pairs that are legitimate, with a reason each. `cargo xtask gen-vectors` and
+`cargo xtask gen-demo` scan every file before writing a byte and fail on an unrecorded match, and an
+exemption naming a value the list does not hold fails too rather than sitting dead. Both files and the
+check arrive with E-14; on this branch the rule is the rule and the gate is not here yet, which is
+recorded rather than implied. Slot numbers and block heights are deliberately out of scope: they are
+plain integers, and a list of them would fire on every counter in the corpus.
+
+## Filing to Post-deadline hardening
+
+A defect found before the submission deadline that is not going to be fixed before it goes to the
+**Post-deadline hardening** milestone, and it goes there as an issue titled `H-nn · …`, numbered in
+filing order. H-01 to H-17 exist. The number is part of the title rather than a label, so it appears
+wherever the issue is linked, and a decision or a comment that defers something says which H it
+deferred to — `docs/DECISIONS.md` and the unit records do that by linking the issue and naming it.
+
+**What goes there, under the shipping posture:** a Medium or a Low from a review round, a defect whose
+fix would ripple past the unit that found it, and a question that should not be decided quickly
+because a deadline is not a reason to decide it at all (H-16 is one of those). **What does not:** a
+High against code, which reopens its unit, and anything touching §4.4's privacy tests or a claim the
+repository makes about itself. Those two do not bend.
+
+An H issue states what was found, how it was found, and what would close it. A deferred defect with no
+reproduction is a note, and a note is not a filing.
+
+## A dependency no gate covers
+
+Anchor B's receipts are created and upgraded by the **OpenTimestamps reference client**, pinned at
+**v0.7.2**, LGPL-3.0, installed in a private virtual environment at
+`~/.local/share/potash/ots-venv` and invoked as a process rather than linked (D-115). It is the only
+implementation that both submits to calendars and upgrades once Bitcoin confirms.
+
+`cargo deny` reads `Cargo.lock` and `scripts/ts-gate.sh` reads `ts/package-lock.json`. **Neither sees
+this.** It is a third supply-chain surface, it is named here rather than left for a reader to notice,
+and what mitigates it is not a gate: every receipt it produces is **parsed** by the
+`opentimestamps` crate — the OpenTimestamps project's own Rust library, which cannot create a
+receipt — before anything computes a digest over it, and this repository then checks the parsed
+result: that the start digest is the root that was stamped, and that a Bitcoin attestation is present
+rather than only a calendar's promise (`crates/certimining-client/src/ots.rs`, `verify_receipt`).
+
+**Not "verified".** Checking the attestation against Bitcoin means recomputing the path to a block's
+merkle root, which needs a header source this client does not have
+(H-12, [#48](https://github.com/CertiMining/potash/issues/48)); the function's own documentation says a
+forged attestation passes. That does not make the dependency safe, and it does not make a receipt
+proven. It makes the artefact *parseable and partly checkable* by something that did not produce it.
+
 ## The privacy release gate
 
 §4.4's V-Z-02, V-Z-03 and V-Z-04 are release blockers and run in `checks` at the sample sizes D-66

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! KAT-01 on-chain (D-08): the five published cases through `sol_keccak256`, inside the Agave
 //! 4.2.2 runtime (`litesvm`, D-16). Build the program first: `scripts/build-sbf.sh`.
 

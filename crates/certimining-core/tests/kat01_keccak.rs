@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! KAT-01 off-chain (§4.1, D-08): both off-chain Keccak-256 paths against the Keccak team's
 //! published values. The on-chain path is tested in `programs/core-harness/tests/kat01_onchain.rs`.
 

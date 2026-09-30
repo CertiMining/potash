@@ -1,0 +1,27 @@
+# Lines that mention fraud, double-pledging or regulatory compliance in order to DENY the claim.
+#
+# §4.6 forbids any artifact in this repository from claiming fraud prevention, double-pledge
+# prevention or regulatory compliance. Naming a claim is how a document forbids it, so the
+# specification and the residuals necessarily contain those words. Each such line is recorded here by
+# a SHA-256 of its trimmed text.
+#
+# The hash, not the line number, is the key. Editing a denial changes its hash and withdraws its
+# exemption, and `scripts/claim-check.sh` fires again — which is the point. An exemption nobody
+# re-checks is how a claim eventually lands beside a denial. A hash here that matches no line in the
+# repository also fails the check, because it means a denial moved and nobody noticed.
+#
+# Format: <sha256 of the trimmed line>  <path it was recorded from>
+
+17f62e3ffe3a469cab237b6ab8f6f38bc74e6d73e7d98b313758a6657f70a250  docs/TCU-02_CertiMining_Anchored_Log_v0.1.md  # §3's E-16 step, forbidding the language in submission copy
+26a31d1cd54353e20bfad1ef42b76c3743cf6f29c18a0883c7e5202df15124ea  docs/TCU-02_CertiMining_Anchored_Log_v0.1.md  # §0 'Consequence for claims' — the denial itself
+3e334cb4e73a75bed315d5f6f75f943ecd3a72f462da84151d505e9f133c21f2  docs/TCU-02_CertiMining_Anchored_Log_v0.1.md  # §0 'What this does not assert'
+53ae6ece65657cc563de0688a21c56921bd12ddc0b33c402438fd6c59498d22b  docs/STANDARD-STEPS.md  # S7's own rule forbidding the claim
+65046253bf4aa38ffd871d9f8d8499959e51b4babcfb4b9fa92d282e76847c50  docs/TCU-02_CertiMining_Anchored_Log_v0.1.md  # RES-08, naming what the architecture cannot reach
+9f3504f5b97fe2d941e9c5c3b4b25b9a45a2f96f55a1855088149ea796b138a1  docs/TCU-02_CertiMining_Anchored_Log_v0.1.md  # §4.6's explanation of why the nouns are handled by hash
+aa62870d0da46756e43f1884bedb27831795dfe57afb95314d23d7fc04182962  docs/TCU-02_CertiMining_Anchored_Log_v0.1.md  # §4.6's merge gate — the ban
+0a9296d1d5491d9c2e26d064f69bd4fa277a5931f2b4a1f06b81d41c44622e4f  README.md  # the README's own denial of the claim
+b2bc03b3f268dc9887f53a5fa377a55bdbc3a299c4a815e58b6fc212b9890d25  README.md  # the README's own denial of the claim
+31ef9187fec643ed09e027de191f2427fea030dd4211fe5b983f00e22523a7b3  scripts/claim-check.sh  # the gate's own description of what it forbids
+76d89a0742f4a991699ef60ec4d0ad2b662a99f852445b05c142b57a14e87af7  scripts/claim-check.sh  # the gate's own description of what it forbids
+fb437f92bc41e78bc96608ad2562d060ef50b8e40846c485976f4a9c4a038346  scripts/claim-check.sh  # the gate's own description of what it forbids
+1a8af029f9fbe2573db6957629503f19cc5d5e517a028ad71058d252e50b08e9  docs/DECISIONS.md  # D-121 stating the problem the gate exists to solve

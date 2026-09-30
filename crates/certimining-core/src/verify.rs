@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Ed25519 verification and signing (§1.1, §2.2, D-38, D-73).
 //!
 //! The caller names the implementation, exactly as it names the hasher (D-20). Only the `native`

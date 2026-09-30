@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-04: the supersession state machine (§1.3; D-37 to D-47).
 //!
 //! Each record commits against its predecessor's head, and nothing is ever rewritten or removed

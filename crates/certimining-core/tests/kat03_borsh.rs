@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! KAT-03 (§4.1): every writer's bytes equal Borsh's encoding of the same fields, in the same
 //! order.
 //!

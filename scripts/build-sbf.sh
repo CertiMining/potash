@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Builds the Solana programs with the pinned toolchain (D-15): Agave 4.2.2's cargo-build-sbf 4.1.0
 # with platform-tools v1.54. Outputs: target/deploy/core_harness.so, the test-only harness, and
 # target/deploy/certimining_checkpoint.so, the program of §2.4.
