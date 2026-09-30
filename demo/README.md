@@ -64,8 +64,9 @@ before any scene runs, so a scene cannot be tuned by editing a file. `demo/fixtu
 what each one is and carries the labels the packages themselves cannot hold — §2.5's field list is
 closed, so a note added to a package would make it unverifiable.
 
-To regenerate, delete the directory's contents deliberately and run the command again: the generator
-refuses to write into a directory that already holds files.
+To check them, run `scripts/ci.sh vectors`: it regenerates into a temporary directory and diffs, so a
+fixture the engine would not produce fails the build. The bare `cargo xtask gen-demo` refuses here,
+because the committed fixtures are already in its default destination; it prints the command to use.
 
 ## Identifiers and keys
 

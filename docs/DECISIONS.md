@@ -1525,7 +1525,7 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
 
-**Decision.** Build the epochs in the page and diff them in front of the viewer: the instruction bytes, the account bytes and the transaction length side by side, every differing byte highlighted and labelled with what fixes it — the epoch number, the publication schedule, or a pseudorandom digest. **The owner's addition: the control is a choice of any record count from 0 to 255, not a toggle between two values.** Two fixed points prove two points; a range the viewer sweeps proves the claim.
+**Decision.** Build the epochs in the page and diff them in front of the viewer: the instruction bytes and the account bytes side by side, every differing byte highlighted and labelled with what fixes it — the epoch number, the publication schedule, or a pseudorandom digest. **Not the transaction length**, which this originally said: the page builds no transaction, because signing one in a browser is machinery the scene does not need, and `demo/index.html` says so where the scene states its limits. V-Z-01's transaction half is compared under LiteSVM in `programs/certimining-checkpoint/tests/privacy.rs`. A review found the decision claiming coverage the page had already disclaimed. **The owner's addition: the control is a choice of any record count from 0 to 255, not a toggle between two values.** Two fixed points prove two points; a range the viewer sweeps proves the claim.
 
 **Ground.** The acceptance criterion says the scene renders the control rather than asserting it. A demo that asserts a property the repository tests is the weaker of the two artefacts. A two-value toggle invites the reading that those two values were chosen because they work.
 
@@ -1535,7 +1535,7 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
 
-**Decision.** `cargo xtask` generates the demo's fixtures into `demo/fixtures/`, committed and manifest-hashed the way `vectors/` is, and the demo refuses to run when a fixture's hash does not match. Tenure identifiers are synthetic and carry a stated fake registry code, which goes in the record so that nobody later reads it as real.
+**Decision.** `cargo xtask gen-demo` generates the demo's fixtures into `demo/fixtures/`, committed and manifest-hashed the way `vectors/` is, and the demo refuses to run when a fixture's hash does not match. **The runnable check is `scripts/ci.sh vectors`**, which regenerates into a temporary directory and diffs; the bare `cargo xtask gen-demo` refuses on a clean clone, because the committed fixtures are already in its destination and regeneration is how they are checked rather than how they are replaced. A review cited the bare command as unrunnable evidence and was right; the command now prints the one that works. Tenure identifiers are synthetic and carry a stated fake registry code, which goes in the record so that nobody later reads it as real.
 
 **Ground.** §4.2 forbids hand-authored vectors and the same reasoning reaches a demo: a fixture that can be edited quietly is a scene that can be made to look better than the engine is.
 
@@ -1593,3 +1593,33 @@ bringing it at the time was the obligation, and a review had to surface it inste
 **Ground.** §4.6 makes overclaiming a merge gate. A demonstration of detection is exactly where a viewer infers prevention.
 
 **Where the gate actually is, as of this branch.** `scripts/claim-check.sh` and §4.6's list of banned phrasings arrived with E-15 and live on `e-10/anchor-b`; this unit is stacked on `e-11/ts-verifier` and carries neither, so **the gate does not run over the demo here** and the earlier wording of this ground, which said it did, was wrong. The demo is checked by hand against the 24 phrasings in E-15's list, and the gate reaches it when the branches meet on `main`. Recorded rather than papered over: a decision that asserts a check is running is worth no more than the check.
+
+## D-129 · The claim is narrowed; the package is not extended
+
+**Date:** 28 Sep 2026 · **Units:** E-11 (found it), E-14 (shows it) · **Class:** security necessity, as claim accuracy · **Status:** settled (owner, 28 Sep 2026)
+
+**The defect.** §0 said the architecture asserts that a record existed "in a stated position of a stated asset's chain". One disclosure package cannot establish that past `seq` 1: §1.3's leaf preimage covers neither `prev_head` nor `head`, so no signature binds them (`docs/TCU-02_CertiMining_Anchored_Log_v0.1.md`, §1.3's preimage table), and an inclusion proof binds only the leaf. INV-STATE-02's recomputation needs the leaves between, which a package does not carry. Recorded as `ts/SPEC-DEFECTS.md` SD-19; reproduced by E-11's verifier, which reports `unestablished` for any `seq` > 1.
+
+**Decision (the owner's), in his words.** *Amend the claim, don't extend the package. A package establishes that a signed record existed and was included at a stated epoch. Position in a chain is established only when the holder also holds the chain segment back to genesis or to a head they already trust, which is D-101's shape again.*
+
+**Where it landed.** §0's sentence on `e-11/ts-verifier`, and SD-19 marked resolved. `ts/src/disclosure.ts` reports `chainPosition` and accepts a caller-supplied `expectedPrevHead`; run `npm --prefix ts test` and read the `ROUND 3` and `FINDING 1` cases in `ts/test/disclosure.test.ts`. E-14's Scene 2 shows the `unestablished` line to a viewer rather than shipping a `seq` 1 fixture that avoids it.
+
+**Filed rather than decided.** A §2.5 package that carries its own chain segment — [issue #51](https://github.com/CertiMining/potash/issues/51). Binding the link properly means putting `prev_head` inside §1.3's preimage, a breaking change to every vector and the instruction data, and it would still not give uniqueness.
+
+**Recorded late.** This entry was written 30 Sep 2026. The ruling was applied on the 28th — in §0, in SD-19 and in the demo — and the decision record was never written, so `docs/DECISIONS.md` stopped at D-128 while D-127 cited "D-130 option 1" and nothing defined either. A review found it.
+
+## D-130 · The disclosure package is a closed contract, so the key's label lives beside it
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** preference within a security necessity · **Status:** settled (owner, 28 Sep 2026)
+
+**The collision.** D-127 requires the signing key labelled as RFC 8032 §7.1's published test key wherever it appears, "not once in a legend", and names the fixture files. §2.5 fixes what a disclosure package contains and INV-DISC-01 makes that list closed, so a conforming verifier refuses the first unlisted field — demonstrated when the generator first emitted a `_notes` array and `verifyDisclosureJson` refused the fixture. A package carrying its own label is a package nobody can verify, which costs Scene 2 the thing it exists to show.
+
+**Decision (the owner's), in his words.** *The package is a closed contract and stays one; the label lives in the fixture directory and on screen at every appearance. Amend D-127 to say why the file itself cannot carry it.*
+
+**Where it landed.** `demo/fixtures/README.md`, which `demo/fixtures/MANIFEST.sha256` covers, and the demo's footer and Scene 3. D-127 carries the reason. Run `node --test "demo/test/*.test.mjs"` — the manifest test covers the sidecar as a fourth file.
+
+**And the process finding the owner attached to it.** *The right call was made; the miss was not bringing the collision at the time.* The collision was found while building and resolved without putting it to him, and a review surfaced it instead. D-127's amendment records that.
+
+## D-131 · This entry is reserved
+
+**Date:** 30 Sep 2026 · **Status:** reserved so that D-131 and D-132, put to the owner at E-12's S0, land on their own numbers rather than on numbers this file has already used.

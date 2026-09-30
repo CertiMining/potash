@@ -121,8 +121,11 @@
   </p>
   <p class="sub">
     Build time is wall-clock in your browser and is not something the chain shows. It is in the table
-    because V-Z-01 varies it deliberately: a slower epoch must not land in a later slot, which is
-    measured on devnet rather than here.
+    because V-Z-01 varies it deliberately — but what that test bounds is a <em>correlation</em>, not a
+    single epoch: any one publication may land in a later slot for reasons that have nothing to do
+    with its contents. What is measured is whether landing delay tracks record count or build time
+    across 200 consecutive epochs, with absolute Pearson correlation below 0.2, and that run is on
+    devnet rather than here.
   </p>
 
   <div class="control">
@@ -191,8 +194,9 @@
   <p class="sub">
     The package's <code>anchor</code> block is <em>not</em> checked here and is a placeholder in this
     fixture: §2.5 carries that block and says nothing about how a verifier checks it, so this verifier
-    does not pretend to. The announced log's own anchoring is real and is recorded in
-    <code>docs/anchoring.md</code>; it does not belong in a fixture whose root it does not anchor.
+    does not pretend to. The announced log's own anchoring is recorded in
+    <code>docs/anchoring.md</code>, which lives on the anchor-B branch and not on this one; it does
+    not belong in a fixture whose root it does not anchor either way.
   </p>
 
   <div class="verdict" id="s2-verdict">verifying…</div>
@@ -211,11 +215,17 @@
 
 <section>
   <span class="scene-no">Scene three</span>
-  <h2>One byte moves, and the log notices</h2>
+  <h2>One byte moves, and a verifier refuses it</h2>
   <p>
     The same package, with the low bit of <code>payload_digest</code> flipped — in the signed preimage
     and in the hex displayed beside it, so the two halves still agree and the file is not merely
     malformed. The signature is what refuses it.
+  </p>
+  <p class="sub">
+    <strong>Nothing on the chain is involved.</strong> The alteration happens to a file a counterparty
+    holds, and the verifier in your browser refuses it offline. The log is not consulted, never
+    receives the altered record and does not react — which is the point: detection that needed the log
+    to notice would need the log to have seen it.
   </p>
 
   <div class="verdict" id="s3-verdict">verifying…</div>
@@ -233,7 +243,11 @@
     longer matches what was committed, and that the commitment — the epoch root — did not move. On the
     announced log a published root is carried by a Solana slot and a Bitcoin block;
     <em>this</em> root is not, because this epoch was built for the demo and published nowhere, which
-    is why the package's anchor block above is empty.
+    is why the package's anchor block above is empty. On the announced log an epoch's root is published
+    on Solana and separately submitted to the OpenTimestamps calendars, and a receipt carrying a
+    Bitcoin attestation is attached when one arrives — which takes hours, so a recently published
+    epoch reads <code>single</code> until then. The receipts and the completed cycles are recorded in
+    <code>docs/anchoring.md</code>, on the anchor-B branch rather than this one.
   </p>
   <p class="limit">
     <strong>And what detection still leaves open.</strong>

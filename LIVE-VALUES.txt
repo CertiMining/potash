@@ -16,12 +16,16 @@
 # case-insensitive, so a false positive is possible and fails generation, which is the safe direction.
 #
 # **This list is checked against the chain, not remembered.** Its first version was assembled by hand
-# from what I could recall of the session that produced it, and it omitted two of the five signatures
-# the deployment holds: epoch 20723's publication, which a review found, and the `initialize` that
-# started the log, which nothing had noticed. A list of live values built from memory has the same
-# defect as a fixture built from memory. `scripts/live-values-from-chain.sh` asks devnet what touched
-# the known accounts and names anything missing here; **run it after every publish cycle**, because
-# each one adds a signature and, on a new epoch, a checkpoint address.
+# from what I could recall of the session that produced it, and it omitted **three of the six**
+# signatures the deployment held at that point: epoch 20723's publication, which a review found, and
+# the deploy and `initialize` transactions, which nothing had noticed. An earlier version of this note
+# said two of five; a review counted and it was three of six. A list of live values built from memory
+# has the same defect as a fixture built from memory, and a miscount in the note about it is the same
+# defect once more.
+#
+# `scripts/live-values-from-chain.sh` asks the cluster what touched the announced deployment and names
+# anything missing here. **Run it after every publish cycle**: each adds a signature, a checkpoint
+# address and a root.
 
 By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  program id, announced deployment
 0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee  program id, announced deployment, as bytes

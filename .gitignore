@@ -12,8 +12,7 @@
 node_modules/
 ts/dist/
 # E-14's demo build: the compiled verifier and a copy of its two dependencies, produced by
-# `scripts/demo.sh`. Same story one branch later — the rule lived in `demo/.gitignore`, `demo/` exists
-# only on the demo's branch, switching away left the directory behind as untracked files, and
-# `git add -A` swept 169 of them into a commit on `e-10/anchor-b`. The lesson above was written down
-# and not generalised: an artefact that can appear on another branch is ignored here.
+# `scripts/demo.sh`. The rule above was written after 783 vendored files reached `main` from a
+# branch-local ignore, and the same thing then happened three times with this directory, because the
+# fix kept landing on whichever branch had just been broken. It is at the root on every branch now.
 demo/build/

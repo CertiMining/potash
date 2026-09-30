@@ -69,12 +69,29 @@ pub fn gen_demo(dir: &Path) {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| !n.starts_with('.'))
             .collect();
-        assert!(
-            existing.is_empty(),
-            "{} already holds {}: remove them deliberately before regenerating",
-            dir.display(),
-            existing.join(", ")
-        );
+        // A refusal with the command that actually works, rather than an assertion that leaves a
+        // reader with a panic. The bare `cargo xtask gen-demo` was cited as reproduction evidence in
+        // the PR body, in D-126 and on the page, and on a clean clone it cannot run: the committed
+        // fixtures are already there. Regeneration is a *comparison*, so it writes somewhere else and
+        // diffs, which is what the `vectors` group does.
+        if !existing.is_empty() {
+            eprintln!(
+                "gen-demo: {} already holds {}.\n\
+                 \n\
+                 The committed fixtures are not overwritten, because regenerating is how they are\n\
+                 checked rather than how they are replaced. To check them:\n\
+                 \n\
+                     scripts/ci.sh vectors\n\
+                 \n\
+                 which generates into a temporary directory and diffs. To regenerate deliberately,\n\
+                 give a destination and compare yourself:\n\
+                 \n\
+                     cargo xtask gen-demo \"$(mktemp -d)/demo\"\n",
+                dir.display(),
+                existing.join(", ")
+            );
+            std::process::exit(2);
+        }
     }
     fs::create_dir_all(dir).expect("the fixture directory can be created");
 
