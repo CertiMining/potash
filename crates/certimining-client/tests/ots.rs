@@ -214,11 +214,18 @@ mod the_pinned_client {
         // A report that merely *contains* the pinned version is not the pinned version. The first
         // parser split on whitespace and accepted any matching token, so `v9.9.9 v0.7.2` passed: a
         // pin asking to be told what it wanted to hear.
+        // Every shape a looser check let through. The first version split the report on whitespace,
+        // so mixed tokens passed; the second stripped leading `v` characters, so a bare number and a
+        // doubled prefix passed. A review found the second set after the first was fixed.
         for smuggled in [
             "v9.9.9 v0.7.2",
             "v0.7.2 v9.9.9",
             "not-ots v0.7.2",
             "v0.7.2-modified",
+            "0.7.2",
+            "vv0.7.2",
+            "V0.7.2",
+            "v0.7.2 extra",
         ] {
             let c = client(fake(&dir, smuggled), dir.join("receipts"));
             assert!(

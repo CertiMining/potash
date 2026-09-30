@@ -96,8 +96,11 @@ offline against a root they fetch themselves.
 **Two anchors, and the second is not an extra.** Solana is anchor A: a checkpoint every epoch,
 published at a fixed time whether the epoch held 255 records or none, so the cadence discloses
 nothing about filing activity. OpenTimestamps and Bitcoin are anchor B: the epoch's root is
-timestamped independently, and the receipt's digest is attached to the checkpoint once a Bitcoin
-block carries it. The integrity claim rests on both. Until anchor B attaches, a client reports the
+timestamped independently, and the receipt's digest is attached to the checkpoint once the receipt
+carries a Bitcoin attestation. **That attestation is the receipt's claim, checked for presence and not
+against Bitcoin**: verifying it means recomputing the path to a block's merkle root, which needs a
+source of Bitcoin headers this client does not have ([#48](https://github.com/CertiMining/potash/issues/48),
+`crates/certimining-client/src/ots.rs`, `BitcoinClaim`). The integrity claim rests on both. Until anchor B attaches, a client reports the
 epoch as `single` rather than `dual` — an epoch waiting hours for a Bitcoin block is the latency this
 design budgets for, and reporting it as anchored twice would be a failure the specification treats as
 a merge blocker.

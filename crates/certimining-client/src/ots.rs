@@ -154,9 +154,17 @@ impl ReferenceClient {
         self.receipts.join(format!("{epoch}.root.ots"))
     }
 
-    /// The version D-113 pins. A different client may write a receipt this code then treats as the
-    /// pinned one's output; the executable is whatever the path says, so the pin has to be checked
-    /// rather than assumed.
+    /// What the pinned client prints, byte for byte.
+    ///
+    /// `~/.local/share/potash/ots-venv/bin/ots --version` writes `v0.7.2\n`, so this is the trimmed
+    /// report and not a number to be recognised inside one. Two earlier versions of this check were
+    /// looser and both were wrong: the first accepted any whitespace-delimited token, so
+    /// `v9.9.9 v0.7.2` passed; the second stripped leading `v` characters before comparing, so
+    /// `0.7.2` and `vv0.7.2` passed as well. A pin that accepts a family of spellings is a pin on
+    /// none of them.
+    pub const PINNED_REPORT: &'static str = "v0.7.2";
+
+    /// The version number alone, for messages.
     pub const PINNED_VERSION: &'static str = "0.7.2";
 
     /// Refuses an executable that is not the pinned version, before it is asked to do anything.
@@ -166,16 +174,16 @@ impl ReferenceClient {
     pub fn check_version(&self) -> Result<String, String> {
         let printed = self.run(&[std::ffi::OsStr::new("--version")])?;
         let found = printed.trim().to_string();
-        // The **whole** report must be the pinned version. Accepting any whitespace-delimited token
-        // let `v9.9.9 v0.7.2` through, which is a client free to be anything as long as it also
-        // mentions the right number somewhere — the pin asking to be told what it wanted to hear.
-        if found.trim_start_matches('v') == Self::PINNED_VERSION {
+        // Exact equality with the report the pinned client prints. Anything else is another client.
+        if found == Self::PINNED_REPORT {
             Ok(found)
         } else {
             Err(format!(
-                "{}: reports {found:?}, and D-113 pins opentimestamps-client v{}",
+                "{}: reports {found:?}, and D-113 pins opentimestamps-client v{} \
+                 whose --version prints exactly {:?}",
                 self.executable.display(),
-                Self::PINNED_VERSION
+                Self::PINNED_VERSION,
+                Self::PINNED_REPORT
             ))
         }
     }

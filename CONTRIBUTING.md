@@ -173,10 +173,17 @@ implementation that both submits to calendars and upgrades once Bitcoin confirms
 
 `cargo deny` reads `Cargo.lock` and `scripts/ts-gate.sh` reads `ts/package-lock.json`. **Neither sees
 this.** It is a third supply-chain surface, it is named here rather than left for a reader to notice,
-and what mitigates it is not a gate: every receipt it produces is parsed and verified by the
+and what mitigates it is not a gate: every receipt it produces is **parsed** by the
 `opentimestamps` crate — the OpenTimestamps project's own Rust library, which cannot create a
-receipt — before anything computes a digest over it. That does not make the dependency safe. It
-makes the artefact checkable by something that did not produce it.
+receipt — before anything computes a digest over it, and this repository then checks the parsed
+result: that the start digest is the root that was stamped, and that a Bitcoin attestation is present
+rather than only a calendar's promise (`crates/certimining-client/src/ots.rs`, `verify_receipt`).
+
+**Not "verified".** Checking the attestation against Bitcoin means recomputing the path to a block's
+merkle root, which needs a header source this client does not have
+([#48](https://github.com/CertiMining/potash/issues/48)); the function's own documentation says a
+forged attestation passes. That does not make the dependency safe, and it does not make a receipt
+proven. It makes the artefact *parseable and partly checkable* by something that did not produce it.
 
 ## The privacy release gate
 
