@@ -104,7 +104,24 @@ move the version line matched nothing, the line sat at `0.1.15` through four com
 document carried §1.4's epoch clock, §2.4's `start_epoch`, INV-ANCH-02's start clause and V-N-26
 without saying so. The content was right every time; the claim was only ever in the commit messages.
 
-So: assert the match, then write. In Python, `assert old in s` before `s.replace(old, new, 1)`. With
+**Assert the match, write, then read the file back.** Asserting before the write is necessary and not
+sufficient, which three incidents have now shown. Twice the assertion was there and the text still did
+not move; the third time a script made four substitutions, asserted on the fifth, raised — and
+discarded all four, because the single `write_text` came after them. A run that ends in an exception
+has written nothing, and an assertion that guards a write it never reaches guards nothing.
+
+So:
+
+1. **Assert the match before replacing.** In Python, `assert old in s` before `s.replace(old, new, 1)`.
+2. **Write after every substitution, not once at the end.** A later mismatch then cannot silently
+   discard an earlier success.
+3. **Read the file back and confirm the new text is in it.** `grep -c` on the result, not the exit
+   code of the tool that was supposed to produce it.
+4. **For anything a viewer sees, check the artifact as served**, not the file on disk — load the page
+   and look for the sentence. The fourth step is what caught the discarded edits; it is a rule rather
+   than a reflex because the first three had all passed.
+
+With
 `sed -i`, check the file afterwards rather than trusting the exit code, which is zero for a pattern
 that matched nothing. The same holds for `docs/DECISIONS.md` and for any file whose text is the
 record rather than the code.
