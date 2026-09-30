@@ -59,9 +59,46 @@ CHECKPOINT_RECEIPT = (66, 98)
 LOG_CONFIG_LEN = 68
 LOG_CONFIG_AUTHORITY = (10, 42)
 
+# §2.4 states the Anchor discriminator as the first 8 bytes of SHA-256("account:" ‖ StructName), and
+# the schema version in the two bytes after it. **Length alone does not establish either.** A review
+# found this decoder choosing a layout by size, so any 106-byte account the program owned would have
+# had bytes 18..50 read as a root; under another schema those offsets may mean something else. The
+# discriminators are computed here rather than copied, for the reason §2.4 gives for computing the
+# address: a constant transcribed by hand is a second opinion about what the program wrote.
+SCHEMA_VERSION = 1
+
+
+def discriminator(struct_name: str) -> bytes:
+    import hashlib
+
+    return hashlib.sha256(f"account:{struct_name}".encode()).digest()[:8]
+
+
+CHECKPOINT_DISCRIMINATOR = discriminator("CheckpointAccount")
+LOG_CONFIG_DISCRIMINATOR = discriminator("LogConfig")
+
+
+def schema_1(data: bytes, expected: bytes) -> bool:
+    """The account is this struct, under the schema whose offsets are the ones below."""
+    return (
+        len(data) >= 10
+        and data[0:8] == expected
+        and int.from_bytes(data[8:10], "little") == SCHEMA_VERSION
+    )
+
 
 class Unreachable(RuntimeError):
     """The cluster could not be asked. Never an absence."""
+
+
+#: What each method's `result` must look like. A response carrying a `result` member is not thereby an
+#: answer: `getProgramAccounts` returning `null` was read as "this program owns nothing", which is the
+#: same silent pass as a missing account, one layer further in. A review found it.
+RESULT_SHAPE: dict[str, type | tuple[type, ...]] = {
+    "getProgramAccounts": list,
+    "getSignaturesForAddress": list,
+    "getAccountInfo": dict,
+}
 
 
 def rpc(method: str, params: list) -> object:
@@ -89,7 +126,17 @@ def rpc(method: str, params: list) -> object:
                 # reports that it found nothing when it never asked.
                 last = f"malformed response, no result member: {json.dumps(payload)[:120]}"
             else:
-                return payload["result"]
+                result = payload["result"]
+                expected = RESULT_SHAPE.get(method)
+                if expected is not None and not isinstance(result, expected):
+                    # A `null` where an array belongs is malformed, not empty. Accepting it turned
+                    # "the cluster did not answer this properly" into "the program owns nothing".
+                    last = (
+                        f"malformed {method} result: expected {expected}, got "
+                        f"{json.dumps(result)[:120]}"
+                    )
+                else:
+                    return result
         time.sleep(wait)
         wait *= 2
     raise Unreachable(f"{RPC}: {method} failed after 6 attempts ({last})")
@@ -130,6 +177,20 @@ def hex32(data: bytes, span: tuple[int, int]) -> str:
     return "0x" + data[span[0] : span[1]].hex()
 
 
+def base58_decode(text: str) -> bytes:
+    """Base58 to the 32 bytes it spells, so both spellings of one address can be compared."""
+    alphabet = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    n = 0
+    for character in text.encode():
+        index = alphabet.find(bytes([character]))
+        if index < 0:
+            raise SystemExit(f"live-values: {text!r} is not base58")
+        n = n * 58 + index
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    leading = len(text) - len(text.lstrip("1"))
+    return b"\x00" * leading + body
+
+
 def base58(data: bytes) -> str:
     """Base58 with the Bitcoin alphabet, for turning 32 account bytes into the spelling the list uses."""
     alphabet = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -166,7 +227,18 @@ def main() -> int:
         if value.lower() not in listed:
             missing.append(f"{what}: {value}")
 
-    check(program, "the announced program id")
+    def check_address(raw: bytes, what: str) -> None:
+        """Both spellings of an address, because the list carries both.
+
+        `LIVE-VALUES.txt` holds base58 *and* the 32 bytes as hex for the program id and the LogConfig
+        address, because a fixture can quote either. Only base58 was compared, so deleting the hex
+        line left the check passing — a review removed `0xa2f283cb…fb7ee` and it exited 0.
+        """
+        check(base58(raw), what)
+        check("0x" + raw.hex(), f"{what}, as bytes")
+
+    program_bytes = base58_decode(program)
+    check_address(program_bytes, "the announced program id")
 
     # The program account, which names its ProgramData, which names the upgrade authority.
     account = rpc("getAccountInfo", [program, {"encoding": "base64"}])
@@ -193,18 +265,26 @@ def main() -> int:
         address = entry["pubkey"]
         addresses.append(address)
         account_data = base64.b64decode(entry["account"]["data"][0])
-        if len(account_data) == CHECKPOINT_LEN:
-            check(address, "a checkpoint address")
+        raw_address = base58_decode(address)
+        if len(account_data) == CHECKPOINT_LEN and schema_1(account_data, CHECKPOINT_DISCRIMINATOR):
+            check_address(raw_address, "a checkpoint address")
             check(hex32(account_data, CHECKPOINT_ROOT), f"a root stored at {address}")
             digest = hex32(account_data, CHECKPOINT_RECEIPT)
             if int(digest, 16) != 0:
                 check(digest, f"a receipt digest stored at {address}")
-        elif len(account_data) == LOG_CONFIG_LEN:
-            check(address, "the LogConfig address")
+        elif len(account_data) == LOG_CONFIG_LEN and schema_1(account_data, LOG_CONFIG_DISCRIMINATOR):
+            check_address(raw_address, "the LogConfig address")
             check(base58(account_data[LOG_CONFIG_AUTHORITY[0] : LOG_CONFIG_AUTHORITY[1]]),
                   "the checkpoint authority")
         else:
-            check(address, f"an account of {len(account_data)} bytes owned by the program")
+            # Not a schema-1 account this script knows how to read. Its address is still a live value
+            # and is still checked; nothing inside it is, and the message says which — failing closed
+            # on the layout rather than reading offsets whose meaning has not been established.
+            check_address(
+                raw_address,
+                f"an account of {len(account_data)} bytes owned by the program, whose "
+                "discriminator and schema this script does not recognise, so nothing inside it was read",
+            )
 
     for address in addresses:
         for signature in signatures_for(address):

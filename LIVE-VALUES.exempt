@@ -9,3 +9,4 @@ V-P-12.json  0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee 
 V-P-12.json  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address §2.4 publishes and the derivation must reproduce
 V-P-12.json  0xabb9dc3b417c0d0fe2b99d109e5d1b0b8b71c7e693c20e756cabdf7e6d30d6fc  the same address, as bytes
 V-P-12.json  H3ERVV7P3yNQxXXJrzVvmS2Nzh9qBd283kcAgMHzHDNn  the two-seed case, answered for by the cluster, which is the check
+V-P-12.json  0xee4d543bd97a4e39c47cf3e12e017b329fe9d1b5bd0ee7bb9942f98206bb612f  the same address, as the bytes the vector carries

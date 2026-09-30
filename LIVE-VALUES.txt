@@ -37,8 +37,11 @@ jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no  program id, superseded 25 September
 CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  LogConfig address, announced deployment
 0xabb9dc3b417c0d0fe2b99d109e5d1b0b8b71c7e693c20e756cabdf7e6d30d6fc  LogConfig address, as bytes
 H3ERVV7P3yNQxXXJrzVvmS2Nzh9qBd283kcAgMHzHDNn  checkpoint address, epoch 20723
+0xee4d543bd97a4e39c47cf3e12e017b329fe9d1b5bd0ee7bb9942f98206bb612f  checkpoint address, epoch 20723, as bytes
 EKRAiF8Z4jWCc8pDeEr9QSLWo4Tjg5oBmnepA359i9N5  checkpoint address, epoch 20724
+0xc5dfb5f797a761fe219da632a179735ff1c95cd2ff8ca95bd2f141519cc8cd4e  checkpoint address, epoch 20724, as bytes
 Fo2xeMegoVvGZZm7YasuZehze9effYpKnY2BiZBDKdWQ  checkpoint address, epoch 20725
+0xdbce8cb6d83ff2a43db7dfbc197246d77c245597f4d99946fab407ecf269aa09  checkpoint address, epoch 20725, as bytes
 0xdc349df9f57964294692bebc3b192906a40b43b3de2d2414a73b581bdc6d0791  published root, epoch 20723
 0x8ab166bab0ffffa380ff1929cdb24c58bf0043741944739f217d3bb968f02891  published root, epoch 20724
 0x0d872549657176aa136bef759843b1dfc5b2d5b33e4521f5cd999d4d57a86443  published root, epoch 20725
