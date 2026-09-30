@@ -1573,7 +1573,6 @@ inferred: a tree-wide scan would need an allow-list holding `docs/anchoring.md`,
 every one of which holds live values because its subject is the deployment, and an allow-list that long
 is a gate that refuses nothing.
 
-
 ## D-127 · The qualified-person key is labelled wherever it appears
 
 **Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
@@ -1595,7 +1594,6 @@ appearance. "Not once in a legend" still binds the interface, where the risk of 
 **The miss was procedural and is recorded as such.** The collision between this decision and §2.5 was
 found while building, and the sidecar was chosen without putting it to the owner. The call was right;
 bringing it at the time was the obligation, and a review had to surface it instead.
-
 
 ## D-128 · Scene 3 states what detection is and what it is not
 
@@ -1636,3 +1634,29 @@ bringing it at the time was the obligation, and a review had to surface it inste
 ## D-131 · This entry is reserved
 
 **Date:** 30 Sep 2026 · **Status:** reserved so that D-131 and D-132, put to the owner at E-12's S0, land on their own numbers rather than on numbers this file has already used.
+
+## D-131 · Fuzzing is cargo-fuzz on the toolchain Miri already pins
+
+**Date:** 30 Sep 2026 · **Unit:** E-12 · **Class:** cost judgment · **Status:** settled at S0 (owner, 30 Sep 2026)
+
+**Decision (the owner's).** `cargo-fuzz`, on `nightly-2026-06-16` — the toolchain `scripts/ci.sh` already pins for Miri, as `MIRI_TOOLCHAIN` in that file — so no second toolchain enters the build. His reason: *"zero OOM, zero timeouts" can't be met by a loop that can't detect either.*
+
+**What it costs, stated rather than absorbed.** `libfuzzer-sys` and `arbitrary`, a `fuzz/` crate outside the workspace, and a scheduled CI job for the million-iteration runs §4.5 asks of F-01 and F-02. Both crates pass `cargo deny`'s licence and advisory gates like everything else, or they do not ship.
+
+**Rejected.** A seeded loop on stable: no toolchain, no dependency, meets the iteration count, explores far less per iteration — and cannot detect an out-of-memory or a timeout at all, so it could not report two of the three things §4.5's acceptance criteria name.
+
+**Revisit if** the licence gate refuses either crate, in which case the stable loop is the fallback and the record says which of §4.5's criteria it cannot meet rather than quietly meeting fewer.
+
+## D-132 · Benchmarks are Criterion, and only the deterministic thresholds gate the build
+
+**Date:** 30 Sep 2026 · **Unit:** E-13 · **Class:** cost judgment · **Status:** settled at S0 (owner, 30 Sep 2026)
+
+**Decision (the owner's).** Criterion, which E-13's task list already named. His reason: *a single wall-clock sample isn't a published number.* §4.4a requires figures measured and reported, and a number with no distribution behind it is not one. It costs a large dependency tree through the licence and advisory gates.
+
+**Rejected.** A minimal harness, about fifty lines, no new dependency, no confidence intervals.
+
+**How a threshold fails a build, which is the harder half (agreed by the owner, 30 Sep 2026).** §4.4a mixes two kinds of measure and they cannot be gated the same way.
+
+- **Compute units are deterministic.** The same instruction against the same program costs the same CU on any machine, so `publish_checkpoint` ≤ 15,000 and `attach_anchor_receipt` ≤ 12,000 are asserted absolutely in CI. `scripts/ci.sh kat01-onchain` already does the first.
+- **Wall-clock is not.** A shared runner's timing varies by more than the margins §4.4a states, so an absolute assertion there would either flake or be loose enough to assert nothing. CI compares against a committed baseline and fails on a regression past a band; §4.4a's absolute figures — a 10,000-record chain walk under 5 ms, an epoch root at 256 leaves under 10 ms, an inclusion proof under 1 ms — are asserted on the reference machine and **recorded with the machine named**, which is what §4.4a's own "reference laptop" wording requires.
+- **The signature path is measured and published with no threshold**, which §4.4a states outright: a bound on it belongs in v0.2, set from real data rather than guessed now.

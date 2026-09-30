@@ -1,0 +1,37 @@
+[package]
+name = "certimining-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "§4.5's fuzz targets. Outside the workspace, because cargo-fuzz builds with sanitizers and a nightly toolchain the rest of the repository does not use (D-131)."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+# The fuzzing driver, pinned like every other tool (D-11's convention). MIT OR Apache-2.0.
+libfuzzer-sys = "=0.4.10"
+# Structured input from arbitrary bytes, so F-03 and F-05 drive real types rather than raw buffers.
+arbitrary = { version = "=1.4.2", features = ["derive"] }
+
+certimining-core = { path = "../crates/certimining-core", features = ["native"] }
+certimining-log = { path = "../crates/certimining-log", features = ["native"] }
+# The proof type's sibling list is a fixed-capacity vector, so a target that builds one needs the
+# same crate the engine uses rather than a std Vec.
+heapless = "=0.9.3"
+
+[[bin]]
+name = "fuzz_canonicalize"
+path = "fuzz_targets/fuzz_canonicalize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proof_verify"
+path = "fuzz_targets/fuzz_proof_verify.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
