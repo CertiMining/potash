@@ -26,8 +26,16 @@ owns. A response without a `result` member is a failure, not an absence.
 
 **What it still cannot do, stated rather than implied.** A superseded deployment's values are not
 reachable from the announced one: `HS82CAXg…` and `jzJzgKWM…` are in the list by hand and this check
-neither confirms nor refutes them. It also cannot prove the list is minimal — an entry for something
-that never existed on chain would sit there unchallenged.
+neither confirms nor refutes them — a review swept all 29 entries and named 27, the two exceptions
+being exactly those. It also cannot prove the list is minimal: an entry for something that never
+existed on chain would sit there unchallenged.
+
+**And it refuses rather than guesses.** An account the program owns whose length, discriminator or
+schema version this script does not recognise makes the whole run exit non-zero. Reading offsets whose
+meaning has not been established would be worse, but so is passing: the script cannot say the list
+holds an account's values when it cannot read the account. A third version of this fallback checked
+the address and carried on, with a comment claiming it failed closed, and a review proved it did not by
+building a 106-byte account under schema 2 with unlisted bytes inside and watching the run exit 0.
 
 Run it after every publish cycle. Each adds a signature, a checkpoint account, a root, and later a
 receipt digest.
@@ -222,6 +230,10 @@ def main() -> int:
 
     listed = listed_values()
     missing: list[str] = []
+    #: Reasons the check cannot report completeness at all, as opposed to values it found unlisted.
+    #: A refusal is unconditional: no entry in the list can satisfy it, because the point is that the
+    #: script does not know what it is looking at.
+    refusals: list[str] = []
 
     def check(value: str, what: str) -> None:
         if value.lower() not in listed:
@@ -277,22 +289,43 @@ def main() -> int:
             check(base58(account_data[LOG_CONFIG_AUTHORITY[0] : LOG_CONFIG_AUTHORITY[1]]),
                   "the checkpoint authority")
         else:
-            # Not a schema-1 account this script knows how to read. Its address is still a live value
-            # and is still checked; nothing inside it is, and the message says which — failing closed
-            # on the layout rather than reading offsets whose meaning has not been established.
-            check_address(
-                raw_address,
-                f"an account of {len(account_data)} bytes owned by the program, whose "
-                "discriminator and schema this script does not recognise, so nothing inside it was read",
+            # **Fail closed, unconditionally.** An earlier version checked the address and carried on,
+            # with a comment claiming it failed closed; it did not. If both spellings of the address
+            # happened to be listed, an account carrying unlisted values inside it exited 0 — a review
+            # built one with an unknown discriminator and another with schema 2 and watched both pass.
+            #
+            # Not reading offsets whose meaning has not been established is right, and it is exactly
+            # why this cannot report completeness: the script does not know what a layout it does not
+            # recognise contains, so it cannot say the list holds everything. Listing the address does
+            # not establish anything about the interior. A new account shape is a person's problem, and
+            # they find out here.
+            check_address(raw_address, "an unrecognised account's address")
+            refusals.append(
+                f"{address} is owned by the program and this script cannot read it: "
+                f"{len(account_data)} bytes, discriminator "
+                f"{account_data[0:8].hex() if len(account_data) >= 8 else '(too short)'}, schema "
+                f"{int.from_bytes(account_data[8:10], 'little') if len(account_data) >= 10 else '(too short)'}. "
+                "Nothing inside it was read, so the list cannot be shown to hold its values. Teach this "
+                "script the layout, or record why the account is out of scope."
             )
 
     for address in addresses:
         for signature in signatures_for(address):
             check(signature, f"a signature touching {address}")
 
+    for line in dict.fromkeys(refusals):
+        print(f"live-values: {line}", file=sys.stderr)
+    for line in dict.fromkeys(missing):
+        print(f"live-values: {line} is not in {LIST.name}", file=sys.stderr)
+
+    if refusals:
+        print(
+            f"live-values: {len(set(refusals))} account(s) the program owns could not be read, so "
+            "this check cannot say the list is complete.",
+            file=sys.stderr,
+        )
+        return 1
     if missing:
-        for line in dict.fromkeys(missing):
-            print(f"live-values: {line} is not in {LIST.name}", file=sys.stderr)
         print(
             f"live-values: {len(set(missing))} value(s) on chain are not listed. "
             "Add them, with what each one is.",
