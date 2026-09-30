@@ -1541,6 +1541,19 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **The hash check alone does not carry that.** A manifest is as editable as the file it covers, so editing both passes every check the demo itself runs. What closes it is regeneration: CI runs `cargo xtask gen-demo` into a temporary directory and diffs the result against the committed set, exactly as the `vectors` group already does, so a fixture that the engine would not produce fails the build. The demo's own hash check stays, because it catches a fixture edited after a clone and needs no Rust toolchain.
 
+**The chain check, and what it took to make it true.** `scripts/live-values-from-chain.py` asks the
+cluster what the announced deployment holds and names anything the list does not. It is the third
+version: the first read signatures only, from accounts the list already named, capped at fifty, and
+treated an RPC error as an empty result, so it could report "nothing missing" having asked nothing.
+The second added paging, retries and error propagation, and a scoped review found three more defects —
+accounts were still selected from the list rather than discovered, a malformed `{}` response produced
+`result: null` and was read as an empty account, and most value classes were never compared at all, so
+removing a receipt digest exited 0. This one enumerates every account the program owns with
+`getProgramAccounts`, decodes each at §2.4's offsets, and compares the root, the receipt digest and
+the authority inside it; a response with no `result` member is a failure rather than an absence. Run
+`python3 scripts/live-values-from-chain.py`. What it still cannot do is confirm a *superseded*
+deployment's values, which are in the list by hand.
+
 **And no fixture carries a value that exists on chain (owner, 28 Sep 2026).** This unit's review found
 the demo's `anchor` block holding the announced log's real transaction signature and slot beside a root
 built here and published nowhere — and the signature and the slot were not even from the same

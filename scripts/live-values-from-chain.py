@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""Ask the cluster what the announced deployment holds, and name anything LIVE-VALUES.txt does not.
+
+The rule is that no synthetic artifact carries a value from a live deployment. A list of those values
+built from memory has the same defect as a fixture built from memory: the first version of
+LIVE-VALUES.txt omitted three of the six signatures the deployment held, one of which a review found
+and two of which nothing had.
+
+**This is the third version of this check and the second rewrite.** The history matters, because each
+earlier version reported "nothing missing" in cases where it had not looked:
+
+1. Signatures only, read only from accounts the list already named, first fifty without paging, and a
+   JSON-RPC error read as an empty result — so it could pass having asked nothing.
+2. Paging, retries and error propagation were added. A scoped review then found three more: accounts
+   were still *selected from the list* rather than discovered from the chain, so an unlisted
+   checkpoint stayed invisible; a malformed response such as `{}` produced `result: null`, which the
+   readers treated as an empty account; and most value classes in the list — program ids, the
+   ProgramData address, both authorities, the LogConfig address, byte encodings, receipt digests —
+   were never compared against anything, so removing one exited 0.
+
+What this version does: `getProgramAccounts` enumerates every account the announced program owns, so
+discovery comes from the chain. Each account is decoded at §2.4's offsets and every value inside it is
+compared — root, receipt digest, authority. The program account gives the ProgramData address, which
+gives the upgrade authority. Signatures are paged to exhaustion for the program and every account it
+owns. A response without a `result` member is a failure, not an absence.
+
+**What it still cannot do, stated rather than implied.** A superseded deployment's values are not
+reachable from the announced one: `HS82CAXg…` and `jzJzgKWM…` are in the list by hand and this check
+neither confirms nor refutes them. It also cannot prove the list is minimal — an entry for something
+that never existed on chain would sit there unchallenged.
+
+Run it after every publish cycle. Each adds a signature, a checkpoint account, a root, and later a
+receipt digest.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+LIST = ROOT / "LIVE-VALUES.txt"
+PROGRAM_FILE = ROOT / "ANNOUNCED_PROGRAM_ID"
+RPC = os.environ.get("CERTIMINING_RPC", "https://api.devnet.solana.com")
+
+# §2.4's CheckpointAccount: 8 discriminator, 2 schema, 8 epoch, 32 root, 8 slot, 8 unix, 32 receipt
+# digest, 1 anchor kind, 1 bump, 6 reserved.
+CHECKPOINT_LEN = 106
+CHECKPOINT_ROOT = (18, 50)
+CHECKPOINT_RECEIPT = (66, 98)
+# §2.4's LogConfig: 8 discriminator, 2 schema, 32 authority, then heights and epochs.
+LOG_CONFIG_LEN = 68
+LOG_CONFIG_AUTHORITY = (10, 42)
+
+
+class Unreachable(RuntimeError):
+    """The cluster could not be asked. Never an absence."""
+
+
+def rpc(method: str, params: list) -> object:
+    """One JSON-RPC call, retried through rate limiting, and strict about what an answer is."""
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    wait = 2.0
+    last = ""
+    for _ in range(6):
+        request = urllib.request.Request(
+            RPC, data=body, headers={"Content-Type": "application/json"}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read())
+        except urllib.error.HTTPError as e:  # 429 and friends
+            last = f"HTTP {e.code}"
+        except Exception as e:  # transport, timeout, or a body that is not JSON
+            last = str(e)
+        else:
+            if "error" in payload:
+                last = f"RPC error {json.dumps(payload['error'])}"
+            elif "result" not in payload:
+                # `{}` is not an empty result. A response that carries neither `result` nor `error`
+                # is malformed, and reading it as "this account does not exist" is how a check
+                # reports that it found nothing when it never asked.
+                last = f"malformed response, no result member: {json.dumps(payload)[:120]}"
+            else:
+                return payload["result"]
+        time.sleep(wait)
+        wait *= 2
+    raise Unreachable(f"{RPC}: {method} failed after 6 attempts ({last})")
+
+
+def listed_values() -> dict[str, str]:
+    """Every value the list holds, mapped to what it says the value is."""
+    out: dict[str, str] = {}
+    for line in LIST.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        value, _, what = line.partition("  ")
+        out[value.strip().lower()] = what.strip()
+    if not out:
+        raise SystemExit(f"live-values: {LIST} lists nothing")
+    return out
+
+
+def signatures_for(address: str) -> list[str]:
+    """Every signature for an address, paged to exhaustion rather than capped."""
+    found: list[str] = []
+    before = None
+    while True:
+        params: list = [address, {"limit": 1000}]
+        if before is not None:
+            params[1]["before"] = before
+        page = rpc("getSignaturesForAddress", params) or []
+        if not page:
+            return found
+        found.extend(entry["signature"] for entry in page)
+        before = page[-1]["signature"]
+        if len(found) > 100_000:
+            raise Unreachable(f"{address}: more than 100000 signatures")
+
+
+def hex32(data: bytes, span: tuple[int, int]) -> str:
+    return "0x" + data[span[0] : span[1]].hex()
+
+
+def base58(data: bytes) -> str:
+    """Base58 with the Bitcoin alphabet, for turning 32 account bytes into the spelling the list uses."""
+    alphabet = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    n = int.from_bytes(data, "big")
+    out = bytearray()
+    while n > 0:
+        n, remainder = divmod(n, 58)
+        out.append(alphabet[remainder])
+    for byte in data:
+        if byte != 0:
+            break
+        out.append(alphabet[0])
+    return bytes(reversed(out)).decode()
+
+
+def main() -> int:
+    if not LIST.exists():
+        raise SystemExit(f"live-values: {LIST} is missing")
+    if not PROGRAM_FILE.exists():
+        raise SystemExit(f"live-values: {PROGRAM_FILE} is missing")
+
+    program = ""
+    for token in PROGRAM_FILE.read_text().split():
+        if 32 <= len(token) <= 44 and token.isalnum():
+            program = token
+            break
+    if not program:
+        raise SystemExit(f"live-values: no program id in {PROGRAM_FILE}")
+
+    listed = listed_values()
+    missing: list[str] = []
+
+    def check(value: str, what: str) -> None:
+        if value.lower() not in listed:
+            missing.append(f"{what}: {value}")
+
+    check(program, "the announced program id")
+
+    # The program account, which names its ProgramData, which names the upgrade authority.
+    account = rpc("getAccountInfo", [program, {"encoding": "base64"}])
+    value = (account or {}).get("value")
+    if not value:
+        raise Unreachable(f"{program}: the cluster does not know this program")
+    data = base64.b64decode(value["data"][0])
+    # An upgradeable program account is a 4-byte tag then the 32-byte ProgramData address.
+    if len(data) >= 36:
+        program_data = base58(data[4:36])
+        check(program_data, "the ProgramData address")
+        pd = rpc("getAccountInfo", [program_data, {"encoding": "base64"}])
+        pd_value = (pd or {}).get("value")
+        if pd_value:
+            pd_data = base64.b64decode(pd_value["data"][0])
+            # 4-byte tag, 8-byte slot, 1-byte option, then the 32-byte upgrade authority.
+            if len(pd_data) >= 45 and pd_data[12] == 1:
+                check(base58(pd_data[13:45]), "the upgrade authority")
+
+    # **Discovery from the chain, not from the list.** Every account the program owns.
+    owned = rpc("getProgramAccounts", [program, {"encoding": "base64"}]) or []
+    addresses = [program]
+    for entry in owned:
+        address = entry["pubkey"]
+        addresses.append(address)
+        account_data = base64.b64decode(entry["account"]["data"][0])
+        if len(account_data) == CHECKPOINT_LEN:
+            check(address, "a checkpoint address")
+            check(hex32(account_data, CHECKPOINT_ROOT), f"a root stored at {address}")
+            digest = hex32(account_data, CHECKPOINT_RECEIPT)
+            if int(digest, 16) != 0:
+                check(digest, f"a receipt digest stored at {address}")
+        elif len(account_data) == LOG_CONFIG_LEN:
+            check(address, "the LogConfig address")
+            check(base58(account_data[LOG_CONFIG_AUTHORITY[0] : LOG_CONFIG_AUTHORITY[1]]),
+                  "the checkpoint authority")
+        else:
+            check(address, f"an account of {len(account_data)} bytes owned by the program")
+
+    for address in addresses:
+        for signature in signatures_for(address):
+            check(signature, f"a signature touching {address}")
+
+    if missing:
+        for line in dict.fromkeys(missing):
+            print(f"live-values: {line} is not in {LIST.name}", file=sys.stderr)
+        print(
+            f"live-values: {len(set(missing))} value(s) on chain are not listed. "
+            "Add them, with what each one is.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"live-values: the chain holds nothing {LIST.name} does not")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Unreachable as e:
+        print(f"live-values: {e}", file=sys.stderr)
+        sys.exit(1)
