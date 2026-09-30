@@ -1517,7 +1517,7 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 
 **Decision.** A static page and a small build step, so `ts/` runs in the viewer's browser and Scene 2 is verification rather than a recording of one. **Condition the owner attached:** the build's new dependency must clear the licence gate at S1; if it cannot, the terminal demo is the fallback, and it is recorded on the issue **as a fallback rather than as a downgrade**.
 
-**Ground.** Scene 2's whole claim is that a counterparty verifies for themselves. A page showing precomputed results demonstrates nothing a screenshot would not, and issue #44 already records that the browser path is typechecked and never executed. Running it closes #44 by doing it.
+**Ground.** Scene 2's whole claim is that a counterparty verifies for themselves. A page showing precomputed results demonstrates nothing a screenshot would not, and H-10 ([issue #44](https://github.com/CertiMining/potash/issues/44)) already records that the browser path is typechecked and never executed. Running it closes H-10 by doing it.
 
 **What S1 found.** No bundler is needed, so the condition's risk does not arise. `tsc -p tsconfig.build.json` already emits browser-shaped ES modules; the only thing a browser cannot resolve is the three bare specifiers `@noble/hashes/sha3.js`, `@noble/hashes/sha2.js` and `@noble/curves/ed25519.js`. Both packages are plain ES modules whose internal imports are all relative, so one import map with two prefix entries resolves the whole graph, and the build step is a copy. Zero new dependencies, and the licence gate sees nothing new.
 
@@ -1617,7 +1617,7 @@ bringing it at the time was the obligation, and a review had to surface it inste
 
 **Where it landed.** §0's sentence on `e-11/ts-verifier`, and SD-19 marked resolved. `ts/src/disclosure.ts` reports `chainPosition` and accepts a caller-supplied `expectedPrevHead`; run `npm --prefix ts test` and read the `ROUND 3` and `FINDING 1` cases in `ts/test/disclosure.test.ts`. E-14's Scene 2 shows the `unestablished` line to a viewer rather than shipping a `seq` 1 fixture that avoids it.
 
-**Filed rather than decided.** A §2.5 package that carries its own chain segment — [issue #51](https://github.com/CertiMining/potash/issues/51). Binding the link properly means putting `prev_head` inside §1.3's preimage, a breaking change to every vector and the instruction data, and it would still not give uniqueness.
+**Filed rather than decided.** A §2.5 package that carries its own chain segment — H-15, [issue #51](https://github.com/CertiMining/potash/issues/51). Binding the link properly means putting `prev_head` inside §1.3's preimage, a breaking change to every vector and the instruction data, and it would still not give uniqueness.
 
 **Recorded late.** This entry was written 30 Sep 2026. The ruling was applied on the 28th — in §0, in SD-19 and in the demo — and the decision record was never written, so `docs/DECISIONS.md` stopped at D-128 while D-127 cited "D-130 option 1" and nothing defined either. A review found it.
 
