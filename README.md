@@ -40,11 +40,12 @@ inside the Solana runtime and outside it, across every committed preimage.
 - The landing-delay correlation above ran **once**, over 200 consecutive epochs at one epoch per
   minute on one endpoint. A day-long cadence would sample network conditions this run did not. That
   run is filed for after the submission deadline.
-- Anchor B has completed **three** cycles on the deployed log, epochs 20723 to 20725, carried by
-  Bitcoin blocks 968,917, 968,923 and 969,173. All three read `dual` and all three receipts are
-  committed under `anchors/epochs/`. Three cycles are three instances, not a measured latency, and
-  the daily cadence INV-ANCH-01 asks for has run for three days rather than for a period worth
-  quoting. `docs/anchoring.md` carries the roots, the slots and the blocks.
+- Anchor B has completed **five** cycles on the deployed log, epochs 20723 to 20727. All five read
+  `dual` and all five receipts are committed under `anchors/epochs/`. Five cycles are five instances,
+  not a measured latency. The cadence INV-ANCH-01 asks for has also already been missed once — nothing
+  published on day 20726, and the log caught up the next day — which is what a cadence run by hand
+  does, there being no worker ([#49](https://github.com/CertiMining/potash/issues/49)).
+  `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
 - There is no fuzz or property harness yet.
 - The count-hiding property is computational, not information-theoretic, and rests on the batcher's
   key custody. Both are stated in Appendix A of the specification as RES-09 and RES-03.
