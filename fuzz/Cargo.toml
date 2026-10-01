@@ -16,9 +16,20 @@ arbitrary = { version = "=1.4.2", features = ["derive"] }
 
 certimining-core = { path = "../crates/certimining-core", features = ["native"] }
 certimining-log = { path = "../crates/certimining-log", features = ["native"] }
+# The program's account layouts, so F-01 can drive the decoders a counterparty's bytes actually reach.
+# `no-entrypoint` keeps the Solana entrypoint out of a host build, which is how the client takes it.
+certimining-checkpoint = { path = "../programs/certimining-checkpoint", features = ["no-entrypoint"] }
+anchor-lang = "=1.2.0"
 # The proof type's sibling list is a fixed-capacity vector, so a target that builds one needs the
 # same crate the engine uses rather than a std Vec.
 heapless = "=0.9.3"
+
+[[bin]]
+name = "fuzz_params_decode"
+path = "fuzz_targets/fuzz_params_decode.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "fuzz_canonicalize"
