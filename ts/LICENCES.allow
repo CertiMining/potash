@@ -1,0 +1,10 @@
+# Licences allowed for the TypeScript verifier's npm tree (D-93). A closed list, checked by
+# scripts/ts-gate.sh against every installed package's own package.json.
+#
+# A package arriving under a licence that is not here fails the build and reaches a person, which is
+# the same behaviour D-89 chose for the Rust side when webpki-roots appeared. Adding a line is a
+# decision taken having read what the licence covers, never a way to make a red build green.
+#
+# Every entry below is present because a package in the committed lock file carries it.
+MIT
+Apache-2.0

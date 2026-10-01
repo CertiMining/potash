@@ -43,6 +43,31 @@ pub const MAX_HEIGHT: u8 = 16;
 pub const DEPLOYED_HEIGHT: u8 = 8;
 pub const DEPLOYED_CAPACITY: usize = 256;
 
+/// §2.4's program-derived addresses, transcribed from the paragraph that states the derivation.
+///
+/// **The derivation is Solana's and §2.4 cites it as Solana's**, which is why these are here as
+/// copied text rather than as something this project defines: the generator implements the algorithm
+/// the paragraph prints and must reproduce the addresses the paragraph publishes, or generation
+/// fails. That is the only way the document's own arithmetic is under test — the first version of
+/// that paragraph had the bump and the program id the wrong way round and nothing here caught it,
+/// because there was no expected value to check against.
+pub const PDA_MARKER: &[u8] = b"ProgramDerivedAddress";
+pub const SEED_LOG_CONFIG: &[u8] = b"cm_cfg";
+pub const SEED_CHECKPOINT: &[u8] = b"cm_ckpt";
+
+/// The announced deployment §2.4 names beside the two addresses below.
+pub const ANNOUNCED_PROGRAM_ID: &str = "By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB";
+
+/// What §2.4 says the log's configuration is actually at, and at which bump.
+pub const ANNOUNCED_LOG_CONFIG: &str = "CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7";
+pub const ANNOUNCED_LOG_CONFIG_BUMP: u8 = 250;
+
+/// What §2.4's *erroneous* first version derived, `… ‖ program_id ‖ bump ‖ …` at bump 255. Copied so
+/// the generator can assert the current text does not produce it: a published wrong answer is a
+/// negative control, and this one cost an implementer the ability to fetch the log.
+pub const ERRONEOUS_ORDER_LOG_CONFIG: &str = "4wmoJSgJCv4Kv9BVwwbSabgEQm23oRsgYte12HH4teHa";
+pub const ERRONEOUS_ORDER_BUMP: u8 = 255;
+
 /// §1.3's schema version for this engine.
 pub const SCHEMA_VERSION: u16 = 1;
 

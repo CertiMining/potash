@@ -90,7 +90,8 @@ signature in the set. No generated key and no real key belongs in this repositor
 | `vectors` | The manifest, and regeneration. |
 | `checks` | Formatting, clippy and the tests, in each of the four feature sets, for both engine crates, and the bare-metal `no_std` builds. |
 | `miri` | The engine crates under Miri. The statistical privacy tests and every tree above `H = 8` are ignored there and run in `checks` instead. Miri interprets a hash in about a tenth of a second, so a tree at `H = 12` costs minutes and one at `H = 16` costs hours, while the shorter trees execute the same code with a shorter loop. Miri is looking for undefined behaviour, not for arithmetic. |
-| `deny` | Advisories, licences, sources and bans. |
+| `deny` | Advisories, licences, sources and bans, for the Rust tree. |
+| `ts` | The independent TypeScript verifier of E-11: its supply-chain gate, its typecheck and build, and its run of every committed vector. `cargo deny` reads `Cargo.lock` and sees no npm package, so `scripts/ts-gate.sh` carries the same discipline for `ts/package-lock.json` — advisories at high or above, and a closed licence list in `ts/LICENCES.allow` (D-93). |
 
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.

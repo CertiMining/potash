@@ -25,3 +25,4 @@ b2bc03b3f268dc9887f53a5fa377a55bdbc3a299c4a815e58b6fc212b9890d25  README.md  # t
 76d89a0742f4a991699ef60ec4d0ad2b662a99f852445b05c142b57a14e87af7  scripts/claim-check.sh  # the gate's own description of what it forbids
 fb437f92bc41e78bc96608ad2562d060ef50b8e40846c485976f4a9c4a038346  scripts/claim-check.sh  # the gate's own description of what it forbids
 1a8af029f9fbe2573db6957629503f19cc5d5e517a028ad71058d252e50b08e9  docs/DECISIONS.md  # D-121 stating the problem the gate exists to solve
+34c85e0f7a3bdea573bea80e9389fe018de7586f112bce0a1e3f77fff34e4778  ts/README.md
