@@ -1605,7 +1605,7 @@ bringing it at the time was the obligation, and a review had to surface it inste
 
 **Ground.** §4.6 makes overclaiming a merge gate. A demonstration of detection is exactly where a viewer infers prevention.
 
-**Where the gate actually is, as of this branch.** `scripts/claim-check.sh` and §4.6's list of banned phrasings arrived with E-15 and live on `e-10/anchor-b`; this unit is stacked on `e-11/ts-verifier` and carries neither, so **the gate does not run over the demo here** and the earlier wording of this ground, which said it did, was wrong. The demo is checked by hand against the 24 phrasings in E-15's list, and the gate reaches it when the branches meet on `main`. Recorded rather than papered over: a decision that asserts a check is running is worth no more than the check.
+**The gate runs over the demo, as of 1 Oct 2026.** It did not for most of this unit's life: `scripts/claim-check.sh` and §4.6's list arrived with E-15 on `e-10/anchor-b`, while this unit was stacked on `e-11/ts-verifier` and carried neither, so an earlier wording of this ground — which said the gate ran — was wrong, and the demo was checked by hand against the 24 phrasings instead. E-10 and E-11 have since merged and this branch is rebased onto `main`, so `scripts/claim-check.sh` now reads `demo/` like any other artefact: 24 phrasings checked, 14 recorded denials, 0 unrecorded, 0 stale. The history stays because the lesson is the part worth keeping — a decision that asserts a check is running is worth no more than the check.
 
 ## D-129 · The claim is narrowed; the package is not extended
 
