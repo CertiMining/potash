@@ -1,0 +1,41 @@
+{
+  "anchor": {
+    "ots_receipt_digest": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "solana_slot": 0,
+    "solana_tx": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "chain": {
+    "genesis": "0x9793f2216338b2296c155ab142bb54f536424cc33b9460407b05f196c220b175",
+    "head": "0x6a56d39e2f2fbdc247ea076da7f160e0baa298a57ed325d07b6bdb257f046743",
+    "prev_head": "0x0d1cf82dee8fd1efb64ddfc38bab734593bbb3e794ccafb7047d20c8dc70f48a"
+  },
+  "inclusion": {
+    "epoch": "20723",
+    "height": 8,
+    "siblings": [
+      "0xe890f27d876b9380064947ed6b62c0188cf853522a4d99b78ae4908abbe88f71",
+      "0x17e5cfaa093e664e2f34d8cd73ffab9d09aab2763971fa9f8d1d58bce69c9272",
+      "0xc9bbd77009c42ad0d4a37c5d344e43a0355248f5d5653ebfb8c2f636e20c6d29",
+      "0xce1482413f82e857ede28a59ed37a815f8486a82d6b30b07fa712dc845639f76",
+      "0x538933cb04a3cb5422e2632ad4e1cf3fd6e9824b38fc7a989110ca14a7c675b6",
+      "0x527f8aafaf2c28100f45a22dfed681e4df2c038f6cc7dddeb2cb71160a0f3a1a",
+      "0x1ab0a84a164a4051d3ea98f3347ea5f2ba1888fc07f110b60aa66a500c958789",
+      "0x9e8fc7b230236b87326fae9f51582537aa063d949eb7111361185c9526552b6b"
+    ],
+    "slot_index": 224
+  },
+  "preimage_borsh": "Q012MUxFQUYVaj8YMLDlSNXDZ6qVKoOtASob3ntRErKk4mtYi30U7gMAAAAAAAAA0QMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaAoDlV2UAAAAAAJRWZQAAAAA=",
+  "qp_signature": "0x9c7912c63ced7fcab485a0e487bc48c32ac79a4f4a70b44bdea745ef8146486145be5236354b50ed3e901260a7266885c3ea776a2b20a9c0d1f02e8279e8f90c",
+  "record": {
+    "assessment_digest": "0xa003000000000000000000000000000000000000000000000000000000000000",
+    "category": 2,
+    "change_identified_at": "1700172800",
+    "effective_at": "1700259200",
+    "flags": 0,
+    "payload_digest": "0xd103000000000000000000000000000000000000000000000000000000000000",
+    "payload_uri": "ipfs://bafydemopayloadplaceholder",
+    "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "seq": "3"
+  },
+  "schema": "certimining/v1/disclosure"
+}

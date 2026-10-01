@@ -85,6 +85,7 @@ fi
 echo "----- §4.6's claim gate"
 if [ -x scripts/claim-check.sh ]; then
   if scripts/claim-check.sh >/dev/null 2>&1; then note "passes"; else fail "claim-check fails"; fi
+  GATE_RAN=1
 else
   note "not on this branch"
 fi
@@ -93,4 +94,14 @@ if [ "$failed" -ne 0 ]; then
   echo "merge-ready: NOT READY" >&2
   exit 1
 fi
-echo "merge-ready: the tree is in order. Tests are scripts/ci.sh all, and review is a person."
+if [ "${GATE_RAN:-0}" -eq 1 ]; then
+  echo "merge-ready: the tree is in order. Tests are scripts/ci.sh all, and review is a person."
+else
+  # An unqualified "in order" over a branch where §4.6's gate does not exist says more than the
+  # script checked: every claim-bearing artefact on it — a README, a demo's copy, a decision record —
+  # went unexamined. The branch is not blocked, because the gate reaches it when the branches meet,
+  # but the verdict says what it is rather than rounding up.
+  echo "merge-ready: the tree is in order, EXCEPT that §4.6's claim gate is not on this branch, so no"
+  echo "             claim in it has been checked. Rebase onto a base that carries scripts/claim-check.sh"
+  echo "             and run it before this merges."
+fi

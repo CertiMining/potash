@@ -21,6 +21,8 @@
 //! Being a tool rather than shipped code, this crate may panic: a generator that cannot produce a
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
+mod demo;
+mod live_values;
 mod spec;
 
 use std::collections::BTreeMap;
@@ -78,8 +80,24 @@ fn main() {
                 .unwrap_or_else(|| repo_root().join("vectors"));
             gen_vectors(&dir);
         }
+        // The synthetic surface, scanned in the working tree rather than only at generation. A page
+        // constant is not something a generator sees.
+        Some("check-live-values") => {
+            live_values::check_synthetic_surface(&repo_root());
+        }
+        // E-14's demo fixtures (D-126). A separate command: the demo's scenes are not conformance
+        // vectors, and regenerating one must not be able to rewrite the other.
+        Some("gen-demo") => {
+            let dir = args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| repo_root().join("demo/fixtures"));
+            demo::gen_demo(&dir);
+        }
         other => {
             eprintln!("usage: cargo xtask gen-vectors [destination directory]");
+            eprintln!("       cargo xtask gen-demo [destination directory]");
+            eprintln!("       cargo xtask check-live-values");
             if let Some(cmd) = other {
                 eprintln!("unknown command: {cmd}");
             }
@@ -141,6 +159,15 @@ fn gen_vectors(dir: &Path) {
             name
         ));
     };
+
+    // No synthetic artifact carries a value that exists on chain (owner, 28 Sep 2026). Checked before
+    // a byte is written, so a fabricated provenance never reaches the working tree at all.
+    live_values::check_list_shape(&repo_root());
+    let pending: Vec<(String, String)> = files
+        .iter()
+        .map(|(name, value)| (name.clone(), to_text(value)))
+        .collect();
+    live_values::refuse_live_values(&repo_root(), &pending);
 
     for (name, value) in &files {
         write(name, &to_text(value), &mut manifest);

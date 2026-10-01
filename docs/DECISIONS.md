@@ -1510,3 +1510,129 @@ trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is 
 **Decision.** A status section near the top of the README, in S9's own words — **not audited** — followed by what is measured and what is not. The measured half names the figure and the threshold. The unmeasured half names the landing-delay run's single compressed execution, anchor B's incomplete cycle on the deployed log, the absent fuzz harness, and count-hiding resting on batcher key custody.
 
 **Ground (the owner's).** This is the sentence that keeps the entry honest to a judge. The README is the first page a reader meets and until this unit the repository had no page that said any of it; the disclosure of the live upgrade authority lived in `docs/anchoring.md`, which a reader arrives at only by already knowing to look.
+
+## D-124 · The demo is a page that runs the real verifier, with a terminal demo as the stated fallback
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** cost judgment · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** A static page and a small build step, so `ts/` runs in the viewer's browser and Scene 2 is verification rather than a recording of one. **Condition the owner attached:** the build's new dependency must clear the licence gate at S1; if it cannot, the terminal demo is the fallback, and it is recorded on the issue **as a fallback rather than as a downgrade**.
+
+**Ground.** Scene 2's whole claim is that a counterparty verifies for themselves. A page showing precomputed results demonstrates nothing a screenshot would not, and H-10 ([issue #44](https://github.com/CertiMining/potash/issues/44)) already records that the browser path is typechecked and never executed. Running it closes H-10 by doing it.
+
+**What S1 found.** No bundler is needed, so the condition's risk does not arise. `tsc -p tsconfig.build.json` already emits browser-shaped ES modules; the only thing a browser cannot resolve is the three bare specifiers `@noble/hashes/sha3.js`, `@noble/hashes/sha2.js` and `@noble/curves/ed25519.js`. Both packages are plain ES modules whose internal imports are all relative, so one import map with two prefix entries resolves the whole graph, and the build step is a copy. Zero new dependencies, and the licence gate sees nothing new.
+
+## D-125 · Scene 1 builds both epochs live and lets the viewer choose the count
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** Build the epochs in the page and diff them in front of the viewer: the instruction bytes and the account bytes side by side, every differing byte highlighted and labelled with what fixes it — the epoch number, the publication schedule, or a pseudorandom digest. **Not the transaction length**, which this originally said: the page builds no transaction, because signing one in a browser is machinery the scene does not need, and `demo/index.html` says so where the scene states its limits. V-Z-01's transaction half is compared under LiteSVM in `programs/certimining-checkpoint/tests/privacy.rs`. A review found the decision claiming coverage the page had already disclaimed. **The owner's addition: the control is a choice of any record count from 0 to 255, not a toggle between two values.** Two fixed points prove two points; a range the viewer sweeps proves the claim.
+
+**Ground.** The acceptance criterion says the scene renders the control rather than asserting it. A demo that asserts a property the repository tests is the weaker of the two artefacts. A two-value toggle invites the reading that those two values were chosen because they work.
+
+**Stated on screen as a limit.** This shows count-hiding against the closed list of permitted bytes §4.4's V-Z-01 fixes, not against every possible observer, and V-Z-02's padding indistinguishability is computational (RES-09).
+
+## D-126 · Fixtures are generated, committed and hash-pinned
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** `cargo xtask gen-demo` generates the demo's fixtures into `demo/fixtures/`, committed and manifest-hashed the way `vectors/` is, and the demo refuses to run when a fixture's hash does not match. **The runnable check is `scripts/ci.sh vectors`**, which regenerates into a temporary directory and diffs; the bare `cargo xtask gen-demo` refuses on a clean clone, because the committed fixtures are already in its destination and regeneration is how they are checked rather than how they are replaced. A review cited the bare command as unrunnable evidence and was right; the command now prints the one that works. Tenure identifiers are synthetic and carry a stated fake registry code, which goes in the record so that nobody later reads it as real.
+
+**Ground.** §4.2 forbids hand-authored vectors and the same reasoning reaches a demo: a fixture that can be edited quietly is a scene that can be made to look better than the engine is.
+
+**The hash check alone does not carry that.** A manifest is as editable as the file it covers, so editing both passes every check the demo itself runs. What closes it is regeneration: CI runs `cargo xtask gen-demo` into a temporary directory and diffs the result against the committed set, exactly as the `vectors` group already does, so a fixture that the engine would not produce fails the build. The demo's own hash check stays, because it catches a fixture edited after a clone and needs no Rust toolchain.
+
+**The chain check, and what it took to make it true.** `scripts/live-values-from-chain.py` asks the
+cluster what the announced deployment holds and names anything the list does not. It is the third
+version: the first read signatures only, from accounts the list already named, capped at fifty, and
+treated an RPC error as an empty result, so it could report "nothing missing" having asked nothing.
+The second added paging, retries and error propagation, and a scoped review found three more defects —
+accounts were still selected from the list rather than discovered, a malformed `{}` response produced
+`result: null` and was read as an empty account, and most value classes were never compared at all, so
+removing a receipt digest exited 0. This one enumerates every account the program owns with
+`getProgramAccounts`, decodes each at §2.4's offsets, and compares the root, the receipt digest and
+the authority inside it; a response with no `result` member is a failure rather than an absence. Run
+`python3 scripts/live-values-from-chain.py`. What it still cannot do is confirm a *superseded*
+deployment's values, which are in the list by hand.
+
+**And no fixture carries a value that exists on chain (owner, 28 Sep 2026).** This unit's review found
+the demo's `anchor` block holding the announced log's real transaction signature and slot beside a root
+built here and published nowhere — and the signature and the slot were not even from the same
+publication. `LIVE-VALUES.txt` lists every program id, address, root, receipt digest and signature the
+deployment holds, and both generators refuse to emit a file containing one unless the pair is recorded
+in `LIVE-VALUES.exempt` with a reason. V-P-12 is exempted, because §2.4's derivation against the
+announced deployment is that vector's whole subject; a fixture that merely looked more concrete for
+carrying one is the defect the rule exists for.
+
+**And over the working tree, not only over what a generator writes.** The rule names three things and
+a generator only ever sees one of them: a review put a live receipt digest into `demo/app.js` and
+watched `gen-demo`, the vectors gate and every test pass, because a hand-written page is not something
+a generator inspects. `cargo xtask check-live-values` scans the synthetic surface — `demo/` and
+`vectors/`, excluding build output — and runs in the `vectors` group. The surface is named rather than
+inferred: a tree-wide scan would need an allow-list holding `docs/anchoring.md`,
+`ANNOUNCED_PROGRAM_ID`, the deploy script, the cluster harnesses and the program's own `declare_id!`,
+every one of which holds live values because its subject is the deployment, and an allow-list that long
+is a gate that refuses nothing.
+
+
+## D-127 · The qualified-person key is labelled wherever it appears
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** Every appearance of the signing key, in the interface and in the fixture files, names it as RFC 8032 §7.1's published specification test key and notes that its private half is published. Not once in a legend.
+
+**Ground.** RES-04 records that a QP key carries no credential. A demo is the one place that gets misread, and a label one scroll away from the misreading does not prevent it.
+
+**Amended 28 Sep 2026, after review, at the owner's ruling (D-130 option 1).** The label cannot go in
+the package file. §2.5 fixes what a disclosure package contains and INV-DISC-01 makes that list
+closed, so a conforming verifier refuses the first field the section does not list — demonstrated when
+the generator first emitted a `_notes` array and the verifier refused the fixture. A package carrying
+its own label is a package nobody can verify, which would cost Scene 2 the thing it exists to show.
+
+**The package is a closed contract and stays one.** The label therefore lives in the fixture
+*directory*, in `demo/fixtures/README.md`, which the manifest covers, and on screen at every
+appearance. "Not once in a legend" still binds the interface, where the risk of misreading is.
+
+**The miss was procedural and is recorded as such.** The collision between this decision and §2.5 was
+found while building, and the sidecar was chosen without putting it to the owner. The call was right;
+bringing it at the time was the obligation, and a review had to surface it instead.
+
+
+## D-128 · Scene 3 states what detection is and what it is not
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
+
+**Decision.** Scene 3 says on screen that the altered record no longer matches what was committed and the log's root is unchanged, so the alteration is **detectable** — not prevented, and not evidence of who made it — together with §0's asset-equivocation limit.
+
+**Ground.** §4.6 makes overclaiming a merge gate. A demonstration of detection is exactly where a viewer infers prevention.
+
+**The gate runs over the demo, as of 1 Oct 2026.** It did not for most of this unit's life: `scripts/claim-check.sh` and §4.6's list arrived with E-15 on `e-10/anchor-b`, while this unit was stacked on `e-11/ts-verifier` and carried neither, so an earlier wording of this ground — which said the gate ran — was wrong, and the demo was checked by hand against the 24 phrasings instead. E-10 and E-11 have since merged and this branch is rebased onto `main`, so `scripts/claim-check.sh` now reads `demo/` like any other artefact: 24 phrasings checked, 14 recorded denials, 0 unrecorded, 0 stale. The history stays because the lesson is the part worth keeping — a decision that asserts a check is running is worth no more than the check.
+
+## D-129 · The claim is narrowed; the package is not extended
+
+**Date:** 28 Sep 2026 · **Units:** E-11 (found it), E-14 (shows it) · **Class:** security necessity, as claim accuracy · **Status:** settled (owner, 28 Sep 2026)
+
+**The defect.** §0 said the architecture asserts that a record existed "in a stated position of a stated asset's chain". One disclosure package cannot establish that past `seq` 1: §1.3's leaf preimage covers neither `prev_head` nor `head`, so no signature binds them (`docs/TCU-02_CertiMining_Anchored_Log_v0.1.md`, §1.3's preimage table), and an inclusion proof binds only the leaf. INV-STATE-02's recomputation needs the leaves between, which a package does not carry. Recorded as `ts/SPEC-DEFECTS.md` SD-19; reproduced by E-11's verifier, which reports `unestablished` for any `seq` > 1.
+
+**Decision (the owner's), in his words.** *Amend the claim, don't extend the package. A package establishes that a signed record existed and was included at a stated epoch. Position in a chain is established only when the holder also holds the chain segment back to genesis or to a head they already trust, which is D-101's shape again.*
+
+**Where it landed.** §0's sentence on `e-11/ts-verifier`, and SD-19 marked resolved. `ts/src/disclosure.ts` reports `chainPosition` and accepts a caller-supplied `expectedPrevHead`; run `npm --prefix ts test` and read the `ROUND 3` and `FINDING 1` cases in `ts/test/disclosure.test.ts`. E-14's Scene 2 shows the `unestablished` line to a viewer rather than shipping a `seq` 1 fixture that avoids it.
+
+**Filed rather than decided.** A §2.5 package that carries its own chain segment — H-15, [issue #51](https://github.com/CertiMining/potash/issues/51). Binding the link properly means putting `prev_head` inside §1.3's preimage, a breaking change to every vector and the instruction data, and it would still not give uniqueness.
+
+**Recorded late.** This entry was written 30 Sep 2026. The ruling was applied on the 28th — in §0, in SD-19 and in the demo — and the decision record was never written, so `docs/DECISIONS.md` stopped at D-128 while D-127 cited "D-130 option 1" and nothing defined either. A review found it.
+
+## D-130 · The disclosure package is a closed contract, so the key's label lives beside it
+
+**Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** preference within a security necessity · **Status:** settled (owner, 28 Sep 2026)
+
+**The collision.** D-127 requires the signing key labelled as RFC 8032 §7.1's published test key wherever it appears, "not once in a legend", and names the fixture files. §2.5 fixes what a disclosure package contains and INV-DISC-01 makes that list closed, so a conforming verifier refuses the first unlisted field — demonstrated when the generator first emitted a `_notes` array and `verifyDisclosureJson` refused the fixture. A package carrying its own label is a package nobody can verify, which costs Scene 2 the thing it exists to show.
+
+**Decision (the owner's), in his words.** *The package is a closed contract and stays one; the label lives in the fixture directory and on screen at every appearance. Amend D-127 to say why the file itself cannot carry it.*
+
+**Where it landed.** `demo/fixtures/README.md`, which `demo/fixtures/MANIFEST.sha256` covers, and the demo's footer and Scene 3. D-127 carries the reason. Run `node --test "demo/test/*.test.mjs"` — the manifest test covers the sidecar as a fourth file.
+
+**And the process finding the owner attached to it.** *The right call was made; the miss was not bringing the collision at the time.* The collision was found while building and resolved without putting it to him, and a review surfaced it instead. D-127's amendment records that.
+
+## D-131 · This entry is reserved
+
+**Date:** 30 Sep 2026 · **Status:** reserved so that D-131 and D-132, put to the owner at E-12's S0, land on their own numbers rather than on numbers this file has already used.

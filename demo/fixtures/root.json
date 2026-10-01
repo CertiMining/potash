@@ -1,0 +1,20 @@
+{
+  "_notes": [
+    "A counterparty obtains a root from Solana, independently of the package. This file stands in for that fetch so the demo runs offline.",
+    "asset_commitment and genesis_head are here for the page to display the chain; INV-STATE-03 keeps the commitment off chain, and a real counterparty gets it from inside the package's signed preimage.",
+    "master_key is published here so the page can build epochs live. In a deployment the epoch key never leaves the batcher (INV-STATE-03, RES-03).",
+    "The tenure identifier, jurisdiction and registry code are synthetic. DEMO0000 is not a registry."
+  ],
+  "asset_commitment": "0x156a3f1830b0e548d5c367aa952a83ad012a1bde7b5112b2a4e26b588b7d14ee",
+  "epoch": "20723",
+  "genesis_head": "0x9793f2216338b2296c155ab142bb54f536424cc33b9460407b05f196c220b175",
+  "heads": [
+    "0x9793f2216338b2296c155ab142bb54f536424cc33b9460407b05f196c220b175",
+    "0x943497be74725ccfe57d6a9e979eb7325b31b96e62439582d7cf8e025b18c010",
+    "0x0d1cf82dee8fd1efb64ddfc38bab734593bbb3e794ccafb7047d20c8dc70f48a",
+    "0x6a56d39e2f2fbdc247ea076da7f160e0baa298a57ed325d07b6bdb257f046743"
+  ],
+  "height": "8",
+  "master_key": "0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+  "root": "0xdd0e325fc74c101e01e893d3cbd357d64fedcfb6a4aded565c0fa05b861b04e5"
+}
