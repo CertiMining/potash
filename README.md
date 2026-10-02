@@ -18,17 +18,26 @@ found defects in the previous round's fixes, which is the reason for counting th
 declaring the work reviewed. There is no OpenTimestamps worker to review: the daily cycle is run by
 hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
 
-**What is measured.** These are numbers this repository produces and checks, not estimates.
+**What is measured.** These are numbers this repository produces and checks, not estimates. Each row
+names which implementation produced it, because two of them exist and they differ by an order of
+magnitude; an earlier version of this table did not, and its Rust and TypeScript figures could not be
+told apart. Rust figures are release builds on the reference machine §4.4a names — Apple M2, 8 cores,
+macOS 26.6.2 — via `scripts/ci.sh thresholds` and `scripts/ci.sh bench`.
 
-| | Threshold | Measured |
-|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | 10,310 CU |
-| `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU |
-| TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.3 ms |
-| Epoch root build, 256 leaves | < 10 ms | 2.7 ms |
-| Inclusion proof verification | < 1 ms | 0.030 ms |
-| Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 |
-| Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 |
+| | Threshold | Measured | By |
+|---|---|---|---|
+| `publish_checkpoint` compute | ≤ 15,000 CU | 8,810 CU | LiteSVM, and the same on chain |
+| `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
+| Chain walk, 10,000 records, hash recomputation only | < 10 ms (D-136) | 7.1 ms | Rust |
+| Epoch root build, 256 leaves | < 10 ms | 0.195 ms | Rust |
+| Epoch root build, 256 leaves | < 10 ms | 2.66 ms | TypeScript |
+| Inclusion proof verification | < 1 ms | 0.0023 ms | Rust |
+| Inclusion proof verification | < 1 ms | 0.0288 ms | TypeScript |
+| TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.23 ms | TypeScript |
+| Full verification including per-record Ed25519 | none in v0.1 | 399 ms | Rust |
+| Full verification including per-record Ed25519 | none in v0.1 | 1,004 ms | TypeScript |
+| Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 | devnet, 200 epochs |
+| Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 | devnet, 200 epochs |
 
 Two independent implementations — Rust and TypeScript, the second written from the specification
 alone by someone who never read the first — agree on all 32 committed vectors, including the ones
@@ -46,7 +55,12 @@ inside the Solana runtime and outside it, across every committed preimage.
   published on day 20726, and the log caught up the next day — which is what a cadence run by hand
   does, there being no worker ([#49](https://github.com/CertiMining/potash/issues/49)).
   `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
-- There is no fuzz or property harness yet.
+- The fuzz and property harness exists (§4.5's five targets and four properties,
+  [`docs/fuzzing.md`](docs/fuzzing.md)) and **has not accumulated a history**. The nightly job is new,
+  so what is behind it is single runs at the stated counts, not a record of nights that found nothing.
+  F-05 runs 25,000 iterations rather than a million because one unit may build a 65,536-leaf tree; it
+  explores four orders of magnitude less input than F-01, and that is a cost, not a judgement that less
+  suffices.
 - The count-hiding property is computational, not information-theoretic, and rests on the batcher's
   key custody. Both are stated in Appendix A of the specification as RES-09 and RES-03.
 
@@ -128,6 +142,8 @@ taken by default.
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
+| `benches/` | §4.4a's performance figures, Criterion and the asserted thresholds ([`docs/performance.md`](docs/performance.md)) |
+| `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
 | `docs/` | the specification, every decision, and per-unit notes |
 | `scripts/ci.sh` | the whole pipeline as one script, so a local run is what CI runs |
 
@@ -136,6 +152,11 @@ taken by default.
 ```bash
 scripts/ci.sh all
 ```
+
+That is the push pipeline verbatim. The fuzz targets are not in it: they take tens of minutes and run
+nightly instead, as `scripts/ci.sh fuzz` and `.github/workflows/fuzz.yml`. What each target establishes,
+and what three of them failed to establish on the first attempt, is in
+[`docs/fuzzing.md`](docs/fuzzing.md).
 
 Toolchain versions are pinned and the script refuses to proceed on the wrong ones. The Solana
 programs build only through `scripts/build-sbf.sh`, which uses a project-private Rust installation so

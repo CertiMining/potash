@@ -90,11 +90,40 @@ signature in the set. No generated key and no real key belongs in this repositor
 | `vectors` | The manifest, and regeneration. |
 | `checks` | Formatting, clippy and the tests, in each of the four feature sets, for both engine crates, and the bare-metal `no_std` builds. |
 | `miri` | The engine crates under Miri. The statistical privacy tests and every tree above `H = 8` are ignored there and run in `checks` instead. Miri interprets a hash in about a tenth of a second, so a tree at `H = 12` costs minutes and one at `H = 16` costs hours, while the shorter trees execute the same code with a shorter loop. Miri is looking for undefined behaviour, not for arithmetic. |
-| `deny` | Advisories, licences, sources and bans, for the Rust tree. |
+| `bench-band` | §4.4a's wall-clock measures on this runner against `benches/BASELINE.toml`, failing past the band (D-132). Not §4.4a's absolute figures: those belong to the reference machine §4.4a names and are asserted by `scripts/ci.sh thresholds`, which is `#[ignore]`d and run before submission. An absent baseline entry fails and prints what it measured. |
+| `deny` | Advisories, licences, sources and bans, over **two** graphs: the workspace, and `fuzz/`, which is its own Cargo workspace and therefore invisible to a root `cargo deny check` (`cargo deny list \| grep -c libfuzzer` answers 0). Both use the same `deny.toml`, so tooling is not held to a looser policy than shipped code. |
 | `ts` | The independent TypeScript verifier of E-11: its supply-chain gate, its typecheck and build, and its run of every committed vector. `cargo deny` reads `Cargo.lock` and sees no npm package, so `scripts/ts-gate.sh` carries the same discipline for `ts/package-lock.json` — advisories at high or above, and a closed licence list in `ts/LICENCES.allow` (D-93). |
 
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
+
+`thresholds` and `bench` are not in `all` either, for two different reasons: the first asserts about a
+machine CI is not, and the second asserts nothing — it reports the Criterion distributions behind the
+figures. `docs/performance.md` says which mechanism covers each of §4.4a's seven rows.
+
+`fuzz` is not in `all` and has no row above, because it is not part of the push pipeline: §4.5's five
+targets run nightly in `.github/workflows/fuzz.yml`, and `scripts/ci.sh fuzz` is that job verbatim.
+`docs/fuzzing.md` says what each target establishes and what its iteration count cost.
+
+**Never change the working tree under a running verification, and that includes switching branches.**
+The narrow version of this rule said only "never edit a script while it is running", and the narrow
+version was not enough: on 2 Oct 2026 a `scripts/ci.sh all` run on one branch had the tree switched to
+another beneath it, and reported `deny: exit 1` and `bench-band: exit 101` — the first because the other
+branch's `deny.toml` lacked an exception while `fuzz/` sat untracked beside it, the second for a group
+that branch does not define. The run had executed against two different trees and its summary looked
+like an ordinary set of results. **A verification is only evidence about the tree that stood still for
+it.** Finish the run, or use a second checkout.
+
+The original and narrower case, which is the same failure in a smaller shape:
+
+**Never edit a script while it is running.** Bash reads a script incrementally, so changing the file
+under a live run shifts where it continues from. Editing `scripts/ci.sh` during a `scripts/ci.sh fuzz`
+run on 1 Oct 2026 made the shell fall out of `fuzz()` and execute `kat01-onchain`, `checks` and `miri`
+in sequence — groups nobody had asked for, in a run whose output was being read as a measurement.
+Nothing was corrupted that time. The failure mode is that a run reports a result for work other than
+the work requested, which is indistinguishable from a passing run. Wait for the run, or branch the
+edit; a copy of the script elsewhere is not a workaround, because its first act is
+`cd "$(dirname "$0")/.."` and from another directory that resolves outside the repository.
 
 ## Editing the specification
 
@@ -232,3 +261,19 @@ cargo test --release -p certimining-log -- --ignored
 
 Its three correlations are recorded on issue #16. The bound there is 0.02, against 0.05 at the sample
 CI runs.
+
+## Run before submission, because nothing else will
+
+Two checks are `#[ignore]`d on purpose and will not run themselves. An ignored test that nobody is told
+to run is an ignored test that never runs, so both belong on the submission checklist rather than in a
+comment:
+
+```sh
+cargo test --release -p certimining-log -- --ignored   # V-Z-04's full 10,000-epoch run
+scripts/ci.sh thresholds                               # §4.4a's absolute wall-clock figures
+```
+
+The second asserts §4.4a's figures on the reference machine §4.4a names, which CI is not — D-132's split
+sends the absolutes there and gives CI a band against its own baseline instead. `docs/performance.md` says
+which mechanism covers each of §4.4a's seven rows, and `scripts/ci.sh fuzz` is the third thing CI does not
+run on a push, for a different reason: it has its own nightly workflow.

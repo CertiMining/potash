@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! E-04's property tests: `apply` is total on any record, a refused record never moves the chain,
 //! and the flags only ever carry the two bits schema 1 defines.
+//!
+//! E-12 adds §4.5's **P-01** and **P-02**. P-01 is the chain's whole point stated as a property —
+//! removing or reordering any leaf changes the head — and P-02 is determinism, which every other
+//! property here quietly assumes.
 
 use certimining_core::{
     AssetChain, ChainSnapshot, ChainState, Digest, Hasher, PayloadUri, RecordLeafInput,
@@ -86,6 +90,65 @@ prop_compose! {
     }
 }
 
+/// A chain of `count` records that each commit to the head before them, so the whole thing applies.
+///
+/// P-01 is about accepted leaves: a chain of refusals has no head to compare. The records differ by
+/// `seed` so the property is not tested against one fixed shape.
+fn valid_chain(count: usize, seed: u64) -> Vec<RecordLeafInput> {
+    let mut chain = Chain::start(&[0x11; 32], 1).expect("starts");
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let mut record = RecordLeafInput {
+            prev_head: chain.head(),
+            seq: (i as u64) + 1,
+            payload_digest: [(seed as u8).wrapping_add(i as u8); 32],
+            assessment_digest: [0x33; 32],
+            qp_key: [0x44; 32],
+            expected_qp_key: None,
+            signature: Some([0x55; 64]),
+            category: ((seed.wrapping_add(i as u64)) % 5) as u8,
+            effective_at: 1_700_000_000 + (i as i64) * 86_400,
+            change_identified_at: 1_700_000_000,
+            payload_uri: PayloadUri::from_slice(b"ipfs://bafyprop").expect("fits"),
+            ext_commitment: None,
+        };
+        // Effective dates are non-decreasing (INV-STATE-04), so a swap must not be refused for that
+        // reason rather than for the one P-01 is about. Flat dates keep the comparison honest.
+        record.effective_at = 1_700_000_000;
+        let _ = chain
+            .apply(&record)
+            .expect("a record built against the current head applies");
+        out.push(record);
+    }
+    out
+}
+
+/// Re-point each record at the head before it, so a shortened or reordered chain still applies and
+/// the only thing that changed is which leaves are in it and in what order.
+fn relink(records: &[RecordLeafInput]) -> Vec<RecordLeafInput> {
+    let mut chain = Chain::start(&[0x11; 32], 1).expect("starts");
+    let mut out = Vec::with_capacity(records.len());
+    for (i, r) in records.iter().enumerate() {
+        let mut record = r.clone();
+        record.prev_head = chain.head();
+        record.seq = (i as u64) + 1;
+        if chain.apply(&record).is_err() {
+            return out;
+        }
+        out.push(record);
+    }
+    out
+}
+
+/// The head after applying all of `records` in order, or `None` if any is refused.
+fn head_after(records: &[RecordLeafInput]) -> Option<Digest> {
+    let mut chain = Chain::start(&[0x11; 32], 1).expect("starts");
+    for r in records {
+        let _ = chain.apply(r).ok()?;
+    }
+    Some(chain.head())
+}
+
 proptest! {
     #![proptest_config(config())]
 
@@ -131,6 +194,84 @@ proptest! {
     fn code_0x09_is_unreachable(r in any_record()) {
         let mut chain = Chain::start(&[0x11; 32], 1).expect("starts");
         prop_assert_ne!(chain.apply(&r).err(), Some(RegistryError::CategorySequenceUnsupported));
+    }
+
+    /// **P-01.** Removing or reordering any leaf in a chain of n changes `hₙ`.
+    ///
+    /// This is INV-STATE-02 from the other side: the invariant says a later head is recomputable from
+    /// an earlier one and the leaves between, and the property says no *other* sequence of leaves
+    /// reaches the same head. A chain that failed this would let an issuer drop a record and present
+    /// a head that still verified.
+    ///
+    /// The records are built valid by construction — each committing to the head before it — because
+    /// a chain of refused records has no head to compare, and the property is about accepted ones.
+    #[test]
+    fn p01_removing_or_reordering_a_leaf_changes_the_head(
+        count in 2usize..=6,
+        seed in any::<u64>(),
+    ) {
+        let records = valid_chain(count, seed);
+        let whole = head_after(&records).expect("a valid chain applies");
+
+        // Remove each leaf in turn. Every shorter chain must reach a different head.
+        for drop in 0..records.len() {
+            let mut shorter: Vec<RecordLeafInput> = records.clone();
+            shorter.remove(drop);
+            let relinked = relink(&shorter);
+            if let Some(head) = head_after(&relinked) {
+                prop_assert_ne!(
+                    head, whole,
+                    "dropping leaf {} reached the same head as the whole chain", drop
+                );
+            }
+        }
+
+        // Swap each adjacent pair. Order is part of what the head commits to.
+        for i in 0..records.len().saturating_sub(1) {
+            let mut swapped: Vec<RecordLeafInput> = records.clone();
+            swapped.swap(i, i + 1);
+            let relinked = relink(&swapped);
+            if let Some(head) = head_after(&relinked) {
+                prop_assert_ne!(
+                    head, whole,
+                    "swapping leaves {} and {} reached the same head", i, i + 1
+                );
+            }
+        }
+    }
+
+    /// **P-02.** `apply` is deterministic: the same record against the same starting state gives the
+    /// same answer, every time.
+    ///
+    /// Every other property in this file assumes it. §4.5 asks for 10,000 generated cases, which is
+    /// `PROPTEST_CASES=10000` against this test; the default run is `config()`'s 512, and the full
+    /// count runs before submission the way V-Z-04's does.
+    #[test]
+    fn p02_apply_is_deterministic(
+        r in any_record(),
+        head in any::<[u8; 32]>(),
+        seq in any::<u64>(),
+        last_effective_at in any::<i64>(),
+        saw_resource in any::<bool>(),
+        previous_category in proptest::option::of(0u8..=4),
+    ) {
+        let snapshot = ChainSnapshot { head, seq, last_effective_at, saw_resource, previous_category };
+        let mut first = Chain::resume(&[0x11; 32], 1, snapshot).expect("resumes");
+        let mut second = Chain::resume(&[0x11; 32], 1, snapshot).expect("resumes");
+
+        let a = first.apply(&r);
+        let b = second.apply(&r);
+
+        match (a, b) {
+            (Ok(x), Ok(y)) => {
+                prop_assert_eq!(x.head, y.head, "two applications gave different heads");
+                prop_assert_eq!(x.leaf, y.leaf, "two applications gave different leaves");
+                prop_assert_eq!(x.flags, y.flags, "two applications gave different flags");
+            }
+            (Err(x), Err(y)) => prop_assert_eq!(x, y, "two applications gave different codes"),
+            (x, y) => prop_assert!(false, "one application succeeded and the other did not: {:?} and {:?}", x, y),
+        }
+        prop_assert_eq!(first.snapshot(), second.snapshot(), "the two chains ended in different states");
     }
 
     /// A chain resumed from a snapshot reports exactly that snapshot back.

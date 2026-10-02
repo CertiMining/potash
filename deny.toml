@@ -38,6 +38,30 @@ private = { ignore = true }
 name = "webpki-roots"
 allow = ["CDLA-Permissive-2.0"]
 
+# One crate, one licence, same shape (D-89, D-135). `libfuzzer-sys` is §4.5's fuzzing driver and lives
+# in `fuzz/`, its own Cargo workspace, which `cargo deny` reaches only because `scripts/ci.sh deny`
+# points at that manifest explicitly. It is not in the shipped workspace: nothing depends on
+# `certimining-fuzz`, and neither it nor `arbitrary` appears in the graph of the client, the engine
+# crates or the program, so it reaches nothing a user runs.
+#
+# **Two licence statements disagree, and both are permissive, which is why this is an exception rather
+# than a wider allow.** The crate declares `(MIT OR Apache-2.0) AND NCSA` at its `Cargo.toml:25` and
+# repeats NCSA in its `README.md:101`. The vendored LLVM sources it actually compiles say otherwise:
+# all 47 `.cpp` and `.h` files under `libfuzzer/`, the set `build.rs:38` feeds to `cc`, carry
+# `SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception`, and the crate ships no NCSA licence text.
+# LLVM relicensed away from NCSA before this snapshot. `cargo deny` reads the declaration, so NCSA is
+# what has to be allowed here; the file headers are recorded because they are what the compiled code
+# carries, and a reader should not have to rediscover the discrepancy.
+#
+# Scoped to this crate, so a second crate arriving under NCSA still fails the gate.
+#
+# Both graphs read this one file, so each run reports the other's exception as
+# `license-exception-not-encountered`: the workspace run says this one is unmatched, the fuzz run says
+# `webpki-roots` is. Warnings, not failures, and the symmetry is the cost of one policy over two graphs.
+[[licenses.exceptions]]
+name = "libfuzzer-sys"
+allow = ["NCSA", "Apache-2.0 WITH LLVM-exception"]
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

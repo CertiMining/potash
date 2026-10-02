@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# §4.4a's figures, in their own crate (E-13).
+#
+# **Why not in the engine crates.** Criterion was first a dev-dependency of `certimining-core` and
+# `certimining-log` with `[[bench]]` targets beside their tests, which is the conventional layout. It is
+# the wrong one here: `cargo test -p certimining-core` compiles bench targets, so Criterion entered the
+# `checks` group's per-feature-set test builds and, worse, `cargo miri test -p certimining-core`. Miri
+# interprets what it builds. Benchmarks have no business in a run looking for undefined behaviour, and a
+# large dependency tree has no business being interpreted.
+#
+# This crate is a workspace member, so `cargo deny check` covers it and `cargo clippy --workspace
+# --all-targets` lints it — unlike `fuzz/`, which is a separate workspace because cargo-fuzz needs a
+# nightly toolchain and a sanitizer (D-131). Criterion needs neither.
+[package]
+name = "certimining-benches"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "§4.4a's performance figures, measured with Criterion (D-132). Benchmarks only; nothing here ships."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+certimining-core = { path = "../crates/certimining-core", features = ["native"] }
+certimining-log = { path = "../crates/certimining-log", features = ["native"] }
+# The full-verification measure signs each record with RFC 8032 §7.1's published key, so the Ed25519
+# path being measured is the real one. The engine carries no signer.
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+# §4.4a asks for figures measured and reported, and a single wall-clock sample is not a published
+# number (D-132). `default-features = false` drops the HTML report and its plotting tree.
+criterion = { version = "=0.8.2", default-features = false }
+
+[[bench]]
+name = "chain"
+path = "chain.rs"
+harness = false
+
+[[bench]]
+name = "epoch"
+path = "epoch.rs"
+harness = false
+
+# §4.4a's absolute figures, asserted on the reference machine (D-132, D-136). `#[ignore]`d, so a plain
+# `cargo test` does not run it; CI is not the machine §4.4a names.
+[[test]]
+name = "thresholds"
+path = "thresholds.rs"
+
+# The CI half of §4.4a's wall-clock split (D-132): a committed per-runner baseline and a band. Not
+# `#[ignore]`d — this one is meant to run where CI runs.
+[[test]]
+name = "band"
+path = "band.rs"
+
