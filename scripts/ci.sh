@@ -221,6 +221,13 @@ miri() {
 }
 
 # Advisories, licences and sources (D-13, D-18). The version is read from the installed tool.
+#
+# **Two graphs, because the workspace is not the whole repository.** `fuzz/` is its own Cargo workspace
+# (D-131), so a root `cargo deny check` never sees `libfuzzer-sys` or `arbitrary` — verifiable as
+# `cargo deny list | grep -c libfuzzer`, which answers 0. D-131 committed those two crates to these
+# gates "like everything else, or they do not ship", and until the fuzz manifest is checked explicitly
+# that commitment is untrue rather than met. Both graphs use the same deny.toml, so there is one policy
+# and not a looser one for tooling.
 deny() {
   local version
   version="$(cargo deny --version)"
@@ -228,7 +235,10 @@ deny() {
     echo "deny: expected cargo-deny $CARGO_DENY_VERSION, got: $version" >&2
     return 1
   fi
-  cargo deny check
+  GROUP_FAILED=""
+  check "deny workspace" cargo deny check
+  check "deny fuzz" cargo deny --manifest-path fuzz/Cargo.toml --config deny.toml check
+  group_result deny
 }
 
 # §4.5's fuzz targets, at the iteration counts §4.6 gates on (D-131). This group is **not** in `all`:
