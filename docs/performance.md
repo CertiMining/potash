@@ -42,6 +42,11 @@ D-132 splits it:
 An absent baseline entry **fails** and prints what it measured. A baseline nobody measured would be a
 gate that cannot fail, and this repository has filed that defect more than once.
 
+The band itself is **50%, and that is a guess**. How much these measures vary between runs on a shared
+runner has not been observed, so the number is not derived from anything; it is wide because a band that
+flakes gets disabled and a disabled gate is worse than a loose one. It is set from observed spread once a
+few runs exist. Until then a failure there means "look", not "something regressed by at least half".
+
 ## The reference machine
 
 **Apple M2, 8 cores, macOS 26.6.2.** §4.4a names it, because a figure without a machine is not a figure.
