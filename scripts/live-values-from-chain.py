@@ -62,6 +62,8 @@ RPC = os.environ.get("CERTIMINING_RPC", "https://api.devnet.solana.com")
 # digest, 1 anchor kind, 1 bump, 6 reserved.
 CHECKPOINT_LEN = 106
 CHECKPOINT_ROOT = (18, 50)
+CHECKPOINT_SLOT = (50, 58)
+CHECKPOINT_UNIX = (58, 66)
 CHECKPOINT_RECEIPT = (66, 98)
 # §2.4's LogConfig: 8 discriminator, 2 schema, 32 authority, then heights and epochs.
 LOG_CONFIG_LEN = 68
@@ -74,6 +76,16 @@ LOG_CONFIG_AUTHORITY = (10, 42)
 # discriminators are computed here rather than copied, for the reason §2.4 gives for computing the
 # address: a constant transcribed by hand is a second opinion about what the program wrote.
 SCHEMA_VERSION = 1
+
+
+def le_u64(data: bytes, span: tuple) -> int:
+    """A little-endian u64 at §2.4's offsets."""
+    return int.from_bytes(data[span[0] : span[1]], "little", signed=False)
+
+
+def le_i64(data: bytes, span: tuple) -> int:
+    """A little-endian i64. `published_unix` is signed in §2.4, so it is read signed here."""
+    return int.from_bytes(data[span[0] : span[1]], "little", signed=True)
 
 
 def discriminator(struct_name: str) -> bytes:
@@ -281,6 +293,14 @@ def main() -> int:
         if len(account_data) == CHECKPOINT_LEN and schema_1(account_data, CHECKPOINT_DISCRIMINATOR):
             check_address(raw_address, "a checkpoint address")
             check(hex32(account_data, CHECKPOINT_ROOT), f"a root stored at {address}")
+            # **The publication slot and timestamp, added after a review (PR #57, round one, High).**
+            # Both are values the deployment produced and both were invisible to this script and
+            # unlistable in LIVE-VALUES.txt, which accepted only hex and base58. A fixture carried a
+            # real slot beside a fabricated root and a fabricated receipt digest and both halves of the
+            # gate exited 0. They are little-endian u64 and i64 at §2.4's offsets, compared as the
+            # decimal text the list holds.
+            check(str(le_u64(account_data, CHECKPOINT_SLOT)), f"a published slot stored at {address}")
+            check(str(le_i64(account_data, CHECKPOINT_UNIX)), f"a published timestamp stored at {address}")
             digest = hex32(account_data, CHECKPOINT_RECEIPT)
             if int(digest, 16) != 0:
                 check(digest, f"a receipt digest stored at {address}")

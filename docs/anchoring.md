@@ -194,11 +194,28 @@ the network and CI has none: `cargo xtask check-live-values` in the `vectors` gr
 which is that no value in the list reaches a synthetic artifact. The two halves are not
 interchangeable, and cycles four and five showed it — both were published, stamped, attached and written
 up here, while their receipt digests and attach signatures went unlisted until the script was run again
-on 2 Oct 2026. The static gate passed throughout, because nothing was fabricated; what was missing was
-the list's own completeness.
+on 2 Oct 2026. The static gate passed throughout; what was missing was the list's own completeness.
 
-Every receipt is committed and every one is the upgraded form, so `ots verify` reaches a Bitcoin block
-header rather than a calendar's promise. Each attached digest is `Keccak256(TAG_RCPT ‖ len ‖ receipt)`
+**An earlier version of this paragraph said the static gate passed "because nothing was fabricated", and
+that was an overclaim a review refuted (PR #57, round one, High).** Something fabricated was there. At
+that head `demo/test/footprint.test.mjs` built a synthetic checkpoint carrying epoch 20723's **real**
+publication slot beside a root and a receipt digest invented for the fixture — a live provenance value
+lending credibility to data published nowhere, which is precisely the pairing LIVE-VALUES.txt was written
+after. Both halves of the gate exited 0, and neither was wrong to: the list accepted only 32-byte hex and
+base58, so a decimal slot could not be listed even deliberately, and the chain script never read those two
+offsets. The rule was unqualified and its enforcement had a shape-sized hole in it.
+
+What a static pass establishes is therefore narrower than that sentence claimed: no **listed** value
+appears in the synthetic surface. It says nothing about live values the list does not hold. Three things
+changed rather than the claim being softened — `published_slot` and `published_unix` are listed for every
+epoch, `cargo xtask check-live-values` accepts decimals of six digits or more, and the chain script reads
+and compares both fields. Epoch numbers are still absent on purpose: a UTC day index is a date rather than
+something the deployment produced, and the demo is legitimately about epoch 20723.
+
+Every **attached** receipt — epochs 20723 to 20727 — is committed and every one is the upgraded form, so
+`ots verify` reaches a Bitcoin block header rather than a calendar's promise. Epoch 20728's is not
+committed and is not attached, which the row above says and which this sentence used to contradict by
+saying "every receipt" without qualification (PR #57, round one, Low). Each attached digest is `Keccak256(TAG_RCPT ‖ len ‖ receipt)`
 over exactly the committed bytes, so a reader recomputes it from the file rather than taking this
 document's word:
 

@@ -46,8 +46,16 @@ function account(overrides = {}) {
     discriminator: CHECKPOINT_DISCRIMINATOR,
     epoch: 20723n,
     root: ROOT,
-    publishedSlot: 504985662n,
-    publishedUnix: 1790500000n,
+    // Not the announced log's slot or time. This fixture used to carry epoch 20723's **real**
+    // publication slot beside the fabricated root and receipt digest above — a live provenance value
+    // lending credibility to data published nowhere, which is the defect LIVE-VALUES.txt exists to
+    // refuse. A review found it (PR #57, round one, High); both halves of the gate had exited 0,
+    // because decimal values could not be listed at all. They can now, and these two are visibly
+    // synthetic so no reader mistakes them for provenance. The real figure is deliberately not quoted
+    // here: writing it into this file would put it straight back, and the gate refuses it — which it
+    // did, on the first attempt at this comment.
+    publishedSlot: 111111111n,
+    publishedUnix: 1111111111n,
     receiptDigest: RECEIPT,
     anchorKind: 1,
     bump: 255,
@@ -64,8 +72,8 @@ test("the account the demo lays out is the account the verifier decodes", () => 
   assert.equal(decoded.schemaVersion, 1);
   assert.equal(decoded.epoch, 20723n);
   assert.equal(toHex(decoded.root), toHex(ROOT));
-  assert.equal(decoded.publishedSlot, 504985662n);
-  assert.equal(decoded.publishedUnix, 1790500000n);
+  assert.equal(decoded.publishedSlot, 111111111n);
+  assert.equal(decoded.publishedUnix, 1111111111n);
   assert.equal(toHex(decoded.receiptDigest), toHex(RECEIPT));
   assert.equal(decoded.anchorKind, 1);
   assert.equal(decoded.bump, 255);

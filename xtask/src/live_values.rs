@@ -125,10 +125,23 @@ pub fn check_list_shape(root: &Path) {
         let looks_like_base58 = v.value.len() >= 32
             && v.value.len() <= 88
             && v.value.chars().all(|c| c.is_ascii_alphanumeric());
+        // **A third shape, added after a review found the second gap this file has had.** The rule
+        // covers "no value from a live deployment", unqualified, and two of a checkpoint's fields are
+        // decimal: `published_slot` and `published_unix`. Only hex and base58 were accepted here, so a
+        // slot could not be listed even by someone who wanted to — and `demo/test/footprint.test.mjs`
+        // carried epoch 20723's real slot beside a fabricated root and a fabricated receipt digest,
+        // which is the exact pairing this rule was written for, while both halves of the gate exited 0.
+        //
+        // Six digits or more, all decimal. The floor is there because short numbers are everywhere in a
+        // fixture — lengths, counts, epoch day indices — and listing one would make the gate match text
+        // that has nothing to do with the deployment. Epoch numbers are deliberately **not** listed for
+        // that reason: a UTC day index is a date, not something the deployment produced, and the demo is
+        // legitimately about epoch 20723.
+        let looks_like_decimal = v.value.len() >= 6 && v.value.chars().all(|c| c.is_ascii_digit());
         assert!(
-            looks_like_hex || looks_like_base58,
-            "LIVE-VALUES.txt: {:?} is neither a 32-byte hex value nor a base58 identifier, and the \
-             rule covers those two shapes",
+            looks_like_hex || looks_like_base58 || looks_like_decimal,
+            "LIVE-VALUES.txt: {:?} is not a 32-byte hex value, a base58 identifier, or a decimal of six \
+             digits or more, and the rule covers those three shapes",
             v.value
         );
     }
