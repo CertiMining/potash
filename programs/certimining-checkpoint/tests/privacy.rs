@@ -248,7 +248,7 @@ fn root_for(records: usize) -> [u8; 32] {
     assert_eq!(
         built.leaves.len(),
         1usize << DEPLOYED_HEIGHT,
-        "every epoch is full, whatever the record count (INV-TREE-02)"
+        "every epoch is full, whatever the record count (INV-TREE-01)"
     );
     built.root
 }
