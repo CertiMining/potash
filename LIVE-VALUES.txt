@@ -42,18 +42,44 @@ EKRAiF8Z4jWCc8pDeEr9QSLWo4Tjg5oBmnepA359i9N5  checkpoint address, epoch 20724
 0xc5dfb5f797a761fe219da632a179735ff1c95cd2ff8ca95bd2f141519cc8cd4e  checkpoint address, epoch 20724, as bytes
 Fo2xeMegoVvGZZm7YasuZehze9effYpKnY2BiZBDKdWQ  checkpoint address, epoch 20725
 HLEMVonzEV2163NFQiJWyTMoHCgBktx9wcWsbBBi3pyM  checkpoint address, epoch 20726
-0xf5a37e4728a4780c0a34db011f976d6bd0e908dce2cab2624fc1b3801a98839e  checkpoint address, epoch 20726, as bytes
+0xf5a37e4728a4780c0a34db011f976d6bd0e908dce2cab2624fc1b3801a98839e  checkpoint address, epoch 20727, as bytes
 HXsUrVsfdmGm4e4UW1cWbh6n2wtyt18uCM6iAeioS22R  checkpoint address, epoch 20727
-0xf2a81ffad64226b76332eb49d17929532ccd553cafe8d631c5a40f8d94079e00  checkpoint address, epoch 20727, as bytes
+0xf2a81ffad64226b76332eb49d17929532ccd553cafe8d631c5a40f8d94079e00  checkpoint address, epoch 20726, as bytes
+8c1SA3Ncp2kZ7zMrcSLZWLt11cLkY36wi87nQb6NMeA  checkpoint address, epoch 20728
+0x01f2a61427e822d04504d687a478f40743f543671a9a4d5d24feeb2ad4571d53  checkpoint address, epoch 20728, as bytes
 0xdbce8cb6d83ff2a43db7dfbc197246d77c245597f4d99946fab407ecf269aa09  checkpoint address, epoch 20725, as bytes
 0xdc349df9f57964294692bebc3b192906a40b43b3de2d2414a73b581bdc6d0791  published root, epoch 20723
 0x8ab166bab0ffffa380ff1929cdb24c58bf0043741944739f217d3bb968f02891  published root, epoch 20724
 0x0d872549657176aa136bef759843b1dfc5b2d5b33e4521f5cd999d4d57a86443  published root, epoch 20725
 0x93bb7266ddff74382349af52c8229d7dc78627f471b7cef5f0fe1fb8d212a63e  published root, epoch 20726
 0xaf59b7a0637098badeaf32ed52496bd37e29b3344a7fb7835fcb9fe2b03f9a73  published root, epoch 20727
+0x7c6b6c2d9b0e2426e15372f7629737e6f44d1efa58c86dcd4e3b4a12ce9d8d07  published root, epoch 20728
+
+# The publication slot and timestamp of every epoch, which a review found were never listed at all
+# (PR #57, round one, High). Two of a checkpoint's fields are decimal and this file accepted only
+# hex and base58, so a slot could not be listed even deliberately — and demo/test/footprint.test.mjs
+# carried epoch 20723's real slot beside a fabricated root and a fabricated receipt digest while both
+# halves of the gate exited 0. That pairing is the defect this file exists for.
+#
+# Epoch numbers are deliberately absent: a UTC day index is a date rather than something the
+# deployment produced, and the demo is legitimately about epoch 20723.
+504985662  published slot, epoch 20723
+504997440  published slot, epoch 20724
+505533854  published slot, epoch 20725
+506347475  published slot, epoch 20726
+506347535  published slot, epoch 20727
+506679656  published slot, epoch 20728
+1790559280  published unix timestamp, epoch 20723
+1790562009  published unix timestamp, epoch 20724
+1790685854  published unix timestamp, epoch 20725
+1790875300  published unix timestamp, epoch 20726
+1790875314  published unix timestamp, epoch 20727
+1790954513  published unix timestamp, epoch 20728
 0xb0191834ee402a4f4e961a7f3974865b2c6f8c184835e18706e0974515a1cdf7  attached receipt digest, epoch 20723
 0x5b6f5fd971c3bc05e2164c35bf357dbbe73595b5f326a579739d4c0f16e89cf8  attached receipt digest, epoch 20724
 0x5046e0f027962a041ccb254a1d8c1b76dc4019d1b5b242c06fe68a5b0fc6c28b  attached receipt digest, epoch 20725
+0x8dbc93f4e4d1f6c257bc1d43813cc33234e5f2c4fda12f427509230d4e148f6a  attached receipt digest, epoch 20726
+0x600a93158741542f04aee04a01d5174f225f3d87cecfd8e8bea33cdc488a9917  attached receipt digest, epoch 20727
 5cxt6xvi2nLVu7oP73YMw3xdesX84afRcxke7SkiBDsoGJFDCHK6BPDpF8u6my8RUuMD3LjNADggmF5JXPLEzhwF  deploy signature, announced deployment
 5DaRprPLekNCpsvSYgrwapTBjpqpKg4gWy2tKopfQMCrLY5wZHXdZSEQqgVgajQMyHuZRmGmRE4iNXAGGbhBRcpG  initialize signature
 MFjCafKz5oqJgoFGJXrndydiAAueG7BqA8ynSbWEVeRpoAT8VGpX7GrM6eBTpshzwRNMtZkLzYq6tN3ZDnCserT  publish_checkpoint signature, epoch 20723
@@ -61,6 +87,9 @@ MFjCafKz5oqJgoFGJXrndydiAAueG7BqA8ynSbWEVeRpoAT8VGpX7GrM6eBTpshzwRNMtZkLzYq6tN3Z
 5o3yZ8fYFdG5hdu8ByrZCRVLdk3FXgAcV9efNboywiLfNiwiL5JY7fC9yBfa3W9qnrGdRjYTiwbb12yBPymkFHBX  publish_checkpoint signature, epoch 20725
 L6oGSoScooUL29an86QFzWahX5qhMAesnCVp4fwXkHjNXhkXG3Bgot6Yi2kQBDzfoCctqjYwKHDJjWerR7qwXTx  publish_checkpoint signature, epoch 20726
 56Um8EpzPRTTQ6jU2pZRP6SMAVNE5D5nzoYAsG9gfC19iuok2y9VVun8bVQVy9oL32CZJ56gi76YikpxBywSk7Po  publish_checkpoint signature, epoch 20727
+2WYoX2QKBkYK5aK3fZLhHGBFXC87buschSVS2ikY3Ptj6sKfmTXTgJ5PTm9MsdjjphREErjU8XCyqxy1f8U4DYcL  publish_checkpoint signature, epoch 20728
 5GQKE7N92h9yScJDqLsMV2hx5vogGsHdZGMrZGvpifEhwaGBBDLNj21HUpE4G5LEbZNHXsShyV3Yw3DJvhSMzmGm  attach_anchor_receipt signature, epoch 20723
 3ri9n1YSk4twGAUNJmgHrnqsxkCperoi8VegevtGYAg5Zrje2DtjbsHhfNEHGnACkX7VT6ggVRpmtrXdynhq1SQA  attach_anchor_receipt signature, epoch 20724
 24tcWkjWZNVArdRK97CNUdh91LeqowV5QHUSmPpAXnQNHLAYygVuwwkkXmv1DXSU5T9wjjfJupzP5GRmELbtgHmB  attach_anchor_receipt signature, epoch 20725
+63BWjGKfdYJ8Ziu5XmnKE3zxgxtPZQpdJq3BJ868jGZBjSFESbF3S4AuCszmuKxTjBRXuFPUsyubfPv5ac6aHcEy  attach_anchor_receipt signature, epoch 20726
+5yLPgvurRpRh85mfUMXgy1Cn8F3FLDrccYyV3ii4n7XBC83sJiWD9P8xUiPy53MsfJGYHJtqkGKKQHYE8DVeDpdQ  attach_anchor_receipt signature, epoch 20727
