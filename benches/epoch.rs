@@ -2,8 +2,9 @@
 //! §4.4a's two epoch measures (E-13, D-132), as distributions.
 //!
 //! Both at the deployed height, `H = 8`, so the figures describe the log that is announced. The tree is
-//! full either way (INV-TREE-02), so 256 is the capacity and the record count decides only how many of
-//! those leaves are real.
+//! full either way (INV-TREE-01, "every epoch tree has exactly `C` leaves"), so 256 is the capacity and
+//! the record count decides only how many of those leaves are real. INV-TREE-02 is a different claim —
+//! that padding is indistinguishable from real leaves — and is not what makes the tree full.
 
 use certimining_benches::{real_leaves, EPOCH, HEIGHT, MASTER};
 use certimining_core::NativeKeccak;
