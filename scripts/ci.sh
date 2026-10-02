@@ -241,6 +241,29 @@ deny() {
   group_result deny
 }
 
+# §4.4a's wall-clock half, the CI side of D-132's split. Compute units are deterministic and are
+# asserted absolutely by the `compute` test in kat01-onchain; wall-clock is not, so a shared runner is
+# held to its own previous figures instead of to §4.4a's absolutes. benches/BASELINE.toml carries those
+# figures and the band; an absent entry fails and prints what it measured, because a baseline nobody
+# measured is a gate that cannot fail.
+#
+# `--release` is not optional: a debug build measures the optimiser's absence.
+bench_band() {
+  cargo test --release -p certimining-benches --test band
+}
+
+# §4.4a's absolute figures, asserted on the reference machine §4.4a names (D-132, D-136). **Not in
+# `all`**, because CI does not run on that machine; run before submission, the way V-Z-04's full
+# 10,000-epoch run is.
+thresholds() {
+  cargo test --release -p certimining-benches --test thresholds -- --ignored --nocapture
+}
+
+# The Criterion distributions behind those figures (D-132). Not in `all`: minutes, and nothing asserts.
+bench() {
+  cargo bench -p certimining-benches
+}
+
 # §4.5's fuzz targets, at the iteration counts §4.6 gates on (D-131). This group is **not** in `all`:
 # it runs in its own nightly workflow, .github/workflows/fuzz.yml, because `all` is the push pipeline
 # verbatim and these runs take tens of minutes rather than seconds.
@@ -343,6 +366,9 @@ run() {
     miri) miri ;;
     deny) deny ;;
     fuzz) fuzz ;;
+    bench-band) bench_band ;;
+    thresholds) thresholds ;;
+    bench) bench ;;
     ts) ts ;;
     *) echo "unknown group: $1" >&2; return 2 ;;
   esac
@@ -354,10 +380,11 @@ run() {
 #
 # `fuzz` is deliberately not in this list. ci.yml runs on every push and the fuzz group takes tens of
 # minutes, so it has its own nightly workflow; `all` stays the push pipeline verbatim, which is the
-# only reason the list is worth comparing against ci.yml at all.
+# only reason the list is worth comparing against ci.yml at all. `thresholds` and `bench` are out for a
+# different reason: the first asserts about a machine CI is not, and the second asserts nothing.
 all() {
   local failed=0 summary="" group code log
-  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts; do
+  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts bench-band; do
     log="$(mktemp)"
     echo "===== $group"
     run "$group" 2>&1 | tee "$log"

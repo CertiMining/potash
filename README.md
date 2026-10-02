@@ -133,6 +133,7 @@ taken by default.
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
+| `benches/` | §4.4a's performance figures, Criterion and the asserted thresholds ([`docs/performance.md`](docs/performance.md)) |
 | `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
 | `docs/` | the specification, every decision, and per-unit notes |
 | `scripts/ci.sh` | the whole pipeline as one script, so a local run is what CI runs |
