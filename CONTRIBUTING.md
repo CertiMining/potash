@@ -96,6 +96,19 @@ signature in the set. No generated key and no real key belongs in this repositor
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
 
+`fuzz` is not in `all` and has no row above, because it is not part of the push pipeline: §4.5's five
+targets run nightly in `.github/workflows/fuzz.yml`, and `scripts/ci.sh fuzz` is that job verbatim.
+`docs/fuzzing.md` says what each target establishes and what its iteration count cost.
+
+**Never edit a script while it is running.** Bash reads a script incrementally, so changing the file
+under a live run shifts where it continues from. Editing `scripts/ci.sh` during a `scripts/ci.sh fuzz`
+run on 1 Oct 2026 made the shell fall out of `fuzz()` and execute `kat01-onchain`, `checks` and `miri`
+in sequence — groups nobody had asked for, in a run whose output was being read as a measurement.
+Nothing was corrupted that time. The failure mode is that a run reports a result for work other than
+the work requested, which is indistinguishable from a passing run. Wait for the run, or branch the
+edit; a copy of the script elsewhere is not a workaround, because its first act is
+`cd "$(dirname "$0")/.."` and from another directory that resolves outside the repository.
+
 ## Editing the specification
 
 **Every scripted edit to `docs/TCU-02_CertiMining_Anchored_Log_v0.1.md` asserts that it matched.**

@@ -17,6 +17,7 @@ KAT02_FILE=crates/certimining-core/tests/data/rfc8032_7.1.txt
 KAT02_SHA256=0717d570f83753773c492e9157bb1407754bf16e3cf9b8be317b2f7c71b42d67        # D-45
 MIRI_TOOLCHAIN=nightly-2026-06-16                                                     # D-11
 CARGO_DENY_VERSION=0.20.2                                                             # D-11
+CARGO_FUZZ_VERSION=0.13.2                                                             # D-11, D-131
 AGAVE_VERSION=v4.2.2                                                                  # D-15
 AGAVE_LINUX_SHA256=5fc8684f7430038105fde953d4308ed56addf627f658daa61709f345448247ee    # D-15, x86_64 Linux archive
 
@@ -230,6 +231,60 @@ deny() {
   cargo deny check
 }
 
+# §4.5's fuzz targets, at the iteration counts §4.6 gates on (D-131). This group is **not** in `all`:
+# it runs in its own nightly workflow, .github/workflows/fuzz.yml, because `all` is the push pipeline
+# verbatim and these runs take tens of minutes rather than seconds.
+#
+# `-rss_limit_mb` and `-timeout` are set rather than left to libFuzzer's defaults, because §4.5 asks
+# F-01 for zero OOM and zero timeouts and neither can be reported unless a limit exists to cross. The
+# limit is per unit: 2 GB of resident memory, 10 seconds of wall clock. The highest peak measured is
+# F-05's 379 MB, and the slowest unit any target reported is under a second.
+#
+# **Where the counts come from: end-to-end runs at the counts themselves, from an empty corpus.** Short
+# measurements do not extrapolate here — libFuzzer mutates from the corpus it accumulates, so a warm
+# corpus is slower than a cold one. F-03 measured 2,222/s over 20,000 runs on a 262-entry corpus and
+# took over 34 minutes for a million; from empty the same million is 349 seconds. The nightly job always
+# starts empty, so these are the numbers that describe it.
+#
+# Measured on an Apple M2, 8 cores, macOS 26.6.2, under cargo-fuzz's default AddressSanitizer build.
+# `slowest_unit_time_sec` was 0 for every target and the highest `peak_rss_mb` was 516, against the
+# 2,048 MB limit below:
+#
+#   F-01 fuzz_params_decode  1,000,000 in    4 s   250,000/s   516 MB
+#   F-02 fuzz_canonicalize   1,000,000 in    2 s   500,000/s   366 MB
+#   F-03 fuzz_apply          1,000,000 in  349 s     2,865/s   480 MB
+#   F-04 fuzz_proof_verify   1,000,000 in  510 s     1,960/s   403 MB
+#   F-05 fuzz_tree_build        25,000 in  169 s       147/s   453 MB
+#                                       ----------
+#                                 whole group 1,034 s, 17 min 14 s
+#
+# §4.5 fixes a million for F-01 and F-02 and states no count for the other three. F-03 and F-04 run a
+# million anyway, because at these rates they can. **F-05 is the one count below a million**, and it
+# could not be one: an arbitrary height byte may ask for H = 16, a complete tree of 65,536 leaves is
+# milliseconds of Keccak under a sanitizer, and a million units at 147/s is 1.9 hours. 25,000 is a
+# budget, not a result — F-05 sees four orders of magnitude less input than F-01, and that is the cost
+# of one unit rather than a finding that less exploration suffices.
+fuzz() {
+  local version
+  version="$(cargo fuzz --version)"
+  if [ "$version" != "cargo-fuzz $CARGO_FUZZ_VERSION" ]; then
+    echo "fuzz: expected cargo-fuzz $CARGO_FUZZ_VERSION, got: $version" >&2
+    return 1
+  fi
+  GROUP_FAILED=""
+  fuzz_target fuzz_params_decode 1000000
+  fuzz_target fuzz_canonicalize 1000000
+  fuzz_target fuzz_apply 1000000
+  fuzz_target fuzz_proof_verify 1000000
+  fuzz_target fuzz_tree_build 25000
+  group_result fuzz
+}
+
+fuzz_target() {
+  check "fuzz $1 ($2 runs)" cargo "+$MIRI_TOOLCHAIN" fuzz run "$1" -- \
+    "-runs=$2" -rss_limit_mb=2048 -timeout=10 -print_final_stats=1
+}
+
 # The TypeScript verifier of E-11 (D-93, D-97). `npm ci` installs the committed lock file exactly, so
 # the tree tested here is the tree the gate audited. The KAT file runs first, as it does on the Rust
 # side, then the whole suite; the network test skips itself unless CERTIMINING_DEVNET is set, which
@@ -255,6 +310,7 @@ ts() {
 install_rust() { rustup toolchain install --no-self-update || rustup show; }
 install_miri() { rustup toolchain install "$MIRI_TOOLCHAIN" --profile minimal --component miri,rust-src --no-self-update; }
 install_cargo_deny() { cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked; }
+install_cargo_fuzz() { cargo install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked; }
 install_agave() {
   local dir="$HOME/.local/share/potash/agave/$AGAVE_VERSION"
   [ -x "$dir/solana-release/bin/cargo-build-sbf" ] && return 0
@@ -276,6 +332,7 @@ run() {
     checks) checks ;;
     miri) miri ;;
     deny) deny ;;
+    fuzz) fuzz ;;
     ts) ts ;;
     *) echo "unknown group: $1" >&2; return 2 ;;
   esac
@@ -284,6 +341,10 @@ run() {
 # Every group in CI's order. KAT-01 gates the rest exactly as in CI (D-09, S9-03): if either KAT
 # group fails, nothing else runs. The other groups are independent, as CI's jobs are, so each of
 # them runs and the summary names any that failed.
+#
+# `fuzz` is deliberately not in this list. ci.yml runs on every push and the fuzz group takes tens of
+# minutes, so it has its own nightly workflow; `all` stays the push pipeline verbatim, which is the
+# only reason the list is worth comparing against ci.yml at all.
 all() {
   local failed=0 summary="" group code log
   for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts; do
@@ -314,6 +375,7 @@ case "${1:-}" in
   install-agave) install_agave ;;
   install-miri) install_miri ;;
   install-cargo-deny) install_cargo_deny ;;
+  install-cargo-fuzz) install_cargo_fuzz ;;
   all) all ;;
   "") echo "usage: scripts/ci.sh <group> | all | install-<tool>" >&2; exit 2 ;;
   *) run "$1" ;;

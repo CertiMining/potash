@@ -9,7 +9,23 @@ description = "§4.5's fuzz targets. Outside the workspace, because cargo-fuzz b
 cargo-fuzz = true
 
 [dependencies]
-# The fuzzing driver, pinned like every other tool (D-11's convention). MIT OR Apache-2.0.
+# The fuzzing driver, pinned like every other tool (D-11's convention).
+#
+# **Its licence does not reduce to one answer, and this comment does not pick one.** The crate declares
+# `(MIT OR Apache-2.0) AND NCSA` at `Cargo.toml:25`, and its `README.md:101` says "All files in the
+# `libfuzzer` directory are licensed NCSA". The files themselves say something else: all 47 `.cpp` and
+# `.h` files under `libfuzzer/` — the ones `build.rs:38` compiles into `libfuzzer.a` — carry
+# `SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception` in their own headers, and the crate ships
+# no NCSA licence text anywhere. LLVM relicensed from NCSA years before this snapshot; the crate's
+# metadata and prose appear not to have followed. Checked against a registry copy of 0.4.10 with:
+#   ls libfuzzer/*.cpp libfuzzer/*.h | wc -l
+#   grep -l  'SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception' libfuzzer/*.cpp libfuzzer/*.h | wc -l
+#   grep -ril 'NCSA' .        # Cargo.toml and README.md only; no licence text
+#
+# Which of those governs is a legal question and not one this file settles. What is settled: `cargo deny`
+# reads the declaration and not the files, so pointing the licence gate at this manifest refuses the
+# crate until the owner rules on it. And nothing here ships — the fuzz binaries are test tooling that
+# reaches neither the deployed program nor the client.
 libfuzzer-sys = "=0.4.10"
 # Structured input from arbitrary bytes, so F-03 and F-05 drive real types rather than raw buffers.
 arbitrary = { version = "=1.4.2", features = ["derive"] }

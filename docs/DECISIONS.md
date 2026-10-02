@@ -1660,3 +1660,57 @@ bringing it at the time was the obligation, and a review had to surface it inste
 - **Compute units are deterministic.** The same instruction against the same program costs the same CU on any machine, so `publish_checkpoint` ≤ 15,000 and `attach_anchor_receipt` ≤ 12,000 are asserted absolutely in CI. `scripts/ci.sh kat01-onchain` already does the first.
 - **Wall-clock is not.** A shared runner's timing varies by more than the margins §4.4a states, so an absolute assertion there would either flake or be loose enough to assert nothing. CI compares against a committed baseline and fails on a regression past a band; §4.4a's absolute figures — a 10,000-record chain walk under 5 ms, an epoch root at 256 leaves under 10 ms, an inclusion proof under 1 ms — are asserted on the reference machine and **recorded with the machine named**, which is what §4.4a's own "reference laptop" wording requires.
 - **The signature path is measured and published with no threshold**, which §4.4a states outright: a bound on it belongs in v0.2, set from real data rather than guessed now.
+
+## D-133 · P-03 runs its whole domain instead of sampling it
+
+**Date:** 1 Oct 2026 · **Unit:** E-12 · **Class:** required by the spec · **Status:** settled at S4
+
+**Decision.** §4.5 states P-03 over "any two real-leaf counts `a ≠ b`", and the domain of real-leaf counts at the deployed height is 257 values: capacity at `H = 8` is 256, and `EpochTree::build` refuses a set only when `real.len() > capacity` (`crates/certimining-log/src/tree.rs:87`). P-03 therefore publishes every count in `0..=256` rather than drawing pairs from a generator. All 32,896 pairs are settled exactly; a sample of them would not be "any two", and `proptest` is not a dev-dependency of the program crate, so sampling would have added one to assert something weaker. Run: `cargo test -p certimining-checkpoint --test privacy p03`, 11.4 s.
+
+**The comparison had to change shape for that to hold.** V-Z-01 compares each publication against the first and permits a difference wherever §4.4's list allows one. That relation is not transitive, because the transaction's permitted windows are located per publication, so all-against-one would not establish all pairs. P-03 blanks each publication's permitted bytes first and compares the remainder for equality, which is transitive, and separately asserts that the windows sit at identical offsets across counts — a window that moved with the count would be a leak that redaction would otherwise hide.
+
+**What the whole domain reaches that four points did not.** A **completely full** epoch, which V-Z-01's maximum of 255 never built; it is the worst case for the tree's open addressing, where the last submission has exactly one free slot left to probe (`probe` scans the full capacity, `tree.rs:221`). And both neighbours of each of V-Z-01's four points, so a footprint that moved only at 127 or at 129 is now caught.
+
+**The test carries a control, because redaction blanks the root.** With the root blanked, the comparison would pass unchanged if `root_for` returned one constant and nothing varied at all. The test asserts that the empty epoch and the full one reach the chain as different accounts and different instruction data. Mutation-checked, three ways: dropping the root from the account's permitted offsets fails at account byte 18; narrowing the transaction's permitted window to the epoch argument fails at transaction byte 382; making `root_for` constant fails the control.
+
+**Revisit if** the deployed height changes. At `H = 16` the domain is 65,537 counts and about 55 minutes at the measured rate, which is a scheduled job and not a merge gate; the record would then say which counts run on a PR and why those.
+
+## D-134 · §4.5's open iteration counts, and the one that is a budget
+
+**Date:** 1 Oct 2026 · **Unit:** E-12 · **Class:** cost judgment · **Status:** settled at S4
+
+**Decision.** §4.5 fixes 1,000,000 iterations for F-01 and F-02 and states no count for F-03, F-04 or
+F-05. F-03 and F-04 run 1,000,000 as well. F-05 runs 25,000. Counts live in `fuzz()` in
+`scripts/ci.sh`; §4.6 gates on them through `.github/workflows/fuzz.yml`.
+
+**Measured end to end at these counts, from an empty corpus** — Apple M2, 8 cores, macOS 26.6.2, under
+cargo-fuzz's default AddressSanitizer build. Run: `scripts/ci.sh fuzz`.
+
+| | runs | time | rate | peak RSS |
+|---|---|---|---|---|
+| F-01 `fuzz_params_decode` | 1,000,000 | 4 s | 250,000/s | 516 MB |
+| F-02 `fuzz_canonicalize` | 1,000,000 | 2 s | 500,000/s | 366 MB |
+| F-03 `fuzz_apply` | 1,000,000 | 349 s | 2,865/s | 480 MB |
+| F-04 `fuzz_proof_verify` | 1,000,000 | 510 s | 1,960/s | 403 MB |
+| F-05 `fuzz_tree_build` | 25,000 | 169 s | 147/s | 453 MB |
+
+1,034 seconds for the group, 17 min 14 s. `slowest_unit_time_sec` was 0 for every target; the limits are
+`-rss_limit_mb=2048` and `-timeout=10`, passed explicitly because §4.5 asks F-01 for zero OOM and zero
+timeouts and libFuzzer can report neither without a limit to cross.
+
+**F-05 is the one count below a million and could not be one.** An arbitrary height byte may ask for
+`H = 16`; a complete tree of 65,536 leaves is milliseconds of Keccak under a sanitizer, and a million
+units at 147/s is 1.9 hours against 17 minutes for the other four combined. 25,000 is a budget, not a
+result: F-05 sees four orders of magnitude less input than F-01, which is the cost of one unit and not a
+finding that less exploration suffices.
+
+**A wrong number was published first, and the reason is worth keeping.** These counts were initially set
+from 20,000-run samples, which put F-03 at 2,222/s and predicted a million in seven and a half minutes;
+the run took over 34 minutes, its corpus growing from 262 entries to 1,527. libFuzzer mutates from the
+corpus it accumulates, so a warm corpus is slower than a cold one and a short sample overstates a long
+run. F-03 and F-04 were briefly cut to 250,000 on that bad arithmetic and restored once measured from
+empty, which is what CI does. **No iteration count in this repository is set from an extrapolated rate.**
+
+**Revisit if** a shared runner's measured time approaches `timeout-minutes: 120`, in which case F-04 is
+the first to cut, being the dearest million; or if F-05's target is narrowed to the deployed height, at
+which point its count is no longer bounded by `H = 16`.

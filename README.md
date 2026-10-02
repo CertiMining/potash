@@ -46,7 +46,12 @@ inside the Solana runtime and outside it, across every committed preimage.
   published on day 20726, and the log caught up the next day — which is what a cadence run by hand
   does, there being no worker ([#49](https://github.com/CertiMining/potash/issues/49)).
   `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
-- There is no fuzz or property harness yet.
+- The fuzz and property harness exists (§4.5's five targets and four properties,
+  [`docs/fuzzing.md`](docs/fuzzing.md)) and **has not accumulated a history**. The nightly job is new,
+  so what is behind it is single runs at the stated counts, not a record of nights that found nothing.
+  F-05 runs 25,000 iterations rather than a million because one unit may build a 65,536-leaf tree; it
+  explores four orders of magnitude less input than F-01, and that is a cost, not a judgement that less
+  suffices.
 - The count-hiding property is computational, not information-theoretic, and rests on the batcher's
   key custody. Both are stated in Appendix A of the specification as RES-09 and RES-03.
 
@@ -128,6 +133,7 @@ taken by default.
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
+| `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
 | `docs/` | the specification, every decision, and per-unit notes |
 | `scripts/ci.sh` | the whole pipeline as one script, so a local run is what CI runs |
 
@@ -136,6 +142,11 @@ taken by default.
 ```bash
 scripts/ci.sh all
 ```
+
+That is the push pipeline verbatim. The fuzz targets are not in it: they take tens of minutes and run
+nightly instead, as `scripts/ci.sh fuzz` and `.github/workflows/fuzz.yml`. What each target establishes,
+and what three of them failed to establish on the first attempt, is in
+[`docs/fuzzing.md`](docs/fuzzing.md).
 
 Toolchain versions are pinned and the script refuses to proceed on the wrong ones. The Solana
 programs build only through `scripts/build-sbf.sh`, which uses a project-private Rust installation so
