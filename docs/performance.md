@@ -5,8 +5,8 @@ threshold that was changed because the code did not meet it.
 
 | §4.4a row | Threshold | Asserted by | Measured |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | in CI, every push |
-| `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | in CI, every push |
+| `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **8,810 CU**, recorded exactly |
+| `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly |
 | Chain walk, 10,000 records, hash recomputation only | < 10 ms (D-136) | `benches/thresholds.rs` on the reference machine; `benches/band.rs` in CI | 7.1 ms |
 | Epoch root, 256 leaves | < 10 ms | the same two | 0.20 ms |
 | Inclusion proof verification | < 1 ms | the same two | 0.0023 ms |
@@ -17,6 +17,17 @@ threshold that was changed because the code did not meet it.
 
 **Compute units are deterministic.** The same instruction against the same program costs the same CU on
 any machine, so §1.8's limits are asserted absolutely in CI and have been since E-08.
+
+§4.4a also says the figures are "recorded per commit", and until E-13 they were not: they reached a
+`println!` that disappears with the run, which let `publish_checkpoint` drift anywhere inside its 15,000
+bound without anyone seeing. The measured figures are now committed in `compute.rs` and asserted
+**exactly** — `initialize` 13,735 CU, `publish_checkpoint` 8,810, `attach_anchor_receipt` 5,687 — so a
+change to the program changes a line in the diff. Three consecutive runs gave byte-identical figures,
+which is what makes equality the right assertion rather than a tolerance. A runtime bump may legitimately
+move them; `litesvm` is pinned at `=0.16.0` against Agave 4.2.2, and if that pin moves the figures are
+re-measured and re-committed naming the version that moved them. Not widened into a bound — §1.8's bounds
+are separate assertions in the same test, and a figure inside its bound can still drift a long way
+unseen.
 
 **Wall-clock is not.** A shared runner is slower and noisier than a laptop by an amount nobody controls,
 so asserting §4.4a's absolute figures there would either flake or be loose enough to assert nothing.
