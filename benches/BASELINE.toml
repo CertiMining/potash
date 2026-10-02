@@ -23,7 +23,25 @@
 # here means "look", not "a regression of at least 50% has occurred".
 band_percent = 50.0
 
+# **Run off the runner, this gate proves nothing, and that is worth stating.** These figures are one
+# machine's. The reference machine is about 1.8x faster, so `scripts/ci.sh bench-band` there measures
+# below the baseline and passes without the comparison meaning anything — it cannot fail on a machine
+# faster than the one it is calibrated to. It is in `all` because `all` mirrors the push pipeline
+# verbatim, and the run that matters is CI's. The figures that gate the reference machine are §4.4a's
+# absolutes, asserted by `scripts/ci.sh thresholds`.
+
+# Measured on ubuntu-24.04, GitHub's shared runner, by the bench-band job of CI run 37046282848
+# (commit c16b6a5) — the run whose failure printed them, which is the only way an entry gets here.
+#
+# **One run, and that is worth knowing.** A baseline from a single sample carries that sample's noise.
+# It is the honest starting point rather than a better one invented, and it is re-measured if the band
+# turns out to flake.
+#
+# For scale: the reference machine does the chain walk in 7.1 ms and this runner in 12.8 ms, about 1.8x
+# slower. That gap is the whole reason D-132 sends §4.4a's absolute figures to the reference machine and
+# gives CI a band instead — §4.4a's 10 ms chain-walk threshold would fail outright here, on code that
+# meets it.
 [measures]
-# chain_walk_hash_chain_only = 0.0
-# epoch_root_256_leaves      = 0.0
-# inclusion_proof_verify     = 0.0
+chain_walk_hash_chain_only = 12.8476
+epoch_root_256_leaves = 0.3685
+inclusion_proof_verify = 0.0041
