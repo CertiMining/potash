@@ -169,6 +169,15 @@ described rather than an argument that it will.
 | 20725 | `0x0d872549…a86443` | 505533854 | Bitcoin block 969,173 | `anchors/epochs/20725.ots` | `dual` |
 | 20726 | `0x93bb7266…12a63e` | 506347475 | Bitcoin block 969,474 | `anchors/epochs/20726.ots` | `dual` |
 | 20727 | `0xaf59b7a0…3f9a73` | 506347535 | Bitcoin block 969,474 | `anchors/epochs/20727.ots` | `dual` |
+| 20728 | `0x7c6b6c2d…9d8d07` | 506679656 | *pending* | *not yet committed* | `single` |
+
+**Epoch 20728 is mid-cycle, and the table says so rather than waiting until it looks finished.** It was
+published and stamped on day 20728; its OpenTimestamps receipt carries calendar attestations only, so
+`attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain and the epoch reads
+`single`. That is D-112's two stages in the state between them, and INV-ANCH-05's honest degradation:
+`single` here means no Bitcoin-anchored receipt exists for 20728 yet, which is true. The receipt is
+committed and the row completed once a block confirms it, because `receipt_digest` is write-once
+(INV-ANCH-03) and the one opportunity is spent on the upgraded form.
 
 **A day was missed, and the log caught up rather than drifting.** Nothing published on day 20726; on
 day 20727 both 20726 and 20727 were published, stamped and attached, so `last_epoch` is the current
@@ -179,8 +188,14 @@ calendars aggregated them into the same one.
 
 **There is no worker.** The cycle is run by hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)), which is why a day can be missed at all.
 
-Full roots, and the transactions that carry them, are in `LIVE-VALUES.txt` on the demo's branch, which
-is checked against the chain by `scripts/live-values-from-chain.py` after every cycle.
+Full roots, and the transactions that carry them, are in `LIVE-VALUES.txt`, which is checked against the
+chain by `scripts/live-values-from-chain.py` after every cycle. That check is manual, because it needs
+the network and CI has none: `cargo xtask check-live-values` in the `vectors` group does the static half,
+which is that no value in the list reaches a synthetic artifact. The two halves are not
+interchangeable, and cycles four and five showed it — both were published, stamped, attached and written
+up here, while their receipt digests and attach signatures went unlisted until the script was run again
+on 2 Oct 2026. The static gate passed throughout, because nothing was fabricated; what was missing was
+the list's own completeness.
 
 Every receipt is committed and every one is the upgraded form, so `ots verify` reaches a Bitcoin block
 header rather than a calendar's promise. Each attached digest is `Keccak256(TAG_RCPT ‖ len ‖ receipt)`
