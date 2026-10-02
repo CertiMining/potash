@@ -1,0 +1,25 @@
+# §4.4a's wall-clock measures as the CI runner performs them (E-13, D-132).
+#
+# **This is not §4.4a's threshold and must not be read as one.** §4.4a's absolute figures are asserted
+# on the reference machine §4.4a names, by `thresholds.rs`. A shared runner is slower and noisier than
+# that machine by an amount nobody controls, so asserting §4.4a's numbers there would either flake or be
+# loose enough to assert nothing. What CI can do is notice that a measure moved: it compares against the
+# figures below and fails past a band.
+#
+# Every value is `median_ms`, the median of the sampled runs, which is what `band.rs` compares.
+#
+# **How these were obtained.** They are measured on the runner and committed from a run's own output.
+# Until that has happened a value is absent, and `band.rs` fails and prints what it measured rather than
+# passing — a baseline nobody has measured would make a gate that cannot fail, which is the defect this
+# repository has filed more than once.
+#
+# `band_percent` is how far above its baseline a measure may drift before the build fails. 50% is wide,
+# deliberately: GitHub's shared runners vary by more than a laptop does, and a band that flakes gets
+# disabled, which is worse than one that catches only real regressions. It is a regression detector, not
+# a performance claim.
+band_percent = 50.0
+
+[measures]
+# chain_walk_hash_chain_only = 0.0
+# epoch_root_256_leaves      = 0.0
+# inclusion_proof_verify     = 0.0

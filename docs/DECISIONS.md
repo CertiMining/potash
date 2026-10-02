@@ -1765,3 +1765,41 @@ the list — scoping it means the next NCSA crate still fails.
 
 **Revisit if** counsel's IP screen (R3) reaches build-time-only tooling, in which case the seeded loop is
 the fallback and the record names which §4.5 criteria it cannot report.
+
+## D-136 · §4.4a's chain-walk threshold is the measured figure, not the one written before measuring
+
+**Date:** 2 Oct 2026 · **Unit:** E-13 · **Class:** required by the spec · **Status:** settled at S2 (owner, 2 Oct 2026)
+
+**Decision (the owner's).** Amend §4.4a to the measured figure, name the reference machine, and record
+that 5 ms was set before anything was measured. His reason: *a threshold the code misses by 40% is a
+claim the repo can't carry, and replacing guesses with measurements is exactly what E-13 is for.* The
+preimage-path gap is filed as H-19 ([#58](https://github.com/CertiMining/potash/issues/58)) so it is
+tracked rather than closed by redefinition.
+
+**What changed.** The row read `< 5 ms, single thread, reference laptop`. It now reads `< 10 ms, single
+thread, on the reference machine named below; measured 7.1 ms`. The reference machine is named in §4.4a:
+Apple M2, 8 cores, macOS 26.6.2, `cargo bench -p certimining-benches`. Per D-103 this branch does not
+renumber the specification; the amendment is annotated "on this branch, unmerged".
+
+**The measurement, and why it is this measurement.** §4.4a's row says "hash recomputation only" and its
+own note says the figure "is achievable only for the hash chain", so what is timed is the hash chain:
+`leafₙ`, then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)`, two Keccak-256 invocations per record and no
+condition judged. **7.1 ms** for 10,000 records. The first version of the bench timed
+`AssetChain::apply` instead and reported 7.73 ms as the threshold miss; that is the issuer's path, which
+judges every §1.3 condition, and measuring it against this row would have been measuring the wrong
+thing. `apply` costs 7.3 ms, so the 0.2 ms difference establishes that the cost is hashing rather than
+judging — which is why no amount of work on the state machine would have reached 5 ms.
+
+**Why the gate is 10 ms and not 7.1 ms.** Repeated runs on the same machine ranged from 6.9 ms to 8.7 ms
+across their confidence intervals. A gate at the point estimate fails on variance rather than on
+regression, which is the distinction D-132 draws between the CU figures — deterministic, asserted
+absolutely — and wall-clock, which is not. 10 ms sits above the worst observed run and still catches a
+regression of 40% or more.
+
+**Rejected, and both are recorded in §4.4a rather than dropped.** RustCrypto `sha3`'s `asm` feature
+measures 5.16 ms, a 27% gain, and was not adopted: it still misses the old 5 ms, and how the system's
+hash primitive is built is not a performance decision to take under deadline. Optimising the preimage
+path was not attempted: it is unmeasured work of unknown payoff with ten days left, and it is H-19.
+
+**Revisit if** H-19 finds overhead that is not inherent to INV-ENC-01's staged tag writing, in which case
+the figure moves and the row moves with it. The threshold follows the measurement; it does not lead it.

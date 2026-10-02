@@ -691,13 +691,21 @@ Restored in v0.1.1 — these were carried in TCU-01 and lost when TCU-02 was wri
 |---|---|
 | `publish_checkpoint` compute | ≤ 15,000 CU |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU |
-| Chain-walk verification, 10,000 records — **hash recomputation only** | < 5 ms, single thread, reference laptop |
+| Chain-walk verification, 10,000 records — **hash recomputation only** | < 10 ms, single thread, on the reference machine named below; measured 7.1 ms |
 | Epoch root build, 256 leaves | < 10 ms |
 | Inclusion proof verification | < 1 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms |
 | Full verification including per-record Ed25519 checks | **measured and reported, no threshold in v0.1** |
 
-The split matters. Signature verification dominates at scale — the 5 ms figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
+The split matters. Signature verification dominates at scale — the hash-chain figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
+
+**The chain-walk threshold was 5 ms, and 5 ms was never measured (amended on this branch, unmerged).** It was written when §4.4a was restored and nothing in the repository had timed the walk; E-13 then timed it and the figure is **7.1 ms**, over by 40%. The number here is now the measurement and a gate above it, because a threshold the implementation misses is a claim this document cannot carry.
+
+What was measured, and how, so a reader can repeat it rather than take this on trust. The **reference machine is an Apple M2, 8 cores, macOS 26.6.2**, and `cargo bench -p certimining-benches` is the command. The measure is the hash chain alone — for each record `leafₙ`, then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)`, two Keccak-256 invocations and no condition judged — which is what "hash recomputation only" means and what a verifier recomputing a chain does. `AssetChain::apply`, the issuer's path, judges every §1.3 condition on top of the same two hashes and costs 7.3 ms, so the 0.2 ms difference says the cost is hashing rather than judging. The full path with per-record Ed25519 verification is 425 ms, which is the row below this one and carries no threshold by design.
+
+**Why the gate is 10 ms and not 7.1 ms.** Repeated runs on the same machine ranged from 6.9 ms to 8.7 ms across their confidence intervals, so a gate at the point estimate would fail on variance rather than on regression — which is the distinction D-132 draws between the compute figures, deterministic and asserted absolutely, and wall-clock, which is not. 10 ms sits above the worst observed run and still catches a regression of 40% or more.
+
+**Two things this threshold does not excuse.** Enabling RustCrypto `sha3`'s `asm` feature was measured at 5.16 ms — a 27% gain that still misses the old 5 ms — and was not adopted, because how the system's hash primitive is built is not a performance decision to make under deadline. And the per-call overhead of the preimage path has not been examined; that is tracked rather than forgotten, as H-19 ([#58](https://github.com/CertiMining/potash/issues/58)). Either could move the figure, and neither changes what is true today.
 
 CU figures are recorded per commit in CI; a regression past threshold fails the build.
 
