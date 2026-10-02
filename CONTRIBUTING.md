@@ -105,6 +105,17 @@ figures. `docs/performance.md` says which mechanism covers each of §4.4a's seve
 targets run nightly in `.github/workflows/fuzz.yml`, and `scripts/ci.sh fuzz` is that job verbatim.
 `docs/fuzzing.md` says what each target establishes and what its iteration count cost.
 
+**Never change the working tree under a running verification, and that includes switching branches.**
+The narrow version of this rule said only "never edit a script while it is running", and the narrow
+version was not enough: on 2 Oct 2026 a `scripts/ci.sh all` run on one branch had the tree switched to
+another beneath it, and reported `deny: exit 1` and `bench-band: exit 101` — the first because the other
+branch's `deny.toml` lacked an exception while `fuzz/` sat untracked beside it, the second for a group
+that branch does not define. The run had executed against two different trees and its summary looked
+like an ordinary set of results. **A verification is only evidence about the tree that stood still for
+it.** Finish the run, or use a second checkout.
+
+The original and narrower case, which is the same failure in a smaller shape:
+
 **Never edit a script while it is running.** Bash reads a script incrementally, so changing the file
 under a live run shifts where it continues from. Editing `scripts/ci.sh` during a `scripts/ci.sh fuzz`
 run on 1 Oct 2026 made the shell fall out of `fuzz()` and execute `kat01-onchain`, `checks` and `miri`

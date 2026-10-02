@@ -18,17 +18,26 @@ found defects in the previous round's fixes, which is the reason for counting th
 declaring the work reviewed. There is no OpenTimestamps worker to review: the daily cycle is run by
 hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
 
-**What is measured.** These are numbers this repository produces and checks, not estimates.
+**What is measured.** These are numbers this repository produces and checks, not estimates. Each row
+names which implementation produced it, because two of them exist and they differ by an order of
+magnitude; an earlier version of this table did not, and its Rust and TypeScript figures could not be
+told apart. Rust figures are release builds on the reference machine §4.4a names — Apple M2, 8 cores,
+macOS 26.6.2 — via `scripts/ci.sh thresholds` and `scripts/ci.sh bench`.
 
-| | Threshold | Measured |
-|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | 10,310 CU |
-| `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU |
-| TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.3 ms |
-| Epoch root build, 256 leaves | < 10 ms | 2.7 ms |
-| Inclusion proof verification | < 1 ms | 0.030 ms |
-| Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 |
-| Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 |
+| | Threshold | Measured | By |
+|---|---|---|---|
+| `publish_checkpoint` compute | ≤ 15,000 CU | 8,810 CU | LiteSVM, and the same on chain |
+| `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
+| Chain walk, 10,000 records, hash recomputation only | < 10 ms (D-136) | 7.1 ms | Rust |
+| Epoch root build, 256 leaves | < 10 ms | 0.195 ms | Rust |
+| Epoch root build, 256 leaves | < 10 ms | 2.66 ms | TypeScript |
+| Inclusion proof verification | < 1 ms | 0.0023 ms | Rust |
+| Inclusion proof verification | < 1 ms | 0.0288 ms | TypeScript |
+| TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.23 ms | TypeScript |
+| Full verification including per-record Ed25519 | none in v0.1 | 399 ms | Rust |
+| Full verification including per-record Ed25519 | none in v0.1 | 1,004 ms | TypeScript |
+| Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 | devnet, 200 epochs |
+| Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 | devnet, 200 epochs |
 
 Two independent implementations — Rust and TypeScript, the second written from the specification
 alone by someone who never read the first — agree on all 32 committed vectors, including the ones

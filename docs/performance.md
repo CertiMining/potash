@@ -5,8 +5,8 @@ threshold that was changed because the code did not meet it.
 
 | §4.4a row | Threshold | Asserted by | Measured |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **8,810 CU**, recorded exactly |
-| `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly |
+| `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **8,810 CU**, recorded exactly; the same on chain |
+| `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly; the same on chain |
 | Chain walk, 10,000 records, hash recomputation only | < 10 ms (D-136) | `benches/thresholds.rs` on the reference machine; `benches/band.rs` in CI | 7.1 ms |
 | Epoch root, 256 leaves | < 10 ms | the same two | 0.20 ms |
 | Inclusion proof verification | < 1 ms | the same two | 0.0023 ms |
@@ -41,6 +41,12 @@ D-132 splits it:
 
 An absent baseline entry **fails** and prints what it measured. A baseline nobody measured would be a
 gate that cannot fail, and this repository has filed that defect more than once.
+
+**Run anywhere but the runner, `bench-band` proves nothing.** The baseline is one machine's figures and
+the reference machine is about 1.8× faster, so locally the measures come in below the baseline and the
+comparison passes without meaning anything — it cannot fail on a machine faster than the one it is
+calibrated to. It sits in `all` because `all` mirrors the push pipeline verbatim; the run that matters is
+CI's, and what gates the reference machine is `scripts/ci.sh thresholds`.
 
 The band itself is **50%, and that is a guess**. How much these measures vary between runs on a shared
 runner has not been observed, so the number is not derived from anything; it is wide because a band that
@@ -91,6 +97,20 @@ The assertion is on the **median** of seven. The best of N reports only the mome
 left alone and the worst reports the moments it did not; the median is the figure that moves when the
 code moves. All three are printed, because a threshold reported without its spread is the single-sample
 problem D-132 rejected.
+
+## Two implementations, and a table that could not tell them apart
+
+§4.4a's epoch-root and inclusion-proof rows are implementation-independent, and both implementations
+meet them — by very different margins. Rust builds a 256-leaf epoch root in **0.195 ms** and the
+TypeScript verifier in **2.66 ms**; Rust verifies an inclusion proof in **0.0023 ms** and TypeScript in
+**0.0288 ms**. Both are real measurements of real code and neither is wrong.
+
+The README's table published the TypeScript figures for those two rows without saying so, beside a row
+that was explicitly labelled TypeScript, which made them read as the Rust ones. Nothing was stale and no
+number was invented; the defect was that a reader could not tell which implementation a row described.
+Every row now names it. Reviewing this is also what caught the one figure that *was* wrong — the
+README's 10,310 CU for `publish_checkpoint`, against 8,810 measured in LiteSVM and 8,810 consumed on
+chain, on a program whose source has not changed since that figure was written.
 
 ## What these figures do not establish
 

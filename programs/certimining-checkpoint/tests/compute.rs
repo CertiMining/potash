@@ -47,6 +47,15 @@ const ATTACH_LIMIT: u64 = 12_000;
 /// A runtime bump may legitimately move these: `litesvm` is pinned at `=0.16.0` against Agave 4.2.2
 /// (D-16, D-87), and if that pin moves these numbers are re-measured and re-committed **with the
 /// version that moved them named in the commit**. That is the point. A silent change is the failure.
+///
+/// **These are also what the deployed program actually costs.** The two figures were checked against
+/// the announced deployment's own transactions: `computeUnitsConsumed` is 8,810 for epoch 20728's
+/// publication and 5,687 for epoch 20727's attachment, matching this harness exactly. Devnet was
+/// running a later Agave than the pin at the time — it reported `4.4.0-beta.0` against the pinned
+/// 4.2.2 — so the agreement is across runtime versions rather than within one, which is more than
+/// determinism alone promises. It also settles a figure the README published: 10,310 CU for
+/// `publish_checkpoint`, which matches neither this harness nor the chain, on a program whose source
+/// has not changed since that line was written.
 const INITIALIZE_CU: u64 = 13_735;
 const PUBLISH_CU: u64 = 8_810;
 const ATTACH_CU: u64 = 5_687;
