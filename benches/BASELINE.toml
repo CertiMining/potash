@@ -13,10 +13,14 @@
 # passing — a baseline nobody has measured would make a gate that cannot fail, which is the defect this
 # repository has filed more than once.
 #
-# `band_percent` is how far above its baseline a measure may drift before the build fails. 50% is wide,
-# deliberately: GitHub's shared runners vary by more than a laptop does, and a band that flakes gets
-# disabled, which is worse than one that catches only real regressions. It is a regression detector, not
-# a performance claim.
+# `band_percent` is how far above its baseline a measure may drift before the build fails. It is a
+# regression detector, not a performance claim.
+#
+# **50 is a guess, and is recorded as one.** Nobody has yet observed how much these measures vary on
+# GitHub's shared runners from one run to the next, so the number is not derived from anything — it is
+# wide because a band that flakes gets disabled and a disabled gate is worse than a loose one. Once a few
+# runs exist, the spread is visible in their output and this number is set from it. Until then, a failure
+# here means "look", not "a regression of at least 50% has occurred".
 band_percent = 50.0
 
 [measures]

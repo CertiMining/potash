@@ -250,3 +250,19 @@ cargo test --release -p certimining-log -- --ignored
 
 Its three correlations are recorded on issue #16. The bound there is 0.02, against 0.05 at the sample
 CI runs.
+
+## Run before submission, because nothing else will
+
+Two checks are `#[ignore]`d on purpose and will not run themselves. An ignored test that nobody is told
+to run is an ignored test that never runs, so both belong on the submission checklist rather than in a
+comment:
+
+```sh
+cargo test --release -p certimining-log -- --ignored   # V-Z-04's full 10,000-epoch run
+scripts/ci.sh thresholds                               # §4.4a's absolute wall-clock figures
+```
+
+The second asserts §4.4a's figures on the reference machine §4.4a names, which CI is not — D-132's split
+sends the absolutes there and gives CI a band against its own baseline instead. `docs/performance.md` says
+which mechanism covers each of §4.4a's seven rows, and `scripts/ci.sh fuzz` is the third thing CI does not
+run on a push, for a different reason: it has its own nightly workflow.
