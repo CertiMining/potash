@@ -1714,3 +1714,38 @@ empty, which is what CI does. **No iteration count in this repository is set fro
 **Revisit if** a shared runner's measured time approaches `timeout-minutes: 120`, in which case F-04 is
 the first to cut, being the dearest million; or if F-05's target is narrowed to the deployed height, at
 which point its count is no longer bounded by `H = 16`.
+
+## D-135 · libfuzzer-sys is a scoped licence exception, not a wider allow
+
+**Date:** 2 Oct 2026 · **Unit:** E-12 · **Class:** cost judgment · **Status:** settled at S6 (owner, 2 Oct 2026)
+
+**Decision (the owner's).** A per-crate exception for `libfuzzer-sys` in D-89's shape, recording both
+licence statements. His reasons: both are permissive, and the crate lives in `fuzz/`, outside the shipped
+workspace, so it never reaches anything a user runs.
+
+**What the two statements are.** The crate declares `(MIT OR Apache-2.0) AND NCSA` at its
+`Cargo.toml:25` and repeats NCSA at its `README.md:101`. The vendored LLVM sources it compiles say
+otherwise: all 47 `.cpp` and `.h` files under `libfuzzer/` — the set `build.rs:38` feeds to `cc` — carry
+`SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception`, and the crate ships no NCSA licence text.
+LLVM relicensed away from NCSA before this snapshot. `cargo deny` reads the declaration, so NCSA is what
+the gate needs allowed; the headers are recorded because they are what the compiled code carries.
+
+**That it ships nothing is checked, not assumed.** Nothing in the repository depends on
+`certimining-fuzz`, and neither `libfuzzer-sys` nor `arbitrary` appears in the dependency graph of
+`certimining-client`, `certimining-core`, `certimining-log` or `certimining-checkpoint`. `arbitrary`
+1.4.2 is `MIT OR Apache-2.0` and needed no exception.
+
+**Why the gate refused it at all, which is the part worth keeping.** `fuzz/` is its own Cargo workspace,
+so a root `cargo deny check` never saw either crate — `cargo deny list | grep -c libfuzzer` answers 0.
+D-131 had committed both to the licence and advisory gates "like everything else, or they do not ship",
+and that was untrue rather than met until `scripts/ci.sh deny` was pointed at the fuzz manifest as a
+second check against the same `deny.toml`. Finding the licence was the consequence of closing that hole,
+not a reason to leave it open.
+
+**Rejected.** D-131's own revisit clause, which said a refused crate means falling back to a seeded loop
+on stable; the owner ruled the exception instead, so §4.5's "zero OOM, zero timeouts" stay reportable. A
+global NCSA allow was also rejected, on D-89's ground that one crate's licence is not a reason to widen
+the list — scoping it means the next NCSA crate still fails.
+
+**Revisit if** counsel's IP screen (R3) reaches build-time-only tooling, in which case the seeded loop is
+the fallback and the record names which §4.5 criteria it cannot report.
