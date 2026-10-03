@@ -250,38 +250,30 @@ deny() {
 # it runs in its own nightly workflow, .github/workflows/fuzz.yml, because `all` is the push pipeline
 # verbatim and these runs take tens of minutes rather than seconds.
 #
-# `-rss_limit_mb` and `-timeout` are set rather than left to libFuzzer's defaults, because §4.5 asks
-# F-01 for zero OOM and zero timeouts and neither can be reported unless a limit exists to cross. The
-# limit is per unit: 2 GB of resident memory, 10 seconds of wall clock. The highest peak measured is
-# F-05's 379 MB, and the slowest unit any target reported is under a second.
+# `-rss_limit_mb` and `-timeout` are set rather than left to libFuzzer's defaults, because §4.5 asks F-01
+# for zero OOM and zero timeouts and neither can be reported unless a limit exists to cross. The limit is
+# per unit: 2 GB of resident memory, 10 seconds of wall clock.
 #
-# **Where the counts come from: end-to-end runs at the counts themselves, from an empty corpus.** Short
-# measurements do not extrapolate here — libFuzzer mutates from the corpus it accumulates, so a warm
-# corpus is slower than a cold one. F-03 measured 2,222/s over 20,000 runs on a 262-entry corpus and
-# took over 34 minutes for a million; from empty the same million is 349 seconds. The nightly job always
-# starts empty, so these are the numbers that describe it.
+# **One run, 3 Oct 2026, every figure from it, total by addition. Apple M2, 8 cores, macOS 26.6.2, from an
+# empty corpus.** `slowest_unit_time_sec` was 0 for all five and the highest peak was F-03's 565 MB.
 #
-# Measured on an Apple M2, 8 cores, macOS 26.6.2, under cargo-fuzz's default AddressSanitizer build.
-# `slowest_unit_time_sec` was 0 for every target and the highest `peak_rss_mb` was 516, against the
-# 2,048 MB limit below:
-#
-#   F-01 fuzz_params_decode  1,000,000 in   11 s   ~91,000/s   518 MB
-#   F-02 fuzz_canonicalize   1,000,000 in    2 s   500,000/s   366 MB
-#   F-03 fuzz_apply          1,000,000 in  349 s     2,865/s   480 MB
-#   F-04 fuzz_proof_verify   1,000,000 in  510 s     1,960/s   403 MB
-#   F-05 fuzz_tree_build        25,000 in 16-195 s  not stable  445 MB
+#   F-01 fuzz_params_decode  1,000,000 in   13 s   76,923/s   505 MB
+#   F-02 fuzz_canonicalize   1,000,000 in   11 s   90,909/s   434 MB
+#   F-03 fuzz_apply          1,000,000 in  355 s    2,816/s   565 MB
+#   F-04 fuzz_proof_verify   1,000,000 in  527 s    1,897/s   404 MB
+#   F-05 fuzz_tree_build        25,000 in  620 s       40/s   380 MB
 #                                       ----------
-#                                 whole group 1,178 s, 19 min 38 s, and it moves with F-05
+#                                 whole group 1,526 s, 25 min 26 s
 #
-# §4.5 fixes a million for F-01 and F-02 and states no count for the other three. F-03 and F-04 run a
-# million anyway, because at these rates they can. **F-05 is the one count below a million**, and it
-# could not be one: an arbitrary height byte may ask for H = 16, a complete tree of 65,536 leaves is
-# milliseconds of Keccak under a sanitizer. **F-05 has no stable rate**: four runs of 25,000 from empty
-# took 16, 64, 75 and 195 seconds, because the leaf count is itself fuzzed and a 4,096-leaf unit costs
-# about sixteen times a 256-leaf one. At the slow end a million is over two hours, which is why the count
-# stays here; no count in this repository is set from an extrapolated rate (D-134). What bounds F-05
-# regardless of count is the derived-count clamp — heights 4 to 12 reach capacity, 13 to 16 do not, and
-# those boundaries are pinned by a deterministic test instead.
+# A review found the previous block arithmetically impossible: it mixed one run's F-01 with an earlier
+# run's F-03 and F-04 and quoted a total from a third, so no addition of its rows reached it.
+#
+# §4.5 fixes a million for F-01 and F-02 and states no count for the other three; F-03 and F-04 run a
+# million anyway. **F-05 has no stable rate** — 25,000 from empty has measured 16, 64, 75, 195, 217, 318
+# and 620 seconds — because the leaf count is itself fuzzed and a 4,096-leaf unit at H = 16 costs orders
+# of magnitude more than a small one. Its count stays at 25,000 (D-134). What bounds it regardless of
+# count is the derived-count clamp: heights 4 to 12 reach capacity, 13 to 16 do not, and those boundaries
+# are pinned by a deterministic test instead.
 fuzz() {
   local version
   version="$(cargo fuzz --version)"

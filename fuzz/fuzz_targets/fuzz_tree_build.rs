@@ -55,7 +55,7 @@ struct Input {
 /// reaches capacity for heights 4 through 12 and cannot for 13 through 16. Those four heights' boundary
 /// counts are covered deterministically instead, by
 /// `the_leaf_count_boundaries_hold_at_every_height_class` in `crates/certimining-log/tests/tree.rs`,
-/// which does 0, 1, C-1, C and C+1 at every height class in under two seconds. Content search is what
+/// which does 0, 1, C-1, C and C+1 at every height class in about two seconds — 1.65 s here and 2.01 s for an independent reviewer, so not a guarantee. Content search is what
 /// this target is for; the boundaries are pinned where they do not depend on a mutation finding them.
 const MAX_DERIVED: u16 = 4_096;
 

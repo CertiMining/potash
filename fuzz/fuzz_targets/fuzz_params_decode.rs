@@ -34,6 +34,24 @@ use certimining_client::{decode_checkpoint, decode_config, Refused};
 use certimining_core::read_tag;
 use libfuzzer_sys::fuzz_target;
 
+/// §2.4's own values, transcribed rather than imported (M-02).
+///
+/// The oracle below first shared `certimining_checkpoint::SCHEMA_VERSION`, `::LEN` and `::DISCRIMINATOR`
+/// with the decoders it checks — so a review changed the program's schema constant from 1 to 2 and both
+/// sides accepted a schema-2 account together, green over a million iterations. An oracle that imports
+/// the decision it is auditing is not a second opinion.
+///
+/// The lengths are §2.4's published figures. The discriminators follow §2.4's stated rule, the first
+/// eight bytes of `SHA-256("account:" ‖ StructName)`, computed independently of Anchor's derive macro:
+///
+///   python3 -c "import hashlib; print(hashlib.sha256(b'account:LogConfig').hexdigest()[:16])"
+///   python3 -c "import hashlib; print(hashlib.sha256(b'account:CheckpointAccount').hexdigest()[:16])"
+const SCHEMA_VERSION: u16 = 1;
+const CHECKPOINT_LEN: usize = 106;
+const LOG_CONFIG_LEN: usize = 68;
+const CHECKPOINT_DISCRIMINATOR: [u8; 8] = [0x4d, 0x11, 0x99, 0xcb, 0x01, 0xec, 0x47, 0x59];
+const LOG_CONFIG_DISCRIMINATOR: [u8; 8] = [0x1c, 0xf0, 0x75, 0x7f, 0x1a, 0xa6, 0xbf, 0x37];
+
 /// What `decode_checkpoint` owes for these inputs, decided here rather than read off its own answer.
 ///
 /// This is the point of the target: an oracle that says "one of these errors is fine" would have passed
@@ -43,15 +61,15 @@ fn expected_checkpoint(owner: &Pubkey, program_id: &Pubkey, data: &[u8], epoch: 
     if owner != program_id {
         return Err(Refused::NotTheProgram);
     }
-    if data.len() < CheckpointAccount::LEN {
+    if data.len() < CHECKPOINT_LEN {
         return Err(Refused::TooShort);
     }
-    if data[..8] != CheckpointAccount::DISCRIMINATOR[..] {
+    if data[..8] != CHECKPOINT_DISCRIMINATOR {
         return Err(Refused::WrongDiscriminator);
     }
     let account =
         CheckpointAccount::deserialize(&mut &data[8..]).map_err(|_| Refused::Malformed)?;
-    if account.schema_version != certimining_checkpoint::SCHEMA_VERSION {
+    if account.schema_version != SCHEMA_VERSION {
         return Err(Refused::UnsupportedSchema);
     }
     if account.epoch != epoch {
@@ -65,14 +83,14 @@ fn expected_config(program_id: &Pubkey, owner: &Pubkey, data: &[u8]) -> Result<u
     if owner != program_id {
         return Err(Refused::NotTheProgram);
     }
-    if data.len() < LogConfig::LEN {
+    if data.len() < LOG_CONFIG_LEN {
         return Err(Refused::TooShort);
     }
-    if data[..8] != LogConfig::DISCRIMINATOR[..] {
+    if data[..8] != LOG_CONFIG_DISCRIMINATOR {
         return Err(Refused::WrongDiscriminator);
     }
     let config = LogConfig::deserialize(&mut &data[8..]).map_err(|_| Refused::Malformed)?;
-    if config.schema_version != certimining_checkpoint::SCHEMA_VERSION {
+    if config.schema_version != SCHEMA_VERSION {
         return Err(Refused::UnsupportedSchema);
     }
     Ok(config.schema_version)
@@ -163,4 +181,49 @@ fuzz_target!(|data: &[u8]| {
         data.len(),
         owner
     );
+
+    // **The transcribed values are checked against Anchor's, as a thing under test rather than as the
+    // oracle's source.** If the derive macro and §2.4's stated rule ever disagree, that is a finding in
+    // itself; importing the constant would have hidden it, which is what M-02 was about.
+    assert_eq!(
+        CHECKPOINT_DISCRIMINATOR,
+        CheckpointAccount::DISCRIMINATOR,
+        "§2.4's rule and Anchor's derive disagree about CheckpointAccount's discriminator"
+    );
+    assert_eq!(
+        LOG_CONFIG_DISCRIMINATOR,
+        LogConfig::DISCRIMINATOR,
+        "§2.4's rule and Anchor's derive disagree about LogConfig's discriminator"
+    );
+    assert_eq!(CHECKPOINT_LEN, CheckpointAccount::LEN, "§2.4 publishes 106 bytes");
+    assert_eq!(LOG_CONFIG_LEN, LogConfig::LEN, "§2.4 publishes 68 bytes");
+
+    // **Seeded valid prefixes (M-02).** Raw arbitrary bytes essentially never carry a real
+    // discriminator, so a clean run left no evidence that the schema and epoch branches were ever
+    // reached. These two candidates carry the right discriminator and a fuzzer-chosen body, so the
+    // conditions past it are exercised on every iteration that has bytes to spare.
+    for (disc, label) in [
+        (CHECKPOINT_DISCRIMINATOR, "checkpoint"),
+        (LOG_CONFIG_DISCRIMINATOR, "config"),
+    ] {
+        let mut candidate = Vec::with_capacity(8 + data.len());
+        candidate.extend_from_slice(&disc);
+        candidate.extend_from_slice(data);
+
+        let got = decode_checkpoint(&program_id, &program_id, &candidate, epoch).map(|c| c.epoch);
+        let want = expected_checkpoint(&program_id, &program_id, &candidate, epoch);
+        assert_eq!(
+            got, want,
+            "decode_checkpoint disagreed on a {label}-seeded candidate of {} bytes, epoch {epoch}",
+            candidate.len()
+        );
+
+        let got = decode_config(&program_id, &program_id, &candidate).map(|c| c.schema_version);
+        let want = expected_config(&program_id, &program_id, &candidate);
+        assert_eq!(
+            got, want,
+            "decode_config disagreed on a {label}-seeded candidate of {} bytes",
+            candidate.len()
+        );
+    }
 });

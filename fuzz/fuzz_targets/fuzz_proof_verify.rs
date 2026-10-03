@@ -37,6 +37,18 @@ fn real_epoch() -> (BuiltEpoch, Digest, SubmissionId) {
 fuzz_target!(|input: Input| {
     let (built, real_leaf, real_id) = real_epoch();
 
+    // **The positive obligation (M-04).** Every assertion below sat behind `Ok(())` on an *arbitrary*
+    // proof, and the empty `Err(_) => {}` arm accepted any refusal — so a verifier that refused every
+    // proof, including the genuine one, passed 100,000 iterations. The epoch's own proof is checked
+    // first and unconditionally: if the verifier will not accept the path the engine just produced for
+    // a submission the epoch holds, nothing else this target says is worth reading.
+    let genuine = built.proof(&real_id).expect("the epoch holds this submission");
+    <ProofVerifier as InclusionVerifier>::verify::<NativeKeccak>(&real_leaf, &genuine, &built.root)
+        .expect(
+            "the proof the engine produced for a submission this epoch holds was refused against the \
+             epoch's own root",
+        );
+
     // §4.5 asks whether an out-of-bounds read is reachable here. **It is not reachable through the
     // sibling list at all**, and the reason is worth stating rather than fuzzing for: `siblings` is a
     // `heapless::Vec` of capacity 16, which is §1.8's maximum height, so a longer path cannot be
@@ -63,7 +75,6 @@ fuzz_target!(|input: Input| {
         Ok(()) => {
             // An accepted proof must be the real one: same leaf, same height, same siblings as the
             // epoch actually holds. Anything else accepted here is a forgery against a real root.
-            let genuine = built.proof(&real_id).expect("the epoch holds this submission");
             assert_eq!(input.leaf, real_leaf, "a proof verified for a leaf the epoch does not hold");
             assert_eq!(proof.height, genuine.height, "accepted a proof at another height");
             assert_eq!(proof.slot_index, genuine.slot_index, "accepted a proof at another slot");

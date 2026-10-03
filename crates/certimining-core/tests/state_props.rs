@@ -126,19 +126,25 @@ fn valid_chain(count: usize, seed: u64) -> Vec<RecordLeafInput> {
 
 /// Re-point each record at the head before it, so a shortened or reordered chain still applies and
 /// the only thing that changed is which leaves are in it and in what order.
-fn relink(records: &[RecordLeafInput]) -> Vec<RecordLeafInput> {
+fn relink(records: &[RecordLeafInput]) -> Result<Vec<RecordLeafInput>, RegistryError> {
     let mut chain = Chain::start(&[0x11; 32], 1).expect("starts");
     let mut out = Vec::with_capacity(records.len());
     for (i, r) in records.iter().enumerate() {
         let mut record = r.clone();
         record.prev_head = chain.head();
         record.seq = (i as u64) + 1;
-        if chain.apply(&record).is_err() {
-            return out;
-        }
+        // **Refusals are surfaced, not swallowed (M-05).** This returned the accepted prefix on any
+        // refusal, so P-01 then proved its claim about a *shorter* chain than the one it asked for — and
+        // an empty prefix skipped the comparison entirely. A review demonstrated it with an invented
+        // category-sequence rule: swapping two records made one of them refuse, `relink` handed back a
+        // one-record prefix, and 10,000 cases passed. Every record this function is given has been
+        // re-pointed at the head before it, so a refusal means the engine refused something §1.3 permits
+        // and the property has to see that rather than work around it.
+        let _ = chain.apply(&record)?;
         out.push(record);
     }
-    out
+    debug_assert_eq!(out.len(), records.len());
+    Ok(out)
 }
 
 /// The same record, rewritten so that §1.3 must accept it from `snapshot`.
@@ -156,11 +162,27 @@ fn valid_against(snapshot: &ChainSnapshot, template: &RecordLeafInput) -> Record
     let mut r = template.clone();
     r.prev_head = snapshot.head; // (a)
     r.seq = snapshot.seq + 1; // (b); the generator keeps `seq` below u64::MAX so this cannot overflow
-    r.effective_at = snapshot.last_effective_at; // (d), non-decreasing permits equal
+                              // (d) permits equal or later, so the generated offset is kept where it does not go backwards. A
+                              // review found the first version pinned this to the snapshot's own time, along with category 0, one
+                              // URI and an absent expected key — so the accepted lane only ever exercised one shape (M-01).
+    r.effective_at = snapshot
+        .last_effective_at
+        .saturating_add(i64::from(template.category) % 3);
     r.signature = Some([0x55; 64]); // (c): present, and AlwaysValid accepts it
-    r.expected_qp_key = None; // (c): no claimed key to disagree with qp_key
-    r.category = 0; // within MAX_CATEGORY
-    r.payload_uri = PayloadUri::from_slice(b"ipfs://bafyvalid").expect("fits");
+                                    // (c): a claimed key is permitted when it agrees, so half the lane carries one.
+    r.expected_qp_key = template
+        .category
+        .is_multiple_of(2)
+        .then_some(template.qp_key);
+    // §1.3's five categories, 0 to 4, transcribed from the specification rather than imported from the
+    // engine: an oracle that shares a production constant agrees with a defect in it (M-02).
+    r.category = template.category % 5;
+    // Both §1.3 URI forms, so the accepted lane is not one spelling.
+    r.payload_uri = if template.category.is_multiple_of(2) {
+        PayloadUri::from_slice(b"ipfs://bafyvalid").expect("fits")
+    } else {
+        PayloadUri::from_slice(b"https://example.test/a").expect("fits")
+    };
     // The schema gate stands before condition (a): schema 1 carries no extension, so any
     // `ext_commitment` is 0x0F however well-formed the rest of the record is (V-N-24).
     r.ext_commitment = None;
@@ -183,10 +205,47 @@ fn applies_the_same_way_twice(
             prop_assert_eq!(x.head, y.head, "two applications gave different heads");
             prop_assert_eq!(x.leaf, y.leaf, "two applications gave different leaves");
             prop_assert_eq!(x.flags, y.flags, "two applications gave different flags");
+            // **`Ok` is not evidence of a commit (M-01).** This compared the two post-states to each
+            // other and never to the state they started from, so deleting every assignment in `apply`'s
+            // commit block — while still returning `Ok(Applied { .. })` — left both chains at the
+            // original snapshot and passed 10,000 cases. §1.3's commit is what an accepted record *is*.
+            let after = first.snapshot();
+            prop_assert_eq!(
+                after.head,
+                x.head,
+                "the chain's head is not the head it returned"
+            );
+            prop_assert_eq!(
+                after.seq,
+                snapshot.seq + 1,
+                "an accepted record did not advance the sequence"
+            );
+            prop_assert_eq!(
+                after.last_effective_at,
+                r.effective_at,
+                "an accepted record did not record its effective date"
+            );
+            prop_assert_eq!(
+                after.previous_category,
+                Some(r.category),
+                "an accepted record did not record its category"
+            );
+            prop_assert_eq!(
+                after.saw_resource,
+                snapshot.saw_resource || matches!(r.category, 1 | 2),
+                "the resource observation did not follow §1.3"
+            );
             true
         }
         (Err(x), Err(y)) => {
             prop_assert_eq!(x, y, "two applications gave different codes");
+            // A refused record leaves the chain exactly as it was (INV-STATE-01). The arbitrary half of
+            // P-02 compared the two chains to each other and not to where they began.
+            prop_assert_eq!(
+                first.snapshot(),
+                snapshot,
+                "a refused record changed the chain"
+            );
             false
         }
         (x, y) => {
@@ -281,29 +340,59 @@ proptest! {
         let whole = head_after(&records).expect("a valid chain applies");
 
         // Remove each leaf in turn. Every shorter chain must reach a different head.
+        //
+        // **Both loops now require the transformed chain to apply in full (M-05).** A refusal is a
+        // finding, not a reason to compare a prefix: every record has been re-pointed at the head before
+        // it, so there is no §1.3 condition left for the engine to object to, and `head_after` must
+        // therefore return a head rather than `None`.
         for drop in 0..records.len() {
             let mut shorter: Vec<RecordLeafInput> = records.clone();
             shorter.remove(drop);
-            let relinked = relink(&shorter);
-            if let Some(head) = head_after(&relinked) {
-                prop_assert_ne!(
-                    head, whole,
-                    "dropping leaf {} reached the same head as the whole chain", drop
-                );
-            }
+            let relinked = relink(&shorter).map_err(|e| {
+                TestCaseError::fail(format!(
+                    "dropping leaf {drop} left a chain the engine refused with {e:?}, though every \
+                     record was re-linked to the head before it"
+                ))
+            })?;
+            prop_assert_eq!(
+                relinked.len(),
+                shorter.len(),
+                "relink returned a different number of records than it was given"
+            );
+            let head = head_after(&relinked).ok_or_else(|| {
+                TestCaseError::fail(format!("the relinked chain for dropped leaf {drop} did not apply"))
+            })?;
+            prop_assert_ne!(
+                head, whole,
+                "dropping leaf {} reached the same head as the whole chain", drop
+            );
         }
 
         // Swap each adjacent pair. Order is part of what the head commits to.
         for i in 0..records.len().saturating_sub(1) {
             let mut swapped: Vec<RecordLeafInput> = records.clone();
             swapped.swap(i, i + 1);
-            let relinked = relink(&swapped);
-            if let Some(head) = head_after(&relinked) {
-                prop_assert_ne!(
-                    head, whole,
-                    "swapping leaves {} and {} reached the same head", i, i + 1
-                );
-            }
+            let relinked = relink(&swapped).map_err(|e| {
+                TestCaseError::fail(format!(
+                    "swapping leaves {i} and {} left a chain the engine refused with {e:?}, though \
+                     every record was re-linked to the head before it",
+                    i + 1
+                ))
+            })?;
+            prop_assert_eq!(
+                relinked.len(),
+                swapped.len(),
+                "relink returned a different number of records than it was given"
+            );
+            let head = head_after(&relinked).ok_or_else(|| {
+                TestCaseError::fail(format!(
+                    "the relinked chain for the swap at {i} did not apply"
+                ))
+            })?;
+            prop_assert_ne!(
+                head, whole,
+                "swapping leaves {} and {} reached the same head", i, i + 1
+            );
         }
     }
 

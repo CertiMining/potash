@@ -1688,44 +1688,44 @@ cargo-fuzz's default AddressSanitizer build. Run: `scripts/ci.sh fuzz`.
 
 | | runs | time | rate | peak RSS |
 |---|---|---|---|---|
-| F-01 `fuzz_params_decode` | 1,000,000 | 11 s | ~91,000/s | 518 MB |
-| F-02 `fuzz_canonicalize` | 1,000,000 | 2 s | 500,000/s | 366 MB |
-| F-03 `fuzz_apply` | 1,000,000 | 349 s | 2,865/s | 480 MB |
-| F-04 `fuzz_proof_verify` | 1,000,000 | 510 s | 1,960/s | 403 MB |
-| F-05 `fuzz_tree_build` | 25,000 | 16-195 s | see below | 445 MB |
+| F-01 `fuzz_params_decode` | 1,000,000 | 13 s | 76,923/s | 505 MB |
+| F-02 `fuzz_canonicalize` | 1,000,000 | 11 s | 90,909/s | 434 MB |
+| F-03 `fuzz_apply` | 1,000,000 | 355 s | 2,816/s | 565 MB |
+| F-04 `fuzz_proof_verify` | 1,000,000 | 527 s | 1,897/s | 404 MB |
+| F-05 `fuzz_tree_build` | 25,000 | 620 s | 40/s | 380 MB |
 
-1,178 seconds for the group in the run recorded here, 19 min 38 s — and that total moves with F-05, which
-is the one target whose cost is not stable. `slowest_unit_time_sec` was 0 for every target; the limits are
-`-rss_limit_mb=2048` and `-timeout=10`, passed explicitly because §4.5 asks F-01 for zero OOM and zero
-timeouts and libFuzzer can report neither without a limit to cross.
+**One run, 3 Oct 2026, every figure from it, total derived by addition: 1,526 s — 25 min 26 s.** Highest
+peak 565 MB against the 2,048 MB limit; `slowest_unit_time_sec` 0 for all five; the group exited 0. The
+limits are `-rss_limit_mb=2048` and `-timeout=10`, passed explicitly because §4.5 asks F-01 for zero OOM
+and zero timeouts and libFuzzer can report neither without a limit to cross.
 
-**F-05 is the one count below a million, and after round two it has no stable rate at all.** Four runs of
-25,000 from an empty corpus took **16 s, 64 s, 75 s and 195 s** — a twelvefold spread. That is a property
-of the redesign rather than noise: the leaf count is now itself fuzzed, and a unit asking for 4,096 leaves
-costs about sixteen times one asking for 256, so the throughput depends on how much of a run the search
-spends on large trees. **No single rate describes this target**, and the 147/s this entry first carried and
-the 1,562/s that briefly replaced it were both one sample each.
+**The previous version of this table was arithmetically impossible, and a review proved it.** F-01's
+figure came from one run, F-03's and F-04's from an earlier one, and the total from a third, so no
+addition of the rows could reach the stated total. Mixing runs is the defect; every figure above is from
+the single run named, and the total is computed from the rows.
 
-Two things follow. The count stays at **25,000**: at the pessimistic end a million units is over two hours,
-so the original budget reasoning survives at the figure that matters, and raising it on an arithmetic
-estimate would repeat exactly the mistake recorded below. And "the redesign made F-05 ten times faster",
-which this entry said for a few minutes, is **withdrawn** — it made the cost variable and moved what the
-target explores, which is the actual gain.
+**F-05 is the one count below a million, and it has no stable rate at all.** Runs of 25,000 from an
+empty corpus have measured **16, 64, 75, 195, 217, 318 and 620 seconds**, with an independent reviewer
+recording 222.60 s and 231.46 s. The leaf count is itself fuzzed and a 4,096-leaf unit at `H = 16` costs
+orders of magnitude more than a small one, so throughput depends on what the search explores. No single
+number describes this target. Three figures have now been published for it and withdrawn — 147/s, then
+1,562/s, then a 16–195 s range — each one a sample mistaken for a rate.
 
-The first attempt at a million-iteration measurement was also contaminated and discarded: its corpus was
-deleted and its binary rebuilt underneath it while an unrelated mutation was being tested.
+The count stays at **25,000**: at the slow end that is already ten minutes, and raising it on arithmetic
+would repeat the mistake this entry exists to record. No count in this repository is set from an
+extrapolated rate.
 
-F-05 therefore still sees far less input than F-01, and the clamp described in the target bounds what it
-can reach regardless of count: heights 4 to 12 reach capacity, 13 to 16 do not, because a 65,536-leaf
-build under a sanitizer exceeded the per-unit timeout. Those boundaries are pinned deterministically by
+**A false timeout, recorded because it will happen again.** One group run aborted with libFuzzer exit 70
+after F-05 reported `slowest_unit_time_sec: 1034`. The saved input replays in **223 ms**, so a unit worth
+223 ms of work was measured at 1,034 seconds of wall clock: the machine stalled, the code did not loop.
+Two fresh runs then completed clean. Nothing was loosened — no `-timeout` survives a thousand-second
+stall — and what caught it was the standing rule to replay a reproducer before believing its filename.
+A review had called the per-unit margin "strong operational confirmation, not a proof against arbitrary
+machine load"; that caveat arrived within the hour.
+
+What bounds F-05 regardless of count is the derived-count clamp: heights 4 to 12 reach capacity, 13 to 16
+do not, and those boundaries are pinned by
 `the_leaf_count_boundaries_hold_at_every_height_class` instead.
-
-**A wrong number was published first, and the reason is worth keeping.** These counts were initially set
-from 20,000-run samples, which put F-03 at 2,222/s and predicted a million in seven and a half minutes;
-the run took over 34 minutes, its corpus growing from 262 entries to 1,527. libFuzzer mutates from the
-corpus it accumulates, so a warm corpus is slower than a cold one and a short sample overstates a long
-run. F-03 and F-04 were briefly cut to 250,000 on that bad arithmetic and restored once measured from
-empty, which is what CI does. **No iteration count in this repository is set from an extrapolated rate.**
 
 **Revisit if** a shared runner's measured time approaches `timeout-minutes: 120`, in which case F-04 is
 the first to cut, being the dearest million; or if F-05's target is narrowed to the deployed height, at

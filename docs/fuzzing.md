@@ -56,40 +56,34 @@ each night's count meaning the same thing at the cost of never going deeper than
 
 | | What it drives | Count | Time | Rate | Peak RSS |
 |---|---|---|---|---|---|
-| F-01 `fuzz_params_decode` | arbitrary bytes into every decoder, including the client's account placement | 1,000,000 | 11 s | ~91,000/s | 518 MB |
-| F-02 `fuzz_canonicalize` | arbitrary bytes and invalid UTF-8 | 1,000,000 | 2 s | 500,000/s | 366 MB |
-| F-03 `fuzz_apply` | arbitrary record sequences against a live chain | 1,000,000 | 349 s | 2,865/s | 480 MB |
-| F-04 `fuzz_proof_verify` | arbitrary proof bytes against a fixed root | 1,000,000 | 510 s | 1,960/s | 403 MB |
-| F-05 `fuzz_tree_build` | arbitrary leaf sets `0..=C` and arbitrary height bytes | 25,000 | 16–195 s | not stable, see below | 445 MB |
+| F-01 `fuzz_params_decode` | arbitrary bytes into every decoder, including the client's account placement | 1,000,000 | 13 s | 76,923/s | 505 MB |
+| F-02 `fuzz_canonicalize` | arbitrary bytes and invalid UTF-8 | 1,000,000 | 11 s | 90,909/s | 434 MB |
+| F-03 `fuzz_apply` | arbitrary record sequences against a live chain | 1,000,000 | 355 s | 2,816/s | 565 MB |
+| F-04 `fuzz_proof_verify` | arbitrary proof bytes against a fixed root | 1,000,000 | 527 s | 1,897/s | 404 MB |
+| F-05 `fuzz_tree_build` | arbitrary leaf sets `0..=C` and arbitrary height bytes | 25,000 | 620 s | 40/s | 380 MB |
 
-The group took 1,178 seconds — 19 minutes 38 seconds — in the run these figures come from, and that total moves with F-05. `slowest_unit_time_sec` was 0 for every
-target and the highest peak was 516 MB against the 2,048 MB limit, so §4.5's "zero panics, zero OOM,
-zero timeouts" is met for F-01 and F-02 and holds for the other three at their counts.
+**One run, 3 Oct 2026, every figure from it, total derived by addition: 1,526 s — 25 min 26 s.** Highest
+peak 565 MB against the 2,048 MB limit; `slowest_unit_time_sec` 0 for all five; `scripts/ci.sh fuzz`
+exited 0.
 
-Measured end to end at these counts, from an empty corpus, on an Apple M2, 8 cores, macOS 26.6.2, under
-cargo-fuzz's default AddressSanitizer build.
+A review found the previous version of this table arithmetically impossible, and it was: F-01's figure
+came from one run while F-03's and F-04's came from an earlier one, and the stated total came from a
+third. Mixing runs is what produced a total no addition of its own rows could reach. **Every figure here
+is from the single run named above**, and the total is computed from the rows rather than quoted.
 
-**Short measurements do not extrapolate here, and an earlier version of this file was wrong because of
-it.** F-03 measured 2,222/s over 20,000 runs against a 262-entry corpus, which predicts a million
-iterations in seven and a half minutes; the actual run took over 34 minutes, its corpus growing to
-1,527 entries. libFuzzer mutates from the corpus it accumulates, so a warm corpus is slower than a cold
-one and a short sample overstates a long run. From empty, that same million is 349 seconds. The nightly
-job always starts from empty, so the table above is what describes it, and no figure in it is derived
-from a shorter run.
+**F-05 has no stable rate, and the spread is the finding.** Runs of 25,000 from an empty corpus have
+measured 16, 64, 75, 195, 217, 318 and 620 seconds, with an independent reviewer recording 222.60 s and
+231.46 s. The leaf count is itself fuzzed and a 4,096-leaf unit at `H = 16` costs orders of magnitude
+more than a small one, so throughput depends on what the search happens to explore. No single number
+describes this target; the 16 s once published as its figure was the fastest of nine samples.
 
-**F-05's count is the one below a million, and it is a budget rather than a result.** §4.5 fixes a
-million for F-01 and F-02; it states no count for the other three, and F-03 and F-04 run a million
-anyway because at these rates they can. F-05 cannot: an arbitrary height byte may ask for `H = 16`, a
-complete tree of 65,536 leaves is milliseconds of Keccak under a sanitizer, and a million units at
-**F-05 has no stable rate.** Four runs of 25,000 from an empty corpus took 16 s, 64 s, 75 s and 195 s. The
-leaf count is itself fuzzed and a 4,096-leaf unit costs about sixteen times a 256-leaf one, so throughput
-depends on what the search explores. At the slow end a million units is over two hours, which is why the
-count stays at 25,000; at the fast end it would be minutes. Neither figure is the target's rate, and
-D-134 records that a claim of a tenfold speed-up made from one sample was withdrawn.
-
-So F-05 sees four orders of magnitude less input than F-01. That is the cost of one unit, not a finding
-that less exploration suffices, and raising it is one edit to `fuzz()` in `scripts/ci.sh` plus a longer
-`timeout-minutes` in the workflow.
+**A false timeout, and what it cost.** One group run aborted with libFuzzer exit 70 after F-05 reported
+`slowest_unit_time_sec: 1034`. The input it saved replays in **223 ms** — a unit worth 223 ms of work was
+measured at 1,034 seconds of wall clock, so the machine stalled rather than the code looping. Two fresh
+runs then completed with `slowest_unit_time_sec: 0`. No `-timeout` value survives a thousand-second
+stall, so nothing was loosened; what caught it was the rule above, replay before believing the filename.
+An independent review had written of the per-unit margin that it was "strong operational confirmation,
+not a proof against arbitrary machine load", and this is that caveat arriving within the hour.
 
 ## Round one's findings, and what they say about this file's own claims
 
@@ -129,7 +123,7 @@ build under a sanitizer **exceeded the 10-second per-unit timeout and aborted th
 reaches capacity for heights 4 through 12 and not for 13 through 16. Those boundaries are pinned
 deterministically instead, by `the_leaf_count_boundaries_hold_at_every_height_class` in
 `crates/certimining-log/tests/tree.rs`, which does 0, 1, `C-1`, `C` and `C+1` at every height class in
-under two seconds. Content search is what the fuzzer is for; a boundary should not depend on a mutation
+about two seconds — 1.65 s here and 2.01 s for an independent reviewer, so not a guarantee. Content search is what the fuzzer is for; a boundary should not depend on a mutation
 happening to find it.
 
 **§4.5's 10,000 P-02 cases reached no committed job (E12-04).** `config()` runs 512 and the requirement
