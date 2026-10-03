@@ -187,6 +187,11 @@ checks() {
   check "test core, default" cargo test -p certimining-core
   check "test core, solana" cargo test -p certimining-core --no-default-features --features solana
   check "test core, all features" cargo test -p certimining-core --all-features
+  # §4.5 asks P-02 for 10,000 generated cases and `config()` runs 512, so the required count reached no
+  # committed job and a review found it (E12-04). It is cheap — a few seconds — so it runs here on every
+  # push rather than being left to a note telling someone to set the variable by hand.
+  check "property counts (§4.5: P-02 at 10,000 cases)" \
+    env PROPTEST_CASES=10000 cargo test -p certimining-core --test state_props p02_apply_is_deterministic -- --exact
   check "test log, no default features" cargo test -p certimining-log --no-default-features
   check "test log, default" cargo test -p certimining-log
   check "test log, solana" cargo test -p certimining-log --no-default-features --features solana
@@ -260,20 +265,23 @@ deny() {
 # `slowest_unit_time_sec` was 0 for every target and the highest `peak_rss_mb` was 516, against the
 # 2,048 MB limit below:
 #
-#   F-01 fuzz_params_decode  1,000,000 in    4 s   250,000/s   516 MB
+#   F-01 fuzz_params_decode  1,000,000 in   11 s   ~91,000/s   518 MB
 #   F-02 fuzz_canonicalize   1,000,000 in    2 s   500,000/s   366 MB
 #   F-03 fuzz_apply          1,000,000 in  349 s     2,865/s   480 MB
 #   F-04 fuzz_proof_verify   1,000,000 in  510 s     1,960/s   403 MB
-#   F-05 fuzz_tree_build        25,000 in  169 s       147/s   453 MB
+#   F-05 fuzz_tree_build        25,000 in 16-195 s  not stable  445 MB
 #                                       ----------
-#                                 whole group 1,034 s, 17 min 14 s
+#                                 whole group 1,178 s, 19 min 38 s, and it moves with F-05
 #
 # §4.5 fixes a million for F-01 and F-02 and states no count for the other three. F-03 and F-04 run a
 # million anyway, because at these rates they can. **F-05 is the one count below a million**, and it
 # could not be one: an arbitrary height byte may ask for H = 16, a complete tree of 65,536 leaves is
-# milliseconds of Keccak under a sanitizer, and a million units at 147/s is 1.9 hours. 25,000 is a
-# budget, not a result — F-05 sees four orders of magnitude less input than F-01, and that is the cost
-# of one unit rather than a finding that less exploration suffices.
+# milliseconds of Keccak under a sanitizer. **F-05 has no stable rate**: four runs of 25,000 from empty
+# took 16, 64, 75 and 195 seconds, because the leaf count is itself fuzzed and a 4,096-leaf unit costs
+# about sixteen times a 256-leaf one. At the slow end a million is over two hours, which is why the count
+# stays here; no count in this repository is set from an extrapolated rate (D-134). What bounds F-05
+# regardless of count is the derived-count clamp — heights 4 to 12 reach capacity, 13 to 16 do not, and
+# those boundaries are pinned by a deterministic test instead.
 fuzz() {
   local version
   version="$(cargo fuzz --version)"

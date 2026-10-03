@@ -374,6 +374,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "certimining-client"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "certimining-checkpoint",
+ "certimining-core",
+ "certimining-log",
+]
+
+[[package]]
 name = "certimining-core"
 version = "0.1.0"
 dependencies = [
@@ -390,6 +400,7 @@ dependencies = [
  "anchor-lang",
  "arbitrary",
  "certimining-checkpoint",
+ "certimining-client",
  "certimining-core",
  "certimining-log",
  "ed25519-dalek",

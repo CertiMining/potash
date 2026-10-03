@@ -1688,21 +1688,37 @@ cargo-fuzz's default AddressSanitizer build. Run: `scripts/ci.sh fuzz`.
 
 | | runs | time | rate | peak RSS |
 |---|---|---|---|---|
-| F-01 `fuzz_params_decode` | 1,000,000 | 4 s | 250,000/s | 516 MB |
+| F-01 `fuzz_params_decode` | 1,000,000 | 11 s | ~91,000/s | 518 MB |
 | F-02 `fuzz_canonicalize` | 1,000,000 | 2 s | 500,000/s | 366 MB |
 | F-03 `fuzz_apply` | 1,000,000 | 349 s | 2,865/s | 480 MB |
 | F-04 `fuzz_proof_verify` | 1,000,000 | 510 s | 1,960/s | 403 MB |
-| F-05 `fuzz_tree_build` | 25,000 | 169 s | 147/s | 453 MB |
+| F-05 `fuzz_tree_build` | 25,000 | 16-195 s | see below | 445 MB |
 
-1,034 seconds for the group, 17 min 14 s. `slowest_unit_time_sec` was 0 for every target; the limits are
+1,178 seconds for the group in the run recorded here, 19 min 38 s — and that total moves with F-05, which
+is the one target whose cost is not stable. `slowest_unit_time_sec` was 0 for every target; the limits are
 `-rss_limit_mb=2048` and `-timeout=10`, passed explicitly because §4.5 asks F-01 for zero OOM and zero
 timeouts and libFuzzer can report neither without a limit to cross.
 
-**F-05 is the one count below a million and could not be one.** An arbitrary height byte may ask for
-`H = 16`; a complete tree of 65,536 leaves is milliseconds of Keccak under a sanitizer, and a million
-units at 147/s is 1.9 hours against 17 minutes for the other four combined. 25,000 is a budget, not a
-result: F-05 sees four orders of magnitude less input than F-01, which is the cost of one unit and not a
-finding that less exploration suffices.
+**F-05 is the one count below a million, and after round two it has no stable rate at all.** Four runs of
+25,000 from an empty corpus took **16 s, 64 s, 75 s and 195 s** — a twelvefold spread. That is a property
+of the redesign rather than noise: the leaf count is now itself fuzzed, and a unit asking for 4,096 leaves
+costs about sixteen times one asking for 256, so the throughput depends on how much of a run the search
+spends on large trees. **No single rate describes this target**, and the 147/s this entry first carried and
+the 1,562/s that briefly replaced it were both one sample each.
+
+Two things follow. The count stays at **25,000**: at the pessimistic end a million units is over two hours,
+so the original budget reasoning survives at the figure that matters, and raising it on an arithmetic
+estimate would repeat exactly the mistake recorded below. And "the redesign made F-05 ten times faster",
+which this entry said for a few minutes, is **withdrawn** — it made the cost variable and moved what the
+target explores, which is the actual gain.
+
+The first attempt at a million-iteration measurement was also contaminated and discarded: its corpus was
+deleted and its binary rebuilt underneath it while an unrelated mutation was being tested.
+
+F-05 therefore still sees far less input than F-01, and the clamp described in the target bounds what it
+can reach regardless of count: heights 4 to 12 reach capacity, 13 to 16 do not, because a 65,536-leaf
+build under a sanitizer exceeded the per-unit timeout. Those boundaries are pinned deterministically by
+`the_leaf_count_boundaries_hold_at_every_height_class` instead.
 
 **A wrong number was published first, and the reason is worth keeping.** These counts were initially set
 from 20,000-run samples, which put F-03 at 2,222/s and predicted a million in seven and a half minutes;

@@ -12,26 +12,34 @@ cargo-fuzz = true
 # The fuzzing driver, pinned like every other tool (D-11's convention).
 #
 # **Its licence does not reduce to one answer, and this comment does not pick one.** The crate declares
-# `(MIT OR Apache-2.0) AND NCSA` at `Cargo.toml:25`, and its `README.md:101` says "All files in the
-# `libfuzzer` directory are licensed NCSA". The files themselves say something else: all 47 `.cpp` and
-# `.h` files under `libfuzzer/` — the ones `build.rs:38` compiles into `libfuzzer.a` — carry
-# `SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception` in their own headers, and the crate ships
-# no NCSA licence text anywhere. LLVM relicensed from NCSA years before this snapshot; the crate's
-# metadata and prose appear not to have followed. Checked against a registry copy of 0.4.10 with:
-#   ls libfuzzer/*.cpp libfuzzer/*.h | wc -l
-#   grep -l  'SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception' libfuzzer/*.cpp libfuzzer/*.h | wc -l
-#   grep -ril 'NCSA' .        # Cargo.toml and README.md only; no licence text
+# `(MIT OR Apache-2.0) AND NCSA` at `Cargo.toml:25` and repeats NCSA at `README.md:101`. The vendored LLVM
+# sources say otherwise: all **53** `.cpp` and `.h` files under `libfuzzer/` carry
+# `SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception`, and the crate ships no NCSA licence text.
+# `build.rs` compiles **26** of them — the top-level `.cpp` only, since its `read_dir` does not recurse,
+# so what is under `afl/`, `dataflow/` and `tests/` ships without being built. LLVM relicensed away from
+# NCSA before this snapshot; the crate's metadata and prose appear not to have followed.
+#
+# An earlier version of this comment said "all 47", which was the top-level `.cpp` and `.h` together —
+# neither figure, and not reproducible from the locked package (PR #55, E12-05). The commands that
+# reproduce all three numbers are in `deny.toml` beside the exception.
 #
 # Which of those governs is a legal question and not one this file settles. What is settled: `cargo deny`
-# reads the declaration and not the files, so pointing the licence gate at this manifest refuses the
-# crate until the owner rules on it. And nothing here ships — the fuzz binaries are test tooling that
-# reaches neither the deployed program nor the client.
+# reads the declaration and not the files, so pointing the licence gate at this manifest refuses the crate
+# until the owner rules on it. And nothing here ships — the fuzz binaries are test tooling that reaches
+# neither the deployed program nor the client.
 libfuzzer-sys = "=0.4.10"
 # Structured input from arbitrary bytes, so F-03 and F-05 drive real types rather than raw buffers.
 arbitrary = { version = "=1.4.2", features = ["derive"] }
 
 certimining-core = { path = "../crates/certimining-core", features = ["native"] }
 certimining-log = { path = "../crates/certimining-log", features = ["native"] }
+# The client's public account decoders, which are where a counterparty's bytes actually enter: an RPC
+# response is untrusted, and `decode_checkpoint` and `decode_config` are what stand between it and a root
+# the client believes. A review found F-01 was not driving them and that the fuzz graph did not even
+# contain this crate, so a defect accepting an account owned by another program survived 1,000,000
+# iterations (PR #55, round two, E12-04). Default features only: the decoders are in the default build and
+# `cluster` would pull in an RPC client this target has no use for.
+certimining-client = { path = "../crates/certimining-client" }
 # The program's account layouts, so F-01 can drive the decoders a counterparty's bytes actually reach.
 # `no-entrypoint` keeps the Solana entrypoint out of a host build, which is how the client takes it.
 certimining-checkpoint = { path = "../programs/certimining-checkpoint", features = ["no-entrypoint"] }

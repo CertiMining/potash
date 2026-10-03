@@ -46,12 +46,26 @@ allow = ["CDLA-Permissive-2.0"]
 #
 # **Two licence statements disagree, and both are permissive, which is why this is an exception rather
 # than a wider allow.** The crate declares `(MIT OR Apache-2.0) AND NCSA` at its `Cargo.toml:25` and
-# repeats NCSA in its `README.md:101`. The vendored LLVM sources it actually compiles say otherwise:
-# all 47 `.cpp` and `.h` files under `libfuzzer/`, the set `build.rs:38` feeds to `cc`, carry
-# `SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception`, and the crate ships no NCSA licence text.
-# LLVM relicensed away from NCSA before this snapshot. `cargo deny` reads the declaration, so NCSA is
-# what has to be allowed here; the file headers are recorded because they are what the compiled code
-# carries, and a reader should not have to rediscover the discrepancy.
+# repeats NCSA in its `README.md:101`. The vendored LLVM sources say otherwise, and a review corrected the
+# population this record named (PR #55, E12-05). Against the locked 0.4.10 source:
+#
+#   find libfuzzer -type f \( -name '*.cpp' -o -name '*.h' \) | wc -l                    # 53
+#   find libfuzzer -type f \( -name '*.cpp' -o -name '*.h' \) \
+#     -exec grep -l 'SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception' {} \; | wc -l  # 53
+#   ls libfuzzer/*.cpp | wc -l                                                           # 26, the set
+#                                                                                        # build.rs compiles
+#   grep -ril 'NCSA' . --include='*.cpp' --include='*.h' | wc -l                          # 0
+#
+# So: 53 `.cpp` and `.h` files in the crate, every one carrying `Apache-2.0 WITH LLVM-exception`, and no
+# NCSA licence text anywhere in them. `build.rs` compiles **26** of those — the top-level `.cpp` only,
+# because its `read_dir("libfuzzer")` does not recurse, so the sources under `afl/`, `dataflow/` and
+# `tests/` are shipped and not built. An earlier version of this note said "all 47", which was the
+# top-level `.cpp` and `.h` together: neither the crate's population nor the compiled set, and not
+# reproducible from the locked package as written.
+#
+# Which statement governs is a legal question and not one this file settles. NCSA is what has to be
+# allowed because `cargo deny` reads the declaration; the headers are recorded because they are what the
+# compiled code carries.
 #
 # Scoped to this crate, so a second crate arriving under NCSA still fails the gate.
 #

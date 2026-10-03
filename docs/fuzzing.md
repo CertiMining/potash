@@ -18,7 +18,7 @@ cargo +nightly-2026-06-16 fuzz run fuzz_apply -- -runs=20000
 ```
 
 The group is not in `scripts/ci.sh all`, which is the push pipeline verbatim. It runs nightly in
-`.github/workflows/fuzz.yml`: the group takes 17 minutes, which is not a cost worth paying on every
+`.github/workflows/fuzz.yml`: the group takes roughly twenty minutes, which is not a cost worth paying on every
 push.
 
 **A `timeout-` artifact does not by itself mean a timeout, and `fuzz/artifacts/` is not cleared between
@@ -56,13 +56,13 @@ each night's count meaning the same thing at the cost of never going deeper than
 
 | | What it drives | Count | Time | Rate | Peak RSS |
 |---|---|---|---|---|---|
-| F-01 `fuzz_params_decode` | arbitrary bytes into every decoder | 1,000,000 | 4 s | 250,000/s | 516 MB |
+| F-01 `fuzz_params_decode` | arbitrary bytes into every decoder, including the client's account placement | 1,000,000 | 11 s | ~91,000/s | 518 MB |
 | F-02 `fuzz_canonicalize` | arbitrary bytes and invalid UTF-8 | 1,000,000 | 2 s | 500,000/s | 366 MB |
 | F-03 `fuzz_apply` | arbitrary record sequences against a live chain | 1,000,000 | 349 s | 2,865/s | 480 MB |
 | F-04 `fuzz_proof_verify` | arbitrary proof bytes against a fixed root | 1,000,000 | 510 s | 1,960/s | 403 MB |
-| F-05 `fuzz_tree_build` | arbitrary leaf sets `0..=C` and arbitrary height bytes | 25,000 | 169 s | 147/s | 453 MB |
+| F-05 `fuzz_tree_build` | arbitrary leaf sets `0..=C` and arbitrary height bytes | 25,000 | 16–195 s | not stable, see below | 445 MB |
 
-The whole group is 1,034 seconds — 17 minutes 14 seconds. `slowest_unit_time_sec` was 0 for every
+The group took 1,178 seconds — 19 minutes 38 seconds — in the run these figures come from, and that total moves with F-05. `slowest_unit_time_sec` was 0 for every
 target and the highest peak was 516 MB against the 2,048 MB limit, so §4.5's "zero panics, zero OOM,
 zero timeouts" is met for F-01 and F-02 and holds for the other three at their counts.
 
@@ -81,11 +81,64 @@ from a shorter run.
 million for F-01 and F-02; it states no count for the other three, and F-03 and F-04 run a million
 anyway because at these rates they can. F-05 cannot: an arbitrary height byte may ask for `H = 16`, a
 complete tree of 65,536 leaves is milliseconds of Keccak under a sanitizer, and a million units at
-147/s is 1.9 hours, against 14 min 25 s for the other four combined.
+**F-05 has no stable rate.** Four runs of 25,000 from an empty corpus took 16 s, 64 s, 75 s and 195 s. The
+leaf count is itself fuzzed and a 4,096-leaf unit costs about sixteen times a 256-leaf one, so throughput
+depends on what the search explores. At the slow end a million units is over two hours, which is why the
+count stays at 25,000; at the fast end it would be minutes. Neither figure is the target's rate, and
+D-134 records that a claim of a tenfold speed-up made from one sample was withdrawn.
 
 So F-05 sees four orders of magnitude less input than F-01. That is the cost of one unit, not a finding
 that less exploration suffices, and raising it is one edit to `fuzz()` in `scripts/ci.sh` plus a longer
 `timeout-minutes` in the workflow.
+
+## Round one's findings, and what they say about this file's own claims
+
+An independent review of E-12 found five, three of them in the targets and properties this file describes
+as working. Two are the same defect the section below is about, found again in places this file had not
+looked.
+
+**F-05 treated a forbidden refusal as success (E12-01).** Its refusal branch accepted `MalformedPayload`
+for any input and only *required* it when the height was invalid. §4.5's obligation is positive — a valid
+height always produces a complete tree — so an engine that began refusing valid trees would not have
+failed it. The reviewer proved it: a defect refusing a valid, unique, one-leaf tree at `H = 8` completed
+25,000 iterations green while the ordinary positive test failed at once. The target now decides what the
+engine owes for every input — `Ok`, `0x05` for an invalid height or a duplicate identifier, `0x12` over
+capacity — and requires exactly that. Re-checked with the same defect: it now fails naming §4.5.
+
+**P-02 never reached an accepted transition (E12-02).** It compared two applications of an arbitrary
+record against an arbitrary snapshot. An arbitrary `prev_head` fails condition (a), so the `Ok` arm was
+dead and nondeterminism in the accepted path passed 10,000 cases — the reviewer demonstrated it with a
+rising nonce XORed into accepted heads. Each case now also applies the same record rewritten to satisfy
+every §1.3 condition from that snapshot, and fails if it is refused. Re-checked with the same defect: it
+fails on the first case.
+
+That is the third time this pattern has been found here, after F-01's refuted assertion and F-03's four
+attempts. The lesson this file already drew was right and was not applied widely enough: **a target or
+property that only inspects refusals has not tested the thing that must succeed.**
+
+**F-05 could not represent its own domain (E12-03).** §4.5 asks for real-leaf sets over `0..=C`. Each
+element costs 48 input bytes and libFuzzer's default `-max_len` is 4,096, so roughly 85 elements fitted and
+the old 300-element source cap was never the binding constraint — its comment claimed to sit "a little
+above the largest capacity this bound allows", which held only for `H = 8`. The input now carries a small
+arbitrary set plus a **derived** count, so any count costs two bytes. That made the target about ten times
+faster, because large sets no longer have to be decoded from input.
+
+It did not make the whole domain reachable, and the limit is recorded rather than glossed. The derived
+count is clamped at 4,096: left at the full `u16`, a unit could ask for 65,536 leaves at `H = 16`, and that
+build under a sanitizer **exceeded the 10-second per-unit timeout and aborted the run**. So the fuzzer
+reaches capacity for heights 4 through 12 and not for 13 through 16. Those boundaries are pinned
+deterministically instead, by `the_leaf_count_boundaries_hold_at_every_height_class` in
+`crates/certimining-log/tests/tree.rs`, which does 0, 1, `C-1`, `C` and `C+1` at every height class in
+under two seconds. Content search is what the fuzzer is for; a boundary should not depend on a mutation
+happening to find it.
+
+**§4.5's 10,000 P-02 cases reached no committed job (E12-04).** `config()` runs 512 and the requirement
+lived in a comment telling a reader to set `PROPTEST_CASES` by hand. `scripts/ci.sh checks` now runs the
+10,000 on every push; it costs a few seconds.
+
+**The licence record named the wrong file population (E12-05).** See `deny.toml`, which now carries the
+commands that reproduce all three figures — 53 files in the crate, 53 carrying the SPDX header, 26
+compiled.
 
 ## Targets that could not reach what they tested
 

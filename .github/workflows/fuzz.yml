@@ -21,7 +21,8 @@ concurrency:
 jobs:
   fuzz:
     runs-on: ubuntu-24.04
-    # The measured group is 17 min 14 s from an empty corpus on an M2 (figures in scripts/ci.sh). This
+    # The measured group is 19 min 38 s from an empty corpus on an M2 (figures in scripts/ci.sh), and it
+    # moves with F-05, whose cost is not stable. This
     # limit is several times that because a shared runner is slower and because libFuzzer's throughput
     # depends on the corpus it accumulates, so the number is not tight. It is here so a target that
     # stops making progress fails the job rather than running to the runner's own six-hour ceiling.
