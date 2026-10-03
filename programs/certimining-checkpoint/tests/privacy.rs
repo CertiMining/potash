@@ -378,6 +378,143 @@ fn v_z_01_an_empty_epoch_is_published_like_any_other() {
     );
 }
 
+/// Everything §4.4 permits to differ, overwritten, so that what remains can be compared for plain
+/// equality. The windows blanked are the ones located in *this* publication's own bytes rather than a
+/// fixed list assumed to hold for it.
+fn redact(published: &Published, permitted_offsets: &[usize]) -> (Vec<u8>, Vec<u8>) {
+    let mut transaction = published.transaction.clone();
+    for range in &published.permitted {
+        transaction[range.clone()].fill(0);
+    }
+    let mut account = published.account.clone();
+    for offset in permitted_offsets {
+        account[*offset] = 0;
+    }
+    (transaction, account)
+}
+
+/// The first offset at which two byte strings differ, so a failure names one byte instead of printing
+/// two whole artifacts.
+fn first_difference(a: &[u8], b: &[u8]) -> Option<usize> {
+    a.iter().zip(b.iter()).position(|(x, y)| x != y)
+}
+
+/// One publication reduced to what P-03 compares: the count it held, its artifacts with §4.4's
+/// permitted bytes blanked, and the windows that were blanked, located in that transaction.
+struct Footprint {
+    records: usize,
+    transaction: Vec<u8>,
+    account: Vec<u8>,
+    windows: Vec<std::ops::Range<usize>>,
+}
+
+/// **P-03.** No real-leaf count moves an epoch's footprint — for *any* two counts, not four.
+///
+/// V-Z-01 fixes 0, 1, 128 and 255. §4.5 states the property over any two counts `a ≠ b`, and at the
+/// deployed height the domain is small enough to run whole: capacity at `H = 8` is 256 and the engine
+/// refuses a set only when `real.len() > capacity`, so a count is one of the 257 values `0..=256`.
+/// This publishes every one of them, which settles all 32,896 pairs exactly rather than sampling from
+/// them the way a generator would (D-133).
+///
+/// Two things fall out of running the whole domain instead of four points in it. A **completely full**
+/// epoch is in it, which V-Z-01's 255 never built, and that is the worst case for the tree's open
+/// addressing: the last submission has exactly one free slot left to probe. And both neighbours of
+/// each of V-Z-01's points are in it, so a footprint that moved only at 127 or at 129 is now caught.
+///
+/// **Why the comparison is redaction and not V-Z-01's shape.** V-Z-01 compares each publication
+/// against the first and permits a difference wherever §4.4's list allows one. That relation is not
+/// transitive, because the transaction's permitted windows are located per publication, so
+/// all-against-one would not carry a claim about all pairs. Here each publication's permitted bytes
+/// are blanked first and the remainder compared for equality, which is transitive, so one pass over
+/// the domain does establish every pair. The windows themselves are asserted identical across counts,
+/// because a window that moved with the count would be a leak redaction would otherwise hide.
+#[test]
+fn p03_no_record_count_moves_an_epochs_footprint() {
+    let capacity = 1usize << DEPLOYED_HEIGHT;
+    let permitted_offsets = permitted_account_offsets();
+
+    let mut reference: Option<Footprint> = None;
+    // Two publications are kept unredacted for the control at the end: comparing redacted artifacts
+    // proves nothing unless the unredacted ones differed in the first place.
+    let mut raw: Vec<(usize, Published)> = Vec::new();
+
+    for records in 0..=capacity {
+        // Each count publishes the same epoch on its own log, V-Z-01's construction: with the epoch
+        // held equal, the checkpoint address and the epoch argument cannot differ, and the record
+        // count is the only thing that varies.
+        let (mut svm, authority, payer) = fresh_log(DEPLOYED_HEIGHT);
+        let published = publish_epoch(&mut svm, &authority, &payer, START, root_for(records));
+
+        assert_eq!(
+            published.account.len(),
+            CheckpointAccount::LEN,
+            "§2.4: 106 bytes, and an epoch of {records} records wrote a different number"
+        );
+        assert_eq!(
+            published.instruction_data.len(),
+            48,
+            "§1.8: 48 bytes, and an epoch of {records} records sent a different number"
+        );
+
+        let (transaction, account) = redact(&published, &permitted_offsets);
+        match &reference {
+            None => {
+                reference = Some(Footprint {
+                    records,
+                    transaction,
+                    account,
+                    windows: published.permitted.clone(),
+                })
+            }
+            Some(first) => {
+                let n = first.records;
+                assert_eq!(
+                    &published.permitted, &first.windows,
+                    "P-03: §4.4's permitted windows sit at different offsets for {records} records \
+                     than for {n}, so the count moves the transaction's layout"
+                );
+                assert_eq!(
+                    transaction.len(),
+                    first.transaction.len(),
+                    "P-03: the transaction is a different length for {records} records than for {n}"
+                );
+                if let Some(at) = first_difference(&transaction, &first.transaction) {
+                    panic!(
+                        "P-03: outside §4.4's list, transaction byte {at} differs between an epoch \
+                         of {records} records and one of {n}"
+                    );
+                }
+                if let Some(at) = first_difference(&account, &first.account) {
+                    panic!(
+                        "P-03: outside §4.4's list, account byte {at} differs between an epoch of \
+                         {records} records and one of {n}"
+                    );
+                }
+            }
+        }
+
+        if records == 0 || records == capacity {
+            raw.push((records, published));
+        }
+    }
+
+    // The control. Redaction blanks the root, so the loop above would pass unchanged if `root_for`
+    // returned one constant and nothing varied at all. The empty epoch and the full one have to reach
+    // the chain as different bytes, or P-03 compared a publication against itself 257 times.
+    assert_eq!(raw[0].0, 0, "the empty epoch is the first one kept");
+    assert_eq!(raw[1].0, capacity, "the full epoch is the second one kept");
+    let (empty, full) = (&raw[0].1, &raw[1].1);
+    assert_ne!(
+        empty.account, full.account,
+        "an empty epoch and a full one wrote identical accounts, so nothing varied across the domain \
+         and P-03 established nothing"
+    );
+    assert_ne!(
+        empty.instruction_data, full.instruction_data,
+        "an empty epoch and a full one sent identical instruction data, so no root reached the chain"
+    );
+}
+
 #[test]
 fn v_z_06_a_daily_filer_and_a_twice_yearly_filer_look_the_same() {
     // Two issuers, two filing rhythms, one chain. What an observer sees is a checkpoint per epoch

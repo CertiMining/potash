@@ -1573,7 +1573,6 @@ inferred: a tree-wide scan would need an allow-list holding `docs/anchoring.md`,
 every one of which holds live values because its subject is the deployment, and an allow-list that long
 is a gate that refuses nothing.
 
-
 ## D-127 · The qualified-person key is labelled wherever it appears
 
 **Date:** 28 Sep 2026 · **Unit:** E-14 · **Class:** security necessity · **Status:** settled at S0 (owner, 28 Sep 2026)
@@ -1595,7 +1594,6 @@ appearance. "Not once in a legend" still binds the interface, where the risk of 
 **The miss was procedural and is recorded as such.** The collision between this decision and §2.5 was
 found while building, and the sidecar was chosen without putting it to the owner. The call was right;
 bringing it at the time was the obligation, and a review had to surface it instead.
-
 
 ## D-128 · Scene 3 states what detection is and what it is not
 
@@ -1636,3 +1634,134 @@ bringing it at the time was the obligation, and a review had to surface it inste
 ## D-131 · This entry is reserved
 
 **Date:** 30 Sep 2026 · **Status:** reserved so that D-131 and D-132, put to the owner at E-12's S0, land on their own numbers rather than on numbers this file has already used.
+
+## D-131 · Fuzzing is cargo-fuzz on the toolchain Miri already pins
+
+**Date:** 30 Sep 2026 · **Unit:** E-12 · **Class:** cost judgment · **Status:** settled at S0 (owner, 30 Sep 2026)
+
+**Decision (the owner's).** `cargo-fuzz`, on `nightly-2026-06-16` — the toolchain `scripts/ci.sh` already pins for Miri, as `MIRI_TOOLCHAIN` in that file — so no second toolchain enters the build. His reason: *"zero OOM, zero timeouts" can't be met by a loop that can't detect either.*
+
+**What it costs, stated rather than absorbed.** `libfuzzer-sys` and `arbitrary`, a `fuzz/` crate outside the workspace, and a scheduled CI job for the million-iteration runs §4.5 asks of F-01 and F-02. Both crates pass `cargo deny`'s licence and advisory gates like everything else, or they do not ship.
+
+**Rejected.** A seeded loop on stable: no toolchain, no dependency, meets the iteration count, explores far less per iteration — and cannot detect an out-of-memory or a timeout at all, so it could not report two of the three things §4.5's acceptance criteria name.
+
+**Revisit if** the licence gate refuses either crate, in which case the stable loop is the fallback and the record says which of §4.5's criteria it cannot meet rather than quietly meeting fewer.
+
+## D-132 · Benchmarks are Criterion, and only the deterministic thresholds gate the build
+
+**Date:** 30 Sep 2026 · **Unit:** E-13 · **Class:** cost judgment · **Status:** settled at S0 (owner, 30 Sep 2026)
+
+**Decision (the owner's).** Criterion, which E-13's task list already named. His reason: *a single wall-clock sample isn't a published number.* §4.4a requires figures measured and reported, and a number with no distribution behind it is not one. It costs a large dependency tree through the licence and advisory gates.
+
+**Rejected.** A minimal harness, about fifty lines, no new dependency, no confidence intervals.
+
+**How a threshold fails a build, which is the harder half (agreed by the owner, 30 Sep 2026).** §4.4a mixes two kinds of measure and they cannot be gated the same way.
+
+- **Compute units are deterministic.** The same instruction against the same program costs the same CU on any machine, so `publish_checkpoint` ≤ 15,000 and `attach_anchor_receipt` ≤ 12,000 are asserted absolutely in CI. `scripts/ci.sh kat01-onchain` already does the first.
+- **Wall-clock is not.** A shared runner's timing varies by more than the margins §4.4a states, so an absolute assertion there would either flake or be loose enough to assert nothing. CI compares against a committed baseline and fails on a regression past a band; §4.4a's absolute figures — a 10,000-record chain walk under 5 ms, an epoch root at 256 leaves under 10 ms, an inclusion proof under 1 ms — are asserted on the reference machine and **recorded with the machine named**, which is what §4.4a's own "reference laptop" wording requires.
+- **The signature path is measured and published with no threshold**, which §4.4a states outright: a bound on it belongs in v0.2, set from real data rather than guessed now.
+
+## D-133 · P-03 runs its whole domain instead of sampling it
+
+**Date:** 1 Oct 2026 · **Unit:** E-12 · **Class:** required by the spec · **Status:** settled at S4
+
+**Decision.** §4.5 states P-03 over "any two real-leaf counts `a ≠ b`", and the domain of real-leaf counts at the deployed height is 257 values: capacity at `H = 8` is 256, and `EpochTree::build` refuses a set only when `real.len() > capacity` (`crates/certimining-log/src/tree.rs:87`). P-03 therefore publishes every count in `0..=256` rather than drawing pairs from a generator. All 32,896 pairs are settled exactly; a sample of them would not be "any two", and `proptest` is not a dev-dependency of the program crate, so sampling would have added one to assert something weaker. Run: `cargo test -p certimining-checkpoint --test privacy p03`, 11.4 s.
+
+**The comparison had to change shape for that to hold.** V-Z-01 compares each publication against the first and permits a difference wherever §4.4's list allows one. That relation is not transitive, because the transaction's permitted windows are located per publication, so all-against-one would not establish all pairs. P-03 blanks each publication's permitted bytes first and compares the remainder for equality, which is transitive, and separately asserts that the windows sit at identical offsets across counts — a window that moved with the count would be a leak that redaction would otherwise hide.
+
+**What the whole domain reaches that four points did not.** A **completely full** epoch, which V-Z-01's maximum of 255 never built; it is the worst case for the tree's open addressing, where the last submission has exactly one free slot left to probe (`probe` scans the full capacity, `tree.rs:221`). And both neighbours of each of V-Z-01's four points, so a footprint that moved only at 127 or at 129 is now caught.
+
+**The test carries a control, because redaction blanks the root.** With the root blanked, the comparison would pass unchanged if `root_for` returned one constant and nothing varied at all. The test asserts that the empty epoch and the full one reach the chain as different accounts and different instruction data. Mutation-checked, three ways: dropping the root from the account's permitted offsets fails at account byte 18; narrowing the transaction's permitted window to the epoch argument fails at transaction byte 382; making `root_for` constant fails the control.
+
+**Revisit if** the deployed height changes. At `H = 16` the domain is 65,537 counts and about 55 minutes at the measured rate, which is a scheduled job and not a merge gate; the record would then say which counts run on a PR and why those.
+
+## D-134 · §4.5's open iteration counts, and the one that is a budget
+
+**Date:** 1 Oct 2026 · **Unit:** E-12 · **Class:** cost judgment · **Status:** settled at S4
+
+**Decision.** §4.5 fixes 1,000,000 iterations for F-01 and F-02 and states no count for F-03, F-04 or
+F-05. F-03 and F-04 run 1,000,000 as well. F-05 runs 25,000. Counts live in `fuzz()` in
+`scripts/ci.sh`; §4.6 gates on them through `.github/workflows/fuzz.yml`.
+
+**Measured end to end at these counts, from an empty corpus** — Apple M2, 8 cores, macOS 26.6.2, under
+cargo-fuzz's default AddressSanitizer build. Run: `scripts/ci.sh fuzz`.
+
+| | runs | time | rate | peak RSS |
+|---|---|---|---|---|
+| F-01 `fuzz_params_decode` | 1,000,000 | 11 s | ~91,000/s | 518 MB |
+| F-02 `fuzz_canonicalize` | 1,000,000 | 2 s | 500,000/s | 366 MB |
+| F-03 `fuzz_apply` | 1,000,000 | 349 s | 2,865/s | 480 MB |
+| F-04 `fuzz_proof_verify` | 1,000,000 | 510 s | 1,960/s | 403 MB |
+| F-05 `fuzz_tree_build` | 25,000 | 16-195 s | see below | 445 MB |
+
+1,178 seconds for the group in the run recorded here, 19 min 38 s — and that total moves with F-05, which
+is the one target whose cost is not stable. `slowest_unit_time_sec` was 0 for every target; the limits are
+`-rss_limit_mb=2048` and `-timeout=10`, passed explicitly because §4.5 asks F-01 for zero OOM and zero
+timeouts and libFuzzer can report neither without a limit to cross.
+
+**F-05 is the one count below a million, and after round two it has no stable rate at all.** Four runs of
+25,000 from an empty corpus took **16 s, 64 s, 75 s and 195 s** — a twelvefold spread. That is a property
+of the redesign rather than noise: the leaf count is now itself fuzzed, and a unit asking for 4,096 leaves
+costs about sixteen times one asking for 256, so the throughput depends on how much of a run the search
+spends on large trees. **No single rate describes this target**, and the 147/s this entry first carried and
+the 1,562/s that briefly replaced it were both one sample each.
+
+Two things follow. The count stays at **25,000**: at the pessimistic end a million units is over two hours,
+so the original budget reasoning survives at the figure that matters, and raising it on an arithmetic
+estimate would repeat exactly the mistake recorded below. And "the redesign made F-05 ten times faster",
+which this entry said for a few minutes, is **withdrawn** — it made the cost variable and moved what the
+target explores, which is the actual gain.
+
+The first attempt at a million-iteration measurement was also contaminated and discarded: its corpus was
+deleted and its binary rebuilt underneath it while an unrelated mutation was being tested.
+
+F-05 therefore still sees far less input than F-01, and the clamp described in the target bounds what it
+can reach regardless of count: heights 4 to 12 reach capacity, 13 to 16 do not, because a 65,536-leaf
+build under a sanitizer exceeded the per-unit timeout. Those boundaries are pinned deterministically by
+`the_leaf_count_boundaries_hold_at_every_height_class` instead.
+
+**A wrong number was published first, and the reason is worth keeping.** These counts were initially set
+from 20,000-run samples, which put F-03 at 2,222/s and predicted a million in seven and a half minutes;
+the run took over 34 minutes, its corpus growing from 262 entries to 1,527. libFuzzer mutates from the
+corpus it accumulates, so a warm corpus is slower than a cold one and a short sample overstates a long
+run. F-03 and F-04 were briefly cut to 250,000 on that bad arithmetic and restored once measured from
+empty, which is what CI does. **No iteration count in this repository is set from an extrapolated rate.**
+
+**Revisit if** a shared runner's measured time approaches `timeout-minutes: 120`, in which case F-04 is
+the first to cut, being the dearest million; or if F-05's target is narrowed to the deployed height, at
+which point its count is no longer bounded by `H = 16`.
+
+## D-135 · libfuzzer-sys is a scoped licence exception, not a wider allow
+
+**Date:** 2 Oct 2026 · **Unit:** E-12 · **Class:** cost judgment · **Status:** settled at S6 (owner, 2 Oct 2026)
+
+**Decision (the owner's).** A per-crate exception for `libfuzzer-sys` in D-89's shape, recording both
+licence statements. His reasons: both are permissive, and the crate lives in `fuzz/`, outside the shipped
+workspace, so it never reaches anything a user runs.
+
+**What the two statements are.** The crate declares `(MIT OR Apache-2.0) AND NCSA` at its
+`Cargo.toml:25` and repeats NCSA at its `README.md:101`. The vendored LLVM sources it compiles say
+otherwise: all 47 `.cpp` and `.h` files under `libfuzzer/` — the set `build.rs:38` feeds to `cc` — carry
+`SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception`, and the crate ships no NCSA licence text.
+LLVM relicensed away from NCSA before this snapshot. `cargo deny` reads the declaration, so NCSA is what
+the gate needs allowed; the headers are recorded because they are what the compiled code carries.
+
+**That it ships nothing is checked, not assumed.** Nothing in the repository depends on
+`certimining-fuzz`, and neither `libfuzzer-sys` nor `arbitrary` appears in the dependency graph of
+`certimining-client`, `certimining-core`, `certimining-log` or `certimining-checkpoint`. `arbitrary`
+1.4.2 is `MIT OR Apache-2.0` and needed no exception.
+
+**Why the gate refused it at all, which is the part worth keeping.** `fuzz/` is its own Cargo workspace,
+so a root `cargo deny check` never saw either crate — `cargo deny list | grep -c libfuzzer` answers 0.
+D-131 had committed both to the licence and advisory gates "like everything else, or they do not ship",
+and that was untrue rather than met until `scripts/ci.sh deny` was pointed at the fuzz manifest as a
+second check against the same `deny.toml`. Finding the licence was the consequence of closing that hole,
+not a reason to leave it open.
+
+**Rejected.** D-131's own revisit clause, which said a refused crate means falling back to a seeded loop
+on stable; the owner ruled the exception instead, so §4.5's "zero OOM, zero timeouts" stay reportable. A
+global NCSA allow was also rejected, on D-89's ground that one crate's licence is not a reason to widen
+the list — scoping it means the next NCSA crate still fails.
+
+**Revisit if** counsel's IP screen (R3) reaches build-time-only tooling, in which case the seeded loop is
+the fallback and the record names which §4.5 criteria it cannot report.

@@ -29,6 +29,8 @@ import {
   readTagged,
 } from "../src/preimage.ts";
 import { TAG_HEAD, TAG_LEAF } from "../src/tags.ts";
+import { readLeafPreimage } from "../src/disclosure.ts";
+import { RegistryFailure } from "../src/errors.ts";
 import {
   PDA_MARKER,
   createProgramAddress,
@@ -249,6 +251,47 @@ const vP11: Handler = (v) => {
 
   // INV-STATE-06a: the flag does not change the leaf digest.
   assert.equal(toHex(flagged.leaf), toHex(seen.leaf), "a flag changed the leaf digest");
+};
+
+const vN18: Handler = (v) => {
+  // §1.3's order of judgement puts decode first: a buffer that does not decode has no fields to
+  // judge. The vector fixes one canonical preimage, and this walks **every** prefix rather than a
+  // sample, because a decoder reading fixed-width fields is exactly as wrong at 160 bytes as at 3 and
+  // the interesting lengths are the ones that stop mid-field.
+  const canonical = fromHex(v.inputs.canonical, num(v.inputs.length));
+  const code = num(v.expected.every_prefix_shorter_than_length.code);
+  const name = v.expected.every_prefix_shorter_than_length.error;
+
+  for (let length = 0; length < canonical.length; length++) {
+    const truncated = canonical.slice(0, length);
+    let failure: unknown;
+    try {
+      readLeafPreimage(truncated);
+    } catch (e) {
+      failure = e;
+    }
+    assert.ok(failure !== undefined, `a ${length}-byte preimage was accepted`);
+    assert.ok(
+      failure instanceof RegistryFailure,
+      `a ${length}-byte preimage failed as ${(failure as Error).constructor.name}, not a registry refusal`,
+    );
+    assert.equal((failure as any).code, code, `${length} bytes: code`);
+    assert.equal((failure as any).codeName, name, `${length} bytes: code name`);
+  }
+
+  // And the whole thing decodes, so the check refuses what §1.3 refuses and nothing wider.
+  const decoded = readLeafPreimage(canonical);
+  assert.equal(decoded.seq, big(v.expected.at_full_length.seq), "seq at full length");
+  assert.equal(decoded.category, num(v.expected.at_full_length.category), "category at full length");
+
+  // The boundaries the vector carries are §1.3's, transcribed. If they drift from what the reader
+  // actually uses, a field would end somewhere this table does not say.
+  let cursor = 0;
+  for (const b of v.inputs.field_boundaries as Array<{ field: string; ends_at: number }>) {
+    assert.ok(b.ends_at > cursor, `${b.field} ends at ${b.ends_at}, which is not after ${cursor}`);
+    cursor = b.ends_at;
+  }
+  assert.equal(cursor, canonical.length, "the fields do not add up to the preimage's length");
 };
 
 const vP12: Handler = (v) => {
@@ -642,6 +685,7 @@ export const HANDLERS: Record<string, Handler> = {
   "V-N-16": vN16,
   "V-N-16b": vN16b,
   "V-N-17": vN17,
+  "V-N-18": vN18,
   "V-N-20": vN20,
   "V-N-21": vN21,
   "V-N-23": vN23,

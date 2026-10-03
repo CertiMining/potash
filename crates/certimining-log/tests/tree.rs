@@ -205,6 +205,52 @@ fn a_full_epoch_builds_and_one_more_submission_is_0x12() {
     );
 }
 
+/// The leaf-count boundaries, at every height class §1.8 allows (E12-03).
+///
+/// **Why this is a test and not the fuzzer's job.** §4.5 asks F-05 for arbitrary real-leaf sets over
+/// `0..=C`, and a review found that it could not represent them: each element costs 48 input bytes and
+/// libFuzzer's default `-max_len` is 4,096, so about 85 elements fit. F-05's input now derives a count in
+/// two bytes, which makes the domain representable — but representable is not reached. libFuzzer starts
+/// from tiny inputs and a 65,536-leaf build is expensive, so the search has every reason to stay small.
+/// Boundary behaviour is pinned here instead, deterministically, where it cannot depend on a mutation
+/// happening to find it.
+///
+/// `MixHash` because what is under test is shape and refusal, not cryptography; the real-Keccak paths run
+/// in `with_real_keccak` below and exhaustively at `H = 8` in P-03.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "65,536 leaves under an interpreter is hours; the smaller heights here cover the same paths"
+)]
+fn the_leaf_count_boundaries_hold_at_every_height_class() {
+    for height in [4u8, 8, 12, 16] {
+        let capacity = 1usize << height;
+        for count in [0usize, 1, capacity - 1, capacity] {
+            let real = submissions(count);
+            let built = BuiltEpoch::build::<MixHash>(7, height, &TEST_MASTER_KEY, &real)
+                .unwrap_or_else(|e| {
+                    panic!("height {height}, {count} leaves: §4.5 says a valid height always builds, got {e:?}")
+                });
+            assert_eq!(
+                built.leaves.len(),
+                capacity,
+                "height {height}, {count} leaves: INV-TREE-01 fixes the leaf count at capacity"
+            );
+            assert_eq!(
+                built.assignment.len(),
+                count,
+                "height {height}: every real leaf is placed"
+            );
+        }
+        let over = submissions(capacity + 1);
+        assert_eq!(
+            BuiltEpoch::build::<MixHash>(7, height, &TEST_MASTER_KEY, &over).err(),
+            Some(RegistryError::EpochCapacityExceeded),
+            "height {height}: C + 1 real submissions is 0x12"
+        );
+    }
+}
+
 #[test]
 fn two_submissions_under_one_identifier_are_0x05() {
     let repeated = vec![

@@ -1,0 +1,63 @@
+{
+  "description": "A truncated leaf preimage at every prefix length. Each is refused at the decode step with 0x05 and never panics; only the whole 161 bytes decode.",
+  "expected": {
+    "at_full_length": {
+      "category": "2",
+      "decodes": true,
+      "seq": "2"
+    },
+    "every_prefix_shorter_than_length": {
+      "asserted": "refused at decode, before any condition is judged, and without a panic",
+      "code": 5,
+      "error": "MalformedPayload"
+    }
+  },
+  "id": "V-N-18",
+  "inputs": {
+    "canonical": "0x434d76314c454146b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd020000000000000022222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0201f15365000000009df0536500000000",
+    "field_boundaries": [
+      {
+        "ends_at": 8,
+        "field": "tag"
+      },
+      {
+        "ends_at": 40,
+        "field": "c"
+      },
+      {
+        "ends_at": 48,
+        "field": "seq"
+      },
+      {
+        "ends_at": 80,
+        "field": "payload_digest"
+      },
+      {
+        "ends_at": 112,
+        "field": "assessment_digest"
+      },
+      {
+        "ends_at": 144,
+        "field": "qp_key"
+      },
+      {
+        "ends_at": 145,
+        "field": "category"
+      },
+      {
+        "ends_at": 153,
+        "field": "effective_at"
+      },
+      {
+        "ends_at": 161,
+        "field": "change_identified_at"
+      }
+    ],
+    "length": "161"
+  },
+  "notes": [
+    "The qualified person's key is RFC 8032 §7.1's published specification test key, not a real identity. Its private half is public, so every signature here is reproducible."
+  ],
+  "schema_version": "1",
+  "spec": "§4.3"
+}

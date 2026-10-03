@@ -1,0 +1,53 @@
+# §4.5's fuzz targets at the iteration counts §4.6 gates on (D-131). Separate from ci.yml because that
+# workflow runs on every push and these runs take minutes rather than seconds. The counts and the
+# limits live in scripts/ci.sh, so `scripts/ci.sh fuzz` on a laptop is this job verbatim, the same way
+# every ci.yml job calls that script. Actions are pinned to full commit SHAs (D-12).
+name: fuzz
+
+on:
+  schedule:
+    # 04:17 UTC daily. An odd minute on purpose: GitHub queues the top of the hour heavily and a
+    # scheduled run that is delayed an hour is a run that reports nothing useful about last night.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    # The measured group is 19 min 38 s from an empty corpus on an M2 (figures in scripts/ci.sh), and it
+    # moves with F-05, whose cost is not stable. This
+    # limit is several times that because a shared runner is slower and because libFuzzer's throughput
+    # depends on the corpus it accumulates, so the number is not tight. It is here so a target that
+    # stops making progress fails the job rather than running to the runner's own six-hour ceiling.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The pinned host toolchain first, exactly as all seven ci.yml jobs do. rust-toolchain.toml would
+      # make rustup install 1.95.0 implicitly on the first cargo call, but `cargo install cargo-fuzz`
+      # and `cargo fuzz --version` below should run against the pin deliberately, not by side effect.
+      - run: scripts/ci.sh install-rust
+      # cargo-fuzz needs a nightly toolchain for the sanitizer, and D-131 settled that it reuses the
+      # one Miri already pins rather than bringing a second one into the build. install-miri is what
+      # installs that toolchain, so it is the step that installs it here too.
+      - run: scripts/ci.sh install-miri
+      - run: scripts/ci.sh install-cargo-fuzz
+      - run: scripts/ci.sh fuzz
+      # A nightly run that finds a crash and then discards the input that caused it has reported a
+      # number, not a defect. libFuzzer writes the reproducer under fuzz/artifacts/, which is
+      # gitignored and lives only on the runner, so it is uploaded before the runner is destroyed.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-reproducers
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 30
