@@ -58,11 +58,11 @@ function account(overrides = {}) {
     publishedUnix: 1111111111n,
     receiptDigest: RECEIPT,
     anchorKind: 1,
-    // 7, which no account on the announced deployment holds — its bumps are 250, 253 and 255. A review
-    // found 255 here, which is both the live checkpoint bump for five of six epochs and the natural
-    // bump for any PDA, since canonical search starts at 255 and counts down (PR #57, round two, H-01).
-    // The owner ruled that synthetic data must look synthetic rather than widening the gate to match
-    // three-digit numbers.
+    // A bump no account on the announced deployment holds. This fixture carried a live one, which is
+    // also the bump canonical PDA search lands on first, so it looked unremarkable (PR #57, round two).
+    // The live values are deliberately not quoted here: this file is inside the surface the rule covers,
+    // and the first attempt at this fix reintroduced them in its own explanation (round three). The
+    // reasoning lives in LIVE-VALUES.txt, outside the scanned surface.
     bump: 7,
     ...overrides,
   });

@@ -24,8 +24,11 @@ are compared: root, publication slot, publication timestamp, receipt digest, aut
 value inside an account, and an earlier version of this paragraph said it was — a review found a live
 checkpoint bump sitting in a synthetic fixture while this script reported nothing missing, because it
 never reads offset 99 (PR #57, round two, H-01). The program account gives the ProgramData address, which
-gives the upgrade authority. Signatures are paged to exhaustion for the program and every account it
-owns. A response without a `result` member is a failure, not an absence.
+gives the upgrade authority. **Transaction ids** are paged to exhaustion for the program and every account it owns. That is the
+`signature` field of each `getSignaturesForAddress` entry, which is a transaction's *first* signature —
+not every signature it carries. A review found the announced deployment's 13 transactions hold 25
+signatures between them, so 12 co-signatures are neither listed nor compared (H-29). An earlier version
+of the message below said "every signature", which was false. A response without a `result` member is a failure, not an absence.
 
 **What it still cannot do, stated rather than implied.** A superseded deployment's values are not
 reachable from the announced one: `HS82CAXg…` and `jzJzgKWM…` are in the list by hand and this check
@@ -360,8 +363,10 @@ def main() -> int:
     # a live bump this script does not read; a success message may not claim more than its own coverage.
     print(
         f"live-values: of the fields this script reads — addresses, roots, publication slots and "
-        f"timestamps, receipt digests, the authority and every signature — the chain holds nothing "
-        f"{LIST.name} does not. Bumps and epoch numbers are not read; they are review-enforced (H-20)."
+        f"timestamps, receipt digests, the authority and every **transaction id** "
+        f"`getSignaturesForAddress` returns — the chain holds nothing {LIST.name} does not. Not read: "
+        f"bumps and epoch numbers, which are review-enforced (H-20), and the co-signatures inside each "
+        f"transaction (H-29)."
     )
     return 0
 

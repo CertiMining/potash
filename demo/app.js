@@ -60,10 +60,11 @@ const FIXED = {
   publishedUnix: 1790500000n,
   receiptDigest: fromHex(`0x${"ab".repeat(32)}`, 32),
   anchorKind: 1,
-  // 7, not 255. The announced deployment's bumps are 250, 253 and 255, and this page is synthetic — a
-  // review-enforced rule, because the gate cannot match three-digit numbers without firing on unrelated
-  // text (LIVE-VALUES.txt, H-20). The review that followed PR #57's round two found 255 here as well as
-  // in the fixture test.
+  // A bump no account on the announced deployment holds. This page is synthetic and must look it; the
+  // live bumps are not quoted here, because this file is inside the surface the rule covers and a comment
+  // naming them would put them straight back — which is what the first attempt at this fix did
+  // (PR #57, rounds two and three). The live set is in LIVE-VALUES.txt's reasoning, which is outside the
+  // scanned surface, and the gate cannot hold three-digit values until H-20 lands.
   bump: 7,
 };
 
