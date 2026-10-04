@@ -54,6 +54,12 @@ inside the Solana runtime and outside it, across every committed preimage.
   suffices.
 - The count-hiding property is computational, not information-theoretic, and rests on the batcher's
   key custody. Both are stated in Appendix A of the specification as RES-09 and RES-03.
+- **The announced log does not demonstrate count-hiding, and never did (D-138).** Its record set is a
+  public constant: the publication harness builds every epoch from three records whose submission ids
+  and leaves are written in `crates/certimining-client/tests/publish_epoch.rs`. A property that hides
+  how many records an epoch held cannot be shown by a log whose record count is in its own source. All
+  eight published roots, epochs 20723 to 20730, can be rebuilt from this repository alone. What
+  exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
 
 ## What this asserts
 
