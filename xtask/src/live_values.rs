@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! The rule that no synthetic artifact carries a value from a live deployment (owner, 28 Sep 2026).
 //!
 //! **Why this exists.** E-14's demo fixture carried the announced log's real transaction signature and

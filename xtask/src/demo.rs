@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! `cargo xtask gen-demo` — E-14's fixtures, written by the engine (D-126).
 //!
 //! **Why the engine writes them.** The demo's Scene 2 is a counterparty verifying a package, and the

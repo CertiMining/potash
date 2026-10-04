@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! F-04: arbitrary proof bytes against a fixed root.
 //!
 //! §4.5 asks that no proof be accepted without a genuine path and that no out-of-bounds read be
@@ -42,7 +43,9 @@ fuzz_target!(|input: Input| {
     // proof, including the genuine one, passed 100,000 iterations. The epoch's own proof is checked
     // first and unconditionally: if the verifier will not accept the path the engine just produced for
     // a submission the epoch holds, nothing else this target says is worth reading.
-    let genuine = built.proof(&real_id).expect("the epoch holds this submission");
+    let genuine = built
+        .proof(&real_id)
+        .expect("the epoch holds this submission");
     <ProofVerifier as InclusionVerifier>::verify::<NativeKeccak>(&real_leaf, &genuine, &built.root)
         .expect(
             "the proof the engine produced for a submission this epoch holds was refused against the \
@@ -75,9 +78,18 @@ fuzz_target!(|input: Input| {
         Ok(()) => {
             // An accepted proof must be the real one: same leaf, same height, same siblings as the
             // epoch actually holds. Anything else accepted here is a forgery against a real root.
-            assert_eq!(input.leaf, real_leaf, "a proof verified for a leaf the epoch does not hold");
-            assert_eq!(proof.height, genuine.height, "accepted a proof at another height");
-            assert_eq!(proof.slot_index, genuine.slot_index, "accepted a proof at another slot");
+            assert_eq!(
+                input.leaf, real_leaf,
+                "a proof verified for a leaf the epoch does not hold"
+            );
+            assert_eq!(
+                proof.height, genuine.height,
+                "accepted a proof at another height"
+            );
+            assert_eq!(
+                proof.slot_index, genuine.slot_index,
+                "accepted a proof at another slot"
+            );
             assert_eq!(
                 proof.siblings.as_slice(),
                 genuine.siblings.as_slice(),
