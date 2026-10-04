@@ -259,3 +259,86 @@ cargo test --release -p certimining-log -- --ignored
 
 Its three correlations are recorded on issue #16. The bound there is 0.02, against 0.05 at the sample
 CI runs.
+
+## The defect this repository keeps finding
+
+Every independent review round so far has found at least one instance of a single defect, and it has
+never once been found by running the suite. It is this:
+
+> **An instrument that maps its own failed observation onto the value its acceptance predicate
+> rewards.**
+
+Not a wrong answer — a *non*-answer, converted into the right-looking one. The measurement does not
+happen, and what the absence produces is indistinguishable from success. Every gate in this repository
+is built to fail loudly, and this is the one way a gate stays silent while measuring nothing.
+
+It is worth stating plainly because the shape is not obvious until you have seen it several times, and
+because the suite cannot find it. These are the instances this repository's own review record names:
+
+| What failed | What it reported |
+|---|---|
+| `pearson` over a constant series | `0.0` — the *best* possible answer for §4.4's bound |
+| the same helper, in its other role, returning `None` | a release predicate that accepted `None` |
+| a feature whose standard deviation is zero | `0.0` for every row, so every pair tied |
+| ties, under a tie-break that alternates | exactly 50%, which is ideal indistinguishability |
+| `assert_indistinguishable` with zero trials | the band `[0, 0]`, which zero successes sits inside |
+| a pair of one leaf with itself | a tie, and so the ideal rate again |
+| `saturating_sub` on an impossible slot reading | a delay of `0` |
+| a benchmark that timed closures and discarded their results | `0.0000 ms`, comfortably inside the band |
+| an expected value taken from the thing under test | both sides moved together, so the check held |
+| a fixture size read from a mutable constant | a 16-leaf build published under a 256-leaf row name |
+| a fixture pinned in one executable, built again in another | a false distribution, exit 0 |
+| a `NaN` baseline | a `NaN` limit, and `now > NaN` is false |
+| a `f64::MAX` baseline | an infinite limit, which nothing exceeds |
+| nine feature columns that were nine copies of one byte | all nine "varied", and the control scored 1.0000 |
+
+Several of those were introduced *by the fix for the one above it*. That is the characteristic
+progression: the repair addresses the instance and leaves the class, because the class is a habit of
+thought rather than a line of code.
+
+**The test that finds it.** Break the thing the instrument watches, not the thing it reports, and
+require the instrument to notice:
+
+- Make the operation a no-op and keep its signature. Does the timing fall to zero and pass?
+- Make the input degenerate — one value, zero rows, zero trials, a self-pair. Does the statistic come
+  back as the ideal rather than as a refusal?
+- Make the fixture a fraction of the size its label claims. Does the label change with it?
+- Ask what the oracle is built from. If it is built from the subject, mutating the subject moves both
+  and nothing fails.
+- Ask what the control could be satisfied by other than the thing it claims to prove.
+
+**A new assertion owes a demonstration that it can fail.** Not that it passes — a dead assertion passes
+too. When you add one, break the property it guards, record the failure message in the commit, and
+restore. Every fix in the table above carries that demonstration, and the ones that did not are why the
+next round found the next instance.
+
+**And the specific habit to distrust: a degenerate sample is a defect, not a result.** If the data
+cannot answer the question, the honest output is a refusal naming what collapsed. It is never the value
+that means "the property holds", however convenient the arithmetic makes that substitution look.
+
+## Anchoring the repository head
+
+§3's E-16 requires the submitted commit to be timestamped on Bitcoin with its receipt committed.
+`anchors/0001-0258f51.txt` was produced by hand in September and nothing recorded how, which left a
+one-shot step on the submission commit with no runbook. It is a command now:
+
+```sh
+scripts/anchor-repo.sh                    # on a clean tree, at the commit being submitted
+```
+
+It refuses a dirty tree, because a manifest naming a commit that is not what is on disk is evidence of
+nothing. It numbers itself from the anchors already present, writes the commit, the tree hash and the
+digests of the documents a counterparty reads, and stamps the manifest against the OpenTimestamps
+calendars.
+
+**The receipt it writes is not the one to commit.** It carries calendar attestations only; Bitcoin
+confirmation takes hours, the same budgeted wait D-112 describes for an epoch. Hours later:
+
+```sh
+ots upgrade anchors/NNNN-xxxxxxx.txt.ots
+ots info anchors/NNNN-xxxxxxx.txt.ots | grep -i bitcoin    # it must name a block
+```
+
+Commit the upgraded receipt. The commit the manifest names is the parent of the commit that carries
+it — the manifest cannot contain its own hash — so a reader checks out the named commit and recomputes
+the tree from there.
