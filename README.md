@@ -45,9 +45,10 @@ inside the Solana runtime and outside it, across every committed preimage.
   not a measured latency. A sixth, epoch 20728, is published and stamped but **not** complete: its
   receipt carries calendar attestations only, so the epoch reads `single` until a Bitcoin block confirms
   it and the receipt is attached.
-  The cadence INV-ANCH-01 asks for has also already been missed once — nothing
-  published on day 20726, and the log caught up the next day — which is what a cadence run by hand
-  does, there being no worker ([#49](https://github.com/CertiMining/potash/issues/49)).
+  The cadence INV-ANCH-01 asks for has also already been missed twice — nothing
+  published on day 20726 or on day 20729, and each time the log caught up the next day — which is what
+  a cadence run by hand does, there being no worker
+  ([#49](https://github.com/CertiMining/potash/issues/49)).
   `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
 - There is no fuzz or property harness yet.
 - The count-hiding property is computational, not information-theoretic, and rests on the batcher's
