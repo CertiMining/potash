@@ -87,8 +87,9 @@ jobs:
       - run: scripts/ci.sh install-cargo-deny
       - run: scripts/ci.sh deny
 
-  # §4.4a's wall-clock half (D-132): this runner against its own committed baseline, with a band. The
-  # absolute figures belong to the reference machine §4.4a names and are asserted there, not here.
+  # §4.4a's wall-clock half (D-132): this runner against its own committed baseline, with a band. This is
+  # the only wall-clock gate left — D-137 removed §4.4a's absolutes, which are now measured and reported
+  # with the machine named by `scripts/ci.sh thresholds`, run before submission rather than here.
   bench-band:
     needs: [kat01-offchain, kat01-onchain]
     runs-on: ubuntu-24.04

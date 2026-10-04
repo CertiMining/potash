@@ -21,8 +21,9 @@ hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
 **What is measured.** These are numbers this repository produces and checks, not estimates. Each row
 names which implementation produced it, because two of them exist and they differ by an order of
 magnitude; an earlier version of this table did not, and its Rust and TypeScript figures could not be
-told apart. Rust figures are release builds on the reference machine §4.4a names — Apple M2, 8 cores,
-macOS 26.6.2 — via `scripts/ci.sh thresholds` and `scripts/ci.sh bench`.
+told apart. Rust figures are release builds via `scripts/ci.sh thresholds` and `scripts/ci.sh bench`,
+on the reference machine §4.4a names — Apple M2, 8 cores, macOS 26.6.2 — except the chain-walk range,
+which spans two machines both matching that description and is why D-137 removed the bound.
 
 | | Threshold | Measured | By |
 |---|---|---|---|
@@ -142,7 +143,7 @@ taken by default.
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
-| `benches/` | §4.4a's performance figures, Criterion and the asserted thresholds ([`docs/performance.md`](docs/performance.md)) |
+| `benches/` | §4.4a's performance figures: Criterion distributions, the reported wall-clock measures, and the CI regression band ([`docs/performance.md`](docs/performance.md)) |
 | `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
 | `docs/` | the specification, every decision, and per-unit notes |
 | `scripts/ci.sh` | the whole pipeline as one script, so a local run is what CI runs |

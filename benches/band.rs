@@ -12,7 +12,7 @@
 //! number.
 
 use certimining_benches::{
-    chain_of, genesis, hash_chain, real_leaves, walk, HashOnly, EPOCH, HEIGHT, MASTER,
+    chain_of, genesis, hash_chain, real_leaves, walk, HashOnly, EPOCH, HEIGHT, MASTER, RECORDS,
 };
 use certimining_core::NativeKeccak;
 use certimining_log::{BuiltEpoch, EpochTree, InclusionVerifier, ProofVerifier};
@@ -106,6 +106,42 @@ fn wall_clock_measures_stay_inside_their_band() {
     let proof = built.proof(&id).expect("a proof");
     let root = built.root;
 
+    // **The workload itself has to be pinned, not just the shape of the result (PR #59, round two,
+    // High 1).** The structural checks below compare a build against `1 << HEIGHT`, and `HEIGHT` is a
+    // mutable benchmark constant — so both sides moved together. A review changed it from 8 to 4 and the
+    // band passed while timing a 16-leaf build and a four-level proof, under a row still called
+    // `epoch_root_256_leaves` and against a baseline measured at 256. That is the third variant of one
+    // mistake in this file: an oracle that shares its subject.
+    //
+    // These are literals, deliberately. They are what §4.4a's rows and `BASELINE.toml`'s names say the
+    // figures describe, and they are checked before anything is timed, so shrinking the fixture fails
+    // here rather than producing a fast number under the old label.
+    assert_eq!(
+        HEIGHT, 8,
+        "§4.4a's figures are at the deployed height; BASELINE.toml's rows assume it"
+    );
+    assert_eq!(
+        RECORDS, 10_000,
+        "§4.4a's chain-walk row is over 10,000 records"
+    );
+    assert_eq!(
+        unsigned.len(),
+        10_000,
+        "the chain fixture is not 10,000 records"
+    );
+    assert_eq!(
+        full.len(),
+        256,
+        "the epoch fixture is not the 256 leaves the row names"
+    );
+    assert_eq!(built.leaves.len(), 256, "the built epoch is not 256 leaves");
+    assert_eq!(
+        proof.siblings.len(),
+        8,
+        "an inclusion proof at the deployed height carries eight siblings; this one carries {}",
+        proof.siblings.len()
+    );
+
     // **Timing an operation is not evidence it happened (PR #59, High 1).** This measured three closures
     // and threw their results away: the chain walk's head was discarded, and the proof verification's
     // `Result` went into `black_box` without being inspected. A review made `hash_chain` return
@@ -150,16 +186,18 @@ fn wall_clock_measures_stay_inside_their_band() {
                         .expect("builds");
                 // Structural, so a build that returned a default or did nothing cannot be timed. There
                 // is no second implementation of the tree to compare a root against, so what is checked
-                // is what INV-TREE-01 fixes: a complete tree, every submission placed.
+                // is what INV-TREE-01 fixes: a complete tree, every submission placed. The sizes are
+                // literals, not `1 << HEIGHT` and `full.len()`, so this closure does not check the
+                // workload against the same constants that chose it.
                 assert_eq!(
                     again.leaves.len(),
-                    1 << HEIGHT,
-                    "the timed build did not produce a complete tree"
+                    256,
+                    "the timed build did not produce a complete 256-leaf tree"
                 );
                 assert_eq!(
                     again.assignment.len(),
-                    full.len(),
-                    "the timed build did not place every submission"
+                    256,
+                    "the timed build did not place all 256 submissions"
                 );
                 assert_ne!(
                     again.root, [0u8; 32],

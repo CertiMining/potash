@@ -1651,6 +1651,12 @@ bringing it at the time was the obligation, and a review had to surface it inste
 
 **Date:** 30 Sep 2026 · **Unit:** E-13 · **Class:** cost judgment · **Status:** settled at S0 (owner, 30 Sep 2026)
 
+**Superseded in part, 4 Oct 2026.** D-137 removes §4.4a's wall-clock absolutes entirely, so the figures
+this entry names for the reference machine — a chain walk under 5 ms, an epoch root under 10 ms, a proof
+under 1 ms — are no longer asserted anywhere; `thresholds.rs` measures and reports them with the machine
+named. The split this entry draws stands, and the compute-unit half is unchanged: the deterministic
+measures are asserted absolutely in CI and the wall-clock half is the committed baseline and its band.
+
 **Decision (the owner's).** Criterion, which E-13's task list already named. His reason: *a single wall-clock sample isn't a published number.* §4.4a requires figures measured and reported, and a number with no distribution behind it is not one. It costs a large dependency tree through the licence and advisory gates.
 
 **Rejected.** A minimal harness, about fifty lines, no new dependency, no confidence intervals.
@@ -1769,6 +1775,11 @@ the fallback and the record names which §4.5 criteria it cannot report.
 ## D-136 · §4.4a's chain-walk threshold is the measured figure, not the one written before measuring
 
 **Date:** 2 Oct 2026 · **Unit:** E-13 · **Class:** required by the spec · **Status:** settled at S2 (owner, 2 Oct 2026)
+
+**Superseded, 4 Oct 2026.** D-137 removes the row this entry amended. The `< 10 ms` bound set here held
+for two days: an independent review measured 17.6–19.5 ms on a second machine matching §4.4a's own
+description, so the figure was not reproducible and the bound is gone rather than widened again. What this
+entry established and D-137 keeps is that a figure in the specification is measured, not guessed.
 
 **Decision (the owner's).** Amend §4.4a to the measured figure, name the reference machine, and record
 that 5 ms was set before anything was measured. His reason: *a threshold the code misses by 40% is a

@@ -1,7 +1,8 @@
-# Performance: what §4.4a asserts, where, and on what machine
+# Performance: §4.4a's figures, what is asserted, what is reported, and on what machine
 
-§4.4a has seven rows. This file says which mechanism covers each, what the figures are, and the one
-threshold that was changed because the code did not meet it.
+§4.4a has seven rows. This file says which mechanism covers each, what the figures are, and how three of
+the seven lost their thresholds — one because the code did not meet it, then all three because the figure
+turned out not to be reproducible.
 
 | §4.4a row | Threshold | Asserted by | Measured |
 |---|---|---|---|
@@ -50,14 +51,18 @@ are separate assertions in the same test, and a figure inside its bound can stil
 unseen.
 
 **Wall-clock is not.** A shared runner is slower and noisier than a laptop by an amount nobody controls,
-so asserting §4.4a's absolute figures there would either flake or be loose enough to assert nothing.
-D-132 splits it:
+so asserting fixed figures there would either flake or be loose enough to mean nothing. D-132 split it by
+machine, and D-137 then removed the absolute half outright, which leaves:
 
-- **On the reference machine**, §4.4a's absolutes are asserted — `benches/thresholds.rs`, `#[ignore]`d so
-  CI does not run it, and run before submission the way V-Z-04's full 10,000-epoch run is.
-- **In CI**, the runner is held to its own previous figures instead: `benches/band.rs` reads
-  `benches/BASELINE.toml` and fails if a measure drifts more than `band_percent` above its baseline. It
-  is a regression detector, not a performance claim.
+- **On the reference machine**, the figures are measured and reported with the machine named —
+  `benches/thresholds.rs`, `#[ignore]`d so CI does not run it, and run before submission the way V-Z-04's
+  full 10,000-epoch run is. It asserts no performance threshold. Its correctness controls still fail: the
+  chain walk is cross-checked against the state machine, the proof is verified, and the workload is
+  pinned to the sizes its rows name.
+- **In CI**, the runner is held to its own previous figures: `benches/band.rs` reads
+  `benches/BASELINE.toml` and fails if a measure drifts more than `band_percent` above its baseline. Since
+  D-137 this is the only wall-clock gate in the repository. It is a regression detector, not a
+  performance claim.
 
 An absent baseline entry **fails** and prints what it measured. A baseline nobody measured would be a
 gate that cannot fail, and this repository has filed that defect more than once.
@@ -66,7 +71,7 @@ gate that cannot fail, and this repository has filed that defect more than once.
 the reference machine is about 1.8× faster, so locally the measures come in below the baseline and the
 comparison passes without meaning anything — it cannot fail on a machine faster than the one it is
 calibrated to. It sits in `all` because `all` mirrors the push pipeline verbatim; the run that matters is
-CI's, and what gates the reference machine is `scripts/ci.sh thresholds`.
+CI's. Nothing gates the reference machine: `scripts/ci.sh thresholds` records its figures (D-137).
 
 The band itself is **50%, and that is a guess**. How much these measures vary between runs on a shared
 runner has not been observed, so the number is not derived from anything; it is wide because a band that
@@ -78,17 +83,19 @@ few runs exist. Until then a failure there means "look", not "something regresse
 **Apple M2, 8 cores, macOS 26.6.2.** §4.4a names it, because a figure without a machine is not a figure.
 
 ```sh
-scripts/ci.sh thresholds   # §4.4a's absolutes, asserted
+scripts/ci.sh thresholds   # §4.4a's wall-clock figures, measured and reported
 scripts/ci.sh bench        # the Criterion distributions behind them
 scripts/ci.sh bench-band   # what CI runs: this machine against the committed baseline
 ```
 
-## The threshold that changed (D-136)
+## The threshold that changed, then went (D-136, then D-137)
 
 §4.4a's chain-walk row read **< 5 ms**, and 5 ms was never measured — it was written when §4.4a was
-restored, before anything in the repository timed the walk. E-13 timed it: **7.1 ms**, over by 40%. The
-row now carries the measurement and a gate above it, because a threshold the implementation misses is a
-claim the specification cannot carry.
+restored, before anything in the repository timed the walk. E-13 timed it: **7.1 ms**, over by 40%. D-136
+amended the row to the measurement with a gate above it, because a threshold the implementation misses is
+a claim the specification cannot carry. That bound held two days: a second machine matching §4.4a's own
+description measured 17.6–19.5 ms, and D-137 removed the row's threshold rather than raise it again. The
+measurement discipline below is why the second figure was believed.
 
 Two measurements had to be told apart to get there. §4.4a's row says "hash recomputation only", and its
 own note says the figure "is achievable only for the hash chain". That is what a verifier does — for each
@@ -113,10 +120,10 @@ as much as they measure code. Criterion warms up for seconds before recording an
 figure describes steady state, so these have to as well. An instrument that disagrees with the figure it
 is checking is not checking it.
 
-The assertion is on the **median** of seven. The best of N reports only the moments the operating system
-left alone and the worst reports the moments it did not; the median is the figure that moves when the
-code moves. All three are printed, because a threshold reported without its spread is the single-sample
-problem D-132 rejected.
+The figure reported, and the one `band.rs` compares, is the **median** of seven. The best of N reports
+only the moments the operating system left alone and the worst reports the moments it did not; the median
+is the figure that moves when the code moves. All three are printed, because a figure reported without its
+spread is the single-sample problem D-132 rejected — and the spread is what made D-137 visible.
 
 ## Two implementations, and a table that could not tell them apart
 
@@ -136,4 +143,5 @@ chain, on a program whose source has not changed since that figure was written.
 
 They are one machine's, on one day, at one tree height. They say nothing about a device under memory
 pressure, a different Keccak backend, or a log at `H = 16`, where an epoch is 65,536 leaves rather than
-256. §4.4a's thresholds bound the deployed shape; outside it there is no claim here.
+256. §4.4a's remaining thresholds — the compute units, and the TypeScript chain walk — bound the deployed
+shape; outside it there is no claim here, and for the three wall-clock rows there is no threshold at all.

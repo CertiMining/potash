@@ -411,8 +411,8 @@ that names this artifact is the third one.
 |---|---|---|
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | **10.3 ms** (10.32, 10.79 on two runs) |
 | the same chain including per-record Ed25519 verification | none in v0.1 | 1,035 ms (1,035.40, 1,037.48) |
-| epoch root build, 256 leaves | < 10 ms | 2.7 ms (2.70, 2.75) |
-| inclusion proof verification | < 1 ms | 0.030 ms (0.0297, 0.0304) |
+| epoch root build, 256 leaves | reported, none (D-137) | 2.7 ms (2.70, 2.75) |
+| inclusion proof verification | reported, none (D-137) | 0.030 ms (0.0297, 0.0304) |
 
 Each figure is the median of several timed repetitions inside one run; the two runs quoted are
 consecutive and show the spread.

@@ -1,10 +1,10 @@
 # §4.4a's wall-clock measures as the CI runner performs them (E-13, D-132).
 #
-# **This is not §4.4a's threshold and must not be read as one.** §4.4a's absolute figures are asserted
-# on the reference machine §4.4a names, by `thresholds.rs`. A shared runner is slower and noisier than
-# that machine by an amount nobody controls, so asserting §4.4a's numbers there would either flake or be
-# loose enough to assert nothing. What CI can do is notice that a measure moved: it compares against the
-# figures below and fails past a band.
+# **This is not a §4.4a threshold and must not be read as one.** §4.4a carries no wall-clock absolutes
+# at all since D-137, and before that they belonged to the reference machine §4.4a names. A shared runner
+# is slower and noisier than that machine by an amount nobody controls, so asserting fixed numbers there
+# would either flake or be loose enough to mean nothing. What CI can do is notice that a measure moved: it
+# compares against the figures below and fails past a band.
 #
 # Every value is `median_ms`, the median of the sampled runs, which is what `band.rs` compares.
 #
@@ -33,8 +33,8 @@ band_percent = 50.0
 # machine's. The reference machine is about 1.8x faster, so `scripts/ci.sh bench-band` there measures
 # below the baseline and passes without the comparison meaning anything — it cannot fail on a machine
 # faster than the one it is calibrated to. It is in `all` because `all` mirrors the push pipeline
-# verbatim, and the run that matters is CI's. The figures that gate the reference machine are §4.4a's
-# absolutes, asserted by `scripts/ci.sh thresholds`.
+# verbatim, and the run that matters is CI's. Nothing gates the reference machine: since D-137,
+# `scripts/ci.sh thresholds` measures §4.4a's figures there and reports them with the machine named.
 
 # Measured on ubuntu-24.04, GitHub's shared runner, by the bench-band job of CI run 37046282848
 # (commit c16b6a5) — the run whose failure printed them, which is the only way an entry gets here.
@@ -44,9 +44,10 @@ band_percent = 50.0
 # turns out to flake.
 #
 # For scale: the reference machine does the chain walk in 7.1 ms and this runner in 12.8 ms, about 1.8x
-# slower. That gap is the whole reason D-132 sends §4.4a's absolute figures to the reference machine and
-# gives CI a band instead — §4.4a's 10 ms chain-walk threshold would fail outright here, on code that
-# meets it.
+# slower. That gap is the whole reason D-132 sent §4.4a's absolute figures to the reference machine and
+# gave CI a band instead — D-136's 10 ms chain-walk threshold would have failed outright here, on code
+# that met it. D-137 has since removed those absolutes, on the same evidence read across two machines
+# rather than two environments, which leaves this band as the only wall-clock gate.
 [measures]
 chain_walk_hash_chain_only = 12.8476
 epoch_root_256_leaves = 0.3685

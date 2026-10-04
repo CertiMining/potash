@@ -705,13 +705,29 @@ So the description does not determine the figure, and a bound stated against it 
 
 The split matters. Signature verification dominates at scale — the hash-chain figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
 
-**The chain-walk threshold was 5 ms, and 5 ms was never measured (amended on this branch, unmerged).** It was written when §4.4a was restored and nothing in the repository had timed the walk; E-13 then timed it and the figure is **7.1 ms**, over by 40%. The number here is now the measurement and a gate above it, because a threshold the implementation misses is a claim this document cannot carry.
+**How the chain-walk row lost its bound, in order (amended on this branch, unmerged).** It was written
+`< 5 ms` when §4.4a was restored, before anything in the repository had timed the walk. E-13 measured
+**7.1 ms** and D-136 amended the bound to `< 10 ms`, chosen above a 6.9–8.7 ms spread so that a gate would
+fail on regression rather than on variance. An independent review then ran the same assertion on a
+different machine satisfying the description above and measured medians of **17.92, 16.65 and 19.52 ms**;
+while this section was being amended, the first machine measured **13.77 ms** with another test suite
+running beside it. One figure, four values from 7 to 19.5 ms, all on conforming hardware. D-137 therefore
+removed the bound rather than raising it a second time: a number stated against a machine description that
+does not determine it is not a property of this system.
 
-What was measured, and how, so a reader can repeat it rather than take this on trust. The **reference machine is an Apple M2, 8 cores, macOS 26.6.2**, and `cargo bench -p certimining-benches` is the command. The measure is the hash chain alone — for each record `leafₙ`, then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)`, two Keccak-256 invocations and no condition judged — which is what "hash recomputation only" means and what a verifier recomputing a chain does. `AssetChain::apply`, the issuer's path, judges every §1.3 condition on top of the same two hashes and costs 7.3 ms, so the 0.2 ms difference says the cost is hashing rather than judging. The full path with per-record Ed25519 verification is 425 ms, which is the row below this one and carries no threshold by design.
+What is measured, and how, so a reader can repeat it. The measure is the hash chain alone — for each
+record `leafₙ`, then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)`, two Keccak-256 invocations and no
+condition judged — which is what "hash recomputation only" means and what a verifier recomputing a chain
+does. `AssetChain::apply`, the issuer's path, judges every §1.3 condition on top of the same two hashes;
+the difference between them was 0.2 ms, which is why the cost is hashing rather than judging and why no
+amount of work on the state machine would have reached 5 ms. `scripts/ci.sh thresholds` reports all four
+figures with the machine named, and asserts no bound on any of them.
 
-**Why the gate is 10 ms and not 7.1 ms.** Repeated runs on the same machine ranged from 6.9 ms to 8.7 ms across their confidence intervals, so a gate at the point estimate would fail on variance rather than on regression — which is the distinction D-132 draws between the compute figures, deterministic and asserted absolutely, and wall-clock, which is not. 10 ms sits above the worst observed run and still catches a regression of 40% or more.
-
-**Two things this threshold does not excuse.** Enabling RustCrypto `sha3`'s `asm` feature was measured at 5.16 ms — a 27% gain that still misses the old 5 ms — and was not adopted, because how the system's hash primitive is built is not a performance decision to make under deadline. And the per-call overhead of the preimage path has not been examined; that is tracked rather than forgotten, as H-19 ([#58](https://github.com/CertiMining/potash/issues/58)). Either could move the figure, and neither changes what is true today.
+**Two things the removal does not excuse.** RustCrypto `sha3`'s `asm` feature was measured at 5.16 ms — a
+27% gain that still missed the old 5 ms — and was not adopted, because how the system's hash primitive is
+built is not a performance decision to take under deadline. And the per-call overhead of the preimage path
+is unexamined, tracked as H-19 ([#58](https://github.com/CertiMining/potash/issues/58)). Either could move
+the figure; neither restores a bound.
 
 CU figures are recorded per commit in CI; a regression past threshold fails the build.
 

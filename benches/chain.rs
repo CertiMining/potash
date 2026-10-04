@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! §4.4a's chain-walk measures (E-13, D-132, D-136), as distributions.
 //!
-//! The threshold these feed is asserted in `thresholds.rs`; this file reports what the figures are.
-//! The three measures are kept apart because the threshold turns on the difference between them:
-//! §4.4a's row is "hash recomputation only", `apply` is the issuer's path, and the Ed25519 path carries
-//! no threshold in v0.1 by §4.4a's own wording.
+//! §4.4a carries no wall-clock threshold on these any more (D-137); `thresholds.rs` reports the same
+//! figures as medians with the machine named, and this file reports their distributions. The three
+//! measures are kept apart because §4.4a distinguishes them: its row is "hash recomputation only",
+//! `apply` is the issuer's path, and the Ed25519 path is measured and reported in v0.1 by §4.4a's own
+//! wording.
 
 use certimining_benches::{chain_of, genesis, hash_chain, walk, HashOnly};
 use certimining_core::DalekVerifier;

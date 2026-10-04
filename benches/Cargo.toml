@@ -50,8 +50,9 @@ path = "epoch.rs"
 harness = false
 
 # §4.4a's wall-clock figures, measured and reported with the machine named (D-132, D-136, D-137). It
-# asserts nothing: two machines matching §4.4a's description measured 7 ms and 17.6-19.5 ms, so the
-# bounds were removed. `#[ignore]`d, and run before submission so the figures are recorded.
+# asserts no performance threshold: two machines matching §4.4a's description measured 7 ms and
+# 17.6-19.5 ms, so the bounds were removed. Its correctness controls can still fail. `#[ignore]`d, and
+# run before submission so the figures are recorded.
 [[test]]
 name = "thresholds"
 path = "thresholds.rs"

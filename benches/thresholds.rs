@@ -14,8 +14,10 @@
 //! announced deployment's own transactions, asserted absolutely in CI; and `band.rs`, which holds one
 //! runner to its own previous numbers so a change in the *code* still shows up.
 //!
-//! What this file does now is **measure and report, with the machine named**. It asserts nothing, which
-//! is why it cannot fail on a loaded laptop — and why its output has to be read rather than trusted to a
+//! What this file does now is **measure and report, with the machine named**. It asserts no performance
+//! threshold, so no figure here can fail on a loaded laptop; its correctness controls still can, and do
+//! — the chain-walk cross-check, the proof verification and the pinned workload below all fail loudly.
+//! What that split means in practice is that its output has to be read rather than trusted to a
 //! green tick. It stays `#[ignore]`d and runs before submission, on CONTRIBUTING's checklist.
 //!
 //! ```text
@@ -61,6 +63,87 @@ fn measure<T>(mut f: impl FnMut() -> T) -> (Duration, Duration, Duration) {
     (times[0], times[SAMPLES / 2], times[SAMPLES - 1])
 }
 
+/// What `ts/test/perf.test.ts:110-116` prints, in Rust and without a dependency: enough of the machine
+/// that a reader can tell whether a figure came from theirs (PR #59, round two, Medium 1).
+///
+/// Every field is read from the running system or declared absent. `std::env::consts` and
+/// `available_parallelism` come from the standard library; the CPU model, kernel release and memory
+/// size have no portable standard-library source, so they are read from the platform's own interface
+/// — `sysctl` and `uname` on macOS, `/proc` on Linux — and print as `unknown` where that fails.
+/// Nothing here is guessed from another field.
+fn probe(command: &str, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new(command)
+        .args(args)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    let trimmed = text.trim().to_string();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+/// The first value of a `/proc` line, e.g. `model name\t: Xeon` or `MemTotal:  16305236 kB`.
+fn proc_field(path: &str, key: &str) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines()
+        .find(|line| line.starts_with(key))
+        .and_then(|line| line.split(':').nth(1))
+        .map(|value| value.trim().to_string())
+}
+
+fn cpu_model() -> String {
+    probe("sysctl", &["-n", "machdep.cpu.brand_string"])
+        .or_else(|| probe("sysctl", &["-n", "hw.model"]))
+        .or_else(|| proc_field("/proc/cpuinfo", "model name"))
+        .unwrap_or_else(|| "unknown CPU".to_string())
+}
+
+/// Printed in binary gigabytes, the unit the TypeScript report already uses.
+fn memory_gib() -> String {
+    if let Some(bytes) = probe("sysctl", &["-n", "hw.memsize"]).and_then(|v| v.parse::<u64>().ok())
+    {
+        return format!("{} GiB", bytes / (1 << 30));
+    }
+    if let Some(kb) = proc_field("/proc/meminfo", "MemTotal")
+        .and_then(|v| v.split_whitespace().next()?.parse::<u64>().ok())
+    {
+        return format!("{} GiB", kb / (1 << 20));
+    }
+    "unknown memory".to_string()
+}
+
+/// `rustc` as found on `PATH` when the test runs. That is **not necessarily the compiler that built this
+/// binary**, which is why the label says so rather than claiming the build's version.
+fn rustc_on_path() -> String {
+    probe("rustc", &["--version"]).unwrap_or_else(|| "rustc unknown".to_string())
+}
+
+fn machine() -> String {
+    let label = std::env::var("CERTIMINING_MACHINE").unwrap_or_default();
+    let named = if label.is_empty() {
+        "unlabelled (set CERTIMINING_MACHINE to name this machine in the record)".to_string()
+    } else {
+        label
+    };
+    format!(
+        "{named}\n           {}, {} {} {}, {} logical cores, {}\n           {} on PATH, {} profile",
+        cpu_model(),
+        std::env::consts::OS,
+        probe("uname", &["-r"]).unwrap_or_else(|| "unknown release".to_string()),
+        std::env::consts::ARCH,
+        std::thread::available_parallelism().map_or(0, |n| n.get()),
+        memory_gib(),
+        rustc_on_path(),
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
+    )
+}
+
 fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1_000.0
 }
@@ -79,15 +162,30 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
     }
 
     println!(
-        "target {} {}, {} logical cores. §4.4a names the reference machine; this prints what the \
-         build saw, which is not the same claim.",
-        std::env::consts::ARCH,
-        std::env::consts::OS,
-        std::thread::available_parallelism().map_or(0, |n| n.get()),
+        "\n§4.4a measurements\n  machine: {}\n  §4.4a names a reference machine; the above is the one \
+         this run saw, which is not the same claim.\n",
+        machine()
     );
 
-    // §4.4a, D-136: 10,000 records, hash recomputation only, < 10 ms. Measured 7.1 ms.
+    // **The row names are literals and the fixtures are not (PR #59, round two, High 1).** That finding
+    // was against `band.rs`, where a mutable `HEIGHT` let a 16-leaf build pass as `epoch_root_256_leaves`.
+    // The same gap reaches this file: it prints "256 leaves" and "{RECORDS} records" as text. Here it
+    // produces a false record rather than a false pass, which §4.4a's figures are recorded from, so the
+    // workload is pinned to what the rows claim before anything is timed.
+    assert_eq!(HEIGHT, 8, "§4.4a's figures are at the deployed height");
+    assert_eq!(
+        RECORDS, 10_000,
+        "§4.4a's chain rows are over 10,000 records"
+    );
+
+    // §4.4a: 10,000 records, hash recomputation only. Reported, no threshold (D-137); D-136's 10 ms
+    // gate was removed after two machines matching §4.4a's description measured 7 ms and 17.6-19.5 ms.
     let unsigned = chain_of(false);
+    assert_eq!(
+        unsigned.len(),
+        10_000,
+        "the chain fixture is not 10,000 records"
+    );
     let from = genesis();
     assert_eq!(
         hash_chain(&unsigned, from),
@@ -103,8 +201,13 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
         ms(worst)
     );
 
-    // §4.4a: an epoch root at 256 leaves, < 10 ms.
+    // §4.4a: an epoch root at 256 leaves. Reported, no threshold (D-137).
     let full = real_leaves(1 << HEIGHT);
+    assert_eq!(
+        full.len(),
+        256,
+        "the epoch fixture is not the 256 leaves the row names"
+    );
     let (best, median, worst) = measure(|| {
         <BuiltEpoch as EpochTree>::build::<NativeKeccak>(EPOCH, HEIGHT, &MASTER, &full)
             .expect("builds")
@@ -116,7 +219,7 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
         ms(worst)
     );
 
-    // §4.4a: one inclusion proof verified, < 1 ms.
+    // §4.4a: one inclusion proof verified. Reported, no threshold (D-137).
     let built = <BuiltEpoch as EpochTree>::build::<NativeKeccak>(EPOCH, HEIGHT, &MASTER, &full)
         .expect("builds");
     let id = full[full.len() / 2].0;

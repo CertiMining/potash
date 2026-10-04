@@ -21,9 +21,11 @@ impl Schedule {
     /// The deployment's schedule: an epoch's checkpoint is submitted an hour after the epoch ends,
     /// and its tree starts building ten minutes before that.
     ///
-    /// The lead is not a guess about one machine: §4.4a bounds a 256-leaf build at 10 ms, so ten
-    /// minutes is four orders of magnitude of headroom. What matters is not the size of the lead but
-    /// that it is constant, because a lead that tracked the record count would publish the count.
+    /// The lead is not a guess about one machine. §4.4a no longer bounds the build at all (D-137), so
+    /// the headroom is stated against measurement: the slowest 256-leaf build recorded anywhere here is
+    /// the TypeScript verifier's 2.7 ms (`ts/README.md`, §4.4a) and the Rust engine reports about 0.2 ms
+    /// (`scripts/ci.sh thresholds`), against a ten-minute lead. What matters is not the size of the lead
+    /// but that it is constant, because a lead that tracked the record count would publish the count.
     pub const DEPLOYED: Self = Self {
         publish_offset: 3_600,
         build_lead: 600,

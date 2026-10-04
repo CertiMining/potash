@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The fixtures §4.4a's measures are taken over, in one place.
 //!
-//! Criterion reports distributions (`chain.rs`, `epoch.rs`) and `thresholds.rs` asserts §4.4a's
-//! absolute figures on the reference machine. Both measure the same thing, which is only true if they
-//! build the same inputs, so the inputs live here rather than in three copies.
+//! Criterion reports distributions (`chain.rs`, `epoch.rs`), `thresholds.rs` measures §4.4a's figures
+//! and reports them with the machine named (D-137), and `band.rs` holds the CI runner to its own previous
+//! numbers. All three measure the same thing, which is only true if they build the same inputs, so the
+//! inputs live here rather than in four copies.
+//!
+//! **`band.rs` and `thresholds.rs` pin these constants against literals before they measure**, because a
+//! row named "256 leaves" that times a smaller tree is a false figure (PR #59, round two). Changing
+//! `HEIGHT` or `RECORDS` here therefore fails those two rather than silently relabelling their output.
 //!
 //! Nothing in this crate ships: it is a workspace member so that `cargo deny` covers it and
 //! `cargo clippy --workspace --all-targets` lints it, and nothing depends on it.

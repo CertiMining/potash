@@ -90,7 +90,7 @@ signature in the set. No generated key and no real key belongs in this repositor
 | `vectors` | The manifest, and regeneration. |
 | `checks` | Formatting, clippy and the tests, in each of the four feature sets, for both engine crates, and the bare-metal `no_std` builds. |
 | `miri` | The engine crates under Miri. The statistical privacy tests and every tree above `H = 8` are ignored there and run in `checks` instead. Miri interprets a hash in about a tenth of a second, so a tree at `H = 12` costs minutes and one at `H = 16` costs hours, while the shorter trees execute the same code with a shorter loop. Miri is looking for undefined behaviour, not for arithmetic. |
-| `bench-band` | §4.4a's wall-clock measures on this runner against `benches/BASELINE.toml`, failing past the band (D-132). Not §4.4a's absolute figures: those belong to the reference machine §4.4a names and are asserted by `scripts/ci.sh thresholds`, which is `#[ignore]`d and run before submission. An absent baseline entry fails and prints what it measured. |
+| `bench-band` | §4.4a's wall-clock measures on this runner against `benches/BASELINE.toml`, failing past the band (D-132). Not §4.4a's wall-clock absolutes, which no longer exist (D-137): `scripts/ci.sh thresholds` measures those figures and reports them with the machine named, and is `#[ignore]`d and run before submission. An absent baseline entry fails and prints what it measured. |
 | `deny` | Advisories, licences, sources and bans, over **two** graphs: the workspace, and `fuzz/`, which is its own Cargo workspace and therefore invisible to a root `cargo deny check` (`cargo deny list \| grep -c libfuzzer` answers 0). Both use the same `deny.toml`, so tooling is not held to a looser policy than shipped code. |
 | `ts` | The independent TypeScript verifier of E-11: its supply-chain gate, its typecheck and build, and its run of every committed vector. `cargo deny` reads `Cargo.lock` and sees no npm package, so `scripts/ts-gate.sh` carries the same discipline for `ts/package-lock.json` — advisories at high or above, and a closed licence list in `ts/LICENCES.allow` (D-93). |
 
@@ -276,9 +276,11 @@ cargo test --release -p certimining-log -- --ignored   # V-Z-04's full 10,000-ep
 scripts/ci.sh thresholds                               # §4.4a's wall-clock figures, to be read and recorded
 ```
 
-The second **asserts nothing** (D-137): §4.4a's wall-clock bounds were removed after two machines matching
-its own description measured 7 ms and 17.6–19.5 ms. It measures and reports with the machine named, so its
-output has to be read rather than trusted to a green tick — which is exactly why it is on a checklist. The
+The second **asserts no performance threshold** (D-137): §4.4a's wall-clock bounds were removed after two
+machines matching its own description measured 7 ms and 17.6–19.5 ms. Its correctness controls still fail
+loudly — the chain-walk cross-check, the proof verification, the pinned workload — but no figure it prints
+can. It measures and reports with the machine named, so its output has to be read rather than trusted to a
+green tick, which is exactly why it is on a checklist. The
 compute figures are the ones asserted absolutely, in CI, and `bench-band` holds the runner to its own
 previous numbers. `docs/performance.md` says
 which mechanism covers each of §4.4a's rows, and `scripts/ci.sh fuzz` is the third thing CI does not

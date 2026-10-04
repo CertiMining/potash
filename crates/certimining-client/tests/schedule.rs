@@ -34,18 +34,22 @@ fn the_build_starts_a_constant_distance_before_publication() {
 }
 
 #[test]
-fn the_schedule_gives_a_full_tree_four_orders_of_magnitude_of_headroom() {
-    // §4.4a bounds a 256-leaf build at 10 ms, and E-06 measured 201 µs in release. The lead is ten
-    // minutes, so the margin is not a guess about one machine.
+fn the_schedule_gives_a_full_tree_orders_of_magnitude_of_headroom() {
     // Constants, so the compiler checks them: a schedule that lost its headroom would not build.
     const _: () = assert!(Schedule::DEPLOYED.build_lead >= 600);
     const _: () = assert!(Schedule::DEPLOYED.publish_offset > Schedule::DEPLOYED.build_lead);
 
-    // And the figure the headroom is measured against, which is §4.4a's threshold in milliseconds.
-    let build_budget_ms = 10i64;
-    assert!(
-        S.build_lead * 1_000 > build_budget_ms * 1_000,
-        "the lead must exceed the build §4.4a allows, by a margin no machine can erase"
+    // **§4.4a no longer bounds the build (D-137), so the lead cannot be justified by citing one.** This
+    // compared the lead against §4.4a's 10 ms, which was a tautology between two literals whose only
+    // content was that citation; the citation is now false. The envelope below is justified by
+    // measurement instead: the slowest 256-leaf build recorded anywhere in this repository is the
+    // TypeScript verifier's 2.7 ms (`ts/README.md`, §4.4a), and the Rust engine reports about 0.2 ms
+    // (`scripts/ci.sh thresholds`). A second is two to three orders of magnitude above both, chosen
+    // coarse on purpose: the property is that the lead is constant and generous, not that it is tight.
+    const BUILD_ENVELOPE_MS: i64 = 1_000;
+    const _: () = assert!(
+        Schedule::DEPLOYED.build_lead * 1_000 > BUILD_ENVELOPE_MS,
+        "the lead must exceed a build envelope no machine can erase"
     );
 }
 
