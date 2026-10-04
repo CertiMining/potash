@@ -262,6 +262,20 @@ pub fn combined_scores(matrix: &[[f64; FEATURE_COUNT]]) -> Vec<f64> {
     }
     let deviations: Vec<f64> = variances.iter().map(|v| (v / n).sqrt()).collect();
 
+    // **An instrument that reads the same value for every row is dead, and this scored it as ideal
+    // (PR #69, round two, High).** A zero-deviation feature contributes 0.0 to every row below, so if
+    // every feature is dead every row ties, the callers' tie-break alternates, and the binomial test
+    // reads a manufactured 50% as perfect indistinguishability. That is the defect this unit was opened
+    // to fix, in the classifier rather than in Pearson. At least one feature must vary, or there is
+    // nothing to classify on and no result to report.
+    assert!(
+        deviations.iter().any(|d| *d > 0.0),
+        "every one of the {} features is constant across all {} rows, so the classifier has no signal \
+         and its score is not a measurement",
+        FEATURE_COUNT,
+        matrix.len()
+    );
+
     matrix
         .iter()
         .map(|row| {
@@ -346,7 +360,20 @@ pub fn binomial_band(trials: usize) -> (f64, f64) {
 }
 
 /// Fails with the numbers in the message, because a privacy blocker that fails must say by how much.
+///
+/// **A sample of nothing is a defect, not perfect indistinguishability (PR #69, round two).** With zero
+/// trials the band is `[0, 0]` and zero successes sits inside it, so a test whose loop never ran
+/// reported the ideal result — the same shape as the degenerate Pearson sample this unit was opened to
+/// fix. The sample size is the caller's to state; that it exists at all is checked here.
 pub fn assert_indistinguishable(label: &str, successes: usize, trials: usize) {
+    assert!(
+        trials > 0,
+        "{label}: no trials ran, so this statistic has no sample. An empty band accepts an empty result."
+    );
+    assert!(
+        successes <= trials,
+        "{label}: {successes} successes over {trials} trials is not a rate"
+    );
     let (low, high) = binomial_band(trials);
     let rate = successes as f64 / trials as f64;
     assert!(

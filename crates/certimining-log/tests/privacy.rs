@@ -15,9 +15,9 @@ mod common;
 use certimining_core::{epoch_key, padding_prf, Digest, NativeKeccak, SubmissionId};
 use certimining_log::{BuiltEpoch, EpochTree};
 use common::{
-    assert_indistinguishable, assignment_oracle, combined_scores, epoch, feature_matrix,
-    leaf_digest, padding_slots, pearson, real_slots, scattered_id, sequential_id, SplitMix,
-    FEATURE_COUNT, FEATURE_NAMES, TEST_MASTER_KEY,
+    assert_indistinguishable, assignment_oracle, binomial_band, combined_scores, epoch,
+    feature_matrix, leaf_digest, padding_slots, pearson, real_slots, scattered_id, sequential_id,
+    SplitMix, FEATURE_COUNT, FEATURE_NAMES, TEST_MASTER_KEY,
 };
 
 /// The deployment's height (D-02).
@@ -45,6 +45,75 @@ fn picked_real(real_score: f64, padding_score: f64, tie_break: bool) -> bool {
     }
 }
 
+/// **The control for V-Z-02 and V-Z-03: the classifier must catch a leak it is given (PR #69, round
+/// two, High).** Those two tests pass when the classifier is right half the time, which is also what a
+/// dead classifier produces — a review returned zero for every feature of every row and both stayed
+/// green, because tied scores alternate and alternation is exactly 50%. `combined_scores` now refuses an
+/// all-constant matrix, but refusing the obvious corpse is not the same as showing a pulse.
+///
+/// So this feeds the same pipeline a set it *should* separate: padding leaves left alone, real leaves
+/// with their first byte pushed hard the other way. The combined score is unsigned — it says the two
+/// sets differ, not which is which — so a working classifier lands far from chance in **either**
+/// direction, and that is what this asserts. The first version of this control demanded that the real
+/// leaf win, and failed at 0.3484 while the classifier was working perfectly: the features ranked the
+/// altered set lower, which is detection, not blindness.
+///
+/// A dead classifier therefore fails here while passing V-Z-02 and V-Z-03, which is the point: those
+/// two cannot distinguish "indistinguishable" from "not measured", and this one can.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "statistical, and the sample is what makes it mean anything"
+)]
+fn the_classifier_detects_a_leak_it_is_given() {
+    let mut separated = 0usize;
+    let mut trials = 0usize;
+    let mut mix = SplitMix(0x5eed_0005);
+
+    for number in 0..50u64 {
+        let capacity = 1usize << HEIGHT;
+        let built = epoch::<NativeKeccak>(number, HEIGHT, capacity / 2);
+        let reals = real_slots(&built);
+        let paddings = padding_slots(&built);
+
+        // The leak: every real leaf carries a high first byte, every padding leaf a low one. Nothing
+        // about the real construction is used, so this measures the classifier and not the engine.
+        let mut leaves = built.leaves.clone();
+        for slot in &reals {
+            leaves[usize::from(*slot)][0] = 0xf0 | (leaves[usize::from(*slot)][0] & 0x0f);
+        }
+        for slot in &paddings {
+            leaves[usize::from(*slot)][0] &= 0x0f;
+        }
+
+        let matrix = feature_matrix(&leaves, &built.root);
+        let combined = combined_scores(&matrix);
+        for (real, padding) in reals.iter().zip(&paddings) {
+            if picked_real(
+                combined[usize::from(*real)],
+                combined[usize::from(*padding)],
+                mix.next_u64().is_multiple_of(2),
+            ) {
+                separated += 1;
+            }
+            trials += 1;
+        }
+    }
+
+    let rate = separated as f64 / trials as f64;
+    let (low, high) = binomial_band(trials);
+    assert!(
+        (separated as f64) < low || (separated as f64) > high,
+        "the classifier put the leaked set on top {separated} of {trials} times ({rate:.4}), inside the \
+         chance band [{low:.1}, {high:.1}] it must leave. A classifier that cannot see a planted \
+         difference cannot testify that there is none, so V-Z-02 and V-Z-03 would be reporting nothing."
+    );
+    println!(
+        "classifier control: {separated} of {trials} ({rate:.4}), outside the chance band \
+         [{low:.1}, {high:.1}] — the planted difference is visible to it"
+    );
+}
+
 #[test]
 #[cfg_attr(
     miri,
@@ -58,6 +127,13 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
     let mut leaf_correct = 0usize;
     let mut leaf_total = 0usize;
     let mut mix = SplitMix(0x5eed_0002);
+
+    // D-66 fixes this sample and the band below is computed from it, so the constant is checked rather
+    // than trusted: a reduced sample would widen nothing and simply test less (PR #69, round two).
+    assert_eq!(
+        EPOCHS_VZ02, 200,
+        "D-66 fixes V-Z-02's CI sample at 200 balanced epochs"
+    );
 
     for number in 0..EPOCHS_VZ02 {
         let capacity = 1usize << HEIGHT;

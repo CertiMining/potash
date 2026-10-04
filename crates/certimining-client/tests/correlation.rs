@@ -144,7 +144,7 @@ fn with_retry<T>(what: &str, mut attempt: impl FnMut() -> Result<T, String>) -> 
 ///     time, delay did not follow record count or build time, which is the property V-Z-01 asserts.
 ///     That is a degenerate sample and a favourable one. It is reported as such and permitted, rather
 ///     than smuggled through as a correlation of zero.
-fn pearson(feature: &[f64], feature_name: &str, delays: &[f64]) -> Option<f64> {
+fn pearson(feature: &[f64], feature_name: &str, delays: &[f64]) -> f64 {
     let n = feature.len() as f64;
     let mf = feature.iter().sum::<f64>() / n;
     let md = delays.iter().sum::<f64>() / n;
@@ -163,12 +163,22 @@ fn pearson(feature: &[f64], feature_name: &str, delays: &[f64]) -> Option<f64> {
          publication quantised to one value — either way the comparison did not happen.",
         feature.len()
     );
-    if dd == 0.0 {
-        // Reported, not scored. The caller prints this and treats it as the property holding, because a
-        // delay that never varied cannot have followed anything.
-        return None;
-    }
-    Some(num / (df.sqrt() * dd.sqrt()))
+    // **A constant delay was reported as the property holding, and it is not distinguishable from a
+    // broken instrument (PR #69, round two, High).** The old reasoning was that a delay which never
+    // varied cannot have followed anything, which is true of an ideal measurement and says nothing about
+    // this one: a slot source or a subtraction that returned the same value for all 200 epochs produces
+    // exactly the same series. §4.4 asks for |r| < 0.2, and an undefined r does not meet that bound — it
+    // reports that no comparison happened. This is the same defect the unit was opened to fix, left in
+    // the observation role of the other helper, so both roles refuse here as they do in certimining-log.
+    assert!(
+        dd > 0.0,
+        "V-Z-01: the landing delay is constant over {} epochs, so this half of the test compared \
+         nothing. Either every publication landed at the identical offset, which a public network does \
+         not do over a run this long, or the measurement collapsed. Both are defects in the run, not \
+         evidence that delay is independent of content.",
+        delays.len()
+    );
+    num / (df.sqrt() * dd.sqrt())
 }
 
 #[test]
@@ -301,24 +311,16 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
     println!("endpoint                   {url}");
     // `None` means the landing delay never varied: unmeasurable as a correlation, and favourable as a
     // result, so it is printed as what it is rather than as a number.
-    match r_count {
-        Some(r) => println!("r(record count, delay)     {r:+.4}"),
-        None => println!("r(record count, delay)     n/a — the landing delay was constant"),
-    }
-    match r_build {
-        Some(r) => println!("r(build time, delay)       {r:+.4}"),
-        None => println!("r(build time, delay)       n/a — the landing delay was constant"),
-    }
+    println!("r(record count, delay)     {r_count:+.4}");
+    println!("r(build time, delay)       {r_build:+.4}");
     println!("bound                      |r| < {BOUND}");
 
     assert!(
-        r_count.is_none_or(|r| r.abs() < BOUND),
-        "V-Z-01: landing delay follows the record count, r = {:+.4}",
-        r_count.unwrap_or(0.0)
+        r_count.abs() < BOUND,
+        "V-Z-01: landing delay follows the record count, r = {r_count:+.4}"
     );
     assert!(
-        r_build.is_none_or(|r| r.abs() < BOUND),
-        "V-Z-01: landing delay follows the build time, r = {:+.4}",
-        r_build.unwrap_or(0.0)
+        r_build.abs() < BOUND,
+        "V-Z-01: landing delay follows the build time, r = {r_build:+.4}"
     );
 }
