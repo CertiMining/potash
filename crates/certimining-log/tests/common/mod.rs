@@ -369,8 +369,29 @@ pub fn pearson(xs: &[f64], ys: &[f64]) -> f64 {
         variance_x += dx * dx;
         variance_y += dy * dy;
     }
-    if variance_x == 0.0 || variance_y == 0.0 {
-        return 0.0;
-    }
+    // **A degenerate sample is a defect, not a correlation of zero (R3-M-05).** This returned 0.0 when
+    // either series was constant, which is the *best possible* answer for §4.4's bounds — so the worst
+    // possible placement outcome passed the privacy gate. A review forced all 25,600 observed slots to
+    // zero and `v_z_04_position_carries_no_meaning` reported correlation 0 for order, issuer and time,
+    // and passed.
+    //
+    // Zero variance means one of two things and both are failures. A constant *observation* is a
+    // catastrophic placement result: every submission in one slot is exactly what INV-TREE-03 forbids.
+    // A constant *feature* is a malformed sample — a test that varied nothing cannot measure whether
+    // position follows it. Neither is a number this function may return, so it refuses instead.
+    assert!(
+        variance_x > 0.0,
+        "pearson: the feature series is constant over {} points, so there is nothing for position to \
+         correlate with and no correlation to report. A sample that varies nothing cannot establish \
+         INV-TREE-03.",
+        xs.len()
+    );
+    assert!(
+        variance_y > 0.0,
+        "pearson: the observed series is constant over {} points. For §4.4's V-Z-04 that is every \
+         submission landing in one slot, which is the placement failure the test exists to catch — not \
+         a correlation of zero.",
+        ys.len()
+    );
     covariance / (variance_x.sqrt() * variance_y.sqrt())
 }

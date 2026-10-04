@@ -200,6 +200,28 @@ What the Rust side does have, it covers: `read_tag` is checked at every prefix 0
 asymmetry follows from the two implementations facing opposite directions: the engine writes, the
 verifier reads. V-N-18 is a claim about reading.
 
+## V-Z-04 scored its own worst outcome as ideal
+
+`pearson` in `crates/certimining-log/tests/common/mod.rs` returned `0.0` whenever either series was
+constant. For §4.4's V-Z-04 bounds, which require |r| below a threshold, that is the **best possible**
+answer — so the worst possible placement result passed the privacy gate.
+
+A review forced all 25,600 observed placements into slot zero. `v_z_04_position_carries_no_meaning`
+reported correlation 0 for submission order, issuer and time, and passed. Every submission landing in one
+slot is exactly what INV-TREE-03 forbids, and the instrument scored it as perfect non-correlation.
+
+Zero variance means one of two things and both are failures. A constant **observation** is that
+catastrophic placement result. A constant **feature** is a malformed sample: a run that varied nothing
+cannot establish whether position follows it. Neither is a number this function may return, so it now
+refuses, naming which series was constant.
+
+This is the eighth instance of one class in this harness, and the only one found inside a §4.4 release
+blocker. What the eight have in common is worth stating plainly: **an instrument that maps its own failed
+observation onto a passing value cannot be caught by running it.** F-01's refuted assertion, F-03's four
+attempts, F-05's refusal branch, F-02's and F-04's missing positive obligations, P-01's silent prefix and
+P-02's absent commit proof were all found the same way — by mutating what the instrument watches and
+checking that it notices.
+
 ## What none of this covers
 
 **The targets themselves are not linted.** `checks` runs
