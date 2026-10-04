@@ -13,9 +13,15 @@
 //! `LIVE-VALUES.exempt`. Matching is case-insensitive, so a base58 string that collides only under
 //! case folding would fail generation — a false positive, which is the safe direction, and loud.
 //!
-//! **What it deliberately does not cover.** Slot numbers and block heights are plain integers and a
-//! list of them would produce false positives on every counter in the corpus. The rule reaches
-//! 32-byte values and base58 identifiers, which is where fabricated provenance is persuasive.
+//! **What it covers, and what it does not.** The rule reaches 32-byte values, base58 identifiers and —
+//! since a review found a live publication slot beside a fabricated root — decimals of six digits or
+//! more, which is what admits a slot or a unix timestamp without firing on every small counter in the
+//! corpus. Block heights are still uncovered. Bumps and epoch day indices are excluded by shape rather
+//! than by principle: both are short enough that listing them would match unrelated text, so they are
+//! review-enforced, and H-20 removes the need for that carve-out.
+//!
+//! An earlier version of this paragraph said slot numbers were deliberately uncovered, which the
+//! decimal support contradicts.
 
 use std::collections::BTreeSet;
 use std::path::Path;

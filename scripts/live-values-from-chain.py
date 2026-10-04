@@ -183,7 +183,13 @@ def listed_values() -> dict[str, str]:
 
 
 def signatures_for(address: str) -> list[str]:
-    """Every signature for an address, paged to exhaustion rather than capped."""
+    """Every transaction id returned for an address, paged to exhaustion rather than capped.
+
+    Each entry of `getSignaturesForAddress` carries one `signature` field, which is the transaction's
+    first signature and serves as its id. The co-signatures inside those transactions are not read and
+    are not listed; that gap is H-29. Round three corrected this module's own docstring and the success
+    message and left this one saying "every signature", which is the claim both of those retracted.
+    """
     found: list[str] = []
     before = None
     while True:
