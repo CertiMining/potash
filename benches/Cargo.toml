@@ -4,10 +4,15 @@
 #
 # **Why not in the engine crates.** Criterion was first a dev-dependency of `certimining-core` and
 # `certimining-log` with `[[bench]]` targets beside their tests, which is the conventional layout. It is
-# the wrong one here: `cargo test -p certimining-core` compiles bench targets, so Criterion entered the
-# `checks` group's per-feature-set test builds and, worse, `cargo miri test -p certimining-core`. Miri
-# interprets what it builds. Benchmarks have no business in a run looking for undefined behaviour, and a
-# large dependency tree has no business being interpreted.
+# the wrong one here: Criterion entered those crates' test builds — including `cargo miri test`, and Miri
+# interprets what it builds. A large dependency tree has no business being interpreted by a run looking
+# for undefined behaviour.
+#
+# The mechanism was stated wrongly at first and a review corrected it (PR #59, Low 7): a default
+# `cargo test` does **not** build the `[[bench]]` target. Criterion reached the test build because it was
+# a package **dev-dependency**, which every test target in the package links. Moving the benches out
+# removes the dev-dependency, which is what achieves the result; the `[[bench]]` targets were not the
+# cause.
 #
 # This crate is a workspace member, so `cargo deny check` covers it and `cargo clippy --workspace
 # --all-targets` lints it — unlike `fuzz/`, which is a separate workspace because cargo-fuzz needs a
@@ -44,8 +49,9 @@ name = "epoch"
 path = "epoch.rs"
 harness = false
 
-# §4.4a's absolute figures, asserted on the reference machine (D-132, D-136). `#[ignore]`d, so a plain
-# `cargo test` does not run it; CI is not the machine §4.4a names.
+# §4.4a's wall-clock figures, measured and reported with the machine named (D-132, D-136, D-137). It
+# asserts nothing: two machines matching §4.4a's description measured 7 ms and 17.6-19.5 ms, so the
+# bounds were removed. `#[ignore]`d, and run before submission so the figures are recorded.
 [[test]]
 name = "thresholds"
 path = "thresholds.rs"

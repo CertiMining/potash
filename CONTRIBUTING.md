@@ -97,9 +97,12 @@ signature in the set. No generated key and no real key belongs in this repositor
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
 
-`thresholds` and `bench` are not in `all` either, for two different reasons: the first asserts about a
-machine CI is not, and the second asserts nothing — it reports the Criterion distributions behind the
-figures. `docs/performance.md` says which mechanism covers each of §4.4a's seven rows.
+`thresholds` and `bench` are not in `all` either, and since D-137 the reason is the same for both:
+**neither asserts anything.** `thresholds` measures §4.4a's wall-clock figures and names the machine;
+`bench` reports the Criterion distributions behind them. §4.4a's wall-clock bounds were removed after two
+machines matching its own description measured 7 ms and 17.6–19.5 ms, so there is nothing left there to
+gate on. What gates is `bench-band`, which is in `all`, and the compute figures in `kat01-onchain`.
+`docs/performance.md` says which mechanism covers each of §4.4a's rows.
 
 `fuzz` is not in `all` and has no row above, because it is not part of the push pipeline: §4.5's five
 targets run nightly in `.github/workflows/fuzz.yml`, and `scripts/ci.sh fuzz` is that job verbatim.
@@ -270,10 +273,13 @@ comment:
 
 ```sh
 cargo test --release -p certimining-log -- --ignored   # V-Z-04's full 10,000-epoch run
-scripts/ci.sh thresholds                               # §4.4a's absolute wall-clock figures
+scripts/ci.sh thresholds                               # §4.4a's wall-clock figures, to be read and recorded
 ```
 
-The second asserts §4.4a's figures on the reference machine §4.4a names, which CI is not — D-132's split
-sends the absolutes there and gives CI a band against its own baseline instead. `docs/performance.md` says
-which mechanism covers each of §4.4a's seven rows, and `scripts/ci.sh fuzz` is the third thing CI does not
+The second **asserts nothing** (D-137): §4.4a's wall-clock bounds were removed after two machines matching
+its own description measured 7 ms and 17.6–19.5 ms. It measures and reports with the machine named, so its
+output has to be read rather than trusted to a green tick — which is exactly why it is on a checklist. The
+compute figures are the ones asserted absolutely, in CI, and `bench-band` holds the runner to its own
+previous numbers. `docs/performance.md` says
+which mechanism covers each of §4.4a's rows, and `scripts/ci.sh fuzz` is the third thing CI does not
 run on a push, for a different reason: it has its own nightly workflow.

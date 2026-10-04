@@ -1803,3 +1803,42 @@ path was not attempted: it is unmeasured work of unknown payoff with ten days le
 
 **Revisit if** H-19 finds overhead that is not inherent to INV-ENC-01's staged tag writing, in which case
 the figure moves and the row moves with it. The threshold follows the measurement; it does not lead it.
+
+## D-137 · §4.4a's wall-clock absolutes are removed, because the figure was not reproducible
+
+**Date:** 3 Oct 2026 · **Unit:** E-13 · **Class:** required by the spec · **Status:** settled at S9 round one (owner, 3 Oct 2026)
+
+**Decision (the owner's).** Remove the wall-clock absolutes from §4.4a. Keep the compute-unit absolutes
+and the CI regression band. `benches/thresholds.rs` becomes a reporting tool that names the machine.
+Record that two machines matching §4.4a's description measured 7 ms and 17.6 to 19.5 ms, so the figure
+was not reproducible. The two remaining instrument findings are filed as H-30 and H-31, worded against
+the amended section.
+
+**What the evidence was.** The chain-walk row began at `< 5 ms`, written when §4.4a was restored and
+before anything here had timed the walk. E-13 measured 7.1 ms and D-136 amended the bound to `< 10 ms`
+around a 6.9–8.7 ms spread. An independent review then ran the same assertion on a **different machine
+that also satisfies §4.4a's description** — Apple M2, 8 cores, macOS 26.6.2 — and measured medians of
+**17.92, 16.65 and 19.52 ms**, Criterion independently reporting 17.6–18.7 ms. While amending the section
+this machine, which had measured 7 ms idle, measured **13.77 ms** with another suite running beside it.
+
+Four values from seven to nineteen and a half milliseconds, every one on hardware matching the words in
+the specification. **The description does not determine the figure**, so a bound stated against it is not
+a property of this system, and raising it a second time would have made the number track the slowest
+machine anyone tried.
+
+**Why this is not a retreat.** D-132 had already established the weaker form: a shared CI runner cannot
+be held to an absolute wall-clock number, which is why the band exists. This is the same fact one step
+further — wall-clock is a property of a machine, and three of §4.4a's rows were pretending otherwise.
+What is asserted absolutely is now what can be: **compute units**, which are deterministic and were
+confirmed at 13,735 / 8,810 / 5,687 against the announced deployment's own transactions, across a runtime
+version gap. The TypeScript row keeps its 50 ms bound because it is asserted on the CI runner rather than
+against a machine description, and passes there with fivefold headroom.
+
+**Amends D-136**, which moved the chain-walk bound from 5 ms to 10 ms. A review observed that D-136
+accommodated an observed failure rather than deriving a bound; that observation was correct, and this
+decision stops the sequence rather than continuing it. D-136's reasoning about *which* measurement §4.4a's
+row meant — the hash chain, not `AssetChain::apply` — stands, and is the reason the reported figure means
+anything.
+
+**Revisit if** a figure is ever needed as a gate rather than a record. It would have to name an exact
+machine, which makes §4.4a unverifiable by anyone who does not hold one, and that trade was rejected here.

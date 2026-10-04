@@ -28,11 +28,11 @@ macOS 26.6.2 — via `scripts/ci.sh thresholds` and `scripts/ci.sh bench`.
 |---|---|---|---|
 | `publish_checkpoint` compute | ≤ 15,000 CU | 8,810 CU | LiteSVM, and the same on chain |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
-| Chain walk, 10,000 records, hash recomputation only | < 10 ms (D-136) | 7.1 ms | Rust |
-| Epoch root build, 256 leaves | < 10 ms | 0.195 ms | Rust |
-| Epoch root build, 256 leaves | < 10 ms | 2.66 ms | TypeScript |
-| Inclusion proof verification | < 1 ms | 0.0023 ms | Rust |
-| Inclusion proof verification | < 1 ms | 0.0288 ms | TypeScript |
+| Chain walk, 10,000 records, hash recomputation only | none (D-137) | 7–19.5 ms, machine-dependent | Rust |
+| Epoch root build, 256 leaves | none (D-137) | 0.20–0.38 ms | Rust |
+| Epoch root build, 256 leaves | none (D-137) | 2.66 ms | TypeScript |
+| Inclusion proof verification | none (D-137) | 0.0023–0.0043 ms | Rust |
+| Inclusion proof verification | none (D-137) | 0.0288 ms | TypeScript |
 | TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.23 ms | TypeScript |
 | Full verification including per-record Ed25519 | none in v0.1 | 399 ms | Rust |
 | Full verification including per-record Ed25519 | none in v0.1 | 1,004 ms | TypeScript |

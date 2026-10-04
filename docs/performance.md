@@ -7,11 +7,31 @@ threshold that was changed because the code did not meet it.
 |---|---|---|---|
 | `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **8,810 CU**, recorded exactly; the same on chain |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly; the same on chain |
-| Chain walk, 10,000 records, hash recomputation only | < 10 ms (D-136) | `benches/thresholds.rs` on the reference machine; `benches/band.rs` in CI | 7.1 ms |
-| Epoch root, 256 leaves | < 10 ms | the same two | 0.20 ms |
-| Inclusion proof verification | < 1 ms | the same two | 0.0023 ms |
+| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`; `benches/band.rs` catches regression on the CI runner | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
+| Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
+| Inclusion proof verification | **none** (D-137) | the same two | 0.0023–0.0043 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
 | Full verification including per-record Ed25519 | **none in v0.1** | nothing; printed | 399 ms |
+
+## The wall-clock bounds are gone (D-137)
+
+§4.4a carried three of them and no longer does. The chain-walk row began at `< 5 ms`, written before
+anything here had timed the walk; D-136 amended it to `< 10 ms` after E-13 measured 7.1 ms. Then an
+independent review ran the same assertion on **a different machine matching §4.4a's own description** —
+Apple M2, 8 cores, macOS 26.6.2 — and measured medians of 17.92, 16.65 and 19.52 ms. While the section
+was being amended, this machine, which had measured 7 ms idle, measured 13.77 ms with another suite
+running beside it.
+
+Four values from 7 to 19.5 ms, all on hardware matching the specification's words. **The description does
+not determine the figure.** A bound stated against it is not a property of this system, so the owner
+removed the three rows rather than raising a number a second time and having it track the slowest machine
+anyone tried.
+
+What asserts absolutely is now only what can: the compute figures, which are deterministic and were
+confirmed against the announced deployment's own transactions. What catches a slowdown in the *code* is
+the band, holding one runner to its own previous numbers. What the wall-clock measures give you is a
+record, with the machine named — and a record has to be read, which is why `scripts/ci.sh thresholds` is
+on CONTRIBUTING's run-before-submission list rather than in CI.
 
 ## Two kinds of number, and why they are gated differently (D-132)
 

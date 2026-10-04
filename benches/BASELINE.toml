@@ -23,6 +23,12 @@
 # here means "look", not "a regression of at least 50% has occurred".
 band_percent = 50.0
 
+# **And it fails on a busy machine, which is H-31 (#72).** Running another test suite alongside it put
+# this machine at 19.73 ms against a 19.27 ms limit, with all three measures marginal — unchanged code,
+# failing on load. Since D-137 removed §4.4a's wall-clock absolutes this band is the only wall-clock gate
+# left, so its calibration is no longer a secondary concern. Until H-31 lands, a failure here on a
+# developer machine means "check what else is running" before it means "the code regressed".
+#
 # **Run off the runner, this gate proves nothing, and that is worth stating.** These figures are one
 # machine's. The reference machine is about 1.8x faster, so `scripts/ci.sh bench-band` there measures
 # below the baseline and passes without the comparison meaning anything — it cannot fail on a machine
