@@ -41,9 +41,51 @@
 # recorded per file **and value** rather than per occurrence — so one exemption blankets every
 # occurrence in that file. That is why `check_list_shape` requires six digits or more.
 #
-# **So the discipline for these two classes is: a synthetic artifact uses a value no live account holds,
-# and a reviewer checks it.** A review found epoch 20723's real bump, 255, in `demo/test/footprint.test.mjs`
-# while both halves of the gate exited 0 (PR #57, round two, H-01); that fixture now uses 7.
+# **The rule for these two classes, as the owner settled it on 4 Oct 2026 (PR #57, round four, M-03):**
+#
+#   A short live value may not appear in a synthetic artifact **unless the artifact's subject is the
+#   announced deployment**, and each such use is recorded in `LIVE-VALUES.exempt` by file, value and
+#   occurrence. A reviewer checks that record, because no gate can.
+#
+# The earlier wording said only "a synthetic artifact uses a value no live account holds", and that was
+# already false when it was written: the demo and its three fixtures are about epoch 20723, and V-P-12
+# carries the live bumps 250 and 255 because §2.4's derivation against the announced deployment is the
+# vector's whole subject. A reviewer had no predicate that admitted those and rejected the thing the
+# rule is for, and could only apply it by importing the long-value exemption rule by eye.
+#
+# The distinction is the same one the long-value rule draws, and it is the only one that matters: an
+# artifact whose subject is the deployment may name it; an artifact that merely looks more concrete for
+# carrying one may not. A review found epoch 20723's real bump, 255, in `demo/test/footprint.test.mjs`
+# while both halves of the gate exited 0 (PR #57, round two, H-01) — that fixture is not about the
+# deployment, so it now uses 7, and the entries in `LIVE-VALUES.exempt` are the ones that are.
+#
+# **The short live values in use, recorded by file, value and occurrence.** This list is a reviewer's
+# checklist, not gate input: these values are not listed above and cannot be, so nothing matches them.
+# A short live value in a synthetic artifact that is *not* recorded here is one a reviewer should
+# question. They are recorded here rather than in `LIVE-VALUES.exempt` because that file exempts a
+# listed value from the matcher, and refuses an entry for a value the list does not hold — which these
+# are, by construction. The gate rejected the first attempt to put them there, which is the right
+# answer: an exemption from a check that never fires is not an exemption.
+#
+#   file                           value  occurrences  why
+#   demo/app.js                    20723  1            Scene 1 rebuilds the announced log's first
+#                                                      epoch, which is the scene's subject
+#   demo/fixtures/root.json        20723  1            the committed root fixture for that scene
+#   demo/fixtures/disclosure.json  20723  1            the package the scene verifies, same epoch
+#   demo/fixtures/tampered.json    20723  1            the altered copy of that package
+#   demo/test/footprint.test.mjs   20723  4            the scene's own account and two instructions;
+#                                                      a fifth match is the comment explaining this
+#   vectors/V-P-12.json            20723  2            §2.4's derivation is checked against this
+#                                                      deployment's epoch-20723 checkpoint, which is
+#                                                      the vector's whole subject
+#   vectors/V-P-12.json            250    1            the LogConfig bump the deployment holds, which
+#                                                      the derivation must reproduce
+#   vectors/V-P-12.json            255    2            the checkpoint bump, one-seed and two-seed
+#
+# **A third "255" in V-P-12.json is inside `Ed25519`, and that is the carve-out in one line.** A
+# matcher looking for the bump 255 as a substring finds the curve's name, a slot index, a record count
+# and a byte value, and a rule that fires on all of those gets switched off. That is why these are
+# read rather than matched, and what H-20 has to solve before they can be listed.
 #
 # This is a stated boundary on enforcement, not on the rule. H-20
 # ([#60](https://github.com/CertiMining/potash/issues/60)) makes the matcher token-aware so these values

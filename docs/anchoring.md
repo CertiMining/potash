@@ -232,8 +232,12 @@ offsets. The rule was unqualified and its enforcement had a shape-sized hole in 
 What a static pass establishes is therefore narrower than that sentence claimed: no **listed** value
 appears in the synthetic surface. And two classes are deliberately unlisted — bumps and epoch day
 indices, which substring matching cannot hold without firing on unrelated text. The owner ruled on
-3 Oct 2026 that those are review-enforced: a synthetic artifact uses a value no live account holds, and a
-reviewer checks it. `LIVE-VALUES.txt` carries the reasoning and H-20 removes the need for it. It says nothing about live values the list does not hold. Three things
+4 Oct 2026 that those are review-enforced against a subject test: a short live value may not appear in a
+synthetic artifact unless the artifact's subject is the announced deployment, and the use is recorded in
+`LIVE-VALUES.txt` by file, value and occurrence, where a reviewer checks it. The earlier wording was
+"a synthetic artifact uses a value no live account holds", which was already false when written — the
+demo is about epoch 20723 and V-P-12 carries the live bumps 250 and 255 because the deployment is its
+subject — so a reviewer had no predicate that admitted those and rejected what the rule is for. `LIVE-VALUES.txt` carries the reasoning and H-20 removes the need for it. It says nothing about live values the list does not hold. Three things
 changed rather than the claim being softened — `published_slot` and `published_unix` are listed for every
 epoch, `cargo xtask check-live-values` accepts decimals of six digits or more, and the chain script reads
 and compares both fields. Epoch numbers are still absent on purpose: a UTC day index is a date rather than

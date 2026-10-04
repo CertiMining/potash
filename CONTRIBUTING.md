@@ -190,10 +190,24 @@ of one may not.
 **Where it is enforced.** `LIVE-VALUES.txt` lists what the deployment holds and `LIVE-VALUES.exempt`
 records the pairs that are legitimate, with a reason each. `cargo xtask gen-vectors` and
 `cargo xtask gen-demo` scan every file before writing a byte and fail on an unrecorded match, and an
-exemption naming a value the list does not hold fails too rather than sitting dead. Both files and the
-check arrive with E-14; on this branch the rule is the rule and the gate is not here yet, which is
-recorded rather than implied. Slot numbers and block heights are deliberately out of scope: they are
-plain integers, and a list of them would fire on every counter in the corpus.
+exemption naming a value the list does not hold fails too rather than sitting dead. The list reaches
+32-byte values, base58 identifiers, and decimals of six digits or more — the last so that a publication
+slot or a unix timestamp is covered, which a review found they were not. Block heights are still out of
+scope.
+
+**And two classes cannot be enforced at all, which changes what the rule asks of you.** A PDA bump is
+0-255 and an epoch is a five-digit day index; listing either would fire on unrelated text wherever it
+appeared. So for short values the rule is checked by a reader, and it reads (owner, 4 Oct 2026):
+
+> A short live value may not appear in a synthetic artifact **unless the artifact's subject is the
+> announced deployment**, and the use is recorded in `LIVE-VALUES.txt` by file, value and occurrence.
+
+The exception is not a loophole; it is the same subject test as above, which V-P-12 needs and the demo's
+epoch needs. What it forbids is the unrecorded use — a short live value sitting in an artifact because
+it looked more concrete. The recorded uses are listed in `LIVE-VALUES.txt` beside the rule, and a short
+live value you find that is not on that list is a finding. H-20 makes the matcher token-aware so these
+can be listed and gated like the rest; when it lands, the carve-out and that list are withdrawn
+together.
 
 ## Filing to Post-deadline hardening
 
