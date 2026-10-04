@@ -13,9 +13,15 @@
 //! `LIVE-VALUES.exempt`. Matching is case-insensitive, so a base58 string that collides only under
 //! case folding would fail generation — a false positive, which is the safe direction, and loud.
 //!
-//! **What it deliberately does not cover.** Slot numbers and block heights are plain integers and a
-//! list of them would produce false positives on every counter in the corpus. The rule reaches
-//! 32-byte values and base58 identifiers, which is where fabricated provenance is persuasive.
+//! **What it covers, and what it does not.** The rule reaches 32-byte values, base58 identifiers and —
+//! since a review found a live publication slot beside a fabricated root — decimals of six digits or
+//! more, which is what admits a slot or a unix timestamp without firing on every small counter in the
+//! corpus. Block heights are still uncovered. Bumps and epoch day indices are excluded by shape rather
+//! than by principle: both are short enough that listing them would match unrelated text, so they are
+//! review-enforced, and H-20 removes the need for that carve-out.
+//!
+//! An earlier version of this paragraph said slot numbers were deliberately uncovered, which the
+//! decimal support contradicts.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -125,10 +131,23 @@ pub fn check_list_shape(root: &Path) {
         let looks_like_base58 = v.value.len() >= 32
             && v.value.len() <= 88
             && v.value.chars().all(|c| c.is_ascii_alphanumeric());
+        // **A third shape, added after a review found the second gap this file has had.** The rule
+        // covers "no value from a live deployment", unqualified, and two of a checkpoint's fields are
+        // decimal: `published_slot` and `published_unix`. Only hex and base58 were accepted here, so a
+        // slot could not be listed even by someone who wanted to — and `demo/test/footprint.test.mjs`
+        // carried epoch 20723's real slot beside a fabricated root and a fabricated receipt digest,
+        // which is the exact pairing this rule was written for, while both halves of the gate exited 0.
+        //
+        // Six digits or more, all decimal. The floor is there because short numbers are everywhere in a
+        // fixture — lengths, counts, epoch day indices — and listing one would make the gate match text
+        // that has nothing to do with the deployment. Epoch numbers are deliberately **not** listed for
+        // that reason: a UTC day index is a date, not something the deployment produced, and the demo is
+        // legitimately about epoch 20723.
+        let looks_like_decimal = v.value.len() >= 6 && v.value.chars().all(|c| c.is_ascii_digit());
         assert!(
-            looks_like_hex || looks_like_base58,
-            "LIVE-VALUES.txt: {:?} is neither a 32-byte hex value nor a base58 identifier, and the \
-             rule covers those two shapes",
+            looks_like_hex || looks_like_base58 || looks_like_decimal,
+            "LIVE-VALUES.txt: {:?} is not a 32-byte hex value, a base58 identifier, or a decimal of six \
+             digits or more, and the rule covers those three shapes",
             v.value
         );
     }

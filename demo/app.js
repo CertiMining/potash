@@ -52,7 +52,9 @@ const INSTRUCTION_DISCRIMINATOR = sha256(new TextEncoder().encode("global:publis
 const FIXED = {
   epoch: 20723n,
   height: 8,
-  masterKey: fromHex("0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a", 32),
+  // `CMv1 DEMO MASTER KEY, NOT SECRET` in ASCII, matching xtask/src/demo.rs. The previous value was
+  // the one the live publication harness used, so this scene rebuilt real published roots.
+  masterKey: fromHex("0x434d76312044454d4f204d4153544552204b45592c204e4f5420534543524554", 32),
   // Synthetic, and visibly so. An earlier version held the announced log's real slot and receipt
   // digest here, which put values a reader might recognise into an account that was never published.
   // Nothing claimed they were real, which is not the same as their not looking it.
@@ -60,7 +62,12 @@ const FIXED = {
   publishedUnix: 1790500000n,
   receiptDigest: fromHex(`0x${"ab".repeat(32)}`, 32),
   anchorKind: 1,
-  bump: 255,
+  // A bump no account on the announced deployment holds. This page is synthetic and must look it; the
+  // live bumps are not quoted here, because this file is inside the surface the rule covers and a comment
+  // naming them would put them straight back — which is what the first attempt at this fix did
+  // (PR #57, rounds two and three). The live set is in LIVE-VALUES.txt's reasoning, which is outside the
+  // scanned surface, and the gate cannot hold three-digit values until H-20 lands.
+  bump: 7,
 };
 
 /** `count` synthetic submissions, so the tree is built from a real set rather than described. */

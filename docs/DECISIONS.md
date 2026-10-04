@@ -1765,3 +1765,57 @@ the list — scoping it means the next NCSA crate still fails.
 
 **Revisit if** counsel's IP screen (R3) reaches build-time-only tooling, in which case the seeded loop is
 the fallback and the record names which §4.5 criteria it cannot report.
+
+## D-138 · The announced log is a demonstration log, and its master key moves out of the repository
+
+**Date:** 4 Oct 2026 · **Unit:** E-16 · **Class:** security necessity · **Status:** settled at S0 (owner, 4 Oct 2026)
+
+**Decision (the owner's).** The announced log is a demonstration log. Its `k_master` moves to a file
+outside the repository; the README and `docs/anchoring.md` state that its record set is a public
+constant, so the log does not and never did demonstrate count-hiding; no derived epoch key is added to
+`LIVE-VALUES.txt`; and the daily publish resumes on day 20731.
+
+**What was found.** `crates/certimining-client/tests/publish_epoch.rs` built every announced epoch with
+`let master: Digest = [0x5a; 32]`, written in that file. `xtask/src/demo.rs` and `demo/app.js` used the
+same constant, which is how it surfaced: the demo's Scene 1 builds an epoch in the viewer's browser at
+`epoch: 20723n`, height 8, with the same record construction the harness uses, so at the announced
+log's record count of three it rendered a real published root on a page saying that epoch was published
+nowhere.
+
+INV-TREE-05 makes count-hiding rest on `k_master` never being published, and RES-03 names it as a
+batcher-custody assumption. A value committed to a public repository satisfies neither. Every root the
+announced log has published — 20723 through 20730 — was rebuilt from the repository alone, and the
+padding leaves of those epochs are derivable by anyone.
+
+**Why this is a custody defect and not a disclosure.** Count-hiding conceals a record count. The
+announced log never had one to conceal. The harness builds each epoch from the literal `3`, with
+submission ids and leaves that are deterministic public constants in the same file as the key, and the
+harness says why: the deployment is a demonstration log with no issuer feeding it. All eight roots were
+reproduced without needing the key to be secret, because the whole input is published. Nothing was
+learned from the key that the source did not already give away.
+
+It follows that rotating the key does not make the announced log count-hiding. The records remain a
+public constant, so the count remains public. A new key would give the log the appearance of the
+property without the property, which is the failure this repository has now filed more than a dozen
+times in other forms: an instrument reporting something it cannot establish. The record says what is
+true instead.
+
+**Rejected: adding the eight derived epoch keys to `LIVE-VALUES.txt`** so the gate could detect reuse of
+the exposed key. INV-TREE-05 says `k_e` is never published, and that file is public. The repository
+would have published exactly what its own invariant forbids, to guard a key already in its history
+permanently. The guard sits in the publisher instead: `master_key()` refuses the exposed value by
+comparison, which names a constant this repository has published since `e315874` and discloses nothing
+new.
+
+**Rejected: making the announced log genuinely count-hiding**, which needs a secret key *and* a record
+set that is not a public constant. That is a different log, days before the submission freeze, and it
+would change what the committed vectors and the demo can reproduce.
+
+**What this does not change.** The published roots, their ordering, the Solana checkpoints and the
+OpenTimestamps receipts are untouched; this was never an integrity question. Count-hiding as a property
+of the architecture is unaffected and is what §4.4's privacy tests and the demo exercise. No claim is
+withdrawn, because none was made: `README.md` already stated that the property is computational and
+rests on batcher key custody, citing RES-09 and RES-03.
+
+**Revisit if** the log ever carries a record set that is not public, at which point the key's custody
+starts protecting something and the disclosure below has to be withdrawn in the same commit.
