@@ -153,6 +153,18 @@ behaviour and the cluster that runs it are not the same version. D-86 makes that
 rather than assume: `crates/certimining-client/tests/devnet.rs` re-runs the LiteSVM assertions against
 the live program, and the two columns are recorded together on issues #8 and #9.
 
+**What this log demonstrates, and what it does not (D-138).** It demonstrates an append-only log
+anchored to two independent chains: real roots, real checkpoints, real OpenTimestamps receipts, on a
+schedule. It does **not** demonstrate count-hiding. The publication harness builds every epoch from
+three records whose submission ids and leaves are deterministic constants in
+`crates/certimining-client/tests/publish_epoch.rs`, because the deployment has no issuer feeding it, so
+the record count is published in the same file that produces the root. Every root this log has
+published — 20723 through 20730 — can be rebuilt from this repository alone. Until D-138 the harness
+also held `k_master` as a source constant, which INV-TREE-05 requires never to be published; it now
+reads the key from outside the repository, so a deployment copying this harness does not inherit the
+defect. That repair does not give *this* log count-hiding, because its records remain public. §4.4's
+privacy tests and the demo are what exercise the property.
+
 Every invariant this program enforces is enforced by *this* program, and whoever holds that key can
 replace it. That is a trust assumption of the same kind as RES-03's batcher-key custody, and it is
 written where a reader meets the claims rather than left to be inferred. Burning the authority is a

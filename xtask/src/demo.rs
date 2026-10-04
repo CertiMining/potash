@@ -49,7 +49,11 @@ const DEMO_HEIGHT: u8 = 8;
 /// The batcher's master key. **In a deployment this never leaves the batcher** (INV-STATE-03,
 /// RES-03); here it is published so Scene 1 can build epochs in front of a viewer, and the demo says
 /// so on screen rather than leaving a reader to assume a key like this is normally publishable.
-const DEMO_MASTER_KEY: Digest = [0x5a; 32];
+// Thirty-two bytes of ASCII that say what they are: `CMv1 DEMO MASTER KEY, NOT SECRET`. It was
+// `[0x5a; 32]`, which is the value the live publication harness also used, so the demo's Scene 1
+// reproduced the announced log's real roots whenever the record count matched — and the page said
+// that epoch was published nowhere. A key that spells out its own status cannot do that silently.
+const DEMO_MASTER_KEY: Digest = *b"CMv1 DEMO MASTER KEY, NOT SECRET";
 
 const FILE_MODE: u32 = 0o644;
 
