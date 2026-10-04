@@ -55,7 +55,7 @@ test("every *.json vector has a handler", () => {
   const extra = Object.keys(HANDLERS).filter((id) => !files.includes(`${id}.json`));
   assert.deepEqual(extra, [], `handlers for vectors that are not in the directory: ${extra.join(", ")}`);
 
-  assert.equal(files.length, 33, `expected 33 committed *.json vectors, found ${files.length}`);
+  assert.equal(files.length, 34, `expected 34 committed *.json vectors, found ${files.length}`);
 });
 
 for (const file of vectorFiles()) {

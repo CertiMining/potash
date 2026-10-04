@@ -1,0 +1,90 @@
+[package]
+name = "certimining-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "§4.5's fuzz targets. Outside the workspace, because cargo-fuzz builds with sanitizers and a nightly toolchain the rest of the repository does not use (D-131)."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+# The fuzzing driver, pinned like every other tool (D-11's convention).
+#
+# **Its licence does not reduce to one answer, and this comment does not pick one.** The crate declares
+# `(MIT OR Apache-2.0) AND NCSA` at `Cargo.toml:25` and repeats NCSA at `README.md:101`. The vendored LLVM
+# sources say otherwise: all **53** `.cpp` and `.h` files under `libfuzzer/` carry
+# `SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception`, and the crate ships no NCSA licence text.
+# `build.rs` compiles **26** of them — the top-level `.cpp` only, since its `read_dir` does not recurse,
+# so what is under `afl/`, `dataflow/` and `tests/` ships without being built. LLVM relicensed away from
+# NCSA before this snapshot; the crate's metadata and prose appear not to have followed.
+#
+# An earlier version of this comment said "all 47", which was the top-level `.cpp` and `.h` together —
+# neither figure, and not reproducible from the locked package (PR #55, E12-05). The commands that
+# reproduce all three numbers are in `deny.toml` beside the exception.
+#
+# Which of those governs is a legal question and not one this file settles. What is settled: `cargo deny`
+# reads the declaration and not the files, so pointing the licence gate at this manifest refuses the crate
+# until the owner rules on it. And nothing here ships — the fuzz binaries are test tooling that reaches
+# neither the deployed program nor the client.
+libfuzzer-sys = "=0.4.10"
+# Structured input from arbitrary bytes, so F-03 and F-05 drive real types rather than raw buffers.
+arbitrary = { version = "=1.4.2", features = ["derive"] }
+
+certimining-core = { path = "../crates/certimining-core", features = ["native"] }
+certimining-log = { path = "../crates/certimining-log", features = ["native"] }
+# The client's public account decoders, which are where a counterparty's bytes actually enter: an RPC
+# response is untrusted, and `decode_checkpoint` and `decode_config` are what stand between it and a root
+# the client believes. A review found F-01 was not driving them and that the fuzz graph did not even
+# contain this crate, so a defect accepting an account owned by another program survived 1,000,000
+# iterations (PR #55, round two, E12-04). Default features only: the decoders are in the default build and
+# `cluster` would pull in an RPC client this target has no use for.
+certimining-client = { path = "../crates/certimining-client" }
+# The program's account layouts, so F-01 can drive the decoders a counterparty's bytes actually reach.
+# `no-entrypoint` keeps the Solana entrypoint out of a host build, which is how the client takes it.
+certimining-checkpoint = { path = "../programs/certimining-checkpoint", features = ["no-entrypoint"] }
+anchor-lang = "=1.2.0"
+# F-03 signs the leaf preimage with RFC 8032 §7.1's published key, so the accepted path is reachable.
+# Without it every record is refused at condition (c) and the target's accept-side assertions never
+# execute — a target that looks like it checks something and cannot.
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std"] }
+# The proof type's sibling list is a fixed-capacity vector, so a target that builds one needs the
+# same crate the engine uses rather than a std Vec.
+heapless = "=0.9.3"
+
+[[bin]]
+name = "fuzz_params_decode"
+path = "fuzz_targets/fuzz_params_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_canonicalize"
+path = "fuzz_targets/fuzz_canonicalize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_apply"
+path = "fuzz_targets/fuzz_apply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_tree_build"
+path = "fuzz_targets/fuzz_tree_build.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proof_verify"
+path = "fuzz_targets/fuzz_proof_verify.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

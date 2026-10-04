@@ -17,6 +17,7 @@ KAT02_FILE=crates/certimining-core/tests/data/rfc8032_7.1.txt
 KAT02_SHA256=0717d570f83753773c492e9157bb1407754bf16e3cf9b8be317b2f7c71b42d67        # D-45
 MIRI_TOOLCHAIN=nightly-2026-06-16                                                     # D-11
 CARGO_DENY_VERSION=0.20.2                                                             # D-11
+CARGO_FUZZ_VERSION=0.13.2                                                             # D-11, D-131
 AGAVE_VERSION=v4.2.2                                                                  # D-15
 AGAVE_LINUX_SHA256=5fc8684f7430038105fde953d4308ed56addf627f658daa61709f345448247ee    # D-15, x86_64 Linux archive
 
@@ -186,6 +187,11 @@ checks() {
   check "test core, default" cargo test -p certimining-core
   check "test core, solana" cargo test -p certimining-core --no-default-features --features solana
   check "test core, all features" cargo test -p certimining-core --all-features
+  # §4.5 asks P-02 for 10,000 generated cases and `config()` runs 512, so the required count reached no
+  # committed job and a review found it (E12-04). It is cheap — a few seconds — so it runs here on every
+  # push rather than being left to a note telling someone to set the variable by hand.
+  check "property counts (§4.5: P-02 at 10,000 cases)" \
+    env PROPTEST_CASES=10000 cargo test -p certimining-core --test state_props p02_apply_is_deterministic -- --exact
   check "test log, no default features" cargo test -p certimining-log --no-default-features
   check "test log, default" cargo test -p certimining-log
   check "test log, solana" cargo test -p certimining-log --no-default-features --features solana
@@ -220,6 +226,13 @@ miri() {
 }
 
 # Advisories, licences and sources (D-13, D-18). The version is read from the installed tool.
+#
+# **Two graphs, because the workspace is not the whole repository.** `fuzz/` is its own Cargo workspace
+# (D-131), so a root `cargo deny check` never sees `libfuzzer-sys` or `arbitrary` — verifiable as
+# `cargo deny list | grep -c libfuzzer`, which answers 0. D-131 committed those two crates to these
+# gates "like everything else, or they do not ship", and until the fuzz manifest is checked explicitly
+# that commitment is untrue rather than met. Both graphs use the same deny.toml, so there is one policy
+# and not a looser one for tooling.
 deny() {
   local version
   version="$(cargo deny --version)"
@@ -227,7 +240,59 @@ deny() {
     echo "deny: expected cargo-deny $CARGO_DENY_VERSION, got: $version" >&2
     return 1
   fi
-  cargo deny check
+  GROUP_FAILED=""
+  check "deny workspace" cargo deny check
+  check "deny fuzz" cargo deny --manifest-path fuzz/Cargo.toml --config deny.toml check
+  group_result deny
+}
+
+# §4.5's fuzz targets, at the iteration counts §4.6 gates on (D-131). This group is **not** in `all`:
+# it runs in its own nightly workflow, .github/workflows/fuzz.yml, because `all` is the push pipeline
+# verbatim and these runs take tens of minutes rather than seconds.
+#
+# `-rss_limit_mb` and `-timeout` are set rather than left to libFuzzer's defaults, because §4.5 asks F-01
+# for zero OOM and zero timeouts and neither can be reported unless a limit exists to cross. The limit is
+# per unit: 2 GB of resident memory, 10 seconds of wall clock.
+#
+# **One run, 3 Oct 2026, every figure from it, total by addition. Apple M2, 8 cores, macOS 26.6.2, from an
+# empty corpus.** `slowest_unit_time_sec` was 0 for all five and the highest peak was F-03's 565 MB.
+#
+#   F-01 fuzz_params_decode  1,000,000 in   13 s   76,923/s   505 MB
+#   F-02 fuzz_canonicalize   1,000,000 in   11 s   90,909/s   434 MB
+#   F-03 fuzz_apply          1,000,000 in  355 s    2,816/s   565 MB
+#   F-04 fuzz_proof_verify   1,000,000 in  527 s    1,897/s   404 MB
+#   F-05 fuzz_tree_build        25,000 in  620 s       40/s   380 MB
+#                                       ----------
+#                                 whole group 1,526 s, 25 min 26 s
+#
+# A review found the previous block arithmetically impossible: it mixed one run's F-01 with an earlier
+# run's F-03 and F-04 and quoted a total from a third, so no addition of its rows reached it.
+#
+# §4.5 fixes a million for F-01 and F-02 and states no count for the other three; F-03 and F-04 run a
+# million anyway. **F-05 has no stable rate** — 25,000 from empty has measured 16, 64, 75, 195, 217, 318
+# and 620 seconds — because the leaf count is itself fuzzed and a 4,096-leaf unit at H = 16 costs orders
+# of magnitude more than a small one. Its count stays at 25,000 (D-134). What bounds it regardless of
+# count is the derived-count clamp: heights 4 to 12 reach capacity, 13 to 16 do not, and those boundaries
+# are pinned by a deterministic test instead.
+fuzz() {
+  local version
+  version="$(cargo fuzz --version)"
+  if [ "$version" != "cargo-fuzz $CARGO_FUZZ_VERSION" ]; then
+    echo "fuzz: expected cargo-fuzz $CARGO_FUZZ_VERSION, got: $version" >&2
+    return 1
+  fi
+  GROUP_FAILED=""
+  fuzz_target fuzz_params_decode 1000000
+  fuzz_target fuzz_canonicalize 1000000
+  fuzz_target fuzz_apply 1000000
+  fuzz_target fuzz_proof_verify 1000000
+  fuzz_target fuzz_tree_build 25000
+  group_result fuzz
+}
+
+fuzz_target() {
+  check "fuzz $1 ($2 runs)" cargo "+$MIRI_TOOLCHAIN" fuzz run "$1" -- \
+    "-runs=$2" -rss_limit_mb=2048 -timeout=10 -print_final_stats=1
 }
 
 # The TypeScript verifier of E-11 (D-93, D-97). `npm ci` installs the committed lock file exactly, so
@@ -255,6 +320,7 @@ ts() {
 install_rust() { rustup toolchain install --no-self-update || rustup show; }
 install_miri() { rustup toolchain install "$MIRI_TOOLCHAIN" --profile minimal --component miri,rust-src --no-self-update; }
 install_cargo_deny() { cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked; }
+install_cargo_fuzz() { cargo install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked; }
 install_agave() {
   local dir="$HOME/.local/share/potash/agave/$AGAVE_VERSION"
   [ -x "$dir/solana-release/bin/cargo-build-sbf" ] && return 0
@@ -276,6 +342,7 @@ run() {
     checks) checks ;;
     miri) miri ;;
     deny) deny ;;
+    fuzz) fuzz ;;
     ts) ts ;;
     *) echo "unknown group: $1" >&2; return 2 ;;
   esac
@@ -284,6 +351,10 @@ run() {
 # Every group in CI's order. KAT-01 gates the rest exactly as in CI (D-09, S9-03): if either KAT
 # group fails, nothing else runs. The other groups are independent, as CI's jobs are, so each of
 # them runs and the summary names any that failed.
+#
+# `fuzz` is deliberately not in this list. ci.yml runs on every push and the fuzz group takes tens of
+# minutes, so it has its own nightly workflow; `all` stays the push pipeline verbatim, which is the
+# only reason the list is worth comparing against ci.yml at all.
 all() {
   local failed=0 summary="" group code log
   for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts; do
@@ -314,6 +385,7 @@ case "${1:-}" in
   install-agave) install_agave ;;
   install-miri) install_miri ;;
   install-cargo-deny) install_cargo_deny ;;
+  install-cargo-fuzz) install_cargo_fuzz ;;
   all) all ;;
   "") echo "usage: scripts/ci.sh <group> | all | install-<tool>" >&2; exit 2 ;;
   *) run "$1" ;;
