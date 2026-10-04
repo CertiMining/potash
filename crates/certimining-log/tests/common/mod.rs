@@ -242,6 +242,31 @@ pub fn feature_matrix(leaves: &[Digest], root: &Digest) -> Vec<[f64; FEATURE_COU
         .collect()
 }
 
+/// Each feature's standard deviation across one epoch's rows, so a caller can accumulate liveness over
+/// the whole sample rather than demanding it of every epoch (PR #69, round four).
+pub fn feature_deviations(matrix: &[[f64; FEATURE_COUNT]]) -> [f64; FEATURE_COUNT] {
+    let n = matrix.len() as f64;
+    let mut totals = [0f64; FEATURE_COUNT];
+    for row in matrix {
+        for (total, value) in totals.iter_mut().zip(row) {
+            *total += value;
+        }
+    }
+    let means: Vec<f64> = totals.iter().map(|t| t / n).collect();
+    let mut variances = [0f64; FEATURE_COUNT];
+    for row in matrix {
+        for (index, value) in row.iter().enumerate() {
+            let d = value - means[index];
+            variances[index] += d * d;
+        }
+    }
+    let mut out = [0f64; FEATURE_COUNT];
+    for (o, v) in out.iter_mut().zip(&variances) {
+        *o = (v / n).sqrt();
+    }
+    out
+}
+
 /// One score per slot: every feature standardised across the epoch's leaf set and summed, which is
 /// the strongest single guess the listed features support.
 pub fn combined_scores(matrix: &[[f64; FEATURE_COUNT]]) -> Vec<f64> {
@@ -268,28 +293,14 @@ pub fn combined_scores(matrix: &[[f64; FEATURE_COUNT]]) -> Vec<f64> {
     // reads a manufactured 50% as perfect indistinguishability. That is the defect this unit was opened
     // to fix, in the classifier rather than in Pearson. At least one feature must vary, or there is
     // nothing to classify on and no result to report.
-    // Round two required *one* feature to vary, and a review then left exactly one alive — the first
-    // leaf byte — and watched V-Z-02, V-Z-03 and the new positive control all pass while eight of the
-    // nine instruments were dead (PR #69, round three, High). One live feature is enough to break the
-    // ties that manufactured the 50%, and enough to carry a control that plants its difference where
-    // that feature reads. It is not enough to support the claim these tests make, which is about nine
-    // named features. Each one that is named must be a measurement, so each one must vary.
-    let dead: Vec<&str> = FEATURE_NAMES
-        .iter()
-        .zip(&deviations)
-        .filter(|(_, d)| **d == 0.0)
-        .map(|(name, _)| *name)
-        .collect();
-    assert!(
-        dead.is_empty(),
-        "{} of {FEATURE_COUNT} features are constant across all {} rows and contribute nothing: {}. \
-         A feature that cannot vary is not evidence, and a score summed from it reports the absence of \
-         an instrument as the absence of a signal.",
-        dead.len(),
-        matrix.len(),
-        dead.join(", ")
-    );
-
+    // **Liveness is not a per-epoch property, and asserting it here was wrong (PR #69, round four,
+    // L-02).** Round three made every feature refuse zero deviation inside this function, which runs
+    // once per epoch. A review then built a valid full epoch through the production tree whose real
+    // leaves genuinely contained no zero byte and no adjacent equal bytes: the zero-byte and
+    // longest-run columns were correctly constant, and the gate aborted a sample that was fine. A
+    // feature that does not vary in one epoch has nothing to say about that epoch; it is an instrument
+    // failure only if it never varies across the whole sample. The callers accumulate that, through
+    // `feature_deviations`, and assert it where their statistic is reported.
     matrix
         .iter()
         .map(|row| {

@@ -290,10 +290,25 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
         // *and* slipped under the constant-delay refusal added earlier in this unit, because a series
         // of almost-all zeros is not constant. That is the third time in this unit that a failed
         // observation was mapped onto a passing value; it refuses now instead.
+        // **A lower bound is half an observation (PR #69, round four, H-03).** Round three refused a
+        // slot below the pre-submit snapshot; nothing refused one above the chain's own head. A stale
+        // or mixed read, a wrong account or a decoding fault can return a slot arbitrarily far in the
+        // future, and one such outlier drags both correlations well under the bound — a review showed
+        // `u64::MAX` passing at r = 0.025 and -0.111. The observation has to sit inside a bracket, read
+        // at the same endpoint and the same commitment as the first snapshot.
+        let after = with_retry("get_slot after", || {
+            rpc.get_slot().map_err(|e| e.to_string())
+        });
         assert!(
             anchored.published_slot >= before,
             "epoch {next_epoch}: published in slot {} but slot {before} was read before submitting. \
              Slots do not go backwards, so this is a bad reading, and a bad reading is not a delay.",
+            anchored.published_slot
+        );
+        assert!(
+            anchored.published_slot <= after,
+            "epoch {next_epoch}: published in slot {} and the chain had only reached {after} after the \
+             transaction confirmed. A slot the chain has not produced is not an observation.",
             anchored.published_slot
         );
         let landed = anchored.published_slot - before;

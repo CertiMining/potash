@@ -16,8 +16,8 @@ use certimining_core::{epoch_key, padding_prf, Digest, NativeKeccak, SubmissionI
 use certimining_log::{BuiltEpoch, EpochTree};
 use common::{
     assert_indistinguishable, assignment_oracle, binomial_band, combined_scores, epoch,
-    feature_matrix, leaf_digest, padding_slots, pearson, real_slots, scattered_id, sequential_id,
-    SplitMix, FEATURE_COUNT, FEATURE_NAMES, TEST_MASTER_KEY,
+    feature_deviations, feature_matrix, leaf_digest, padding_slots, pearson, real_slots,
+    scattered_id, sequential_id, SplitMix, FEATURE_COUNT, FEATURE_NAMES, TEST_MASTER_KEY,
 };
 
 /// The deployment's height (D-02).
@@ -63,6 +63,143 @@ fn picked_real(real_score: f64, padding_score: f64, tie_break: bool) -> bool {
     } else {
         real_score > padding_score
     }
+}
+
+/// **Liveness is not conformance, and a review proved the gap (PR #69, round four, H-01).** Round three
+/// required all nine feature columns to vary. An extractor that copies leaf byte 0 into all nine
+/// satisfies that, and the positive control plants its leak in byte 0, so the control reached 1.0000
+/// while eight named instruments were absent and both release blockers stayed green.
+///
+/// So each column is checked against the property its name claims. **Every case below holds leaf byte 0
+/// identical between the two inputs**, which is what makes the test discriminating: an extractor
+/// aliasing byte 0 produces the same column for both sides of every case and fails all nine. The last
+/// two hold the whole leaf identical and vary its neighbour and the root, because that is what those
+/// two features are about.
+#[cfg_attr(
+    miri,
+    ignore = "nine feature extractions over a small matrix, not a Miri question"
+)]
+#[test]
+fn each_named_feature_responds_to_its_own_property() {
+    const FIXED: u8 = 0x5a;
+    // A leaf whose byte 0 is `first` and whose remaining bytes come from `rest`.
+    fn leaf(first: u8, rest: impl Fn(usize) -> u8) -> Digest {
+        let mut out = [0u8; 32];
+        out[0] = first;
+        for (i, slot) in out.iter_mut().enumerate().skip(1) {
+            *slot = rest(i);
+        }
+        out
+    }
+    // Four rows so the cyclic neighbours in the extractor are well defined; row 1 is the one examined.
+    fn matrix_of(subject: Digest, neighbour: Digest, root: Digest) -> Vec<[f64; FEATURE_COUNT]> {
+        let filler = leaf(0x11, |i| i as u8);
+        feature_matrix(&[filler, subject, neighbour, filler], &root)
+    }
+
+    let plain_root = [0x33; 32];
+    let quiet = leaf(FIXED, |_| 0x00);
+    let cases: [(usize, Digest, Digest, Digest, Digest, Digest, Digest); FEATURE_COUNT] = [
+        // per-position byte deviation: same byte 0, a tail far from the set mean versus one at it.
+        (
+            0,
+            leaf(FIXED, |_| 0x00),
+            quiet,
+            leaf(FIXED, |_| 0xff),
+            quiet,
+            plain_root,
+            plain_root,
+        ),
+        // population count: a tail of no bits versus a tail of every bit.
+        (
+            1,
+            leaf(FIXED, |_| 0x00),
+            quiet,
+            leaf(FIXED, |_| 0xff),
+            quiet,
+            plain_root,
+            plain_root,
+        ),
+        // zero bytes: thirty-one zero bytes versus none.
+        (
+            2,
+            leaf(FIXED, |_| 0x00),
+            quiet,
+            leaf(FIXED, |_| 0x01),
+            quiet,
+            plain_root,
+            plain_root,
+        ),
+        // leading zero bits: byte 0 is zero in both, and byte 1 decides.
+        (
+            3,
+            leaf(0x00, |i| if i == 1 { 0x00 } else { 0xff }),
+            quiet,
+            leaf(0x00, |i| if i == 1 { 0x01 } else { 0xff }),
+            quiet,
+            plain_root,
+            plain_root,
+        ),
+        // longest equal run: an alternating tail versus a constant one.
+        (
+            4,
+            leaf(FIXED, |i| if i.is_multiple_of(2) { 0x01 } else { 0x02 }),
+            quiet,
+            leaf(FIXED, |_| 0x01),
+            quiet,
+            plain_root,
+            plain_root,
+        ),
+        // distinct byte values: two distinct values versus thirty-two.
+        (
+            5,
+            leaf(FIXED, |_| 0x01),
+            quiet,
+            leaf(FIXED, |i| i as u8),
+            quiet,
+            plain_root,
+            plain_root,
+        ),
+        // nibble chi-squared: one nibble pair repeated versus a spread of them.
+        (
+            6,
+            leaf(FIXED, |_| 0x11),
+            quiet,
+            leaf(FIXED, |i| ((i as u8) << 4) | (i as u8)),
+            quiet,
+            plain_root,
+            plain_root,
+        ),
+        // hamming distance to the adjacent slots: the subject is identical, the neighbour is not.
+        (
+            7,
+            quiet,
+            leaf(0x00, |_| 0x00),
+            quiet,
+            leaf(0xff, |_| 0xff),
+            plain_root,
+            plain_root,
+        ),
+        // hamming distance to the root: the subject is identical, the root is not.
+        (8, quiet, quiet, quiet, quiet, [0x00; 32], [0xff; 32]),
+    ];
+
+    for (feature, a_subject, a_neighbour, b_subject, b_neighbour, a_root, b_root) in cases {
+        assert_eq!(
+            a_subject[0], b_subject[0],
+            "{}: the two inputs must agree on byte 0 or this case cannot discriminate an alias of it",
+            FEATURE_NAMES[feature]
+        );
+        let a = matrix_of(a_subject, a_neighbour, a_root)[1][feature];
+        let b = matrix_of(b_subject, b_neighbour, b_root)[1][feature];
+        assert_ne!(
+            a, b,
+            "{} did not move when the property it names changed, and byte 0 did not change, so this \
+             column is not the feature it is named after",
+            FEATURE_NAMES[feature]
+        );
+    }
+    println!("conformance: all {FEATURE_COUNT} feature columns respond to their own property with leaf byte 0 held fixed");
 }
 
 /// **The control for V-Z-02 and V-Z-03: the classifier must catch a leak it is given (PR #69, round
@@ -147,6 +284,7 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
     let mut leaf_correct = 0usize;
     let mut leaf_total = 0usize;
     let mut mix = SplitMix(0x5eed_0002);
+    let mut ever_varied = [false; FEATURE_COUNT];
 
     // D-66 fixes this sample and the band below is computed from it, so the constant is checked rather
     // than trusted: a reduced sample would widen nothing and simply test less (PR #69, round two).
@@ -160,6 +298,9 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
         let built = epoch::<NativeKeccak>(number, HEIGHT, capacity / 2);
         // The classifier is given the root and the leaves in slot order, and no key.
         let matrix = feature_matrix(&built.leaves, &built.root);
+        for (seen, deviation) in ever_varied.iter_mut().zip(feature_deviations(&matrix)) {
+            *seen |= deviation > 0.0;
+        }
         let combined = combined_scores(&matrix);
 
         let mut reals = real_slots(&built);
@@ -168,7 +309,27 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
         mix.shuffle(&mut reals);
         mix.shuffle(&mut paddings);
 
+        // **A pair that is not one real and one padding is not a trial (PR #69, round four, H-02).**
+        // The oracle is the built epoch itself, read again rather than taken from the shuffled vectors
+        // the loop consumes, so a pairing layer that supplied the real side twice is caught here and
+        // not converted into the ideal result by the tie-break.
+        let real_oracle = real_slots(&built);
+        let padding_oracle = padding_slots(&built);
         for (real, padding) in reals.iter().zip(&paddings) {
+            assert!(
+                real_oracle.binary_search(real).is_ok(),
+                "epoch {number}: slot {real} was offered as the real side and the epoch does not place a \
+                 real submission there"
+            );
+            assert!(
+                padding_oracle.binary_search(padding).is_ok(),
+                "epoch {number}: slot {padding} was offered as the padding side and the epoch does not \
+                 pad there"
+            );
+            assert_ne!(
+                real, padding,
+                "epoch {number}: a slot was compared with itself, which ties by construction"
+            );
             pair_trials += 1;
             let tie_break = pair_trials.is_multiple_of(2);
             let real_row = matrix[usize::from(*real)];
@@ -203,6 +364,38 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
         }
     }
 
+    // **Liveness over the whole sample, which is the scope the claim is at (PR #69, round four).** A
+    // feature may be constant in one epoch and still be a working instrument; one that never varies in
+    // any of them measured nothing, and summing it reported the absence of an instrument as the absence
+    // of a signal. Conformance — that each column is the feature its name says — is a different
+    // question, and `each_named_feature_responds_to_its_own_property` answers it.
+    let never: Vec<&str> = FEATURE_NAMES
+        .iter()
+        .zip(&ever_varied)
+        .filter(|(_, seen)| !**seen)
+        .map(|(name, _)| *name)
+        .collect();
+    assert!(
+        never.is_empty(),
+        "{} of {FEATURE_COUNT} features never varied anywhere in this sample: {}",
+        never.len(),
+        never.join(", ")
+    );
+
+    // **Pinning the epoch count does not pin what each epoch contributes (PR #69, round four, L-01).**
+    // D-66's sample is 200 balanced epochs of 128 pairs. A review truncated each epoch to one pair,
+    // leaving 200 trials instead of 25,600 — a 128-fold reduction — with every compile-time assertion
+    // intact. The band is computed from whatever count arrives, so a smaller sample simply widens it.
+    assert_eq!(
+        pair_trials, 25_600,
+        "D-66's V-Z-02 sample is 200 balanced epochs of 128 pairs"
+    );
+    assert_eq!(
+        leaf_total,
+        200 * 256,
+        "the leaf-by-leaf form sees every slot of every epoch"
+    );
+
     for (index, successes) in pair_successes.iter().enumerate() {
         let label = if index == FEATURE_COUNT {
             "combined score"
@@ -224,6 +417,7 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
     let mut pair_successes = [0usize; FEATURE_COUNT + 1];
     let mut pair_trials = 0usize;
     let mut mix = SplitMix(0x5eed_0003);
+    let mut ever_varied = [false; FEATURE_COUNT];
 
     for number in 0..EPOCHS_VZ03 {
         let real: Vec<(SubmissionId, Digest)> = (0..(capacity / 2) as u64)
@@ -267,6 +461,9 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
         }
 
         let matrix = feature_matrix(&siblings, &built.root);
+        for (seen, deviation) in ever_varied.iter_mut().zip(feature_deviations(&matrix)) {
+            *seen |= deviation > 0.0;
+        }
         let combined = combined_scores(&matrix);
         let mut real_rows: Vec<usize> = (0..siblings.len())
             .filter(|index| sibling_is_real[*index])
@@ -277,7 +474,22 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
         mix.shuffle(&mut real_rows);
         mix.shuffle(&mut padding_rows);
 
+        // The same boundary check as V-Z-02 (PR #69, round four, H-02): the oracle is
+        // `sibling_is_real`, which is derived from the epoch's own assignment, not from the shuffled
+        // vectors this loop consumes.
         for (real_row, padding_row) in real_rows.iter().zip(&padding_rows) {
+            assert!(
+                sibling_is_real[*real_row],
+                "epoch {number}: row {real_row} was offered as the real side and its sibling is padding"
+            );
+            assert!(
+                !sibling_is_real[*padding_row],
+                "epoch {number}: row {padding_row} was offered as the padding side and its sibling is real"
+            );
+            assert_ne!(
+                real_row, padding_row,
+                "epoch {number}: a row was compared with itself, which ties by construction"
+            );
             pair_trials += 1;
             let tie_break = pair_trials.is_multiple_of(2);
             for feature in 0..FEATURE_COUNT {
@@ -347,6 +559,20 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
         pair_trials > 1_000,
         "V-Z-03 needs a sample, and {pair_trials} pairs is not one"
     );
+    // The same aggregate liveness V-Z-02 asserts; see the note there (PR #69, round four).
+    let never: Vec<&str> = FEATURE_NAMES
+        .iter()
+        .zip(&ever_varied)
+        .filter(|(_, seen)| !**seen)
+        .map(|(name, _)| *name)
+        .collect();
+    assert!(
+        never.is_empty(),
+        "{} of {FEATURE_COUNT} features never varied anywhere in this sample: {}",
+        never.len(),
+        never.join(", ")
+    );
+
     for (index, successes) in pair_successes.iter().enumerate() {
         let label = if index == FEATURE_COUNT {
             "sibling nature, combined score"
