@@ -169,19 +169,31 @@ described rather than an argument that it will.
 | 20725 | `0x0d872549…a86443` | 505533854 | Bitcoin block 969,173 | `anchors/epochs/20725.ots` | `dual` |
 | 20726 | `0x93bb7266…12a63e` | 506347475 | Bitcoin block 969,474 | `anchors/epochs/20726.ots` | `dual` |
 | 20727 | `0xaf59b7a0…3f9a73` | 506347535 | Bitcoin block 969,474 | `anchors/epochs/20727.ots` | `dual` |
-| 20728 | `0x7c6b6c2d…9d8d07` | 506679656 | *pending* | *not yet committed* | `single` |
+| 20728 | `0x7c6b6c2d…9d8d07` | 506679656 | Bitcoin block 969,632 | `anchors/epochs/20728.ots` | `dual` |
+| 20729 | `0x93d90db1…8984c1` | 507274820 | *pending* | *not yet committed* | `single` |
+| 20730 | `0xc37e64d3…6c92d5` | 507274885 | *pending* | *not yet committed* | `single` |
 
-**Epoch 20728 is mid-cycle, and the table says so rather than waiting until it looks finished.** It was
-published and stamped on day 20728; its OpenTimestamps receipt carries calendar attestations only, so
-`attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain and the epoch reads
-`single`. That is D-112's two stages in the state between them, and INV-ANCH-05's honest degradation:
-`single` here means no Bitcoin-anchored receipt exists for 20728 yet, which is true. The receipt is
-committed and the row completed once a block confirms it, because `receipt_digest` is write-once
-(INV-ANCH-03) and the one opportunity is spent on the upgraded form.
+**Epochs 20729 and 20730 are mid-cycle, and the table says so rather than waiting until the rows look
+finished.** Both were published and stamped on day 20730; their OpenTimestamps receipts carry calendar
+attestations only, so `attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain and
+both read `single`. That is D-112's two stages in the state between them, and INV-ANCH-05's honest
+degradation: `single` here means no Bitcoin-anchored receipt exists for those epochs yet, which is true.
+Each receipt is committed and its row completed once a block confirms it, because `receipt_digest` is
+write-once (INV-ANCH-03) and the one opportunity is spent on the upgraded form.
 
-**A day was missed, and the log caught up rather than drifting.** Nothing published on day 20726; on
-day 20727 both 20726 and 20727 were published, stamped and attached, so `last_epoch` is the current
-UTC day index again. `publish_checkpoint` takes `last_epoch + 1` and nothing else, so a skipped day
+**Epoch 20728 is what the other end of that wait looks like.** Its receipt was stamped on day 20728 and
+carried calendar attestations only for about a day and a half; `ots upgrade` found Bitcoin attestations on
+day 20730, and `attach_anchor_receipt` committed the digest of the upgraded receipt. The row names block
+969,632 because that is the height the attached claim carries — the first Bitcoin attestation in the
+receipt's operation tree, which is what `verify_receipt` returns. The receipt also carries a second
+calendar's attestation at block 969,627, and naming one of two is the convention every row here follows.
+Neither height is checked against Bitcoin by anything in this repository, which is H-12
+([#48](https://github.com/CertiMining/potash/issues/48)).
+
+**A day has been missed twice, and both times the log caught up rather than drifting.** Nothing
+published on day 20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing
+published on day 20729 either; on day 20730 both 20729 and 20730 were published and stamped, so
+`last_epoch` is the current UTC day index again. `publish_checkpoint` takes `last_epoch + 1` and nothing else, so a skipped day
 does not vanish — it stays owed, and every later epoch is published one day late until it is paid
 back. Epochs 20726 and 20727 share a Bitcoin block because they were stamped minutes apart and the
 calendars aggregated them into the same one.
