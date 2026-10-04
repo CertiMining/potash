@@ -60,7 +60,11 @@ const FIXED = {
   publishedUnix: 1790500000n,
   receiptDigest: fromHex(`0x${"ab".repeat(32)}`, 32),
   anchorKind: 1,
-  bump: 255,
+  // 7, not 255. The announced deployment's bumps are 250, 253 and 255, and this page is synthetic — a
+  // review-enforced rule, because the gate cannot match three-digit numbers without firing on unrelated
+  // text (LIVE-VALUES.txt, H-20). The review that followed PR #57's round two found 255 here as well as
+  // in the fixture test.
+  bump: 7,
 };
 
 /** `count` synthetic submissions, so the tree is built from a real set rather than described. */

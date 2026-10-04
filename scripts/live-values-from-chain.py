@@ -19,8 +19,11 @@ earlier version reported "nothing missing" in cases where it had not looked:
    were never compared against anything, so removing one exited 0.
 
 What this version does: `getProgramAccounts` enumerates every account the announced program owns, so
-discovery comes from the chain. Each account is decoded at §2.4's offsets and every value inside it is
-compared — root, receipt digest, authority. The program account gives the ProgramData address, which
+discovery comes from the chain. Each account is decoded at §2.4's offsets and **the fields named below**
+are compared: root, publication slot, publication timestamp, receipt digest, authority. That is not every
+value inside an account, and an earlier version of this paragraph said it was — a review found a live
+checkpoint bump sitting in a synthetic fixture while this script reported nothing missing, because it
+never reads offset 99 (PR #57, round two, H-01). The program account gives the ProgramData address, which
 gives the upgrade authority. Signatures are paged to exhaustion for the program and every account it
 owns. A response without a `result` member is a failure, not an absence.
 
@@ -353,7 +356,13 @@ def main() -> int:
         )
         return 1
 
-    print(f"live-values: the chain holds nothing {LIST.name} does not")
+    # Bounded to what was actually compared. "The chain holds nothing the list does not" was falsified by
+    # a live bump this script does not read; a success message may not claim more than its own coverage.
+    print(
+        f"live-values: of the fields this script reads — addresses, roots, publication slots and "
+        f"timestamps, receipt digests, the authority and every signature — the chain holds nothing "
+        f"{LIST.name} does not. Bumps and epoch numbers are not read; they are review-enforced (H-20)."
+    )
     return 0
 
 

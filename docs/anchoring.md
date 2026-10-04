@@ -206,7 +206,10 @@ base58, so a decimal slot could not be listed even deliberately, and the chain s
 offsets. The rule was unqualified and its enforcement had a shape-sized hole in it.
 
 What a static pass establishes is therefore narrower than that sentence claimed: no **listed** value
-appears in the synthetic surface. It says nothing about live values the list does not hold. Three things
+appears in the synthetic surface. And two classes are deliberately unlisted — bumps and epoch day
+indices, which substring matching cannot hold without firing on unrelated text. The owner ruled on
+3 Oct 2026 that those are review-enforced: a synthetic artifact uses a value no live account holds, and a
+reviewer checks it. `LIVE-VALUES.txt` carries the reasoning and H-20 removes the need for it. It says nothing about live values the list does not hold. Three things
 changed rather than the claim being softened — `published_slot` and `published_unix` are listed for every
 epoch, `cargo xtask check-live-values` accepts decimals of six digits or more, and the chain script reads
 and compares both fields. Epoch numbers are still absent on purpose: a UTC day index is a date rather than

@@ -26,6 +26,29 @@
 # `scripts/live-values-from-chain.py` asks the cluster what touched the announced deployment and names
 # anything missing here. **Run it after every publish cycle**: each adds a signature, a checkpoint
 # address and a root.
+#
+# **What this gate cannot enforce, ruled by the owner 3 Oct 2026.** The rule above is unqualified and
+# stays so, but two classes of live value cannot be held by it and are **review-enforced rather than
+# gate-enforced**:
+#
+#   * **Bumps.** A PDA bump is 0-255. The announced deployment holds 250, 253 and 255, and 255 is also
+#     the natural bump for any synthetic account because canonical search starts at 255 and counts down.
+#   * **Epoch day indices.** Five digits, and a synthetic artifact may legitimately be *about* a real
+#     epoch — the demo is about 20723.
+#
+# Listing either would make the matcher fire on unrelated text, because it matches a value as a
+# case-insensitive substring of a whole file, and the exemptions that silenced the false positives are
+# recorded per file **and value** rather than per occurrence — so one exemption blankets every
+# occurrence in that file. That is why `check_list_shape` requires six digits or more.
+#
+# **So the discipline for these two classes is: a synthetic artifact uses a value no live account holds,
+# and a reviewer checks it.** A review found epoch 20723's real bump, 255, in `demo/test/footprint.test.mjs`
+# while both halves of the gate exited 0 (PR #57, round two, H-01); that fixture now uses 7.
+#
+# This is a stated boundary on enforcement, not on the rule. H-20
+# ([#60](https://github.com/CertiMining/potash/issues/60)) makes the matcher token-aware so these values
+# can be listed safely, and when it lands this carve-out is withdrawn. H-27 and H-28 are the two
+# consequences that depend on it.
 
 By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  program id, announced deployment
 0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee  program id, announced deployment, as bytes

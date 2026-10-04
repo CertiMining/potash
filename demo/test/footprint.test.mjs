@@ -58,7 +58,12 @@ function account(overrides = {}) {
     publishedUnix: 1111111111n,
     receiptDigest: RECEIPT,
     anchorKind: 1,
-    bump: 255,
+    // 7, which no account on the announced deployment holds — its bumps are 250, 253 and 255. A review
+    // found 255 here, which is both the live checkpoint bump for five of six epochs and the natural
+    // bump for any PDA, since canonical search starts at 255 and counts down (PR #57, round two, H-01).
+    // The owner ruled that synthetic data must look synthetic rather than widening the gate to match
+    // three-digit numbers.
+    bump: 7,
     ...overrides,
   });
 }
@@ -76,7 +81,7 @@ test("the account the demo lays out is the account the verifier decodes", () => 
   assert.equal(decoded.publishedUnix, 1111111111n);
   assert.equal(toHex(decoded.receiptDigest), toHex(RECEIPT));
   assert.equal(decoded.anchorKind, 1);
-  assert.equal(decoded.bump, 255);
+  assert.equal(decoded.bump, 7);
 });
 
 test("every offset in the account belongs to exactly one named field, and the fields tile it", () => {
