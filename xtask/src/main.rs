@@ -742,6 +742,63 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
         })
     };
 
+    // V-N-18: §1.3's decode step, which the order of judgement puts before every condition. A buffer
+    // that does not decode has no fields to judge, so it is refused there. The vector fixes one
+    // canonical 161-byte leaf preimage and asserts that **every** shorter prefix is refused — not a
+    // sample of them, because a decoder reading a fixed-width field is exactly as wrong at 160 bytes
+    // as at 3, and the interesting lengths are the ones that stop mid-field.
+    {
+        let record = signed_record(&chain, 2, 2, FIRST_EFFECTIVE_AT + 1);
+        let canonical = leaf_preimage_bytes(&commitment, &record);
+        assert_eq!(
+            canonical.len(),
+            161,
+            "§1.3 fixes the leaf preimage at 161 bytes and this one is {}",
+            canonical.len()
+        );
+        // The field boundaries, so a reader can see which prefixes stop mid-field rather than between
+        // two. Transcribed from §1.3's table, not read out of the encoder.
+        let boundaries = json!([
+            { "field": "tag", "ends_at": 8 },
+            { "field": "c", "ends_at": 40 },
+            { "field": "seq", "ends_at": 48 },
+            { "field": "payload_digest", "ends_at": 80 },
+            { "field": "assessment_digest", "ends_at": 112 },
+            { "field": "qp_key", "ends_at": 144 },
+            { "field": "category", "ends_at": 145 },
+            { "field": "effective_at", "ends_at": 153 },
+            { "field": "change_identified_at", "ends_at": 161 },
+        ]);
+        files.insert(
+            "V-N-18.json".into(),
+            vector(
+                "V-N-18",
+                "§4.3",
+                "A truncated leaf preimage at every prefix length. Each is refused at the decode step with 0x05 and never panics; only the whole 161 bytes decode.",
+                json!({
+                    "canonical": hex(&canonical),
+                    "length": canonical.len().to_string(),
+                    "field_boundaries": boundaries,
+                }),
+                json!({
+                    "every_prefix_shorter_than_length": {
+                        // A number, the way every other vector writes a code. Written as the string
+                        // "0x05" it parsed as zero on the reading side and the check compared 0 to 5.
+                        "code": 0x05,
+                        "error": "MalformedPayload",
+                        "asserted": "refused at decode, before any condition is judged, and without a panic",
+                    },
+                    "at_full_length": {
+                        "decodes": true,
+                        "seq": record.seq.to_string(),
+                        "category": record.category.to_string(),
+                    },
+                }),
+                &[TEST_KEY_NOTE],
+            ),
+        );
+    }
+
     let mut single = |name: &str, description: &str, notes: &[&str], case: Value| {
         files.insert(
             format!("{name}.json"),
