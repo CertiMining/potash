@@ -128,12 +128,13 @@ fn machine() -> String {
         label
     };
     format!(
-        "{named}\n           {}, {} {} {}, {} logical cores, {}\n           {} on PATH, {} profile",
+        "{named}\n           {}, {} {} {}, {} available parallelism, {}\n           {} on PATH, {} profile",
         cpu_model(),
         std::env::consts::OS,
         probe("uname", &["-r"]).unwrap_or_else(|| "unknown release".to_string()),
         std::env::consts::ARCH,
-        std::thread::available_parallelism().map_or(0, |n| n.get()),
+        std::thread::available_parallelism()
+            .map_or_else(|_| "unknown".to_string(), |n| n.get().to_string()),
         memory_gib(),
         rustc_on_path(),
         if cfg!(debug_assertions) {
@@ -178,14 +179,33 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
         "§4.4a's chain rows are over 10,000 records"
     );
 
-    // §4.4a: 10,000 records, hash recomputation only. Reported, no threshold (D-137); D-136's 10 ms
-    // gate was removed after two machines matching §4.4a's description measured 7 ms and 17.6-19.5 ms.
+    // **Round two pinned the fixtures this function happened to build first, and the signed chain was
+    // built sixty lines later (PR #59, round three, High).** `chain_of` takes a `signed` flag, so a
+    // helper can agree with `RECORDS` on one branch and disagree on the other: a review made the signed
+    // branch a hundredth of the size, every existing pin passed, and the Ed25519 row printed 4.1 ms
+    // under a label reading 10,000 records. Pinning per row is pinning what you happen to be looking
+    // at. Every fixture is built and checked here, before the first `measure`, so that claim is literal.
     let unsigned = chain_of(false);
+    let signed = chain_of(true);
+    let full = real_leaves(1 << HEIGHT);
     assert_eq!(
         unsigned.len(),
         10_000,
-        "the chain fixture is not 10,000 records"
+        "the unsigned chain fixture is not the 10,000 records its row names"
     );
+    assert_eq!(
+        signed.len(),
+        10_000,
+        "the signed chain fixture is not the 10,000 records its row names"
+    );
+    assert_eq!(
+        full.len(),
+        256,
+        "the epoch fixture is not the 256 leaves its rows name"
+    );
+
+    // §4.4a: 10,000 records, hash recomputation only. Reported, no threshold (D-137); D-136's 10 ms
+    // gate was removed after two machines matching §4.4a's description measured 7 ms and 17.6-19.5 ms.
     let from = genesis();
     assert_eq!(
         hash_chain(&unsigned, from),
@@ -202,12 +222,6 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
     );
 
     // §4.4a: an epoch root at 256 leaves. Reported, no threshold (D-137).
-    let full = real_leaves(1 << HEIGHT);
-    assert_eq!(
-        full.len(),
-        256,
-        "the epoch fixture is not the 256 leaves the row names"
-    );
     let (best, median, worst) = measure(|| {
         <BuiltEpoch as EpochTree>::build::<NativeKeccak>(EPOCH, HEIGHT, &MASTER, &full)
             .expect("builds")
@@ -243,7 +257,6 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
     // §4.4a: measured and reported, **no threshold in v0.1**. Printed and not asserted, because the
     // specification says a threshold here is set in v0.2 from real data rather than guessed now — which
     // is the same discipline D-136 applied to the row above.
-    let signed = chain_of(true);
     let (best, median, worst) = measure(|| walk::<DalekVerifier>(&signed));
     println!(
         "full verification including per-record Ed25519, {RECORDS} records: best {:.1} ms, \

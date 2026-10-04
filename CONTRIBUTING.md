@@ -98,7 +98,9 @@ Clippy runs once per feature set, because code behind a feature gate is only lin
 feature is compiled.
 
 `thresholds` and `bench` are not in `all` either, and since D-137 the reason is the same for both:
-**neither asserts anything.** `thresholds` measures §4.4a's wall-clock figures and names the machine;
+**neither asserts a performance threshold.** Both can still fail a correctness control — `thresholds`
+cross-checks the chain walk against the state machine, verifies a proof and pins its workload, and any
+of those failing fails the run. `thresholds` measures §4.4a's wall-clock figures and names the machine;
 `bench` reports the Criterion distributions behind them. §4.4a's wall-clock bounds were removed after two
 machines matching its own description measured 7 ms and 17.6–19.5 ms, so there is nothing left there to
 gate on. What gates is `bench-band`, which is in `all`, and the compute figures in `kat01-onchain`.

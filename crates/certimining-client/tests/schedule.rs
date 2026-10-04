@@ -39,18 +39,16 @@ fn the_schedule_gives_a_full_tree_orders_of_magnitude_of_headroom() {
     const _: () = assert!(Schedule::DEPLOYED.build_lead >= 600);
     const _: () = assert!(Schedule::DEPLOYED.publish_offset > Schedule::DEPLOYED.build_lead);
 
-    // **§4.4a no longer bounds the build (D-137), so the lead cannot be justified by citing one.** This
-    // compared the lead against §4.4a's 10 ms, which was a tautology between two literals whose only
-    // content was that citation; the citation is now false. The envelope below is justified by
-    // measurement instead: the slowest 256-leaf build recorded anywhere in this repository is the
-    // TypeScript verifier's 2.7 ms (`ts/README.md`, §4.4a), and the Rust engine reports about 0.2 ms
-    // (`scripts/ci.sh thresholds`). A second is two to three orders of magnitude above both, chosen
-    // coarse on purpose: the property is that the lead is constant and generous, not that it is tight.
-    const BUILD_ENVELOPE_MS: i64 = 1_000;
-    const _: () = assert!(
-        Schedule::DEPLOYED.build_lead * 1_000 > BUILD_ENVELOPE_MS,
-        "the lead must exceed a build envelope no machine can erase"
-    );
+    // **This carried a third assertion and it could not fail (PR #59, round three).** It compared the
+    // lead against a one-second envelope, which `build_lead >= 600` above already implies, so it was
+    // true by construction and unchanged by any build regression — a literal against a literal, which
+    // is the shape the tautology it replaced already had. It also called 2.7 ms "the slowest 256-leaf
+    // build recorded anywhere here", and `ts/README.md` labels that figure a **median**; no committed
+    // figure records a slowest build.
+    //
+    // What this test establishes is the property it can: the lead is fixed, generous, and ordered
+    // before the publication offset. The measurements are documentary and live in §4.4a, where they are
+    // reported with the machine named. A real build-time gate belongs in the benchmark suite, not here.
 }
 
 #[test]

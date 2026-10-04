@@ -62,6 +62,16 @@ fn baseline() -> (f64, Vec<(String, f64)>) {
             .parse()
             .unwrap_or_else(|_| panic!("{key}: {value} is not a number"));
         if in_measures {
+            // **A baseline that is not a number switches its row off silently (PR #59, round three).**
+            // Rust's f64 parser accepts `NaN`, `NaN * 1.5` is `NaN`, and `now > NaN` is false, so one
+            // typo turned `epoch_root_256_leaves` into a comparison that could not fail while the test
+            // reported a pass. `band_percent` was already checked for this; the measures were not.
+            assert!(
+                parsed.is_finite() && parsed >= 0.0,
+                "benches/BASELINE.toml: {key} is {value}, which is not a measurable duration. A \
+                 non-finite or negative baseline makes its limit non-finite and the comparison \
+                 vacuous, so the row would pass without being checked."
+            );
             measures.push((key.to_string(), parsed));
         } else if key == "band_percent" {
             band = Some(parsed);
