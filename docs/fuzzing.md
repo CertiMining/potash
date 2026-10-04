@@ -205,9 +205,11 @@ verifier reads. V-N-18 is a claim about reading.
 **There were two such helpers, not one.** `crates/certimining-log/tests/common/mod.rs` serves V-Z-04 and
 `crates/certimining-client/tests/correlation.rs` serves V-Z-01's devnet gate; both returned `0.0` on a
 constant series, and an earlier version of this section said V-Z-04 was the only §4.4 instance. V-Z-01's
-is fixed here too, with its two roles separated: a constant *feature* means the comparison never ran and
-refuses, while a constant *landing delay* is unmeasurable as a correlation but favourable as a result, so
-it is reported rather than scored.
+is fixed here too. Its two roles were separated at first — a constant *feature* refused, while a constant
+*landing delay* was reported as favourable rather than scored — and a later round showed that split was
+wrong. A collapsed slot reading produces exactly the series a genuinely flat delay would, and §4.4 asks
+for `|r| < 0.2`, which an undefined r does not meet. Both roles refuse now, as they always did in
+`certimining-log`.
 
 `pearson` in `crates/certimining-log/tests/common/mod.rs` returned `0.0` whenever either series was
 constant. For §4.4's V-Z-04 bounds, which require |r| below a threshold, that is the **best possible**

@@ -268,12 +268,26 @@ pub fn combined_scores(matrix: &[[f64; FEATURE_COUNT]]) -> Vec<f64> {
     // reads a manufactured 50% as perfect indistinguishability. That is the defect this unit was opened
     // to fix, in the classifier rather than in Pearson. At least one feature must vary, or there is
     // nothing to classify on and no result to report.
+    // Round two required *one* feature to vary, and a review then left exactly one alive — the first
+    // leaf byte — and watched V-Z-02, V-Z-03 and the new positive control all pass while eight of the
+    // nine instruments were dead (PR #69, round three, High). One live feature is enough to break the
+    // ties that manufactured the 50%, and enough to carry a control that plants its difference where
+    // that feature reads. It is not enough to support the claim these tests make, which is about nine
+    // named features. Each one that is named must be a measurement, so each one must vary.
+    let dead: Vec<&str> = FEATURE_NAMES
+        .iter()
+        .zip(&deviations)
+        .filter(|(_, d)| **d == 0.0)
+        .map(|(name, _)| *name)
+        .collect();
     assert!(
-        deviations.iter().any(|d| *d > 0.0),
-        "every one of the {} features is constant across all {} rows, so the classifier has no signal \
-         and its score is not a measurement",
-        FEATURE_COUNT,
-        matrix.len()
+        dead.is_empty(),
+        "{} of {FEATURE_COUNT} features are constant across all {} rows and contribute nothing: {}. \
+         A feature that cannot vary is not evidence, and a score summed from it reports the absence of \
+         an instrument as the absence of a signal.",
+        dead.len(),
+        matrix.len(),
+        dead.join(", ")
     );
 
     matrix
@@ -350,6 +364,11 @@ pub fn assignment_oracle<H: Hasher>(
 
 /// The two-sided critical value at α = 0.001 (D-66).
 pub const Z_ALPHA_0_001: f64 = 3.2905;
+/// **The band is this number (PR #69, round three).** A review changed it to 20.0 and every §4.4 test
+/// stayed green while the band accepted 43.75% through 56.25% and the failure message still said
+/// α = 0.001. The two-sided standard normal critical value at α = 0.001 is 3.2905; a different value
+/// is a different α, and the name would be a lie.
+const _: () = assert!(Z_ALPHA_0_001 == 3.2905);
 
 /// The band a fair coin's successes stay inside at α = 0.001.
 pub fn binomial_band(trials: usize) -> (f64, f64) {

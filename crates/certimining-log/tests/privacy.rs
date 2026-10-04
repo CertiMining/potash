@@ -35,6 +35,26 @@ const REAL_PER_EPOCH: usize = 64;
 const CORRELATION_BOUND_CI: f64 = 0.05;
 const CORRELATION_BOUND_FULL: f64 = 0.02;
 
+// **§4.4 and D-66 own these, so they are checked rather than trusted (PR #69, round three).** A
+// changed height, bound or per-epoch count leaves every test green while measuring something the
+// specification did not ask for. V-Z-02's epoch count is asserted inside the test that uses it.
+const _: () = assert!(HEIGHT == 8, "D-02's deployed height");
+const _: () = assert!(
+    REAL_PER_EPOCH == 64,
+    "D-66's submissions per epoch for V-Z-04"
+);
+const _: () = assert!(EPOCHS_VZ03 == 50, "D-66's CI sample for V-Z-03");
+const _: () = assert!(EPOCHS_VZ04 == 400, "D-66's CI sample for V-Z-04");
+const _: () = assert!(EPOCHS_VZ04_FULL == 10_000, "§4.4's full sample for V-Z-04");
+const _: () = assert!(
+    CORRELATION_BOUND_CI == 0.05,
+    "D-66's bound at CI's sample size"
+);
+const _: () = assert!(
+    CORRELATION_BOUND_FULL == 0.02,
+    "D-66's bound over the full run"
+);
+
 /// One pair trial: the classifier names which of the two leaves is real, and ties alternate so a tie
 /// cannot bias the count in either direction.
 fn picked_real(real_score: f64, padding_score: f64, tie_break: bool) -> bool {
