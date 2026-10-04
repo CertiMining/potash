@@ -42,9 +42,13 @@ inside the Solana runtime and outside it, across every committed preimage.
   run is filed for after the submission deadline.
 - Anchor B has completed **five** cycles on the deployed log, epochs 20723 to 20727. All five read
   `dual` and all five receipts are committed under `anchors/epochs/`. Five cycles are five instances,
-  not a measured latency. The cadence INV-ANCH-01 asks for has also already been missed once — nothing
-  published on day 20726, and the log caught up the next day — which is what a cadence run by hand
-  does, there being no worker ([#49](https://github.com/CertiMining/potash/issues/49)).
+  not a measured latency. A sixth, epoch 20728, is published and stamped but **not** complete: its
+  receipt carries calendar attestations only, so the epoch reads `single` until a Bitcoin block confirms
+  it and the receipt is attached.
+  The cadence INV-ANCH-01 asks for has also already been missed twice — nothing
+  published on day 20726 or on day 20729, and each time the log caught up the next day — which is what
+  a cadence run by hand does, there being no worker
+  ([#49](https://github.com/CertiMining/potash/issues/49)).
   `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
 - The fuzz and property harness exists (§4.5's five targets and four properties,
   [`docs/fuzzing.md`](docs/fuzzing.md)) and **has not accumulated a history**. The nightly job is new,

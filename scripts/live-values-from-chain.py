@@ -19,10 +19,16 @@ earlier version reported "nothing missing" in cases where it had not looked:
    were never compared against anything, so removing one exited 0.
 
 What this version does: `getProgramAccounts` enumerates every account the announced program owns, so
-discovery comes from the chain. Each account is decoded at §2.4's offsets and every value inside it is
-compared — root, receipt digest, authority. The program account gives the ProgramData address, which
-gives the upgrade authority. Signatures are paged to exhaustion for the program and every account it
-owns. A response without a `result` member is a failure, not an absence.
+discovery comes from the chain. Each account is decoded at §2.4's offsets and **the fields named below**
+are compared: root, publication slot, publication timestamp, receipt digest, authority. That is not every
+value inside an account, and an earlier version of this paragraph said it was — a review found a live
+checkpoint bump sitting in a synthetic fixture while this script reported nothing missing, because it
+never reads offset 99 (PR #57, round two, H-01). The program account gives the ProgramData address, which
+gives the upgrade authority. **Transaction ids** are paged to exhaustion for the program and every account it owns. That is the
+`signature` field of each `getSignaturesForAddress` entry, which is a transaction's *first* signature —
+not every signature it carries. A review found the announced deployment's 13 transactions hold 25
+signatures between them, so 12 co-signatures are neither listed nor compared (H-29). An earlier version
+of the message below said "every signature", which was false. A response without a `result` member is a failure, not an absence.
 
 **What it still cannot do, stated rather than implied.** A superseded deployment's values are not
 reachable from the announced one: `HS82CAXg…` and `jzJzgKWM…` are in the list by hand and this check
@@ -62,6 +68,8 @@ RPC = os.environ.get("CERTIMINING_RPC", "https://api.devnet.solana.com")
 # digest, 1 anchor kind, 1 bump, 6 reserved.
 CHECKPOINT_LEN = 106
 CHECKPOINT_ROOT = (18, 50)
+CHECKPOINT_SLOT = (50, 58)
+CHECKPOINT_UNIX = (58, 66)
 CHECKPOINT_RECEIPT = (66, 98)
 # §2.4's LogConfig: 8 discriminator, 2 schema, 32 authority, then heights and epochs.
 LOG_CONFIG_LEN = 68
@@ -74,6 +82,16 @@ LOG_CONFIG_AUTHORITY = (10, 42)
 # discriminators are computed here rather than copied, for the reason §2.4 gives for computing the
 # address: a constant transcribed by hand is a second opinion about what the program wrote.
 SCHEMA_VERSION = 1
+
+
+def le_u64(data: bytes, span: tuple) -> int:
+    """A little-endian u64 at §2.4's offsets."""
+    return int.from_bytes(data[span[0] : span[1]], "little", signed=False)
+
+
+def le_i64(data: bytes, span: tuple) -> int:
+    """A little-endian i64. `published_unix` is signed in §2.4, so it is read signed here."""
+    return int.from_bytes(data[span[0] : span[1]], "little", signed=True)
 
 
 def discriminator(struct_name: str) -> bytes:
@@ -165,7 +183,13 @@ def listed_values() -> dict[str, str]:
 
 
 def signatures_for(address: str) -> list[str]:
-    """Every signature for an address, paged to exhaustion rather than capped."""
+    """Every transaction id returned for an address, paged to exhaustion rather than capped.
+
+    Each entry of `getSignaturesForAddress` carries one `signature` field, which is the transaction's
+    first signature and serves as its id. The co-signatures inside those transactions are not read and
+    are not listed; that gap is H-29. Round three corrected this module's own docstring and the success
+    message and left this one saying "every signature", which is the claim both of those retracted.
+    """
     found: list[str] = []
     before = None
     while True:
@@ -281,6 +305,14 @@ def main() -> int:
         if len(account_data) == CHECKPOINT_LEN and schema_1(account_data, CHECKPOINT_DISCRIMINATOR):
             check_address(raw_address, "a checkpoint address")
             check(hex32(account_data, CHECKPOINT_ROOT), f"a root stored at {address}")
+            # **The publication slot and timestamp, added after a review (PR #57, round one, High).**
+            # Both are values the deployment produced and both were invisible to this script and
+            # unlistable in LIVE-VALUES.txt, which accepted only hex and base58. A fixture carried a
+            # real slot beside a fabricated root and a fabricated receipt digest and both halves of the
+            # gate exited 0. They are little-endian u64 and i64 at §2.4's offsets, compared as the
+            # decimal text the list holds.
+            check(str(le_u64(account_data, CHECKPOINT_SLOT)), f"a published slot stored at {address}")
+            check(str(le_i64(account_data, CHECKPOINT_UNIX)), f"a published timestamp stored at {address}")
             digest = hex32(account_data, CHECKPOINT_RECEIPT)
             if int(digest, 16) != 0:
                 check(digest, f"a receipt digest stored at {address}")
@@ -333,7 +365,15 @@ def main() -> int:
         )
         return 1
 
-    print(f"live-values: the chain holds nothing {LIST.name} does not")
+    # Bounded to what was actually compared. "The chain holds nothing the list does not" was falsified by
+    # a live bump this script does not read; a success message may not claim more than its own coverage.
+    print(
+        f"live-values: of the fields this script reads — addresses, roots, publication slots and "
+        f"timestamps, receipt digests, the authority and every **transaction id** "
+        f"`getSignaturesForAddress` returns — the chain holds nothing {LIST.name} does not. Not read: "
+        f"bumps and epoch numbers, which are review-enforced (H-20), and the co-signatures inside each "
+        f"transaction (H-29)."
+    )
     return 0
 
 
