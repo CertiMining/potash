@@ -202,6 +202,13 @@ verifier reads. V-N-18 is a claim about reading.
 
 ## V-Z-04 scored its own worst outcome as ideal
 
+**There were two such helpers, not one.** `crates/certimining-log/tests/common/mod.rs` serves V-Z-04 and
+`crates/certimining-client/tests/correlation.rs` serves V-Z-01's devnet gate; both returned `0.0` on a
+constant series, and an earlier version of this section said V-Z-04 was the only §4.4 instance. V-Z-01's
+is fixed here too, with its two roles separated: a constant *feature* means the comparison never ran and
+refuses, while a constant *landing delay* is unmeasurable as a correlation but favourable as a result, so
+it is reported rather than scored.
+
 `pearson` in `crates/certimining-log/tests/common/mod.rs` returned `0.0` whenever either series was
 constant. For §4.4's V-Z-04 bounds, which require |r| below a threshold, that is the **best possible**
 answer — so the worst possible placement result passed the privacy gate.
@@ -215,12 +222,27 @@ catastrophic placement result. A constant **feature** is a malformed sample: a r
 cannot establish whether position follows it. Neither is a number this function may return, so it now
 refuses, naming which series was constant.
 
-This is the eighth instance of one class in this harness, and the only one found inside a §4.4 release
-blocker. What the eight have in common is worth stating plainly: **an instrument that maps its own failed
-observation onto a passing value cannot be caught by running it.** F-01's refuted assertion, F-03's four
-attempts, F-05's refusal branch, F-02's and F-04's missing positive obligations, P-01's silent prefix and
-P-02's absent commit proof were all found the same way — by mutating what the instrument watches and
-checking that it notices.
+## What this class is, stated to the evidence
+
+An earlier version of this section called V-Z-04 "the eighth instance of one class" and said such a
+defect "cannot be caught by running it". A review narrowed both claims, and it was right to.
+
+**Five predecessors have committed before-and-after evidence**, where the repository holds the bad branch
+and its repair: F-05's refusal branch (`eb88730`, repaired in `8eb2eda`), and F-02's and F-04's missing
+positive obligations, P-01's silent prefix and P-02's absent commit proof (all repaired in `2d546c2`).
+**Two are author-recorded development history only** — F-01's refuted assertion and F-03's four
+attempts arrived already repaired, and survive in comments rather than in the history. So the count of
+*named harnesses in which adversarial mutation exposed an invalid green path* is eight including V-Z-04;
+the count of independently verifiable defect instances is five.
+
+**And "cannot be caught by running it" was too strong.** F-01's own account in this file says the fuzzer
+refuted its first assertion in seconds — that one *was* caught by running it. P-02 had an unreachable
+accepted path before its later missing commit proof, and F-03 records several distinct reachability
+failures, so the instances are not uniform either.
+
+The bounded claim is the useful one: **ordinary green runs did not expose these paths, and adversarial
+mutation did.** Each was found by changing what the instrument watches and checking whether it noticed —
+not by running the suite again.
 
 ## What none of this covers
 

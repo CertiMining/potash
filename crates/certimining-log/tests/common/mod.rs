@@ -355,43 +355,46 @@ pub fn assert_indistinguishable(label: &str, successes: usize, trials: usize) {
     );
 }
 
-pub fn pearson(xs: &[f64], ys: &[f64]) -> f64 {
-    let n = xs.len() as f64;
-    let mean_x = xs.iter().sum::<f64>() / n;
-    let mean_y = ys.iter().sum::<f64>() / n;
+pub fn pearson(observed: &[f64], feature: &[f64], feature_name: &str) -> f64 {
+    let n = observed.len() as f64;
+    let mean_observed = observed.iter().sum::<f64>() / n;
+    let mean_feature = feature.iter().sum::<f64>() / n;
     let mut covariance = 0.0;
-    let mut variance_x = 0.0;
-    let mut variance_y = 0.0;
-    for (x, y) in xs.iter().zip(ys) {
-        let dx = x - mean_x;
-        let dy = y - mean_y;
+    let mut variance_observed = 0.0;
+    let mut variance_feature = 0.0;
+    for (x, y) in observed.iter().zip(feature) {
+        let dx = x - mean_observed;
+        let dy = y - mean_feature;
         covariance += dx * dy;
-        variance_x += dx * dx;
-        variance_y += dy * dy;
+        variance_observed += dx * dx;
+        variance_feature += dy * dy;
     }
-    // **A degenerate sample is a defect, not a correlation of zero (R3-M-05).** This returned 0.0 when
-    // either series was constant, which is the *best possible* answer for §4.4's bounds — so the worst
-    // possible placement outcome passed the privacy gate. A review forced all 25,600 observed slots to
-    // zero and `v_z_04_position_carries_no_meaning` reported correlation 0 for order, issuer and time,
-    // and passed.
+    // **A degenerate sample is a defect, not a correlation of zero.** This returned 0.0 when either
+    // series was constant, which is the *best possible* answer for §4.4's bounds — so the worst possible
+    // placement outcome passed the privacy gate. A review forced all 25,600 observed slots to zero and
+    // V-Z-04 reported correlation 0 for order, issuer and time, and passed.
     //
-    // Zero variance means one of two things and both are failures. A constant *observation* is a
-    // catastrophic placement result: every submission in one slot is exactly what INV-TREE-03 forbids.
-    // A constant *feature* is a malformed sample — a test that varied nothing cannot measure whether
-    // position follows it. Neither is a number this function may return, so it refuses instead.
+    // The two series are not interchangeable, which an earlier version of these messages got backwards:
+    // every caller passes the **observed** placement first and the feature second, and the feature's own
+    // name is passed in so a failure says which of order, issuer or time was flat.
+    //
+    // There is deliberately no epsilon here. Pearson's r is scale invariant, so an absolute floor would
+    // make a unitless statistic depend on units. The support a valid sample owes is semantic and belongs
+    // where the semantics are — see `position_correlations`, which requires every epoch to place its
+    // submissions in distinct slots before any correlation is computed.
     assert!(
-        variance_x > 0.0,
-        "pearson: the feature series is constant over {} points, so there is nothing for position to \
-         correlate with and no correlation to report. A sample that varies nothing cannot establish \
-         INV-TREE-03.",
-        xs.len()
-    );
-    assert!(
-        variance_y > 0.0,
+        variance_observed > 0.0,
         "pearson: the observed series is constant over {} points. For §4.4's V-Z-04 that is every \
          submission landing in one slot, which is the placement failure the test exists to catch — not \
          a correlation of zero.",
-        ys.len()
+        observed.len()
     );
-    covariance / (variance_x.sqrt() * variance_y.sqrt())
+    assert!(
+        variance_feature > 0.0,
+        "pearson: the {feature_name} series is constant over {} points, so there is nothing for \
+         position to follow and no correlation to report. A sample that varied nothing cannot establish \
+         INV-TREE-03.",
+        feature.len()
+    );
+    covariance / (variance_observed.sqrt() * variance_feature.sqrt())
 }

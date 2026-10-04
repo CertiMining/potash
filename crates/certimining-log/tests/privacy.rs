@@ -281,6 +281,30 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
         let built = BuiltEpoch::build::<NativeKeccak>(number, HEIGHT, &TEST_MASTER_KEY, &real)
             .expect("builds");
 
+        // **The support a valid sample owes, asserted per epoch (PR #69, H-01).** The exact-zero guard in
+        // `pearson` proves only that the denominator is not literally zero. A review left 25,599
+        // identical slots and one outlier: variance was about 1e-301, the guard passed, and all three
+        // V-Z-04 bounds reported |r| near 0.01 while placement had collapsed. Scale invariance means the
+        // same holds with the outlier at slot 1, so it is not an artefact of subnormal arithmetic, and a
+        // larger sample hides one outlier better rather than worse.
+        //
+        // An epsilon in `pearson` would be the wrong remedy — r is unitless, so an absolute floor there
+        // would make it depend on units. This is where the meaning lives: first-free probing marks each
+        // slot taken, so an epoch holding `REAL_PER_EPOCH` submissions owes exactly that many distinct
+        // slots. Anything less is a placement failure, and the correlations computed from it would be
+        // arithmetic rather than observation.
+        let placed: std::collections::BTreeSet<u16> =
+            built.assignment.iter().map(|(_, slot)| *slot).collect();
+        assert_eq!(
+            placed.len(),
+            REAL_PER_EPOCH,
+            "epoch {number} placed {} submissions into {} distinct slots; INV-TREE-03's premise is that \
+             each takes its own, so a correlation over this sample would measure arithmetic rather than \
+             placement",
+            built.assignment.len(),
+            placed.len()
+        );
+
         for (order, (id, _)) in real.iter().enumerate() {
             let slot = built
                 .assignment
@@ -296,10 +320,31 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
         }
     }
 
+    // **And the same obligation on the observation actually correlated (PR #69, H-01).** The per-epoch
+    // assertion above guards the engine: it catches a builder that stopped spreading submissions. It does
+    // not guard *this* series, because a collection or instrument fault corrupts the vector downstream of
+    // a correct placement — which is precisely what the review demonstrated, by overwriting the collected
+    // slots with 25,599 zeros and one outlier and watching all three bounds pass.
+    //
+    // The first attempt at this fix asserted only the per-epoch property and did **not** catch that
+    // mutation; running it is how that was established rather than assumed. A sample spanning at least
+    // one epoch of `REAL_PER_EPOCH` submissions, each in its own slot, owes at least that many distinct
+    // observed slots.
+    let distinct: std::collections::BTreeSet<u64> = slots.iter().map(|s| s.to_bits()).collect();
+    assert!(
+        distinct.len() >= REAL_PER_EPOCH,
+        "the observed slot series carries {} distinct values over {} points; a valid sample of {} epochs \
+         owes at least {}, so a correlation computed from this would be arithmetic rather than placement",
+        distinct.len(),
+        slots.len(),
+        epochs,
+        REAL_PER_EPOCH
+    );
+
     [
-        pearson(&slots, &orders),
-        pearson(&slots, &issuers),
-        pearson(&slots, &times),
+        pearson(&slots, &orders, "submission order"),
+        pearson(&slots, &issuers, "issuer"),
+        pearson(&slots, &times, "time in the epoch"),
     ]
 }
 

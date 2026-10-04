@@ -127,24 +127,48 @@ fn with_retry<T>(what: &str, mut attempt: impl FnMut() -> Result<T, String>) -> 
     panic!("{what}: still failing after six attempts, so the run stops rather than skip an epoch");
 }
 
-/// Pearson's r. Returns 0.0 when a sample has no variance, which is the honest answer: a constant
-/// carries no correlation with anything.
-fn pearson(xs: &[f64], ys: &[f64]) -> f64 {
-    let n = xs.len() as f64;
-    let mx = xs.iter().sum::<f64>() / n;
-    let my = ys.iter().sum::<f64>() / n;
+/// Pearson's r for V-Z-01, with the two roles kept apart (PR #69, M-01).
+///
+/// **This returned 0.0 whenever either series was constant, called "the honest answer".** It is not:
+/// r is undefined when a variance is zero, and 0.0 is the *best* score against §4.4's bound, so an
+/// unmeasurable run passed as a clean one. A review found it while checking the same defect in V-Z-04's
+/// helper, and noted that the prose claiming V-Z-04 was the only instance was therefore wrong.
+///
+/// The two series are not symmetric here, which is why they are named rather than positional:
+///
+///   * A constant **feature** — record count, or build time — means the comparison was never run. The
+///     run varies the record count deliberately, so a flat one is a defect in the harness, and a flat
+///     build time means 200 publications all quantised to one millisecond and the build-time half of
+///     V-Z-01 established nothing. Both refuse.
+///   * A constant **observation** — the landing delay — is different. If every epoch landed in the same
+///     time, delay did not follow record count or build time, which is the property V-Z-01 asserts.
+///     That is a degenerate sample and a favourable one. It is reported as such and permitted, rather
+///     than smuggled through as a correlation of zero.
+fn pearson(feature: &[f64], feature_name: &str, delays: &[f64]) -> Option<f64> {
+    let n = feature.len() as f64;
+    let mf = feature.iter().sum::<f64>() / n;
+    let md = delays.iter().sum::<f64>() / n;
     let mut num = 0.0;
-    let mut dx = 0.0;
-    let mut dy = 0.0;
-    for (x, y) in xs.iter().zip(ys.iter()) {
-        num += (x - mx) * (y - my);
-        dx += (x - mx) * (x - mx);
-        dy += (y - my) * (y - my);
+    let mut df = 0.0;
+    let mut dd = 0.0;
+    for (x, y) in feature.iter().zip(delays.iter()) {
+        num += (x - mf) * (y - md);
+        df += (x - mf) * (x - mf);
+        dd += (y - md) * (y - md);
     }
-    if dx == 0.0 || dy == 0.0 {
-        return 0.0;
+    assert!(
+        df > 0.0,
+        "V-Z-01: the {feature_name} series is constant over {} epochs, so this half of the test \
+         compared nothing. The run varies the record count on purpose, and a flat build time means every \
+         publication quantised to one value — either way the comparison did not happen.",
+        feature.len()
+    );
+    if dd == 0.0 {
+        // Reported, not scored. The caller prints this and treats it as the property holding, because a
+        // delay that never varied cannot have followed anything.
+        return None;
     }
-    num / (dx.sqrt() * dy.sqrt())
+    Some(num / (df.sqrt() * dd.sqrt()))
 }
 
 #[test]
@@ -269,22 +293,32 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
         }
     }
 
-    let r_count = pearson(&counts, &delays);
-    let r_build = pearson(&builds, &delays);
+    let r_count = pearson(&counts, "record count", &delays);
+    let r_build = pearson(&builds, "build time", &delays);
     println!("--- V-Z-01, landing-delay correlation ---");
     println!("epochs                     {EPOCHS}");
     println!("cadence                    one per {} s", CADENCE.as_secs());
     println!("endpoint                   {url}");
-    println!("r(record count, delay)     {r_count:+.4}");
-    println!("r(build time, delay)       {r_build:+.4}");
+    // `None` means the landing delay never varied: unmeasurable as a correlation, and favourable as a
+    // result, so it is printed as what it is rather than as a number.
+    match r_count {
+        Some(r) => println!("r(record count, delay)     {r:+.4}"),
+        None => println!("r(record count, delay)     n/a — the landing delay was constant"),
+    }
+    match r_build {
+        Some(r) => println!("r(build time, delay)       {r:+.4}"),
+        None => println!("r(build time, delay)       n/a — the landing delay was constant"),
+    }
     println!("bound                      |r| < {BOUND}");
 
     assert!(
-        r_count.abs() < BOUND,
-        "V-Z-01: landing delay follows the record count, r = {r_count:+.4}"
+        r_count.is_none_or(|r| r.abs() < BOUND),
+        "V-Z-01: landing delay follows the record count, r = {:+.4}",
+        r_count.unwrap_or(0.0)
     );
     assert!(
-        r_build.abs() < BOUND,
-        "V-Z-01: landing delay follows the build time, r = {r_build:+.4}"
+        r_build.is_none_or(|r| r.abs() < BOUND),
+        "V-Z-01: landing delay follows the build time, r = {:+.4}",
+        r_build.unwrap_or(0.0)
     );
 }
