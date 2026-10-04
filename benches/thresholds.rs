@@ -66,7 +66,11 @@ fn measure<T>(mut f: impl FnMut() -> T) -> (Duration, Duration, Duration) {
 /// What `ts/test/perf.test.ts:110-116` prints, in Rust and without a dependency: enough of the machine
 /// that a reader can tell whether a figure came from theirs (PR #59, round two, Medium 1).
 ///
-/// Every field is read from the running system or declared absent. `std::env::consts` and
+/// Every field is read from the running system or declared absent — and four of them are read by running
+/// a program that `PATH` resolves, which is a claim about what that program said, not about the host. A
+/// review put forged `sysctl` and `uname` shims first on `PATH` and wrote `FORGED-CPU` and
+/// `FORGED-KERNEL` into a passing measurement record, so the report now says where those fields come
+/// from. It is a record to be read, and this is part of reading it. `std::env::consts` and
 /// `available_parallelism` come from the standard library; the CPU model, kernel release and memory
 /// size have no portable standard-library source, so they are read from the platform's own interface
 /// — `sysctl` and `uname` on macOS, `/proc` on Linux — and print as `unknown` where that fails.
@@ -81,7 +85,13 @@ fn probe(command: &str, args: &[&str]) -> Option<String> {
     }
     let text = String::from_utf8(out.stdout).ok()?;
     let trimmed = text.trim().to_string();
-    (!trimmed.is_empty()).then_some(trimmed)
+    // **A probe may not inject rows into the record (PR #59, round four).** The output is pasted into a
+    // multi-line report, so a value containing a newline would write lines of its own and read as
+    // machine facts the system never reported.
+    if trimmed.is_empty() || trimmed.contains(['\n', '\r']) {
+        return None;
+    }
+    Some(trimmed)
 }
 
 /// The first value of a `/proc` line, e.g. `model name\t: Xeon` or `MemTotal:  16305236 kB`.
@@ -117,7 +127,8 @@ fn memory_gib() -> String {
 /// `rustc` as found on `PATH` when the test runs. That is **not necessarily the compiler that built this
 /// binary**, which is why the label says so rather than claiming the build's version.
 fn rustc_on_path() -> String {
-    probe("rustc", &["--version"]).unwrap_or_else(|| "rustc unknown".to_string())
+    probe("rustc", &["--version"])
+        .map_or_else(|| "rustc unknown".to_string(), |v| format!("{v} on PATH"))
 }
 
 fn machine() -> String {
@@ -128,7 +139,7 @@ fn machine() -> String {
         label
     };
     format!(
-        "{named}\n           {}, {} {} {}, {} available parallelism, {}\n           {} on PATH, {} profile",
+        "{named}\n           {}, {} {} {}, {} available parallelism, {}\n           {}, {} profile\n           (CPU, kernel release, memory and compiler are what `sysctl`, `uname` and `rustc` on PATH \n           reported; a shadowed PATH can make any of them say anything)",
         cpu_model(),
         std::env::consts::OS,
         probe("uname", &["-r"]).unwrap_or_else(|| "unknown release".to_string()),

@@ -34,7 +34,7 @@ fn the_build_starts_a_constant_distance_before_publication() {
 }
 
 #[test]
-fn the_schedule_gives_a_full_tree_orders_of_magnitude_of_headroom() {
+fn the_build_lead_is_fixed_and_ordered_before_the_publication_offset() {
     // Constants, so the compiler checks them: a schedule that lost its headroom would not build.
     const _: () = assert!(Schedule::DEPLOYED.build_lead >= 600);
     const _: () = assert!(Schedule::DEPLOYED.publish_offset > Schedule::DEPLOYED.build_lead);

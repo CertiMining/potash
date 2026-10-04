@@ -44,8 +44,10 @@
 # **The rule for these two classes, as the owner settled it on 4 Oct 2026 (PR #57, round four, M-03):**
 #
 #   A short live value may not appear in a synthetic artifact **unless the artifact's subject is the
-#   announced deployment**, and each such use is recorded in `LIVE-VALUES.exempt` by file, value and
-#   occurrence. A reviewer checks that record, because no gate can.
+#   announced deployment**, and each such use is recorded in this file, below, by file, value and
+#   occurrence. A reviewer checks that record, because no gate can. (`LIVE-VALUES.exempt` is the wrong
+#   home and refuses these entries: it exempts a *listed* value from the matcher, and these are values
+#   the list cannot hold. The reasoning is with the record itself.)
 #
 # The earlier wording said only "a synthetic artifact uses a value no live account holds", and that was
 # already false when it was written: the demo and its three fixtures are about epoch 20723, and V-P-12

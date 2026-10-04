@@ -31,8 +31,17 @@ pub const ASSET: Digest = [0x11; 32];
 pub const RECORDS: usize = 10_000;
 /// The deployed height, so the figures describe the log that is announced (D-02).
 pub const HEIGHT: u8 = 8;
-pub const MASTER: Digest = [0x5a; 32];
-pub const EPOCH: u64 = 20_728;
+/// **Neither of these may be a deployment value (PR #59, round four, Medium).** This was `[0x5a; 32]`,
+/// which D-138 names as the announced log's exposed former `k_master` and which the publisher now
+/// refuses by comparison, and epoch `20_728`, which the announced log published. A benchmark fixture is
+/// not *about* the deployment — it measures the engine — so the short-live-value rule gives it no
+/// exception, and no record of it existed. Using a key the repository has disowned as an active
+/// synthetic key would be wrong even if the epoch were fine.
+///
+/// Both are now self-describing and unreachable by the log: the key spells out what it is, and the
+/// epoch is a day index in 2087, past any epoch this deployment will publish.
+pub const MASTER: Digest = *b"CMv1 BENCH MASTER KEY NOT SECRET";
+pub const EPOCH: u64 = 42_800;
 
 /// Accepts every signature, so a walk measures hashing and nothing else. This is the instrument
 /// §4.4a's "hash recomputation only" asks for. It is not a verifier and nothing outside this crate
@@ -102,6 +111,18 @@ pub fn chain_of(signed: bool) -> Vec<RecordLeafInput> {
             .expect("a record built against the current head applies");
         out.push(record);
     }
+    // **A pin at one call site protects one call site (PR #59, round four, High).** Round three pinned
+    // `signed.len()` inside `thresholds.rs`; `chain.rs` builds its own and registers
+    // `chain_walk_10000_with_ed25519` from it, so the same one-branch mutation still published a false
+    // Criterion distribution and exited 0. Three rounds have found this constructor disagreeing with
+    // the row names that describe it, in a different consumer each time. The check belongs here, where
+    // there is one of it and no consumer can omit it.
+    assert_eq!(
+        out.len(),
+        RECORDS,
+        "chain_of built {} records and every row naming this fixture says {RECORDS}",
+        out.len()
+    );
     out
 }
 
@@ -150,7 +171,7 @@ pub fn walk<V: Verifier>(records: &[RecordLeafInput]) -> Digest {
 
 /// A full epoch: `count` real leaves, the rest padding, as a real publisher's would be.
 pub fn real_leaves(count: usize) -> Vec<(SubmissionId, Digest)> {
-    (0..count)
+    let built: Vec<(SubmissionId, Digest)> = (0..count)
         .map(|i| {
             let mut id = [0u8; 16];
             id[..8].copy_from_slice(&(i as u64).to_le_bytes());
@@ -159,5 +180,14 @@ pub fn real_leaves(count: usize) -> Vec<(SubmissionId, Digest)> {
             leaf[8] = 0x11;
             (id, leaf)
         })
-        .collect()
+        .collect();
+    // The same reasoning: the caller asks for a size, the rows name it, and the constructor owes
+    // exactly that many rather than leaving each consumer to remember.
+    assert_eq!(
+        built.len(),
+        count,
+        "real_leaves({count}) built {} leaves",
+        built.len()
+    );
+    built
 }

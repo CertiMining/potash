@@ -23,7 +23,7 @@ fn benches(c: &mut Criterion) {
         "the hash chain and the state machine disagree on the head, so one of them is wrong"
     );
 
-    // §4.4a: 10,000 records, single thread, hash recomputation only. D-136's threshold.
+    // §4.4a: 10,000 records, single thread, hash recomputation only. Reported, no threshold (D-137).
     c.bench_function("chain_walk_10000_hash_chain_only", |b| {
         b.iter(|| black_box(hash_chain(black_box(&unsigned), black_box(from))))
     });

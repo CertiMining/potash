@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! The CI half of §4.4a's wall-clock thresholds (E-13, D-132): a committed baseline and a band.
+//! The CI regression band over §4.4a's wall-clock measures (E-13, D-132): a committed baseline and a
+//! band. §4.4a states no wall-clock threshold since D-137; this compares a runner against itself.
 //!
 //! §4.4a no longer carries wall-clock absolutes at all (D-137), so this is the only wall-clock gate left.
 //! `thresholds.rs` measures and reports those figures with the machine named. This is the other
@@ -232,6 +233,15 @@ fn wall_clock_measures_stay_inside_their_band() {
             None => missing.push(format!("{name} = {now:.4}")),
             Some((_, was)) => {
                 let limit = was * (1.0 + band / 100.0);
+                // **Finite was necessary and not sufficient (PR #59, round four).** `f64::MAX` passes
+                // the parse check, `f64::MAX * 1.5` is infinity, and `now > inf` is never true, so a
+                // finite baseline could still switch its row off. The number that has to be usable is
+                // the one the comparison uses.
+                assert!(
+                    limit.is_finite(),
+                    "benches/BASELINE.toml: {name}'s baseline {was} with a {band}% band gives a limit \
+                     of {limit}, which nothing can exceed, so the row would pass unchecked"
+                );
                 println!("{name}: {now:.4} ms, baseline {was:.4} ms, limit {limit:.4} ms");
                 if now > &limit {
                     over.push(format!(
