@@ -260,6 +260,31 @@ cargo test --release -p certimining-log -- --ignored
 Its three correlations are recorded on issue #16. The bound there is 0.02, against 0.05 at the sample
 CI runs.
 
+## Miri's durations are not elapsed time
+
+`scripts/ci.sh all` prints each group's `test result` lines under its exit code. For every group except
+`miri` those durations are wall clock. Miri's are not.
+
+Miri runs with host isolation by default, and its own README says clocks "are replaced by deterministic
+'fake' implementations". `Instant::now()` inside a Miri run therefore reads a simulated clock, and
+libtest reports that. Two consequences, both of which look like faults until you know the cause:
+
+- **The figures repeat exactly.** The same tests report the same durations to the hundredth of a second
+  across runs, machines and directories, because the clock is deterministic. Real timings never do
+  that, which is how this was eventually noticed — after being seen and dismissed twice.
+- **They sum to more than the group takes.** Measured directly with `/usr/bin/time -p`: nineteen test
+  binaries reported 67.4 minutes between them while the group ran in 46.0, a ratio of 1.46. On
+  GitHub's runner the same group takes 48m37s of real time, because real time depends on the machine
+  and simulated time does not.
+
+Nothing depends on them: a group's verdict comes from the command's exit status, not from these lines.
+But this summary gets quoted as evidence, so it now says which numbers are measurements. If you want a
+real figure for how long Miri takes, time the group from outside:
+
+```sh
+/usr/bin/time -p scripts/ci.sh miri
+```
+
 ## The defect this repository keeps finding
 
 Every independent review round so far has found at least one instance of a single defect, and it has

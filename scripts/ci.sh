@@ -379,6 +379,18 @@ all() {
     run "$group" 2>&1 | tee "$log"
     code=${PIPESTATUS[0]}
     summary+="$group: exit $code"$'\n'
+    # **Miri's durations are not elapsed time, and printing them beside the others implied they were.**
+    # Miri runs with host isolation by default, which its own README describes as replacing clocks with
+    # "deterministic fake implementations", so `Instant::now()` inside a Miri run is a simulated clock.
+    # libtest reports that clock. The figures are therefore identical to the hundredth of a second on
+    # every run of the same tests — which is how this was noticed — and they sum to more than the group
+    # takes: measured directly with `/usr/bin/time -p`, 19 binaries reported 67.4 minutes between them
+    # while the group ran in 46.0.
+    # Nothing depends on them, because a group's verdict is ${PIPESTATUS[0]} from the command itself.
+    # But this summary is quoted as evidence, so it says which numbers are measurements.
+    if [ "$group" = miri ]; then
+      summary+="    (durations below are Miri's deterministic simulated clock, not elapsed time)"$'\n'
+    fi
     summary+="$(grep -E '^test result:' "$log" | sed 's/^/    /')"$'\n'
     rm -f "$log"
     if [ "$code" -ne 0 ]; then
