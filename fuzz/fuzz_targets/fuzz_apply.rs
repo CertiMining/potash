@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! F-03: arbitrary record sequences against a chain.
 //!
 //! §4.5 states what every iteration asserts: `seq` never decreases, no head value repeats, and every
@@ -10,8 +11,8 @@
 
 use arbitrary::Arbitrary;
 use certimining_core::{
-    AssetChain, ChainState, DalekVerifier, Digest, LeafPreimage, NativeKeccak, PayloadUri, Preimage,
-    PreimageBuf, RecordLeafInput,
+    AssetChain, ChainState, DalekVerifier, Digest, LeafPreimage, NativeKeccak, PayloadUri,
+    Preimage, PreimageBuf, RecordLeafInput,
 };
 use ed25519_dalek::{Signer as _, SigningKey};
 use libfuzzer_sys::fuzz_target;
@@ -98,8 +99,16 @@ fuzz_target!(|steps: Vec<Step>| {
             continue; // the type holds 128; longer is checked directly in state.rs
         }
         let mut record = RecordLeafInput {
-            prev_head: if step.link_to_head || step.link_head_only { chain.head() } else { step.prev_head },
-            seq: if step.link_to_head && !step.link_head_only { chain.seq() + 1 } else { step.seq },
+            prev_head: if step.link_to_head || step.link_head_only {
+                chain.head()
+            } else {
+                step.prev_head
+            },
+            seq: if step.link_to_head && !step.link_head_only {
+                chain.seq() + 1
+            } else {
+                step.seq
+            },
             payload_digest: step.payload_digest,
             assessment_digest: step.assessment_digest,
             qp_key: step.qp_key,
@@ -144,8 +153,15 @@ fuzz_target!(|steps: Vec<Step>| {
         match outcome {
             Ok(applied) => {
                 // §4.5: the sequence never decreases, and in fact rises by exactly one.
-                assert!(chain.seq() > last_seq, "an accepted record did not advance the sequence");
-                assert_eq!(chain.seq(), last_seq + 1, "the sequence rose by more than one");
+                assert!(
+                    chain.seq() > last_seq,
+                    "an accepted record did not advance the sequence"
+                );
+                assert_eq!(
+                    chain.seq(),
+                    last_seq + 1,
+                    "the sequence rose by more than one"
+                );
                 // §1.3's condition (b) is `seq = n + 1`, so an accepted record's own claim must be
                 // where it actually landed. The chain sets its counter from itself, so the two
                 // assertions above hold even if (b) is relaxed; this is the one that does not, and it
@@ -165,16 +181,31 @@ fuzz_target!(|steps: Vec<Step>| {
                     !heads.contains(&applied.head),
                     "an accepted record produced a head the chain had already held"
                 );
-                assert_eq!(chain.head(), applied.head, "the chain's head is not what apply returned");
+                assert_eq!(
+                    chain.head(),
+                    applied.head,
+                    "the chain's head is not what apply returned"
+                );
                 heads.push(applied.head);
 
                 // §4.5: recomputable from its inputs. Replaying the same record against the same
                 // starting state must reach the same head, with nothing carried over from this chain.
                 let mut replay = Chain::resume(&ASSET, 1, before).expect("resumes");
-                let again = replay.apply(&record).expect("a transition that applied once applies again");
-                assert_eq!(again.head, applied.head, "the transition is not recomputable from its inputs");
-                assert_eq!(again.leaf, applied.leaf, "the leaf is not recomputable from its inputs");
-                assert_eq!(again.flags, applied.flags, "the flags are not recomputable from their inputs");
+                let again = replay
+                    .apply(&record)
+                    .expect("a transition that applied once applies again");
+                assert_eq!(
+                    again.head, applied.head,
+                    "the transition is not recomputable from its inputs"
+                );
+                assert_eq!(
+                    again.leaf, applied.leaf,
+                    "the leaf is not recomputable from its inputs"
+                );
+                assert_eq!(
+                    again.flags, applied.flags,
+                    "the flags are not recomputable from their inputs"
+                );
             }
             Err(_) => {
                 // INV-STATE-01: a refusal changes nothing at all.

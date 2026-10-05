@@ -34,6 +34,21 @@ kat01_offchain() {
 # its own output.
 # Reads a file's permission bits on either platform. GNU stat's -f means file system status, so the
 # BSD form must not be tried first: on Linux it succeeds and returns something that is not a mode.
+# D-89's licence applied, not merely decided. Seven files had drifted without one by 4 October — the
+# five fuzz targets and two xtask modules, all added after the last time anyone looked — so this is a
+# check rather than a convention. The first line, because a reader and a licence scanner both start there.
+licence_headers() {
+  local missing=0 f
+  while IFS= read -r f; do
+    head -1 "$f" | grep -q "SPDX-License-Identifier" || { echo "no SPDX header: $f" >&2; missing=$((missing + 1)); }
+  done < <(git ls-files '*.rs')
+  if [ "$missing" -ne 0 ]; then
+    echo "licence headers: $missing file(s) without one (D-89)" >&2
+    return 1
+  fi
+  echo "licence headers: every tracked .rs file carries one"
+}
+
 file_mode() {
   local m
   m="$(stat -c '%a' "$1" 2>/dev/null)"
@@ -178,6 +193,7 @@ checks() {
   # §4.6's claim gate (E-15, D-121). First, because a claim in the repository is a merge blocker of
   # the same severity as a failing test and costs a second to find.
   check "claims" scripts/claim-check.sh
+  check "licence headers" licence_headers
   check "fmt" cargo fmt --all --check
   check "clippy, no default features" cargo clippy --workspace --all-targets --no-default-features -- -D warnings
   check "clippy, default" cargo clippy --workspace --all-targets -- -D warnings

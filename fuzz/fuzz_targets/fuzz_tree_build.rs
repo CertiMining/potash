@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! F-05: arbitrary real-leaf sets and arbitrary height bytes.
 //!
 //! §4.5: a valid height always produces a complete tree of that height, an invalid one returns `0x05`,
@@ -97,8 +98,12 @@ fuzz_target!(|input: Input| {
     let over_capacity = capacity.is_some_and(|c| real.len() > c);
     let duplicates = has_duplicate_ids(&real);
 
-    let outcome =
-        <BuiltEpoch as EpochTree>::build::<NativeKeccak>(input.epoch, input.height, &input.key, &real);
+    let outcome = <BuiltEpoch as EpochTree>::build::<NativeKeccak>(
+        input.epoch,
+        input.height,
+        &input.key,
+        &real,
+    );
 
     match outcome {
         Ok(built) => {
