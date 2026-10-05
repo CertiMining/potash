@@ -37,6 +37,13 @@ const BOUND: f64 = 0.2;
 const CADENCE: Duration = Duration::from_secs(60);
 const TREE_HEIGHT: u8 = 8;
 
+/// **The specification owns these three, so they are checked rather than trusted (PR #69, round three).**
+/// A reduced sample, a widened bound or a different height would each leave the test green while
+/// measuring something §4.4 did not ask for, and nothing else in this file would notice.
+const _: () = assert!(EPOCHS == 200, "D-85 fixes V-Z-01's run at 200 epochs");
+const _: () = assert!(TREE_HEIGHT == 8, "D-02's deployed height");
+const _: () = assert!(BOUND == 0.2, "§4.4 fixes V-Z-01's bound at |r| < 0.2");
+
 fn key(name: &str) -> Keypair {
     let home = std::env::var("HOME").expect("HOME");
     let path = format!("{home}/.config/certimining/{name}");
@@ -127,24 +134,59 @@ fn with_retry<T>(what: &str, mut attempt: impl FnMut() -> Result<T, String>) -> 
     panic!("{what}: still failing after six attempts, so the run stops rather than skip an epoch");
 }
 
-/// Pearson's r. Returns 0.0 when a sample has no variance, which is the honest answer: a constant
-/// carries no correlation with anything.
-fn pearson(xs: &[f64], ys: &[f64]) -> f64 {
-    let n = xs.len() as f64;
-    let mx = xs.iter().sum::<f64>() / n;
-    let my = ys.iter().sum::<f64>() / n;
+/// Pearson's r for V-Z-01, with the two roles kept apart (PR #69, M-01).
+///
+/// **This returned 0.0 whenever either series was constant, called "the honest answer".** It is not:
+/// r is undefined when a variance is zero, and 0.0 is the *best* score against §4.4's bound, so an
+/// unmeasurable run passed as a clean one. A review found it while checking the same defect in V-Z-04's
+/// helper, and noted that the prose claiming V-Z-04 was the only instance was therefore wrong.
+///
+/// The two series are not symmetric here, which is why they are named rather than positional:
+///
+///   * A constant **feature** — record count, or build time — means the comparison was never run. The
+///     run varies the record count deliberately, so a flat one is a defect in the harness, and a flat
+///     build time means 200 publications all quantised to one millisecond and the build-time half of
+///     V-Z-01 established nothing. Both refuse.
+///   * A constant **observation** — the landing delay — refuses too, and the reasoning that once
+///     exempted it was wrong. It ran: if every epoch landed in the same time, delay did not follow
+///     record count or build time, which is what V-Z-01 asserts, so a flat delay is favourable. That
+///     holds of an ideal measurement and says nothing about this one, because a collapsed slot reading
+///     produces an identical series. §4.4 asks for |r| < 0.2 and an undefined r does not meet it.
+fn pearson(feature: &[f64], feature_name: &str, delays: &[f64]) -> f64 {
+    let n = feature.len() as f64;
+    let mf = feature.iter().sum::<f64>() / n;
+    let md = delays.iter().sum::<f64>() / n;
     let mut num = 0.0;
-    let mut dx = 0.0;
-    let mut dy = 0.0;
-    for (x, y) in xs.iter().zip(ys.iter()) {
-        num += (x - mx) * (y - my);
-        dx += (x - mx) * (x - mx);
-        dy += (y - my) * (y - my);
+    let mut df = 0.0;
+    let mut dd = 0.0;
+    for (x, y) in feature.iter().zip(delays.iter()) {
+        num += (x - mf) * (y - md);
+        df += (x - mf) * (x - mf);
+        dd += (y - md) * (y - md);
     }
-    if dx == 0.0 || dy == 0.0 {
-        return 0.0;
-    }
-    num / (dx.sqrt() * dy.sqrt())
+    assert!(
+        df > 0.0,
+        "V-Z-01: the {feature_name} series is constant over {} epochs, so this half of the test \
+         compared nothing. The run varies the record count on purpose, and a flat build time means every \
+         publication quantised to one value — either way the comparison did not happen.",
+        feature.len()
+    );
+    // **A constant delay was reported as the property holding, and it is not distinguishable from a
+    // broken instrument (PR #69, round two, High).** The old reasoning was that a delay which never
+    // varied cannot have followed anything, which is true of an ideal measurement and says nothing about
+    // this one: a slot source or a subtraction that returned the same value for all 200 epochs produces
+    // exactly the same series. §4.4 asks for |r| < 0.2, and an undefined r does not meet that bound — it
+    // reports that no comparison happened. This is the same defect the unit was opened to fix, left in
+    // the observation role of the other helper, so both roles refuse here as they do in certimining-log.
+    assert!(
+        dd > 0.0,
+        "V-Z-01: the landing delay is constant over {} epochs, so this half of the test compared \
+         nothing. Either every publication landed at the identical offset, which a public network does \
+         not do over a run this long, or the measurement collapsed. Both are defects in the run, not \
+         evidence that delay is independent of content.",
+        delays.len()
+    );
+    num / (df.sqrt() * dd.sqrt())
 }
 
 #[test]
@@ -241,7 +283,35 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
                 .map_err(|e| format!("{e:?}"))
         });
         let wall = reference.elapsed();
-        let landed = anchored.published_slot.saturating_sub(before);
+        // **An impossible observation is not a zero delay (PR #69, round three, High).** This was
+        // `saturating_sub`, so a publication slot below the slot read before submission — which cannot
+        // happen on a monotone chain and means the reading is wrong — became a delay of 0. A review
+        // produced 199 such pairs and the whole series collapsed to {0, 1}, which passed both bounds
+        // *and* slipped under the constant-delay refusal added earlier in this unit, because a series
+        // of almost-all zeros is not constant. That is the third time in this unit that a failed
+        // observation was mapped onto a passing value; it refuses now instead.
+        // **A lower bound is half an observation (PR #69, round four, H-03).** Round three refused a
+        // slot below the pre-submit snapshot; nothing refused one above the chain's own head. A stale
+        // or mixed read, a wrong account or a decoding fault can return a slot arbitrarily far in the
+        // future, and one such outlier drags both correlations well under the bound — a review showed
+        // `u64::MAX` passing at r = 0.025 and -0.111. The observation has to sit inside a bracket, read
+        // at the same endpoint and the same commitment as the first snapshot.
+        let after = with_retry("get_slot after", || {
+            rpc.get_slot().map_err(|e| e.to_string())
+        });
+        assert!(
+            anchored.published_slot >= before,
+            "epoch {next_epoch}: published in slot {} but slot {before} was read before submitting. \
+             Slots do not go backwards, so this is a bad reading, and a bad reading is not a delay.",
+            anchored.published_slot
+        );
+        assert!(
+            anchored.published_slot <= after,
+            "epoch {next_epoch}: published in slot {} and the chain had only reached {after} after the \
+             transaction confirmed. A slot the chain has not produced is not an observation.",
+            anchored.published_slot
+        );
+        let landed = anchored.published_slot - before;
 
         counts.push(records as f64);
         builds.push(build_time.as_secs_f64() * 1_000.0);
@@ -269,12 +339,14 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
         }
     }
 
-    let r_count = pearson(&counts, &delays);
-    let r_build = pearson(&builds, &delays);
+    let r_count = pearson(&counts, "record count", &delays);
+    let r_build = pearson(&builds, "build time", &delays);
     println!("--- V-Z-01, landing-delay correlation ---");
     println!("epochs                     {EPOCHS}");
     println!("cadence                    one per {} s", CADENCE.as_secs());
     println!("endpoint                   {url}");
+    // Both figures are numbers or the run has already refused: a constant series in either role means
+    // the comparison did not happen, which §4.4's bound cannot be met by.
     println!("r(record count, delay)     {r_count:+.4}");
     println!("r(build time, delay)       {r_build:+.4}");
     println!("bound                      |r| < {BOUND}");
