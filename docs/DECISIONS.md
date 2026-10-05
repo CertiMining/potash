@@ -1784,7 +1784,8 @@ nowhere.
 
 INV-TREE-05 makes count-hiding rest on `k_master` never being published, and RES-03 names it as a
 batcher-custody assumption. A value committed to a public repository satisfies neither. Every root the
-announced log has published — 20723 through 20730 — was rebuilt from the repository alone, and the
+announced log has published — 20723 through 20731, see the amendment below — was rebuilt from the
+repository alone, and the
 padding leaves of those epochs are derivable by anyone.
 
 **Why this is a custody defect and not a disclosure.** Count-hiding conceals a record count. The
@@ -1816,6 +1817,19 @@ OpenTimestamps receipts are untouched; this was never an integrity question. Cou
 of the architecture is unaffected and is what §4.4's privacy tests and the demo exercise. No claim is
 withdrawn, because none was made: `README.md` already stated that the property is computational and
 rests on batcher key custody, citing RES-09 and RES-03.
+
+**Amended 5 Oct 2026: the affected range is 20723 through 20731, not 20730.** This decision was taken
+on 4 October and the custody fix merged the same day, but the next day's cycle was run from a checkout
+still on a feature branch from 3 October, which predates it. That harness holds the old constant, so
+epoch 20731 was built and published with the exposed key. It was confirmed rather than assumed: 20731's
+live root reproduces exactly from `[0x5a; 32]` using nothing but this repository.
+
+`publish_checkpoint` is monotone and writes once per epoch, so this cannot be republished. The range in
+every disclosure moves to 20731 and the rotation remains operationally unproven until an epoch is
+published under the replacement key.
+
+The repair is operational rather than textual, because no code added after the fact can constrain a
+checkout that predates it: the daily cycle runs from `main`, and the working clone is kept there.
 
 **Revisit if** the log ever carries a record set that is not public, at which point the key's custody
 starts protecting something and the disclosure below has to be withdrawn in the same commit.

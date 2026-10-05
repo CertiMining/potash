@@ -158,7 +158,7 @@ schedule. It does **not** demonstrate count-hiding. The publication harness buil
 three records whose submission ids and leaves are deterministic constants in
 `crates/certimining-client/tests/publish_epoch.rs`, because the deployment has no issuer feeding it, so
 the record count is published in the same file that produces the root. Every root this log has
-published — 20723 through 20730 — can be rebuilt from this repository alone. Until D-138 the harness
+published — 20723 through 20731 — can be rebuilt from this repository alone. Until D-138 the harness
 also held `k_master` as a source constant, which INV-TREE-05 requires never to be published; it now
 reads the key from outside the repository, so a deployment copying this harness does not inherit the
 defect. That repair does not give *this* log count-hiding, because its records remain public. §4.4's
@@ -182,13 +182,14 @@ described rather than an argument that it will.
 | 20726 | `0x93bb7266…12a63e` | 506347475 | Bitcoin block 969,474 | `anchors/epochs/20726.ots` | `dual` |
 | 20727 | `0xaf59b7a0…3f9a73` | 506347535 | Bitcoin block 969,474 | `anchors/epochs/20727.ots` | `dual` |
 | 20728 | `0x7c6b6c2d…9d8d07` | 506679656 | Bitcoin block 969,632 | `anchors/epochs/20728.ots` | `dual` |
-| 20729 | `0x93d90db1…8984c1` | 507274820 | *pending* | *not yet committed* | `single` |
-| 20730 | `0xc37e64d3…6c92d5` | 507274885 | *pending* | *not yet committed* | `single` |
+| 20729 | `0x93d90db1…8984c1` | 507274820 | Bitcoin block 969,809 | `anchors/epochs/20729.ots` | `dual` |
+| 20730 | `0xc37e64d3…6c92d5` | 507274885 | Bitcoin block 969,869 | `anchors/epochs/20730.ots` | `dual` |
+| 20731 | `0x4a37066f…890d15` | 507636283 | *pending* | *not yet committed* | `single` |
 
-**Epochs 20729 and 20730 are mid-cycle, and the table says so rather than waiting until the rows look
-finished.** Both were published and stamped on day 20730; their OpenTimestamps receipts carry calendar
-attestations only, so `attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain and
-both read `single`. That is D-112's two stages in the state between them, and INV-ANCH-05's honest
+**Epoch 20731 is mid-cycle, and the table says so rather than waiting until the row looks finished.**
+It was published and stamped on day 20731; its OpenTimestamps receipt carries calendar attestations
+only, so `attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain and it reads
+`single`. That is D-112's two stages in the state between them, and INV-ANCH-05's honest
 degradation: `single` here means no Bitcoin-anchored receipt exists for those epochs yet, which is true.
 Each receipt is committed and its row completed once a block confirms it, because `receipt_digest` is
 write-once (INV-ANCH-03) and the one opportunity is spent on the upgraded form.
@@ -205,7 +206,14 @@ Neither height is checked against Bitcoin by anything in this repository, which 
 **A day has been missed twice, and both times the log caught up rather than drifting.** Nothing
 published on day 20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing
 published on day 20729 either; on day 20730 both 20729 and 20730 were published and stamped, so
-`last_epoch` is the current UTC day index again. `publish_checkpoint` takes `last_epoch + 1` and nothing else, so a skipped day
+`last_epoch` is the current UTC day index again, and stayed there on day 20731.
+
+**Epoch 20731 was published with the key D-138 moved out of the repository, and that is recorded rather
+than quietly corrected.** The cycle for that day was run from a working clone still on a feature branch
+from 3 October, which predates the custody fix, so the harness it ran held the old constant. 20731's
+published root reproduces exactly from `[0x5a; 32]` and this repository alone — checked, not assumed.
+`publish_checkpoint` writes once per epoch, so it stands. The affected range is 20723 through 20731,
+and the rotation is unproven until an epoch is published under the replacement key. `publish_checkpoint` takes `last_epoch + 1` and nothing else, so a skipped day
 does not vanish — it stays owed, and every later epoch is published one day late until it is paid
 back. Epochs 20726 and 20727 share a Bitcoin block because they were stamped minutes apart and the
 calendars aggregated them into the same one.
