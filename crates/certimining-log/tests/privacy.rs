@@ -12,7 +12,9 @@
 
 mod common;
 
-use certimining_core::{epoch_key, padding_prf, Digest, NativeKeccak, SubmissionId};
+use certimining_core::{
+    epoch_key, padding_prf, Digest, NativeKeccak, PaddingPreimage, Preimage, SubmissionId,
+};
 use certimining_log::{BuiltEpoch, EpochTree};
 use common::{
     assert_indistinguishable, assignment_oracle, binomial_band, combined_scores, epoch,
@@ -65,141 +67,184 @@ fn picked_real(real_score: f64, padding_score: f64, tie_break: bool) -> bool {
     }
 }
 
-/// **Liveness is not conformance, and a review proved the gap (PR #69, round four, H-01).** Round three
-/// required all nine feature columns to vary. An extractor that copies leaf byte 0 into all nine
-/// satisfies that, and the positive control plants its leak in byte 0, so the control reached 1.0000
-/// while eight named instruments were absent and both release blockers stayed green.
+/// **Which slots are real, decided from the leaves rather than from the assignment (PR #69, round
+/// five, H-02).** V-Z-02 and V-Z-03 took both their trial vectors and their validation oracle from
+/// `real_slots`, so a review corrupted that one helper to call the first half of every epoch real and
+/// both blockers stayed green: the stream and its check agreed because they were the same statement.
 ///
-/// So each column is checked against the property its name claims. **Every case below holds leaf byte 0
-/// identical between the two inputs**, which is what makes the test discriminating: an extractor
-/// aliasing byte 0 produces the same column for both sides of every case and fails all nine. The last
-/// two hold the whole leaf identical and vary its neighbour and the root, because that is what those
-/// two features are about.
+/// This asks a different question of a different object. A slot holds padding exactly when its leaf is
+/// the value `padding_prf` derives for that slot under the epoch key, which the test holds and the
+/// classifier does not. It never consults `built.assignment`, so corrupting the assignment path cannot
+/// move it.
+fn real_by_recomputation(built: &BuiltEpoch, epoch_number: u64) -> Vec<bool> {
+    let k_e = epoch_key::<NativeKeccak>(&TEST_MASTER_KEY, epoch_number).expect("derives");
+    built
+        .leaves
+        .iter()
+        .enumerate()
+        .map(|(slot, leaf)| {
+            let prf_output = padding_prf::<NativeKeccak>(&k_e, slot as u16).expect("derives");
+            let padding = PaddingPreimage { prf_output }
+                .digest::<NativeKeccak>()
+                .expect("digests");
+            *leaf != padding
+        })
+        .collect()
+}
+
+/// **Conformance is equality with an independent answer, not movement (PR #69, round five, H-01).**
+/// Round four asserted that each column changed when the property it names changed, with leaf byte 0
+/// held fixed so a byte-0 alias would fail. A review then made column 0 an exact copy of column 1 —
+/// population count — and all nine cases passed, because the contrast chosen for column 0 (a tail of
+/// `0x00` against `0xff`) moves population count too. "It moved" is satisfied by any column that
+/// happens to correlate; only the right number is satisfied by the right implementation.
+///
+/// So every feature is recomputed here, independently of the extractor and of its helpers — different
+/// loops, different primitives, `count_ones` nowhere — and the column must equal it. A duplicated or
+/// permuted implementation now produces the wrong number for at least one of the fixtures and fails.
 #[cfg_attr(
     miri,
-    ignore = "nine feature extractions over a small matrix, not a Miri question"
+    ignore = "nine recomputations over a small matrix, not a Miri question"
 )]
 #[test]
-fn each_named_feature_responds_to_its_own_property() {
-    const FIXED: u8 = 0x5a;
-    // A leaf whose byte 0 is `first` and whose remaining bytes come from `rest`.
-    fn leaf(first: u8, rest: impl Fn(usize) -> u8) -> Digest {
-        let mut out = [0u8; 32];
-        out[0] = first;
-        for (i, slot) in out.iter_mut().enumerate().skip(1) {
-            *slot = rest(i);
+fn each_named_feature_equals_an_independently_computed_value() {
+    // Bit population of one byte, by shifting. Deliberately not `count_ones`.
+    fn bits(mut b: u8) -> u32 {
+        let mut n = 0;
+        while b != 0 {
+            n += u32::from(b & 1);
+            b >>= 1;
         }
-        out
+        n
     }
-    // Four rows so the cyclic neighbours in the extractor are well defined; row 1 is the one examined.
-    fn matrix_of(subject: Digest, neighbour: Digest, root: Digest) -> Vec<[f64; FEATURE_COUNT]> {
-        let filler = leaf(0x11, |i| i as u8);
-        feature_matrix(&[filler, subject, neighbour, filler], &root)
+    fn bits_of(d: &Digest) -> u32 {
+        d.iter().map(|b| bits(*b)).sum()
+    }
+    fn differing_bits(a: &Digest, b: &Digest) -> u32 {
+        (0..32).map(|i| bits(a[i] ^ b[i])).sum()
+    }
+    // Leading zero bits, over the digest written out as bits.
+    fn leading_zeros_independently(d: &Digest) -> u32 {
+        let mut n = 0;
+        for byte in d {
+            for shift in (0..8).rev() {
+                if (byte >> shift) & 1 == 1 {
+                    return n;
+                }
+                n += 1;
+            }
+        }
+        n
+    }
+    fn longest_run_independently(d: &Digest) -> usize {
+        let (mut best, mut run) = (1usize, 1usize);
+        for i in 1..d.len() {
+            run = if d[i] == d[i - 1] { run + 1 } else { 1 };
+            if run > best {
+                best = run;
+            }
+        }
+        best
+    }
+    fn distinct_independently(d: &Digest) -> usize {
+        let mut values: Vec<u8> = d.to_vec();
+        values.sort_unstable();
+        values.dedup();
+        values.len()
+    }
+    fn chi_squared_independently(d: &Digest) -> f64 {
+        let mut counts = [0usize; 16];
+        for byte in d {
+            counts[usize::from(*byte) / 16] += 1;
+            counts[usize::from(*byte) % 16] += 1;
+        }
+        let expected = 4.0_f64;
+        counts
+            .iter()
+            .map(|c| {
+                let diff = *c as f64 - expected;
+                diff * diff / expected
+            })
+            .sum()
     }
 
-    let plain_root = [0x33; 32];
-    let quiet = leaf(FIXED, |_| 0x00);
-    let cases: [(usize, Digest, Digest, Digest, Digest, Digest, Digest); FEATURE_COUNT] = [
-        // per-position byte deviation: same byte 0, a tail far from the set mean versus one at it.
-        (
-            0,
-            leaf(FIXED, |_| 0x00),
-            quiet,
-            leaf(FIXED, |_| 0xff),
-            quiet,
-            plain_root,
-            plain_root,
-        ),
-        // population count: a tail of no bits versus a tail of every bit.
-        (
-            1,
-            leaf(FIXED, |_| 0x00),
-            quiet,
-            leaf(FIXED, |_| 0xff),
-            quiet,
-            plain_root,
-            plain_root,
-        ),
-        // zero bytes: thirty-one zero bytes versus none.
-        (
-            2,
-            leaf(FIXED, |_| 0x00),
-            quiet,
-            leaf(FIXED, |_| 0x01),
-            quiet,
-            plain_root,
-            plain_root,
-        ),
-        // leading zero bits: byte 0 is zero in both, and byte 1 decides.
-        (
-            3,
-            leaf(0x00, |i| if i == 1 { 0x00 } else { 0xff }),
-            quiet,
-            leaf(0x00, |i| if i == 1 { 0x01 } else { 0xff }),
-            quiet,
-            plain_root,
-            plain_root,
-        ),
-        // longest equal run: an alternating tail versus a constant one.
-        (
-            4,
-            leaf(FIXED, |i| if i.is_multiple_of(2) { 0x01 } else { 0x02 }),
-            quiet,
-            leaf(FIXED, |_| 0x01),
-            quiet,
-            plain_root,
-            plain_root,
-        ),
-        // distinct byte values: two distinct values versus thirty-two.
-        (
-            5,
-            leaf(FIXED, |_| 0x01),
-            quiet,
-            leaf(FIXED, |i| i as u8),
-            quiet,
-            plain_root,
-            plain_root,
-        ),
-        // nibble chi-squared: one nibble pair repeated versus a spread of them.
-        (
-            6,
-            leaf(FIXED, |_| 0x11),
-            quiet,
-            leaf(FIXED, |i| ((i as u8) << 4) | (i as u8)),
-            quiet,
-            plain_root,
-            plain_root,
-        ),
-        // hamming distance to the adjacent slots: the subject is identical, the neighbour is not.
-        (
-            7,
-            quiet,
-            leaf(0x00, |_| 0x00),
-            quiet,
-            leaf(0xff, |_| 0xff),
-            plain_root,
-            plain_root,
-        ),
-        // hamming distance to the root: the subject is identical, the root is not.
-        (8, quiet, quiet, quiet, quiet, [0x00; 32], [0xff; 32]),
+    // A set with enough shape that no two features agree across it by accident.
+    let leaves: Vec<Digest> = vec![
+        [0x00; 32],
+        [0xff; 32],
+        {
+            let mut d = [0u8; 32];
+            for (i, b) in d.iter_mut().enumerate() {
+                *b = i as u8;
+            }
+            d
+        },
+        {
+            let mut d = [0xaa; 32];
+            d[0] = 0x00;
+            d[31] = 0x01;
+            d
+        },
+        {
+            let mut d = [0u8; 32];
+            for (i, b) in d.iter_mut().enumerate() {
+                *b = if i.is_multiple_of(2) { 0x0f } else { 0xf0 };
+            }
+            d
+        },
     ];
+    let root: Digest = [0x5c; 32];
+    let n = leaves.len();
 
-    for (feature, a_subject, a_neighbour, b_subject, b_neighbour, a_root, b_root) in cases {
-        assert_eq!(
-            a_subject[0], b_subject[0],
-            "{}: the two inputs must agree on byte 0 or this case cannot discriminate an alias of it",
-            FEATURE_NAMES[feature]
-        );
-        let a = matrix_of(a_subject, a_neighbour, a_root)[1][feature];
-        let b = matrix_of(b_subject, b_neighbour, b_root)[1][feature];
-        assert_ne!(
-            a, b,
-            "{} did not move when the property it names changed, and byte 0 did not change, so this \
-             column is not the feature it is named after",
-            FEATURE_NAMES[feature]
-        );
+    // The per-position mean, recomputed here rather than taken from the extractor.
+    let mut mean = [0f64; 32];
+    for position in 0..32 {
+        mean[position] = leaves.iter().map(|l| f64::from(l[position])).sum::<f64>() / n as f64;
     }
-    println!("conformance: all {FEATURE_COUNT} feature columns respond to their own property with leaf byte 0 held fixed");
+
+    let matrix = feature_matrix(&leaves, &root);
+    assert_eq!(matrix.len(), n, "one row per leaf");
+
+    for (index, leaf) in leaves.iter().enumerate() {
+        let previous = leaves[(index + n - 1) % n];
+        let next = leaves[(index + 1) % n];
+        let expected: [f64; FEATURE_COUNT] = [
+            (0..32).map(|p| (f64::from(leaf[p]) - mean[p]).abs()).sum(),
+            f64::from(bits_of(leaf)),
+            leaf.iter().filter(|b| **b == 0).count() as f64,
+            f64::from(leading_zeros_independently(leaf)),
+            longest_run_independently(leaf) as f64,
+            distinct_independently(leaf) as f64,
+            chi_squared_independently(leaf),
+            f64::from(differing_bits(leaf, &previous) + differing_bits(leaf, &next)),
+            f64::from(differing_bits(leaf, &root)),
+        ];
+        for feature in 0..FEATURE_COUNT {
+            assert!(
+                (matrix[index][feature] - expected[feature]).abs() < 1e-9,
+                "{}: row {index} is {} and an independent computation says {}. The column does not \
+                 implement the feature it is named after.",
+                FEATURE_NAMES[feature],
+                matrix[index][feature],
+                expected[feature]
+            );
+        }
+    }
+
+    // And the fixtures must actually separate the features, or equality above would be satisfied by a
+    // battery of duplicates that happened to agree. Every pair of columns must differ somewhere.
+    for a in 0..FEATURE_COUNT {
+        for b in (a + 1)..FEATURE_COUNT {
+            assert!(
+                (0..n).any(|r| (matrix[r][a] - matrix[r][b]).abs() > 1e-9),
+                "{} and {} agree on every fixture, so these fixtures cannot tell a duplicated \
+                 implementation from a correct one",
+                FEATURE_NAMES[a],
+                FEATURE_NAMES[b]
+            );
+        }
+    }
+    println!("conformance: all {FEATURE_COUNT} columns equal an independent computation, and no two agree across the fixtures");
 }
 
 /// **The control for V-Z-02 and V-Z-03: the classifier must catch a leak it is given (PR #69, round
@@ -284,7 +329,8 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
     let mut leaf_correct = 0usize;
     let mut leaf_total = 0usize;
     let mut mix = SplitMix(0x5eed_0002);
-    let mut ever_varied = [false; FEATURE_COUNT];
+    let mut live_epochs = [0usize; FEATURE_COUNT];
+    let mut epochs_sampled = 0usize;
 
     // D-66 fixes this sample and the band below is computed from it, so the constant is checked rather
     // than trusted: a reduced sample would widen nothing and simply test less (PR #69, round two).
@@ -298,8 +344,11 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
         let built = epoch::<NativeKeccak>(number, HEIGHT, capacity / 2);
         // The classifier is given the root and the leaves in slot order, and no key.
         let matrix = feature_matrix(&built.leaves, &built.root);
-        for (seen, deviation) in ever_varied.iter_mut().zip(feature_deviations(&matrix)) {
-            *seen |= deviation > 0.0;
+        epochs_sampled += 1;
+        for (seen, deviation) in live_epochs.iter_mut().zip(feature_deviations(&matrix)) {
+            if deviation > 0.0 {
+                *seen += 1;
+            }
         }
         let combined = combined_scores(&matrix);
 
@@ -313,18 +362,25 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
         // The oracle is the built epoch itself, read again rather than taken from the shuffled vectors
         // the loop consumes, so a pairing layer that supplied the real side twice is caught here and
         // not converted into the ideal result by the tie-break.
-        let real_oracle = real_slots(&built);
-        let padding_oracle = padding_slots(&built);
+        // Independent of `real_slots`, which supplies the vectors this loop consumes (round five, H-02).
+        let is_real = real_by_recomputation(&built, number);
+        assert_eq!(
+            is_real.iter().filter(|r| **r).count(),
+            reals.len(),
+            "epoch {number}: the leaves say {} slots are real and the assignment says {}",
+            is_real.iter().filter(|r| **r).count(),
+            reals.len()
+        );
         for (real, padding) in reals.iter().zip(&paddings) {
             assert!(
-                real_oracle.binary_search(real).is_ok(),
-                "epoch {number}: slot {real} was offered as the real side and the epoch does not place a \
-                 real submission there"
+                is_real[usize::from(*real)],
+                "epoch {number}: slot {real} was offered as the real side and its leaf is the padding \
+                 the epoch key derives for that slot"
             );
             assert!(
-                padding_oracle.binary_search(padding).is_ok(),
-                "epoch {number}: slot {padding} was offered as the padding side and the epoch does not \
-                 pad there"
+                !is_real[usize::from(*padding)],
+                "epoch {number}: slot {padding} was offered as the padding side and its leaf is not \
+                 the padding the epoch key derives for it"
             );
             assert_ne!(
                 real, padding,
@@ -369,17 +425,30 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
     // any of them measured nothing, and summing it reported the absence of an instrument as the absence
     // of a signal. Conformance — that each column is the feature its name says — is a different
     // question, and `each_named_feature_responds_to_its_own_property` answers it.
-    let never: Vec<&str> = FEATURE_NAMES
+    // **"Varied somewhere" is not support (PR #69, round five, H-03).** Round four accumulated a
+    // boolean per feature across the sample. A review then made one feature compute its real value for
+    // a single epoch and return 0.0 for the other 199, and the boolean was still true: a feature
+    // contributing nothing to 99.5% of the trials satisfied the check, which reopens round two's
+    // neutral-value hole for almost the whole run.
+    //
+    // The sample has to support the claim, so the count is kept and a floor applied. Measured on the
+    // committed fixtures, every one of the nine varies in **every** epoch — 200 of 200 here and 50 of
+    // 50 in V-Z-03. The floor is nine tenths rather than all of them, because round four's L-02 showed
+    // a legitimate epoch can hold a genuinely constant column and must not abort the run; the gap
+    // between the measured 100% and the required 90% is exactly that allowance, and it is wide.
+    let floor = (epochs_sampled * 9) / 10;
+    let thin: Vec<String> = FEATURE_NAMES
         .iter()
-        .zip(&ever_varied)
-        .filter(|(_, seen)| !**seen)
-        .map(|(name, _)| *name)
+        .zip(&live_epochs)
+        .filter(|(_, live)| **live < floor)
+        .map(|(name, live)| format!("{name} ({live} of {epochs_sampled})"))
         .collect();
     assert!(
-        never.is_empty(),
-        "{} of {FEATURE_COUNT} features never varied anywhere in this sample: {}",
-        never.len(),
-        never.join(", ")
+        thin.is_empty(),
+        "{} of {FEATURE_COUNT} features varied in fewer than {floor} of {epochs_sampled} epochs, so \
+         they do not support a statistic computed over all of them: {}",
+        thin.len(),
+        thin.join(", ")
     );
 
     // **Pinning the epoch count does not pin what each epoch contributes (PR #69, round four, L-01).**
@@ -417,7 +486,8 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
     let mut pair_successes = [0usize; FEATURE_COUNT + 1];
     let mut pair_trials = 0usize;
     let mut mix = SplitMix(0x5eed_0003);
-    let mut ever_varied = [false; FEATURE_COUNT];
+    let mut live_epochs = [0usize; FEATURE_COUNT];
+    let mut epochs_sampled = 0usize;
 
     for number in 0..EPOCHS_VZ03 {
         let real: Vec<(SubmissionId, Digest)> = (0..(capacity / 2) as u64)
@@ -430,6 +500,14 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
             .expect("builds");
         let k_e = epoch_key::<NativeKeccak>(&TEST_MASTER_KEY, number).expect("derives");
         let reals = real_slots(&built);
+        let real_from_leaves = real_by_recomputation(&built, number);
+        assert_eq!(
+            real_from_leaves.iter().filter(|r| **r).count(),
+            reals.len(),
+            "epoch {number}: the leaves say {} slots are real and the assignment says {}",
+            real_from_leaves.iter().filter(|r| **r).count(),
+            reals.len()
+        );
 
         // Nothing a proof carries may be a preimage. Every chain leaf of this epoch and every PRF
         // output behind its padding is collected, and no sibling may be any of them: a sibling that
@@ -457,12 +535,17 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
                     .first()
                     .expect("a proof carries at least four siblings"),
             );
-            sibling_is_real.push(reals.binary_search(&(*slot ^ 1)).is_ok());
+            // From the leaves, not from `reals`, which is the vector this loop's partners come from
+            // (round five, H-02).
+            sibling_is_real.push(real_from_leaves[usize::from(*slot ^ 1)]);
         }
 
         let matrix = feature_matrix(&siblings, &built.root);
-        for (seen, deviation) in ever_varied.iter_mut().zip(feature_deviations(&matrix)) {
-            *seen |= deviation > 0.0;
+        epochs_sampled += 1;
+        for (seen, deviation) in live_epochs.iter_mut().zip(feature_deviations(&matrix)) {
+            if deviation > 0.0 {
+                *seen += 1;
+            }
         }
         let combined = combined_scores(&matrix);
         let mut real_rows: Vec<usize> = (0..siblings.len())
@@ -560,17 +643,30 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
         "V-Z-03 needs a sample, and {pair_trials} pairs is not one"
     );
     // The same aggregate liveness V-Z-02 asserts; see the note there (PR #69, round four).
-    let never: Vec<&str> = FEATURE_NAMES
+    // **"Varied somewhere" is not support (PR #69, round five, H-03).** Round four accumulated a
+    // boolean per feature across the sample. A review then made one feature compute its real value for
+    // a single epoch and return 0.0 for the other 199, and the boolean was still true: a feature
+    // contributing nothing to 99.5% of the trials satisfied the check, which reopens round two's
+    // neutral-value hole for almost the whole run.
+    //
+    // The sample has to support the claim, so the count is kept and a floor applied. Measured on the
+    // committed fixtures, every one of the nine varies in **every** epoch — 200 of 200 here and 50 of
+    // 50 in V-Z-03. The floor is nine tenths rather than all of them, because round four's L-02 showed
+    // a legitimate epoch can hold a genuinely constant column and must not abort the run; the gap
+    // between the measured 100% and the required 90% is exactly that allowance, and it is wide.
+    let floor = (epochs_sampled * 9) / 10;
+    let thin: Vec<String> = FEATURE_NAMES
         .iter()
-        .zip(&ever_varied)
-        .filter(|(_, seen)| !**seen)
-        .map(|(name, _)| *name)
+        .zip(&live_epochs)
+        .filter(|(_, live)| **live < floor)
+        .map(|(name, live)| format!("{name} ({live} of {epochs_sampled})"))
         .collect();
     assert!(
-        never.is_empty(),
-        "{} of {FEATURE_COUNT} features never varied anywhere in this sample: {}",
-        never.len(),
-        never.join(", ")
+        thin.is_empty(),
+        "{} of {FEATURE_COUNT} features varied in fewer than {floor} of {epochs_sampled} epochs, so \
+         they do not support a statistic computed over all of them: {}",
+        thin.len(),
+        thin.join(", ")
     );
 
     for (index, successes) in pair_successes.iter().enumerate() {
@@ -627,6 +723,13 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
             placed.len()
         );
 
+        // **The observation is checked per epoch, after it is collected (PR #69, round five, H-04).**
+        // The guard above and the dispersion floor below are both global: a review kept epoch zero
+        // correct and wrote 0.0 for the other 399, destroying 25,536 of 25,600 observations, and epoch
+        // zero alone satisfied the distinctness floor while all three correlations moved *towards* the
+        // passing value. A sample is not supported by one good epoch. What this epoch contributed is
+        // therefore compared against what this epoch placed, before the next one is built.
+        let before = slots.len();
         for (order, (id, _)) in real.iter().enumerate() {
             let slot = built
                 .assignment
@@ -640,6 +743,23 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
             // Time rises through the epoch, with jitter that owes nothing to the slot.
             times.push((order as f64) * 137.0 + (mix.next_u64() % 100) as f64);
         }
+
+        // What was just appended must be this epoch's placement, as a multiset: the same slots the
+        // assignment holds, each once. An instrument that flattened, duplicated or dropped any of them
+        // fails here rather than being averaged away over the other epochs.
+        let contributed: std::collections::BTreeSet<u16> =
+            slots[before..].iter().map(|value| *value as u16).collect();
+        assert_eq!(
+            slots.len() - before,
+            REAL_PER_EPOCH,
+            "epoch {number} contributed {} observations for {REAL_PER_EPOCH} submissions",
+            slots.len() - before
+        );
+        assert_eq!(
+            contributed, placed,
+            "epoch {number}: the observed slots are not the slots the epoch placed, so this epoch's \
+             contribution to the correlation is not a measurement of placement"
+        );
     }
 
     // **And the same obligation on the observation actually correlated (PR #69, H-01).** The per-epoch
