@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! F-02: arbitrary bytes and invalid UTF-8 into canonicalization.
 //!
 //! §4.5 asks for a million iterations with output no longer than 64 bytes or a clean `0x11`. §1.3
@@ -63,12 +64,13 @@ fuzz_target!(|data: &[u8]| {
     // And the same obligation over arbitrary content rather than six constants: anything already in the
     // canonical alphabet must be accepted and must be its own canonical form.
     if let Some(already_canonical) = a_valid_tenure(data) {
-        let got = AssetId::<NativeKeccak>::canonicalize_bytes(&already_canonical).unwrap_or_else(|e| {
-            panic!(
-                "{:?} is A-Z and 0-9 within §1.3's bounds and was refused with {e:?}",
-                core::str::from_utf8(&already_canonical)
-            )
-        });
+        let got =
+            AssetId::<NativeKeccak>::canonicalize_bytes(&already_canonical).unwrap_or_else(|e| {
+                panic!(
+                    "{:?} is A-Z and 0-9 within §1.3's bounds and was refused with {e:?}",
+                    core::str::from_utf8(&already_canonical)
+                )
+            });
         assert_eq!(
             got.as_slice(),
             &already_canonical[..],

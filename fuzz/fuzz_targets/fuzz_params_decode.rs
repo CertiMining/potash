@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! F-01: arbitrary bytes into every decoder.
 //!
 //! §4.5 asks for a million iterations with zero panics, zero out-of-memory and zero timeouts. The
@@ -57,7 +58,12 @@ const LOG_CONFIG_DISCRIMINATOR: [u8; 8] = [0x1c, 0xf0, 0x75, 0x7f, 0x1a, 0xa6, 0
 /// This is the point of the target: an oracle that says "one of these errors is fine" would have passed
 /// the defect that prompted it. The conditions are in §2.4's order, which is the order the decoder must
 /// apply them in, so a reordering is a finding too.
-fn expected_checkpoint(owner: &Pubkey, program_id: &Pubkey, data: &[u8], epoch: u64) -> Result<u64, Refused> {
+fn expected_checkpoint(
+    owner: &Pubkey,
+    program_id: &Pubkey,
+    data: &[u8],
+    epoch: u64,
+) -> Result<u64, Refused> {
     if owner != program_id {
         return Err(Refused::NotTheProgram);
     }
@@ -104,7 +110,11 @@ fuzz_target!(|data: &[u8]| {
         // weakening the slice bound changes nothing, because the conversion still refuses. What can
         // fail, and what a defect would actually look like, is the tag not being the bytes it was
         // handed; making `read_tag` return `bytes[1..9]` fails this in seconds.
-        assert_eq!(&tag[..], &data[..8], "read_tag returned bytes it was not given");
+        assert_eq!(
+            &tag[..],
+            &data[..8],
+            "read_tag returned bytes it was not given"
+        );
     }
 
     // The two account decoders, from the start and from after the discriminator a client skips.
@@ -126,7 +136,9 @@ fuzz_target!(|data: &[u8]| {
         // A decoder that loses or invents a field would fail that, and no semantic guess is needed.
         if let Ok(config) = LogConfig::deserialize(&mut &body[..]) {
             let mut again = Vec::new();
-            config.serialize(&mut again).expect("a decoded config re-serializes");
+            config
+                .serialize(&mut again)
+                .expect("a decoded config re-serializes");
             assert!(
                 body.len() >= again.len() && body[..again.len()] == again[..],
                 "LogConfig did not round-trip: read {} bytes and wrote back something else",
@@ -136,7 +148,9 @@ fuzz_target!(|data: &[u8]| {
 
         if let Ok(checkpoint) = CheckpointAccount::deserialize(&mut &body[..]) {
             let mut again = Vec::new();
-            checkpoint.serialize(&mut again).expect("a decoded checkpoint re-serializes");
+            checkpoint
+                .serialize(&mut again)
+                .expect("a decoded checkpoint re-serializes");
             assert!(
                 body.len() >= again.len() && body[..again.len()] == again[..],
                 "CheckpointAccount did not round-trip: read {} bytes and wrote back something else",
@@ -167,7 +181,8 @@ fuzz_target!(|data: &[u8]| {
     let got = decode_checkpoint(&owner, &program_id, data, epoch).map(|c| c.epoch);
     let want = expected_checkpoint(&owner, &program_id, data, epoch);
     assert_eq!(
-        got, want,
+        got,
+        want,
         "decode_checkpoint disagreed with §2.4's conditions for {} bytes, owner {}, epoch {epoch}",
         data.len(),
         owner
@@ -176,7 +191,8 @@ fuzz_target!(|data: &[u8]| {
     let got = decode_config(&program_id, &owner, data).map(|c| c.schema_version);
     let want = expected_config(&program_id, &owner, data);
     assert_eq!(
-        got, want,
+        got,
+        want,
         "decode_config disagreed with §2.4's conditions for {} bytes, owner {}",
         data.len(),
         owner
@@ -195,7 +211,11 @@ fuzz_target!(|data: &[u8]| {
         LogConfig::DISCRIMINATOR,
         "§2.4's rule and Anchor's derive disagree about LogConfig's discriminator"
     );
-    assert_eq!(CHECKPOINT_LEN, CheckpointAccount::LEN, "§2.4 publishes 106 bytes");
+    assert_eq!(
+        CHECKPOINT_LEN,
+        CheckpointAccount::LEN,
+        "§2.4 publishes 106 bytes"
+    );
     assert_eq!(LOG_CONFIG_LEN, LogConfig::LEN, "§2.4 publishes 68 bytes");
 
     // **Seeded valid prefixes (M-02).** Raw arbitrary bytes essentially never carry a real
@@ -213,7 +233,8 @@ fuzz_target!(|data: &[u8]| {
         let got = decode_checkpoint(&program_id, &program_id, &candidate, epoch).map(|c| c.epoch);
         let want = expected_checkpoint(&program_id, &program_id, &candidate, epoch);
         assert_eq!(
-            got, want,
+            got,
+            want,
             "decode_checkpoint disagreed on a {label}-seeded candidate of {} bytes, epoch {epoch}",
             candidate.len()
         );
@@ -221,7 +242,8 @@ fuzz_target!(|data: &[u8]| {
         let got = decode_config(&program_id, &program_id, &candidate).map(|c| c.schema_version);
         let want = expected_config(&program_id, &program_id, &candidate);
         assert_eq!(
-            got, want,
+            got,
+            want,
             "decode_config disagreed on a {label}-seeded candidate of {} bytes",
             candidate.len()
         );
