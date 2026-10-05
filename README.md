@@ -62,7 +62,9 @@ inside the Solana runtime and outside it, across every committed preimage.
   public constant: the publication harness builds every epoch from three records whose submission ids
   and leaves are written in `crates/certimining-client/tests/publish_epoch.rs`. A property that hides
   how many records an epoch held cannot be shown by a log whose record count is in its own source. All
-  eight published roots, epochs 20723 to 20730, can be rebuilt from this repository alone. What
+  nine published roots, epochs 20723 to 20731, can be rebuilt from this repository alone — 20731
+  because the cycle for that day was run from a checkout that predated the key's move, which is
+  recorded with the cycle. What
   exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
 
 ## What this asserts
