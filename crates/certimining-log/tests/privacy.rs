@@ -247,6 +247,60 @@ fn each_named_feature_equals_an_independently_computed_value() {
     println!("conformance: all {FEATURE_COUNT} columns equal an independent computation, and no two agree across the fixtures");
 }
 
+/// **The control V-Z-04's instrument never had.** V-Z-02 and V-Z-03 are guarded by
+/// `the_classifier_detects_a_leak_it_is_given`, which proves their classifier reacts to a planted
+/// difference. The correlation V-Z-04 reports had no equivalent: `pearson` hardcoded to `return 0.0` —
+/// the best possible answer for §4.4's bound — leaves every privacy test green, V-Z-04 included.
+///
+/// Round one of this unit fixed `pearson` returning `0.0` on a *degenerate* sample. Nothing then
+/// established that it returns the right number on a good one, which is the same omission one level
+/// along: an instrument whose failure is indistinguishable from the result the predicate rewards.
+///
+/// The expected values are computed by hand and written as literals, so the control cannot be
+/// satisfied by the implementation it is checking.
+#[test]
+fn the_correlation_instrument_reports_a_correlation_that_exists() {
+    // r = +1: y is a positive affine function of x.
+    let x = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let up = [2.0, 4.0, 6.0, 8.0, 10.0];
+    assert!(
+        (pearson(&up, &x, "a perfectly correlated feature") - 1.0).abs() < 1e-12,
+        "a perfectly correlated pair must report +1 and reported {}",
+        pearson(&up, &x, "a perfectly correlated feature")
+    );
+
+    // r = -1: the same, reversed.
+    let down = [10.0, 8.0, 6.0, 4.0, 2.0];
+    assert!(
+        (pearson(&down, &x, "a perfectly anti-correlated feature") + 1.0).abs() < 1e-12,
+        "a perfectly anti-correlated pair must report -1 and reported {}",
+        pearson(&down, &x, "a perfectly anti-correlated feature")
+    );
+
+    // r = 0.5, by hand: x = [1,2,3] and y = [1,3,2] give means of 2, deviations [-1,0,1] and [-1,1,0],
+    // a covariance of 1 and variances of 2 and 2, so r = 1 / sqrt(2 * 2) = 0.5 exactly.
+    let a = [1.0, 2.0, 3.0];
+    let b = [1.0, 3.0, 2.0];
+    assert!(
+        (pearson(&b, &a, "a partially correlated feature") - 0.5).abs() < 1e-12,
+        "a pair whose correlation is 0.5 by hand reported {}",
+        pearson(&b, &a, "a partially correlated feature")
+    );
+
+    // And the bound V-Z-04 asserts must actually reject each of those, or the bound is decorative.
+    for (label, r) in [
+        ("+1", pearson(&up, &x, "f")),
+        ("-1", pearson(&down, &x, "f")),
+        ("0.5", pearson(&b, &a, "f")),
+    ] {
+        assert!(
+            r.abs() >= CORRELATION_BOUND_CI,
+            "a correlation of {label} must exceed V-Z-04's bound of {CORRELATION_BOUND_CI}"
+        );
+    }
+    println!("correlation control: +1, -1 and 0.5 reported exactly, and each exceeds the bound");
+}
+
 /// **The control for V-Z-02 and V-Z-03: the classifier must catch a leak it is given (PR #69, round
 /// two, High).** Those two tests pass when the classifier is right half the time, which is also what a
 /// dead classifier produces — a review returned zero for every feature of every row and both stayed
