@@ -69,20 +69,27 @@
 # are, by construction. The gate rejected the first attempt to put them there, which is the right
 # answer: an exemption from a check that never fires is not an exemption.
 #
+# The occurrence column is the raw number of times the value appears in that file, comments included,
+# because `cargo xtask check-live-values` compares it against the tree and a qualified number cannot be
+# checked. It caught this list's own first error: this entry said 4, counting uses and not the comment.
+#
 #   file                           value  occurrences  why
 #   demo/app.js                    20723  1            Scene 1 rebuilds the announced log's first
 #                                                      epoch, which is the scene's subject
 #   demo/fixtures/root.json        20723  1            the committed root fixture for that scene
 #   demo/fixtures/disclosure.json  20723  1            the package the scene verifies, same epoch
 #   demo/fixtures/tampered.json    20723  1            the altered copy of that package
-#   demo/test/footprint.test.mjs   20723  4            the scene's own account and two instructions;
-#                                                      a fifth match is the comment explaining this
+#   demo/test/footprint.test.mjs   20723  5            the scene's own account and two instructions,
+#                                                      plus the comment explaining why the slot that
+#                                                      used to sit beside them is gone
 #   vectors/V-P-12.json            20723  2            §2.4's derivation is checked against this
 #                                                      deployment's epoch-20723 checkpoint, which is
 #                                                      the vector's whole subject
 #   vectors/V-P-12.json            250    1            the LogConfig bump the deployment holds, which
 #                                                      the derivation must reproduce
-#   vectors/V-P-12.json            255    2            the checkpoint bump, one-seed and two-seed
+#   vectors/V-P-12.json            255    3            the checkpoint bump, one-seed and two-seed —
+#                                                      and a third match inside `Ed25519`, which is the
+#                                                      carve-out in one line, below
 #
 # **A third "255" in V-P-12.json is inside `Ed25519`, and that is the carve-out in one line.** A
 # matcher looking for the bump 255 as a substring finds the curve's name, a slot index, a record count

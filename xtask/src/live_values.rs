@@ -126,7 +126,58 @@ pub fn refuse_live_values(root: &Path, files: &[(String, String)]) {
 
 /// The list's own integrity: a value that is not what it claims to be would exempt nothing and catch
 /// nothing. Checked at generation so a malformed list fails loudly rather than passing everything.
+/// The short live values the rule permits, each checked against the file that is supposed to hold it
+/// (H-27).
+///
+/// Bumps and epoch day indices cannot be matched — five digits and 0-255 collide with unrelated text
+/// everywhere, and `255` inside `Ed25519` is the example the list itself gives — so the owner made them
+/// review-enforced on 4 Oct 2026: a short live value may appear only where the artifact's subject is
+/// the announced deployment, and only if the use is recorded in `LIVE-VALUES.txt` by file, value and
+/// occurrence.
+///
+/// **A checklist nobody verifies goes stale the first time somebody edits one of those files.** The
+/// record claims `demo/app.js` holds `20723` once. If a second use appears, the count is wrong and the
+/// reviewer reading it is misled in the safe-looking direction. So the counts are checked here: not
+/// that the value is permitted, which is a judgement, but that the record describes the tree.
+fn check_recorded_short_values(root: &Path) {
+    let listing = repo_file(root, "LIVE-VALUES.txt");
+    let mut checked = 0usize;
+    for line in listing.lines() {
+        // `#   <path>  <value>  <count>  <why>` — the recorded block, and only it.
+        let Some(rest) = line.strip_prefix("#   ") else {
+            continue;
+        };
+        let mut parts = rest.split_whitespace();
+        let (Some(path), Some(value), Some(count)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        if !path.contains('/') || !value.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(expected) = count.parse::<usize>() else {
+            continue;
+        };
+        let body = repo_file(root, path);
+        let found = body.matches(value).count();
+        assert_eq!(
+            found, expected,
+            "LIVE-VALUES.txt records {value} appearing {expected} time(s) in {path} and it appears \
+             {found}. The short-value rule is enforced by a reader against that record, so a record \
+             that does not describe the tree is worse than none."
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "LIVE-VALUES.txt records no short live values; if the carve-out is gone the check should go \
+         with it, and if it is not, the record is missing"
+    );
+    println!("live-values: {checked} recorded short-value uses match the files that hold them");
+}
+
 pub fn check_list_shape(root: &Path) {
+    check_recorded_short_values(root);
     for v in live_values(root) {
         let looks_like_hex = v.value.starts_with("0x") && v.value.len() == 66;
         let looks_like_base58 = v.value.len() >= 32
