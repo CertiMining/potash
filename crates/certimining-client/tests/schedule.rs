@@ -34,19 +34,21 @@ fn the_build_starts_a_constant_distance_before_publication() {
 }
 
 #[test]
-fn the_schedule_gives_a_full_tree_four_orders_of_magnitude_of_headroom() {
-    // §4.4a bounds a 256-leaf build at 10 ms, and E-06 measured 201 µs in release. The lead is ten
-    // minutes, so the margin is not a guess about one machine.
+fn the_build_lead_is_fixed_and_ordered_before_the_publication_offset() {
     // Constants, so the compiler checks them: a schedule that lost its headroom would not build.
     const _: () = assert!(Schedule::DEPLOYED.build_lead >= 600);
     const _: () = assert!(Schedule::DEPLOYED.publish_offset > Schedule::DEPLOYED.build_lead);
 
-    // And the figure the headroom is measured against, which is §4.4a's threshold in milliseconds.
-    let build_budget_ms = 10i64;
-    assert!(
-        S.build_lead * 1_000 > build_budget_ms * 1_000,
-        "the lead must exceed the build §4.4a allows, by a margin no machine can erase"
-    );
+    // **This carried a third assertion and it could not fail (PR #59, round three).** It compared the
+    // lead against a one-second envelope, which `build_lead >= 600` above already implies, so it was
+    // true by construction and unchanged by any build regression — a literal against a literal, which
+    // is the shape the tautology it replaced already had. It also called 2.7 ms "the slowest 256-leaf
+    // build recorded anywhere here", and `ts/README.md` labels that figure a **median**; no committed
+    // figure records a slowest build.
+    //
+    // What this test establishes is the property it can: the lead is fixed, generous, and ordered
+    // before the publication offset. The measurements are documentary and live in §4.4a, where they are
+    // reported with the machine named. A real build-time gate belongs in the benchmark suite, not here.
 }
 
 #[test]

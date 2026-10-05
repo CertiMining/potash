@@ -85,8 +85,9 @@ lead before it. The crate holds no clock: the service supplies the time, exactly
 supplied its epoch.
 
 Publishing when the tree happens to be ready would leak build time, and build time tracks record
-count. §4.4a bounds a 256-leaf build at 10 ms and E-06 measured 201 µs in release, against a ten-minute
-lead — but the size of the lead is not the property. **The property is that the lead is constant.**
+count. §4.4a no longer bounds the build (D-137), so the headroom is stated against measurement: E-06
+measured 201 µs in release and the TypeScript verifier 2.7 ms, against a ten-minute lead — but the size of
+the lead is not the property. **The property is that the lead is constant.**
 
 ## What the privacy tests here prove, and what they cannot
 

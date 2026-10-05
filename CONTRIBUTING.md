@@ -90,15 +90,36 @@ signature in the set. No generated key and no real key belongs in this repositor
 | `vectors` | The manifest, and regeneration. |
 | `checks` | Formatting, clippy and the tests, in each of the four feature sets, for both engine crates, and the bare-metal `no_std` builds. |
 | `miri` | The engine crates under Miri. The statistical privacy tests and every tree above `H = 8` are ignored there and run in `checks` instead. Miri interprets a hash in about a tenth of a second, so a tree at `H = 12` costs minutes and one at `H = 16` costs hours, while the shorter trees execute the same code with a shorter loop. Miri is looking for undefined behaviour, not for arithmetic. |
+| `bench-band` | §4.4a's wall-clock measures on this runner against `benches/BASELINE.toml`, failing past the band (D-132). Not §4.4a's wall-clock absolutes, which no longer exist (D-137): `scripts/ci.sh thresholds` measures those figures and reports them with the machine named, and is `#[ignore]`d and run before submission. An absent baseline entry fails and prints what it measured. |
 | `deny` | Advisories, licences, sources and bans, over **two** graphs: the workspace, and `fuzz/`, which is its own Cargo workspace and therefore invisible to a root `cargo deny check` (`cargo deny list \| grep -c libfuzzer` answers 0). Both use the same `deny.toml`, so tooling is not held to a looser policy than shipped code. |
 | `ts` | The independent TypeScript verifier of E-11: its supply-chain gate, its typecheck and build, and its run of every committed vector. `cargo deny` reads `Cargo.lock` and sees no npm package, so `scripts/ts-gate.sh` carries the same discipline for `ts/package-lock.json` — advisories at high or above, and a closed licence list in `ts/LICENCES.allow` (D-93). |
 
 Clippy runs once per feature set, because code behind a feature gate is only linted when that
 feature is compiled.
 
+`thresholds` and `bench` are not in `all` either, and since D-137 the reason is the same for both:
+**neither asserts a performance threshold.** Both can still fail a correctness control — `thresholds`
+cross-checks the chain walk against the state machine, verifies a proof and pins its workload, and any
+of those failing fails the run. `thresholds` measures §4.4a's wall-clock figures and names the machine;
+`bench` reports the Criterion distributions behind them. §4.4a's wall-clock bounds were removed after two
+machines matching its own description measured 7 ms and 17.6–19.5 ms, so there is nothing left there to
+gate on. What gates is `bench-band`, which is in `all`, and the compute figures in `kat01-onchain`.
+`docs/performance.md` says which mechanism covers each of §4.4a's rows.
+
 `fuzz` is not in `all` and has no row above, because it is not part of the push pipeline: §4.5's five
 targets run nightly in `.github/workflows/fuzz.yml`, and `scripts/ci.sh fuzz` is that job verbatim.
 `docs/fuzzing.md` says what each target establishes and what its iteration count cost.
+
+**Never change the working tree under a running verification, and that includes switching branches.**
+The narrow version of this rule said only "never edit a script while it is running", and the narrow
+version was not enough: on 2 Oct 2026 a `scripts/ci.sh all` run on one branch had the tree switched to
+another beneath it, and reported `deny: exit 1` and `bench-band: exit 101` — the first because the other
+branch's `deny.toml` lacked an exception while `fuzz/` sat untracked beside it, the second for a group
+that branch does not define. The run had executed against two different trees and its summary looked
+like an ordinary set of results. **A verification is only evidence about the tree that stood still for
+it.** Finish the run, or use a second checkout.
+
+The original and narrower case, which is the same failure in a smaller shape:
 
 **Never edit a script while it is running.** Bash reads a script incrementally, so changing the file
 under a live run shifts where it continues from. Editing `scripts/ci.sh` during a `scripts/ci.sh fuzz`
@@ -316,6 +337,26 @@ next round found the next instance.
 cannot answer the question, the honest output is a refusal naming what collapsed. It is never the value
 that means "the property holds", however convenient the arithmetic makes that substitution look.
 
+## Run before submission, because nothing else will
+
+Two checks are `#[ignore]`d on purpose and will not run themselves. An ignored test that nobody is told
+to run is an ignored test that never runs, so both belong on the submission checklist rather than in a
+comment:
+
+```sh
+cargo test --release -p certimining-log -- --ignored   # V-Z-04's full 10,000-epoch run
+scripts/ci.sh thresholds                               # §4.4a's wall-clock figures, to be read and recorded
+```
+
+The second **asserts no performance threshold** (D-137): §4.4a's wall-clock bounds were removed after two
+machines matching its own description measured 7 ms and 17.6–19.5 ms. Its correctness controls still fail
+loudly — the chain-walk cross-check, the proof verification, the pinned workload — but no figure it prints
+can. It measures and reports with the machine named, so its output has to be read rather than trusted to a
+green tick, which is exactly why it is on a checklist. The
+compute figures are the ones asserted absolutely, in CI, and `bench-band` holds the runner to its own
+previous numbers. `docs/performance.md` says
+which mechanism covers each of §4.4a's rows, and `scripts/ci.sh fuzz` is the third thing CI does not
+run on a push, for a different reason: it has its own nightly workflow.
 ## Anchoring the repository head
 
 §3's E-16 requires the submitted commit to be timestamped on Bitcoin with its receipt committed.

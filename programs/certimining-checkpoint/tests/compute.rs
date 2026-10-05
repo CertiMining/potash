@@ -34,6 +34,32 @@ fn pin_the_clock(svm: &mut LiteSVM) {
 
 const ATTACH_LIMIT: u64 = 12_000;
 
+/// **The measured figures, recorded (E-13, §4.4a).** §4.4a says "CU figures are recorded per commit in
+/// CI; a regression past threshold fails the build". The bounds below did the second half; nothing did
+/// the first, because the numbers only ever reached a log line that disappears with the run — which let
+/// `publish_checkpoint` drift anywhere from 4,000 to 14,999 without anyone seeing it.
+///
+/// So they are asserted **exactly**, and a change to the program changes a committed line in the diff.
+/// Compute units are deterministic — the same instruction against the same program costs the same CU on
+/// any machine (D-132) — and three consecutive runs gave byte-identical figures, which is what makes
+/// equality the right assertion rather than a tolerance.
+///
+/// A runtime bump may legitimately move these: `litesvm` is pinned at `=0.16.0` against Agave 4.2.2
+/// (D-16, D-87), and if that pin moves these numbers are re-measured and re-committed **with the
+/// version that moved them named in the commit**. That is the point. A silent change is the failure.
+///
+/// **These are also what the deployed program actually costs.** The two figures were checked against
+/// the announced deployment's own transactions: `computeUnitsConsumed` is 8,810 for epoch 20728's
+/// publication and 5,687 for epoch 20727's attachment, matching this harness exactly. Devnet was
+/// running a later Agave than the pin at the time — it reported `4.4.0-beta.0` against the pinned
+/// 4.2.2 — so the agreement is across runtime versions rather than within one, which is more than
+/// determinism alone promises. It also settles a figure the README published: 10,310 CU for
+/// `publish_checkpoint`, which matches neither this harness nor the chain, on a program whose source
+/// has not changed since that line was written.
+const INITIALIZE_CU: u64 = 13_735;
+const PUBLISH_CU: u64 = 8_810;
+const ATTACH_CU: u64 = 5_687;
+
 fn metas(accounts: Vec<anchor_lang::prelude::AccountMeta>) -> Vec<solana_instruction::AccountMeta> {
     accounts
         .into_iter()
@@ -129,6 +155,24 @@ fn both_instructions_stay_inside_the_limits_1_8_gives() {
     let attach_cu = send(&mut svm, attach, &[&payer, &authority]);
 
     println!("compute, LiteSVM: initialize {initialize_cu}, publish_checkpoint {publish_cu}, attach_anchor_receipt {attach_cu}");
+
+    // Recorded, not merely bounded. The message says what to do rather than only what went wrong,
+    // because the right response to a changed figure depends on what changed.
+    for (name, measured, recorded) in [
+        ("initialize", initialize_cu, INITIALIZE_CU),
+        ("publish_checkpoint", publish_cu, PUBLISH_CU),
+        ("attach_anchor_receipt", attach_cu, ATTACH_CU),
+    ] {
+        assert_eq!(
+            measured, recorded,
+            "{name} used {measured} CU and this file records {recorded}. Compute units are \
+             deterministic, so this changed because the program changed or because the pinned runtime \
+             did. If the program changed, that is the diff to look at; if `litesvm` or the Agave pin \
+             moved, re-measure all three and commit them naming the version that moved them. Do not \
+             widen this into a bound: §1.8's bounds are the two assertions below, and this one exists \
+             because a figure inside its bound can still drift a long way unseen."
+        );
+    }
     assert!(
         publish_cu <= PUBLISH_LIMIT,
         "§1.8: publish_checkpoint is bounded at {PUBLISH_LIMIT} CU and used {publish_cu}"

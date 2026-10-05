@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# §4.4a's figures, in their own crate (E-13).
+#
+# **Why not in the engine crates.** Criterion was first a dev-dependency of `certimining-core` and
+# `certimining-log` with `[[bench]]` targets beside their tests, which is the conventional layout. It is
+# the wrong one here: Criterion entered those crates' test builds — including `cargo miri test`, and Miri
+# interprets what it builds. A large dependency tree has no business being interpreted by a run looking
+# for undefined behaviour.
+#
+# The mechanism was stated wrongly at first and a review corrected it (PR #59, Low 7): a default
+# `cargo test` does **not** build the `[[bench]]` target. Criterion reached the test build because it was
+# a package **dev-dependency**, which every test target in the package links. Moving the benches out
+# removes the dev-dependency, which is what achieves the result; the `[[bench]]` targets were not the
+# cause.
+#
+# This crate is a workspace member, so `cargo deny check` covers it and `cargo clippy --workspace
+# --all-targets` lints it — unlike `fuzz/`, which is a separate workspace because cargo-fuzz needs a
+# nightly toolchain and a sanitizer (D-131). Criterion needs neither.
+[package]
+name = "certimining-benches"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "§4.4a's performance figures, measured with Criterion (D-132). Benchmarks only; nothing here ships."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+certimining-core = { path = "../crates/certimining-core", features = ["native"] }
+certimining-log = { path = "../crates/certimining-log", features = ["native"] }
+# The full-verification measure signs each record with RFC 8032 §7.1's published key, so the Ed25519
+# path being measured is the real one. The engine carries no signer.
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+# §4.4a asks for figures measured and reported, and a single wall-clock sample is not a published
+# number (D-132). `default-features = false` drops the HTML report and its plotting tree.
+criterion = { version = "=0.8.2", default-features = false }
+
+[[bench]]
+name = "chain"
+path = "chain.rs"
+harness = false
+
+[[bench]]
+name = "epoch"
+path = "epoch.rs"
+harness = false
+
+# §4.4a's wall-clock figures, measured and reported with the machine named (D-132, D-136, D-137). It
+# asserts no performance threshold: two machines matching §4.4a's description measured 7 ms and
+# 17.6-19.5 ms, so the bounds were removed. Its correctness controls can still fail. `#[ignore]`d, and
+# run before submission so the figures are recorded.
+[[test]]
+name = "thresholds"
+path = "thresholds.rs"
+
+# The CI half of §4.4a's wall-clock split (D-132): a committed per-runner baseline and a band. Not
+# `#[ignore]`d — this one is meant to run where CI runs.
+[[test]]
+name = "band"
+path = "band.rs"
+
