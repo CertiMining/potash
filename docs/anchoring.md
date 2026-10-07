@@ -1,6 +1,10 @@
 # The chain: one root per epoch, and how a counterparty reads it
 
-The program stores a root per epoch and an optional receipt digest, and nothing else, ever. The client
+The program stores a root per epoch and an optional receipt digest, and **never anything about what
+was filed**. The checkpoint account carries housekeeping beside those two — the epoch, the publication
+slot and time, the anchor status, the bump — and §2.4 below lays out all nine fields; an earlier
+version of this sentence said "nothing else, ever", which the table a page down contradicts. What no
+field carries is a record, an identifier, a count or a category. The client
 publishes on the epoch cadence and lets anyone fetch a root by deriving its address. This file
 describes what `certimining-checkpoint` and `certimining-client` do; TCU-02 §1.5, §2.3 and §2.4 are the
 contract they follow.
