@@ -185,15 +185,16 @@ described rather than an argument that it will.
 | 20728 | `0x7c6b6c2d…9d8d07` | 506679656 | Bitcoin block 969,632 | `anchors/epochs/20728.ots` | `dual` |
 | 20729 | `0x93d90db1…8984c1` | 507274820 | Bitcoin block 969,809 | `anchors/epochs/20729.ots` | `dual` |
 | 20730 | `0xc37e64d3…6c92d5` | 507274885 | Bitcoin block 969,869 | `anchors/epochs/20730.ots` | `dual` |
-| 20731 | `0x4a37066f…890d15` | 507636283 | *pending* | *not yet committed* | `single` |
+| 20731 | `0x4a37066f…890d15` | 507636283 | Bitcoin block 969,968 | `anchors/epochs/20731.ots` | `dual` |
 | 20732 | `0xcfa92cc7…1ae465` | 508282376 | *pending* | *not yet committed* | `single` |
 | 20733 | `0xdc1aa505…f4b513` | 508282423 | *pending* | *not yet committed* | `single` |
 
-**Epoch 20731 is mid-cycle, and the table says so rather than waiting until the row looks finished.**
-It was published and stamped on day 20731; its OpenTimestamps receipt carries calendar attestations
-only, so `attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain and it reads
-`single`. That is D-112's two stages in the state between them, and INV-ANCH-05's honest
-degradation: `single` here means no Bitcoin-anchored receipt exists for those epochs yet, which is true.
+**Epochs 20732 and 20733 are mid-cycle, and the table says so rather than waiting until the rows look
+finished.** Both were published and stamped on day 20733; their OpenTimestamps receipts carry calendar
+attestations only, so `attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain for
+both and they read `single`. That is D-112's two stages in the state between them, and INV-ANCH-05's
+honest degradation: `single` here means no Bitcoin-anchored receipt exists for those epochs yet, which
+is true. Epoch 20731 sat in this state for two days and left it on day 20733, at block 969,968.
 Each receipt is committed and its row completed once a block confirms it, because `receipt_digest` is
 write-once (INV-ANCH-03) and the one opportunity is spent on the upgraded form.
 
@@ -262,10 +263,16 @@ epoch, `cargo xtask check-live-values` accepts decimals of six digits or more, a
 and compares both fields. Epoch numbers are still absent on purpose: a UTC day index is a date rather than
 something the deployment produced, and the demo is legitimately about epoch 20723.
 
-Every **attached** receipt — epochs 20723 to 20727 — is committed and every one is the upgraded form, so
-`ots verify` reaches a Bitcoin block header rather than a calendar's promise. Epoch 20728's is not
-committed and is not attached, which the row above says and which this sentence used to contradict by
-saying "every receipt" without qualification (PR #57, round one, Low). Each attached digest is `Keccak256(TAG_RCPT ‖ len ‖ receipt)`
+Every **attached** receipt — epochs 20723 to 20731 — is committed and every one is the upgraded form, so
+`ots verify` reaches a Bitcoin block header rather than a calendar's promise. Epochs 20732 and 20733 are
+stamped and neither committed nor attached, which the rows above say.
+
+**This sentence has been wrong in both directions, and that is a fact about hand-kept records rather
+than about this one.** It once said "every receipt" without qualification, which overstated (PR #57,
+round one, Low). The correction named epochs 20723 to 20727 and said 20728's was neither committed nor
+attached — true that day, and false four cycles later, by which time 20728 through 20731 were both.
+Nothing edited it; the cycles advanced. The table below is the part a reader can check without trusting
+either sentence, because each digest recomputes from the committed bytes. Each attached digest is `Keccak256(TAG_RCPT ‖ len ‖ receipt)`
 over exactly the committed bytes, so a reader recomputes it from the file rather than taking this
 document's word:
 
@@ -276,6 +283,10 @@ document's word:
 | 20725 | `anchors/epochs/20725.ots` | 3,778 | `4a78864f0e51da9d34c9085ecf01b7290da758ba2ba8ed77b7a68f83f80ad213` | `0x5046e0f027962a041ccb254a1d8c1b76dc4019d1b5b242c06fe68a5b0fc6c28b` |
 | 20726 | `anchors/epochs/20726.ots` | 1,458 | `5cbca5f7d16c89c70b4e36e5b7c39e809549873a83705eac3f30459410141466` | `0x8dbc93f4e4d1f6c257bc1d43813cc33234e5f2c4fda12f427509230d4e148f6a` |
 | 20727 | `anchors/epochs/20727.ots` | 1,423 | `569245ff5acaaf5042c42c83b9437452aaaf5ef470c3260f45cfa37d9a0b1988` | `0x600a93158741542f04aee04a01d5174f225f3d87cecfd8e8bea33cdc488a9917` |
+| 20728 | `anchors/epochs/20728.ots` | 3,841 | `1acd43ec499e75f4a50da8f97d34d423281e87e1138dd799988773b8e448ae3f` | `0xb62ebab2a0cd166513499ff9cc0c69888f6df8ef3758d4e1fd1cf84f920773c0` |
+| 20729 | `anchors/epochs/20729.ots` | 2,599 | `9df34f124391509df8949f2efe359aa253ca721f950ff1fdbde7b27e0dd9436f` | `0x770178b7ca09fa52b0d99aeb6aa82cc36fd3c24f5fa0a5e6051ab432a7ee299c` |
+| 20730 | `anchors/epochs/20730.ots` | 2,634 | `ffebe180c51d1b0ababb6d16c069d736a9891bc0c6640af16789689976b1376d` | `0xa4020a0c14087b0316d0bf9ae623c320dd9aa2fa63fe3a307e7d5ede46b23be7` |
+| 20731 | `anchors/epochs/20731.ots` | 3,707 | `53347acb6079a911dc9623cde6b6ea4157208015b99eecde93119cb14c38da5e` | `0x59e12c7770ec794367cbc0f069518f900074f523d97b785700069f12f9b7ce16` |
 
 **The wait is not a constant and the table shows it.** Across five cycles the confirmations landed
 anywhere from six blocks to a few hundred after publication, and two epochs stamped minutes apart
