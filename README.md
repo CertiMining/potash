@@ -50,15 +50,17 @@ inside the Solana runtime and outside it, across every committed preimage.
 - The landing-delay correlation above ran **once**, over 200 consecutive epochs at one epoch per
   minute on one endpoint. A day-long cadence would sample network conditions this run did not. That
   run is filed for after the submission deadline.
-- Anchor B has completed **five** cycles on the deployed log, epochs 20723 to 20727. All five read
-  `dual` and all five receipts are committed under `anchors/epochs/`. Five cycles are five instances,
-  not a measured latency. A sixth, epoch 20728, is published and stamped but **not** complete: its
-  receipt carries calendar attestations only, so the epoch reads `single` until a Bitcoin block confirms
-  it and the receipt is attached.
-  The cadence INV-ANCH-01 asks for has also already been missed twice — nothing
-  published on day 20726 or on day 20729, and each time the log caught up the next day — which is what
-  a cadence run by hand does, there being no worker
-  ([#49](https://github.com/CertiMining/potash/issues/49)).
+- Anchor B has completed **nine** cycles on the deployed log, epochs 20723 to 20731. All nine read
+  `dual` and all nine receipts are committed under `anchors/epochs/`. Nine cycles are nine instances,
+  not a measured latency. Epochs 20732 and 20733 are published and stamped but **not** complete: their
+  receipts carry calendar attestations only, so both read `single` until a Bitcoin block confirms them
+  and the receipts are attached.
+  The cadence INV-ANCH-01 asks for has also already been missed three times — nothing published on
+  day 20726, on day 20729 or on day 20732 — and each time the next day paid both the owed epoch and
+  its own. That is what a cadence run by hand does, there being no worker
+  ([#49](https://github.com/CertiMining/potash/issues/49)). The distance from `last_epoch` to the
+  current day is not recorded here, because a distance written down ages into a false claim;
+  `sequence_lag` reports it against a clock.
   `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
 - The fuzz and property harness exists (§4.5's five targets and four properties,
   [`docs/fuzzing.md`](docs/fuzzing.md)) and **has not accumulated a history**. The nightly job is new,
@@ -71,11 +73,12 @@ inside the Solana runtime and outside it, across every committed preimage.
 - **The announced log does not demonstrate count-hiding, and never did (D-138).** Its record set is a
   public constant: the publication harness builds every epoch from three records whose submission ids
   and leaves are written in `crates/certimining-client/tests/publish_epoch.rs`. A property that hides
-  how many records an epoch held cannot be shown by a log whose record count is in its own source. All
-  nine published roots, epochs 20723 to 20731, can be rebuilt from this repository alone — 20731
-  because the cycle for that day was run from a checkout that predated the key's move, which is
-  recorded with the cycle. What
-  exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
+  how many records an epoch held cannot be shown by a log whose record count is in its own source.
+  Epochs 20723 to 20731 can be rebuilt from this repository alone, 20731 included, because the cycle
+  for that day was run from a checkout that predated the key's move, which is recorded with the cycle.
+  From epoch 20732 the roots no longer rebuild from this repository, the master key being outside it —
+  which changes nothing about count-hiding, because the record count is still written in the harness.
+  What exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
 
 ## What this asserts
 
