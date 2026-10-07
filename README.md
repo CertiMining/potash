@@ -1,8 +1,9 @@
 # CertiMining Anchored Log
 
 An append-only log of mineral estimate records, anchored to two independent chains. It lets a
-counterparty establish that a record existed, unaltered, in a stated position of a stated asset's
-chain, at a time bounded by a Solana slot and a Bitcoin block.
+counterparty establish that a record existed, unaltered, and was included in a stated epoch, at a
+time bounded by a Solana slot and a Bitcoin block. Its **position** in an asset's chain is a separate
+question, and one disclosure package does not answer it — see below.
 
 Specification: [`docs/TCU-02_CertiMining_Anchored_Log_v0.1.md`](docs/TCU-02_CertiMining_Anchored_Log_v0.1.md).
 Every decision behind the build: [`docs/DECISIONS.md`](docs/DECISIONS.md).
@@ -82,8 +83,20 @@ inside the Solana runtime and outside it, across every committed preimage.
 
 ## What this asserts
 
-That a record existed, unaltered, in a stated position of a stated asset's chain, at a time bounded
-by a Solana slot and a Bitcoin block.
+That a signed record existed, unaltered, and was included in a stated epoch, at a time bounded by a
+Solana slot and a Bitcoin block.
+
+**Position in a chain is established only when the holder also holds the chain segment back to
+genesis, or back to a head they already trust.** One disclosure package carries the issuer's signed
+statement of its position and no evidence for it: §1.3's leaf preimage covers neither `prev_head` nor
+`head`, so no signature binds them, and an inclusion proof binds only the leaf (D-129, SD-19). The
+TypeScript verifier reports this rather than passing over it — `chainPosition.established` is `false`
+with the reason, and the check line reads `unestablished`.
+
+An earlier version of this section said a counterparty could establish that a record existed "in a
+stated position of a stated asset's chain", which asserted the one thing a package on its own cannot
+show. The specification, the demo and the verifier all carried the limit; this file was the only
+place that had dropped it.
 
 ## What this does not assert
 
