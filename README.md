@@ -35,7 +35,7 @@ which spans two machines both matching that description and is why D-137 removed
 | Inclusion proof verification | none (D-137) | 0.0023–0.0043 ms | Rust |
 | Inclusion proof verification | none (D-137) | 0.0288 ms | TypeScript |
 | TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.23 ms | TypeScript |
-| Full verification including per-record Ed25519 | none in v0.1 | 399 ms | Rust |
+| Full verification including per-record Ed25519 | none in v0.1 | 465–486 ms, and 399 ms when the row was written ([why](docs/performance.md)) | Rust |
 | Full verification including per-record Ed25519 | none in v0.1 | 1,004 ms | TypeScript |
 | Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 | devnet, 200 epochs |
 | Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 | devnet, 200 epochs |

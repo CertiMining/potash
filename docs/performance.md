@@ -25,6 +25,12 @@ measurement rather than changed code: the record count is `RECORDS = 10_000` in 
 built all ten thousand in both, and both walk the same chain through `walk::<DalekVerifier>`. So the two
 numbers are over the same workload with the same verifier.
 
+**The same machine's other figures did not move**, which is what rules out "a different machine" as the
+explanation. `benches/thresholds.rs` measures four rows in one run. On 7 October this machine measured
+the chain walk at 7.15–8.00 ms, and the row above attributes 7 ms to this machine. The epoch root and the
+inclusion proof landed inside their recorded ranges too. Only the Ed25519 row moved, so whatever moved it
+is specific to that row rather than to the hardware the run happened on.
+
 What changed in between is the harness around it. E-13's fourth round moved every fixture's construction
 to before the first `measure`, because pinning the fixtures a function happens to build first protects
 only those — a review had made the signed branch a hundredth of its size and the row still printed
