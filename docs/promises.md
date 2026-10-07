@@ -1,8 +1,11 @@
 # The batcher and its promises
 
 The batcher accepts submissions, hands back a signed promise that the leaf will appear in a root
-inside two epochs, and seals epochs into trees. The promise is what makes censorship provable rather
-than deniable. This file describes what `certimining-log`'s batcher does; TCU-02 §1.6 and §2.3 are
+inside two epochs, and seals epochs into trees. The promise is what makes censorship **answerable**
+rather than deniable: a signed, checkable claim naming the epochs by which a leaf must appear, which
+the batcher either meets or leaves unmet in public. It does not make censorship provable, and an
+earlier version of this sentence said it did — absence cannot be proven from a root, which the
+section of that name below sets out and which this line contradicted. This file describes what `certimining-log`'s batcher does; TCU-02 §1.6 and §2.3 are
 the contract it follows.
 
 ## What a promise is
@@ -76,7 +79,7 @@ is sealed a whole epoch at a time, so the submission at queue position `k` lands
 `epoch + 1 + k / C`, and that is the epoch its promise names.
 
 **A full epoch never refuses.** A submitter holding no promise has no evidence of having submitted,
-which is precisely the censorship the promise exists to make provable, so the promise names the next
+which is precisely the censorship the promise exists to make answerable, so the promise names the next
 epoch the batcher can meet and `overflow_queue_len` reports what is waiting (D-71). §4.3's V-N-14 is
 answered by two layers: the tree returns `0x12` when asked to build more than `C` leaves, and the
 batcher never asks it to.
