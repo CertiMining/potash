@@ -14,9 +14,14 @@ Every decision behind the build: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 No external audit has completed, and no figure below was measured by anyone outside this project.
 What has run is independent review, in rounds, against posted heads: two on the Anchor program and the
-anchor client, two on anchor B, three on the TypeScript verifier, and two on the demo. Each round
-found defects in the previous round's fixes, which is the reason for counting them rather than
-declaring the work reviewed. There is no OpenTimestamps worker to review: the daily cycle is run by
+anchor client, two on anchor B, three on the TypeScript verifier, two on the demo, three on the fuzz
+and property harness, three on the benchmarks, four on a publication cycle and its live-value record,
+and **six on §4.4's privacy instrument**. Each round found defects in the previous round's fixes,
+which is the reason for counting them rather than declaring the work reviewed — and why the longest
+count is against the privacy tests, which are the release blockers.
+
+This list named four of those eight until 7 October, having been written when four was the number and
+not revisited as the others were reviewed. There is no OpenTimestamps worker to review: the daily cycle is run by
 hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
 
 **What is measured.** These are numbers this repository produces and checks, not estimates. Each row
