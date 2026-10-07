@@ -204,10 +204,15 @@ calendar's attestation at block 969,627, and naming one of two is the convention
 Neither height is checked against Bitcoin by anything in this repository, which is H-12
 ([#48](https://github.com/CertiMining/potash/issues/48)).
 
-**A day has been missed twice, and both times the log caught up rather than drifting.** Nothing
+**A day has been missed three times. The first two were paid the next day; the third is open.** Nothing
 published on day 20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing
 published on day 20729 either; on day 20730 both 20729 and 20730 were published and stamped, so
-`last_epoch` is the current UTC day index again, and stayed there on day 20731.
+`last_epoch` was the current UTC day index again on day 20731. Nothing was published on day 20732, and
+that day is still owed: `last_epoch` stands at 20731, and the next publication this program will accept
+is 20732, whatever day it arrives on. `sequence_lag` reports the distance; this file does not record it,
+because a distance written here ages into a false one. An earlier version of this paragraph said the log
+had caught up both times and stayed caught up, which was true when it was written and is not true now —
+a claim about a live sequence goes stale on its own, with nothing editing it.
 
 **Epoch 20731 was published with the key D-138 moved out of the repository, and that is recorded rather
 than quietly corrected.** The cycle for that day was run from a working clone still on a feature branch
