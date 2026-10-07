@@ -18,17 +18,27 @@ found defects in the previous round's fixes, which is the reason for counting th
 declaring the work reviewed. There is no OpenTimestamps worker to review: the daily cycle is run by
 hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
 
-**What is measured.** These are numbers this repository produces and checks, not estimates.
+**What is measured.** These are numbers this repository produces and checks, not estimates. Each row
+names which implementation produced it, because two of them exist and they differ by an order of
+magnitude; an earlier version of this table did not, and its Rust and TypeScript figures could not be
+told apart. Rust figures are release builds via `scripts/ci.sh thresholds` and `scripts/ci.sh bench`,
+on the reference machine §4.4a names — Apple M2, 8 cores, macOS 26.6.2 — except the chain-walk range,
+which spans two machines both matching that description and is why D-137 removed the bound.
 
-| | Threshold | Measured |
-|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | 10,310 CU |
-| `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU |
-| TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.3 ms |
-| Epoch root build, 256 leaves | < 10 ms | 2.7 ms |
-| Inclusion proof verification | < 1 ms | 0.030 ms |
-| Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 |
-| Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 |
+| | Threshold | Measured | By |
+|---|---|---|---|
+| `publish_checkpoint` compute | ≤ 15,000 CU | 8,810 CU | LiteSVM, and the same on chain |
+| `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
+| Chain walk, 10,000 records, hash recomputation only | none (D-137) | 7–19.5 ms, machine-dependent | Rust |
+| Epoch root build, 256 leaves | none (D-137) | 0.20–0.38 ms | Rust |
+| Epoch root build, 256 leaves | none (D-137) | 2.66 ms | TypeScript |
+| Inclusion proof verification | none (D-137) | 0.0023–0.0043 ms | Rust |
+| Inclusion proof verification | none (D-137) | 0.0288 ms | TypeScript |
+| TypeScript verifier, 1,000-record chain, hashing only | < 50 ms | 10.23 ms | TypeScript |
+| Full verification including per-record Ed25519 | none in v0.1 | 399 ms | Rust |
+| Full verification including per-record Ed25519 | none in v0.1 | 1,004 ms | TypeScript |
+| Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 | devnet, 200 epochs |
+| Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 | devnet, 200 epochs |
 
 Two independent implementations — Rust and TypeScript, the second written from the specification
 alone by someone who never read the first — agree on all 32 committed vectors, including the ones
@@ -40,15 +50,17 @@ inside the Solana runtime and outside it, across every committed preimage.
 - The landing-delay correlation above ran **once**, over 200 consecutive epochs at one epoch per
   minute on one endpoint. A day-long cadence would sample network conditions this run did not. That
   run is filed for after the submission deadline.
-- Anchor B has completed **five** cycles on the deployed log, epochs 20723 to 20727. All five read
-  `dual` and all five receipts are committed under `anchors/epochs/`. Five cycles are five instances,
-  not a measured latency. A sixth, epoch 20728, is published and stamped but **not** complete: its
-  receipt carries calendar attestations only, so the epoch reads `single` until a Bitcoin block confirms
-  it and the receipt is attached.
-  The cadence INV-ANCH-01 asks for has also already been missed twice — nothing
-  published on day 20726 or on day 20729, and each time the log caught up the next day — which is what
-  a cadence run by hand does, there being no worker
-  ([#49](https://github.com/CertiMining/potash/issues/49)).
+- Anchor B has completed **nine** cycles on the deployed log, epochs 20723 to 20731. All nine read
+  `dual` and all nine receipts are committed under `anchors/epochs/`. Nine cycles are nine instances,
+  not a measured latency. Epochs 20732 and 20733 are published and stamped but **not** complete: their
+  receipts carry calendar attestations only, so both read `single` until a Bitcoin block confirms them
+  and the receipts are attached.
+  The cadence INV-ANCH-01 asks for has also already been missed three times — nothing published on
+  day 20726, on day 20729 or on day 20732 — and each time the next day paid both the owed epoch and
+  its own. That is what a cadence run by hand does, there being no worker
+  ([#49](https://github.com/CertiMining/potash/issues/49)). The distance from `last_epoch` to the
+  current day is not recorded here, because a distance written down ages into a false claim;
+  `sequence_lag` reports it against a clock.
   `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
 - The fuzz and property harness exists (§4.5's five targets and four properties,
   [`docs/fuzzing.md`](docs/fuzzing.md)) and **has not accumulated a history**. The nightly job is new,
@@ -61,11 +73,12 @@ inside the Solana runtime and outside it, across every committed preimage.
 - **The announced log does not demonstrate count-hiding, and never did (D-138).** Its record set is a
   public constant: the publication harness builds every epoch from three records whose submission ids
   and leaves are written in `crates/certimining-client/tests/publish_epoch.rs`. A property that hides
-  how many records an epoch held cannot be shown by a log whose record count is in its own source. All
-  nine published roots, epochs 20723 to 20731, can be rebuilt from this repository alone — 20731
-  because the cycle for that day was run from a checkout that predated the key's move, which is
-  recorded with the cycle. What
-  exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
+  how many records an epoch held cannot be shown by a log whose record count is in its own source.
+  Epochs 20723 to 20731 can be rebuilt from this repository alone, 20731 included, because the cycle
+  for that day was run from a checkout that predated the key's move, which is recorded with the cycle.
+  From epoch 20732 the roots no longer rebuild from this repository, the master key being outside it —
+  which changes nothing about count-hiding, because the record count is still written in the harness.
+  What exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
 
 ## What this asserts
 
@@ -145,6 +158,7 @@ taken by default.
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
+| `benches/` | §4.4a's performance figures: Criterion distributions, the reported wall-clock measures, and the CI regression band ([`docs/performance.md`](docs/performance.md)) |
 | `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
 | `docs/` | the specification, every decision, and per-unit notes |
 | `scripts/ci.sh` | the whole pipeline as one script, so a local run is what CI runs |

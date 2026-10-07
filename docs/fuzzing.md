@@ -134,6 +134,25 @@ lived in a comment telling a reader to set `PROPTEST_CASES` by hand. `scripts/ci
 commands that reproduce all three figures — 53 files in the crate, 53 carrying the SPDX header, 26
 compiled.
 
+## Where E-12's round-three findings went
+
+A third review round found five instances, none High. Four went to Post-deadline hardening on the owner's
+ruling of 3 Oct 2026 — below High goes to hardening and the unit closes. The pointer is here because the
+commit that first recorded it landed after PR #55's head was taken:
+
+- **H-21** ([#61](https://github.com/CertiMining/potash/issues/61)) P-02's accepted lane derives URI form
+  and claimed-key presence from the same parity bit, so two of four valid combinations never occur and a
+  partial commit in one of them passed 10,000 cases.
+- **H-22** ([#62](https://github.com/CertiMining/potash/issues/62)) F-01 reduces an accepted checkpoint to
+  its epoch, so a forced-zero root passed a million runs.
+- **H-23** ([#63](https://github.com/CertiMining/potash/issues/63)) F-02 never requires raw input over 256
+  bytes to be refused.
+- **H-24** ([#64](https://github.com/CertiMining/potash/issues/64)) F-04's genuine-proof control is one
+  fixed epoch, so refusing every *other* genuine proof survives.
+
+The fifth was in V-Z-04, a §4.4 release blocker, and went out as its own pull request rather than waiting
+behind a unit.
+
 ## Targets that could not reach what they tested
 
 Each of these passed, and each was worthless, which is the failure mode a fuzz target is most prone to:

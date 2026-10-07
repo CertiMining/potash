@@ -1651,6 +1651,12 @@ bringing it at the time was the obligation, and a review had to surface it inste
 
 **Date:** 30 Sep 2026 · **Unit:** E-13 · **Class:** cost judgment · **Status:** settled at S0 (owner, 30 Sep 2026)
 
+**Superseded in part, 4 Oct 2026.** D-137 removes §4.4a's wall-clock absolutes entirely, so the figures
+this entry names for the reference machine — a chain walk under 5 ms, an epoch root under 10 ms, a proof
+under 1 ms — are no longer asserted anywhere; `thresholds.rs` measures and reports them with the machine
+named. The split this entry draws stands, and the compute-unit half is unchanged: the deterministic
+measures are asserted absolutely in CI and the wall-clock half is the committed baseline and its band.
+
 **Decision (the owner's).** Criterion, which E-13's task list already named. His reason: *a single wall-clock sample isn't a published number.* §4.4a requires figures measured and reported, and a number with no distribution behind it is not one. It costs a large dependency tree through the licence and advisory gates.
 
 **Rejected.** A minimal harness, about fifty lines, no new dependency, no confidence intervals.
@@ -1766,6 +1772,87 @@ the list — scoping it means the next NCSA crate still fails.
 **Revisit if** counsel's IP screen (R3) reaches build-time-only tooling, in which case the seeded loop is
 the fallback and the record names which §4.5 criteria it cannot report.
 
+## D-136 · §4.4a's chain-walk threshold is the measured figure, not the one written before measuring
+
+**Date:** 2 Oct 2026 · **Unit:** E-13 · **Class:** required by the spec · **Status:** settled at S2 (owner, 2 Oct 2026)
+
+**Superseded, 4 Oct 2026.** D-137 removes the row this entry amended. The `< 10 ms` bound set here held
+for two days: an independent review measured 17.6–19.5 ms on a second machine matching §4.4a's own
+description, so the figure was not reproducible and the bound is gone rather than widened again. What this
+entry established and D-137 keeps is that a figure in the specification is measured, not guessed.
+
+**Decision (the owner's).** Amend §4.4a to the measured figure, name the reference machine, and record
+that 5 ms was set before anything was measured. His reason: *a threshold the code misses by 40% is a
+claim the repo can't carry, and replacing guesses with measurements is exactly what E-13 is for.* The
+preimage-path gap is filed as H-19 ([#58](https://github.com/CertiMining/potash/issues/58)) so it is
+tracked rather than closed by redefinition.
+
+**What changed.** The row read `< 5 ms, single thread, reference laptop`. It now reads `< 10 ms, single
+thread, on the reference machine named below; measured 7.1 ms`. The reference machine is named in §4.4a:
+Apple M2, 8 cores, macOS 26.6.2, `cargo bench -p certimining-benches`. Per D-103 this branch does not
+renumber the specification; the amendment is annotated "on this branch, unmerged".
+
+**The measurement, and why it is this measurement.** §4.4a's row says "hash recomputation only" and its
+own note says the figure "is achievable only for the hash chain", so what is timed is the hash chain:
+`leafₙ`, then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)`, two Keccak-256 invocations per record and no
+condition judged. **7.1 ms** for 10,000 records. The first version of the bench timed
+`AssetChain::apply` instead and reported 7.73 ms as the threshold miss; that is the issuer's path, which
+judges every §1.3 condition, and measuring it against this row would have been measuring the wrong
+thing. `apply` costs 7.3 ms, so the 0.2 ms difference establishes that the cost is hashing rather than
+judging — which is why no amount of work on the state machine would have reached 5 ms.
+
+**Why the gate is 10 ms and not 7.1 ms.** Repeated runs on the same machine ranged from 6.9 ms to 8.7 ms
+across their confidence intervals. A gate at the point estimate fails on variance rather than on
+regression, which is the distinction D-132 draws between the CU figures — deterministic, asserted
+absolutely — and wall-clock, which is not. 10 ms sits above the worst observed run and still catches a
+regression of 40% or more.
+
+**Rejected, and both are recorded in §4.4a rather than dropped.** RustCrypto `sha3`'s `asm` feature
+measures 5.16 ms, a 27% gain, and was not adopted: it still misses the old 5 ms, and how the system's
+hash primitive is built is not a performance decision to take under deadline. Optimising the preimage
+path was not attempted: it is unmeasured work of unknown payoff with ten days left, and it is H-19.
+
+**Revisit if** H-19 finds overhead that is not inherent to INV-ENC-01's staged tag writing, in which case
+the figure moves and the row moves with it. The threshold follows the measurement; it does not lead it.
+
+## D-137 · §4.4a's wall-clock absolutes are removed, because the figure was not reproducible
+
+**Date:** 3 Oct 2026 · **Unit:** E-13 · **Class:** required by the spec · **Status:** settled at S9 round one (owner, 3 Oct 2026)
+
+**Decision (the owner's).** Remove the wall-clock absolutes from §4.4a. Keep the compute-unit absolutes
+and the CI regression band. `benches/thresholds.rs` becomes a reporting tool that names the machine.
+Record that two machines matching §4.4a's description measured 7 ms and 17.6 to 19.5 ms, so the figure
+was not reproducible. The two remaining instrument findings are filed as H-30 and H-31, worded against
+the amended section.
+
+**What the evidence was.** The chain-walk row began at `< 5 ms`, written when §4.4a was restored and
+before anything here had timed the walk. E-13 measured 7.1 ms and D-136 amended the bound to `< 10 ms`
+around a 6.9–8.7 ms spread. An independent review then ran the same assertion on a **different machine
+that also satisfies §4.4a's description** — Apple M2, 8 cores, macOS 26.6.2 — and measured medians of
+**17.92, 16.65 and 19.52 ms**, Criterion independently reporting 17.6–18.7 ms. While amending the section
+this machine, which had measured 7 ms idle, measured **13.77 ms** with another suite running beside it.
+
+Four values from seven to nineteen and a half milliseconds, every one on hardware matching the words in
+the specification. **The description does not determine the figure**, so a bound stated against it is not
+a property of this system, and raising it a second time would have made the number track the slowest
+machine anyone tried.
+
+**Why this is not a retreat.** D-132 had already established the weaker form: a shared CI runner cannot
+be held to an absolute wall-clock number, which is why the band exists. This is the same fact one step
+further — wall-clock is a property of a machine, and three of §4.4a's rows were pretending otherwise.
+What is asserted absolutely is now what can be: **compute units**, which are deterministic and were
+confirmed at 13,735 / 8,810 / 5,687 against the announced deployment's own transactions, across a runtime
+version gap. The TypeScript row keeps its 50 ms bound because it is asserted on the CI runner rather than
+against a machine description, and passes there with fivefold headroom.
+
+**Amends D-136**, which moved the chain-walk bound from 5 ms to 10 ms. A review observed that D-136
+accommodated an observed failure rather than deriving a bound; that observation was correct, and this
+decision stops the sequence rather than continuing it. D-136's reasoning about *which* measurement §4.4a's
+row meant — the hash chain, not `AssetChain::apply` — stands, and is the reason the reported figure means
+anything.
+
+**Revisit if** a figure is ever needed as a gate rather than a record. It would have to name an exact
+machine, which makes §4.4a unverifiable by anyone who does not hold one, and that trade was rejected here.
 ## D-138 · The announced log is a demonstration log, and its master key moves out of the repository
 
 **Date:** 4 Oct 2026 · **Unit:** E-16 · **Class:** security necessity · **Status:** settled at S0 (owner, 4 Oct 2026)

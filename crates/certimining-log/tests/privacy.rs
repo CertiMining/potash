@@ -12,9 +12,7 @@
 
 mod common;
 
-use certimining_core::{
-    epoch_key, padding_prf, Digest, NativeKeccak, PaddingPreimage, Preimage, SubmissionId,
-};
+use certimining_core::{epoch_key, padding_prf, Digest, Hasher, NativeKeccak, SubmissionId};
 use certimining_log::{BuiltEpoch, EpochTree};
 use common::{
     assert_indistinguishable, assignment_oracle, binomial_band, combined_scores, epoch,
@@ -77,17 +75,47 @@ fn picked_real(real_score: f64, padding_score: f64, tie_break: bool) -> bool {
 /// classifier does not. It never consults `built.assignment`, so corrupting the assignment path cannot
 /// move it.
 fn real_by_recomputation(built: &BuiltEpoch, epoch_number: u64) -> Vec<bool> {
-    let k_e = epoch_key::<NativeKeccak>(&TEST_MASTER_KEY, epoch_number).expect("derives");
+    // **An oracle that calls the production path degrades with it (PR #69, round six, M-01).** This
+    // used `epoch_key`, `padding_prf` and `PaddingPreimage::digest` — the same functions the engine
+    // uses — so a review changed padding's domain code from `0x03` to `0x02` and engine and oracle
+    // produced the same wrong value together. The privacy suite stayed green. (`certimining-core`'s
+    // own PRF vector caught that mutation, which is why it was graded Medium and not High, but an
+    // oracle whose independence is supplied by a different test is not independent.)
+    //
+    // So the derivation is transcribed here from §1.2 and §1.4, as `assignment_oracle` already does:
+    // the tags and use codes are literals, not imports.
+    const SPEC_TAG_PRF: [u8; 8] = *b"CMv1PRF0";
+    const SPEC_TAG_PAD: [u8; 8] = *b"CMv1PADD";
+    const SPEC_USE_EPOCH_KEY: u8 = 0x01;
+    const SPEC_USE_PADDING: u8 = 0x03;
+
+    // `PRF(k, x) = Keccak256(TAG_PRF ‖ k ‖ len(x) ‖ x)`, the length a little-endian `u16` (§1.1, D-59).
+    let prf = |key: &Digest, input: &[u8]| -> Digest {
+        let mut preimage = Vec::new();
+        preimage.extend_from_slice(&SPEC_TAG_PRF);
+        preimage.extend_from_slice(key);
+        preimage.extend_from_slice(&(input.len() as u16).to_le_bytes());
+        preimage.extend_from_slice(input);
+        NativeKeccak::hashv(&[&preimage])
+    };
+
+    let mut epoch_input = vec![SPEC_USE_EPOCH_KEY];
+    epoch_input.extend_from_slice(&epoch_number.to_le_bytes());
+    let k_e = prf(&TEST_MASTER_KEY, &epoch_input);
+
     built
         .leaves
         .iter()
         .enumerate()
         .map(|(slot, leaf)| {
-            let prf_output = padding_prf::<NativeKeccak>(&k_e, slot as u16).expect("derives");
-            let padding = PaddingPreimage { prf_output }
-                .digest::<NativeKeccak>()
-                .expect("digests");
-            *leaf != padding
+            let mut padding_input = vec![SPEC_USE_PADDING];
+            padding_input.extend_from_slice(&(slot as u16).to_le_bytes());
+            let prf_output = prf(&k_e, &padding_input);
+            // The padding leaf is the digest of that output under its own tag (§1.4).
+            let mut padding_preimage = Vec::new();
+            padding_preimage.extend_from_slice(&SPEC_TAG_PAD);
+            padding_preimage.extend_from_slice(&prf_output);
+            *leaf != NativeKeccak::hashv(&[&padding_preimage])
         })
         .collect()
 }
@@ -108,7 +136,67 @@ fn real_by_recomputation(built: &BuiltEpoch, epoch_number: u64) -> Vec<bool> {
 )]
 #[test]
 fn each_named_feature_equals_an_independently_computed_value() {
-    // Bit population of one byte, by shifting. Deliberately not `count_ones`.
+    // A set with enough shape that no two features agree across it by accident.
+    let leaves: Vec<Digest> = vec![
+        [0x00; 32],
+        [0xff; 32],
+        {
+            let mut d = [0u8; 32];
+            for (i, b) in d.iter_mut().enumerate() {
+                *b = i as u8;
+            }
+            d
+        },
+        {
+            let mut d = [0xaa; 32];
+            d[0] = 0x00;
+            d[31] = 0x01;
+            d
+        },
+        {
+            let mut d = [0u8; 32];
+            for (i, b) in d.iter_mut().enumerate() {
+                *b = if i.is_multiple_of(2) { 0x0f } else { 0xf0 };
+            }
+            d
+        },
+    ];
+    let root: Digest = [0x5c; 32];
+
+    // **The blockers score 128- and 256-row matrices and this checked five (PR #69, round six, H-01).**
+    // A review gave the first column a shape-dependent path — slot parity when the row count is a power
+    // of two, the real feature otherwise — and the five-row fixture still saw the right implementation
+    // while V-Z-02 and V-Z-03 got unrelated noise. The noise varied in every epoch, so the liveness
+    // floor cleared, and its success rate sat at chance, which is the passing value. Conformance has to
+    // run at the shapes the statistic consumes, so this now checks all three.
+    check_conformance(&leaves, &root);
+    check_conformance(&deployment_shaped(256), &root);
+    check_conformance(&deployment_shaped(128), &root);
+    println!("conformance: all {FEATURE_COUNT} columns equal an independent computation at 5, 128 and 256 rows");
+}
+
+/// Leaves with enough structure that every named feature varies, at whatever row count the caller
+/// needs — so conformance can be checked at the shapes V-Z-02 and V-Z-03 actually score.
+fn deployment_shaped(rows: usize) -> Vec<Digest> {
+    (0..rows)
+        .map(|i| {
+            let mut d = [0u8; 32];
+            for (j, b) in d.iter_mut().enumerate() {
+                *b = ((i * 31 + j * 7) % 256) as u8;
+            }
+            // A few rows carry runs and zeros, so the run and zero-byte columns are not constant.
+            if i % 7 == 0 {
+                d[4..12].fill(0x00);
+            }
+            if i % 11 == 0 {
+                d[16..24].fill(0xcc);
+            }
+            d
+        })
+        .collect()
+}
+
+fn check_conformance(leaves: &[Digest], root: &Digest) {
     fn bits(mut b: u8) -> u32 {
         let mut n = 0;
         while b != 0 {
@@ -123,7 +211,6 @@ fn each_named_feature_equals_an_independently_computed_value() {
     fn differing_bits(a: &Digest, b: &Digest) -> u32 {
         (0..32).map(|i| bits(a[i] ^ b[i])).sum()
     }
-    // Leading zero bits, over the digest written out as bits.
     fn leading_zeros_independently(d: &Digest) -> u32 {
         let mut n = 0;
         for byte in d {
@@ -168,41 +255,13 @@ fn each_named_feature_equals_an_independently_computed_value() {
             .sum()
     }
 
-    // A set with enough shape that no two features agree across it by accident.
-    let leaves: Vec<Digest> = vec![
-        [0x00; 32],
-        [0xff; 32],
-        {
-            let mut d = [0u8; 32];
-            for (i, b) in d.iter_mut().enumerate() {
-                *b = i as u8;
-            }
-            d
-        },
-        {
-            let mut d = [0xaa; 32];
-            d[0] = 0x00;
-            d[31] = 0x01;
-            d
-        },
-        {
-            let mut d = [0u8; 32];
-            for (i, b) in d.iter_mut().enumerate() {
-                *b = if i.is_multiple_of(2) { 0x0f } else { 0xf0 };
-            }
-            d
-        },
-    ];
-    let root: Digest = [0x5c; 32];
     let n = leaves.len();
-
-    // The per-position mean, recomputed here rather than taken from the extractor.
     let mut mean = [0f64; 32];
     for position in 0..32 {
         mean[position] = leaves.iter().map(|l| f64::from(l[position])).sum::<f64>() / n as f64;
     }
 
-    let matrix = feature_matrix(&leaves, &root);
+    let matrix = feature_matrix(leaves, root);
     assert_eq!(matrix.len(), n, "one row per leaf");
 
     for (index, leaf) in leaves.iter().enumerate() {
@@ -217,7 +276,7 @@ fn each_named_feature_equals_an_independently_computed_value() {
             distinct_independently(leaf) as f64,
             chi_squared_independently(leaf),
             f64::from(differing_bits(leaf, &previous) + differing_bits(leaf, &next)),
-            f64::from(differing_bits(leaf, &root)),
+            f64::from(differing_bits(leaf, root)),
         ];
         for feature in 0..FEATURE_COUNT {
             assert!(
@@ -463,11 +522,16 @@ fn v_z_02_padding_is_indistinguishable_from_a_real_leaf() {
         // conservative one to hold it to.
         let mut ranked: Vec<(usize, f64)> = combined.iter().copied().enumerate().collect();
         ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
-        let real_lookup = real_slots(&built);
+        // **The second form was still labelled from the assignment (PR #69, round six, H-03).** The pair
+        // game above was wired to `real_by_recomputation` and this one was not: it rebuilt its truth
+        // through `real_slots`, so a review labelled the first half of every epoch real and the test
+        // passed — unrelated labels produce chance accuracy, and chance is what this asserts. D-66
+        // requires both forms, and one correct form does not make the other's result evidence.
+        let real_count = is_real.iter().filter(|r| **r).count();
         for (rank, (slot, _)) in ranked.iter().enumerate() {
-            let called_real = rank < real_lookup.len();
-            let is_real = real_lookup.binary_search(&(*slot as u16)).is_ok();
-            if called_real == is_real {
+            let called_real = rank < real_count;
+            let is_real_slot = is_real[*slot];
+            if called_real == is_real_slot {
                 leaf_correct += 1;
             }
             leaf_total += 1;
@@ -735,6 +799,16 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
 
 /// Every real submission's slot, against its submission order, its issuer and its time in the epoch.
 fn position_correlations(epochs: u64) -> [f64; 3] {
+    // **The function defends its own sample (H-33).** Pinning `EPOCHS_VZ04` stops the constant being
+    // edited; it does nothing about a caller that passes something else, and the bound this returns
+    // against is computed from a sample of 400. A review found nine epochs green under the unchanged
+    // bound. The literal is deliberate: taking it from the constant would make the check restate the
+    // thing it is checking, which is the defect this unit spent five rounds on.
+    assert!(
+        epochs >= 400,
+        "V-Z-04's bound is computed from a sample of 400 epochs and this run has {epochs}; a smaller \
+         sample does not widen the bound, it just measures less"
+    );
     let mut slots: Vec<f64> = Vec::new();
     let mut orders: Vec<f64> = Vec::new();
     let mut issuers: Vec<f64> = Vec::new();
@@ -798,9 +872,33 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
             times.push((order as f64) * 137.0 + (mix.next_u64() % 100) as f64);
         }
 
-        // What was just appended must be this epoch's placement, as a multiset: the same slots the
-        // assignment holds, each once. An instrument that flattened, duplicated or dropped any of them
-        // fails here rather than being averaged away over the other epochs.
+        // **A set is not an alignment (PR #69, round six, H-02).** Pearson consumes ordered pairs:
+        // `slots[i]` against `orders[i]`, `issuers[i]` and `times[i]`. The round-five check compared
+        // this epoch's contribution as a *set* against what it placed, which a rotation satisfies
+        // exactly — same values, same count, every pairing destroyed. A review rotated each epoch by
+        // one and both the 400-epoch CI test and the 10,000-epoch release gate passed.
+        //
+        // So the record is checked where it is made: each appended observation is compared against the
+        // slot the assignment gives for the submission that produced it, in order, before anything is
+        // projected into a column.
+        for (offset, (id, _)) in real.iter().enumerate() {
+            let expected = built
+                .assignment
+                .iter()
+                .find(|(candidate, _)| candidate == id)
+                .map(|(_, slot)| *slot)
+                .expect("every submission was placed");
+            assert_eq!(
+                slots[before + offset] as u16,
+                expected,
+                "epoch {number}: observation {offset} is the slot of a different submission, so the \
+                 pair this contributes to the correlation is fabricated"
+            );
+        }
+
+        // The set and count checks below are kept behind the alignment check above. They are weaker —
+        // a rotation satisfies both — but they catch a flattened or truncated contribution with a
+        // message about the epoch rather than about one observation.
         let contributed: std::collections::BTreeSet<u16> =
             slots[before..].iter().map(|value| *value as u16).collect();
         assert_eq!(
@@ -835,6 +933,17 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
         slots.len(),
         epochs,
         REAL_PER_EPOCH
+    );
+
+    // The sample that actually arrived, not the one the loop was asked for (H-33). Each epoch owes
+    // `REAL_PER_EPOCH` placements and the per-epoch check above enforces that one epoch at a time;
+    // this is the total those are supposed to add up to.
+    let owed = epochs as usize * REAL_PER_EPOCH;
+    assert_eq!(
+        slots.len(),
+        owed,
+        "{epochs} epochs of {REAL_PER_EPOCH} submissions owe {owed} observations and {} arrived",
+        slots.len()
     );
 
     [

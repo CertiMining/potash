@@ -691,13 +691,43 @@ Restored in v0.1.1 — these were carried in TCU-01 and lost when TCU-02 was wri
 |---|---|
 | `publish_checkpoint` compute | ≤ 15,000 CU |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU |
-| Chain-walk verification, 10,000 records — **hash recomputation only** | < 5 ms, single thread, reference laptop |
-| Epoch root build, 256 leaves | < 10 ms |
-| Inclusion proof verification | < 1 ms |
-| TS verifier, 1,000-record chain, hash recomputation only | < 50 ms |
+| TS verifier, 1,000-record chain, hash recomputation only | < 50 ms, asserted on the CI runner |
+| Chain-walk verification, 10,000 records — **hash recomputation only** | **measured and reported, with the machine named; no threshold** |
+| Epoch root build, 256 leaves | **measured and reported, with the machine named; no threshold** |
+| Inclusion proof verification | **measured and reported, with the machine named; no threshold** |
 | Full verification including per-record Ed25519 checks | **measured and reported, no threshold in v0.1** |
 
-The split matters. Signature verification dominates at scale — the 5 ms figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
+**The three wall-clock bounds are gone, and the reason is that the figure was not reproducible (amended on this branch, unmerged).** The chain-walk row has now carried two numbers. It began at `< 5 ms`, written when §4.4a was restored and before anything in the repository had timed the walk. E-13 measured 7.1 ms, and D-136 amended the bound to `< 10 ms` around an observed 6.9–8.7 ms spread. An independent review then ran the same assertion on a **different machine that also satisfies this document's description** — Apple M2, 8 cores, macOS 26.6.2 — and measured medians of **17.92, 16.65 and 19.52 ms**, with Criterion independently reporting 17.6–18.7 ms. Two conforming machines differ by about two and a half times.
+
+So the description does not determine the figure, and a bound stated against it is not a property of this system. D-132 had already found the weaker form of this — that a shared CI runner cannot be held to an absolute wall-clock number — and this is the same fact one step further: wall-clock is a property of a machine, and the specification should not pretend otherwise. Raising the bound a second time would only have made it track the slowest machine anyone happened to try.
+
+**What remains, and why it is enough.** Compute units are deterministic: the same instruction against the same program costs the same CU anywhere, and the three figures this repository records — 13,735 for `initialize`, 8,810 for `publish_checkpoint`, 5,687 for `attach_anchor_receipt` — were confirmed against the announced deployment's own transactions, across a runtime version gap. Those are asserted absolutely in CI. The wall-clock measures are **reported** with the machine named, and CI holds its own runner to its own previous figures through a regression band, which catches a change in the code without pretending to bound the hardware. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
+
+The split matters. Signature verification dominates at scale — the hash-chain figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
+
+**How the chain-walk row lost its bound, in order (amended on this branch, unmerged).** It was written
+`< 5 ms` when §4.4a was restored, before anything in the repository had timed the walk. E-13 measured
+**7.1 ms** and D-136 amended the bound to `< 10 ms`, chosen above a 6.9–8.7 ms spread so that a gate would
+fail on regression rather than on variance. An independent review then ran the same assertion on a
+different machine satisfying the description above and measured medians of **17.92, 16.65 and 19.52 ms**;
+while this section was being amended, the first machine measured **13.77 ms** with another test suite
+running beside it. One figure, four values from 7 to 19.5 ms, all on conforming hardware. D-137 therefore
+removed the bound rather than raising it a second time: a number stated against a machine description that
+does not determine it is not a property of this system.
+
+What is measured, and how, so a reader can repeat it. The measure is the hash chain alone — for each
+record `leafₙ`, then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)`, two Keccak-256 invocations and no
+condition judged — which is what "hash recomputation only" means and what a verifier recomputing a chain
+does. `AssetChain::apply`, the issuer's path, judges every §1.3 condition on top of the same two hashes;
+the difference between them was 0.2 ms, which is why the cost is hashing rather than judging and why no
+amount of work on the state machine would have reached 5 ms. `scripts/ci.sh thresholds` reports all four
+figures with the machine named, and asserts no bound on any of them.
+
+**Two things the removal does not excuse.** RustCrypto `sha3`'s `asm` feature was measured at 5.16 ms — a
+27% gain that still missed the old 5 ms — and was not adopted, because how the system's hash primitive is
+built is not a performance decision to take under deadline. And the per-call overhead of the preimage path
+is unexamined, tracked as H-19 ([#58](https://github.com/CertiMining/potash/issues/58)). Either could move
+the figure; neither restores a bound.
 
 CU figures are recorded per commit in CI; a regression past threshold fails the build.
 

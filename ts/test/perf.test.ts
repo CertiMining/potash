@@ -69,7 +69,7 @@ function measure(runs: number, fn: () => void): { median: number; min: number; m
   return { median: median(times), min: Math.min(...times), max: Math.max(...times) };
 }
 
-test("§4.4a: the measured thresholds hold, and the signature path is reported", () => {
+test("§4.4a: the one wall-clock threshold holds, and the other rows are reported", () => {
   const { records, start } = buildChain(RECORDS);
 
   // Hash recomputation only: leaf preimage, leaf digest, head step. No signature check.
@@ -115,13 +115,19 @@ test("§4.4a: the measured thresholds hold, and the signature path is reported",
     `  machine: ${machine}`,
     `  TS verifier, ${RECORDS}-record chain, hash recomputation only : ${chainWalk.median.toFixed(2)} ms  (min ${chainWalk.min.toFixed(2)}, max ${chainWalk.max.toFixed(2)})   threshold < 50 ms`,
     `  the same chain including per-record Ed25519 verification      : ${fullWalk.median.toFixed(2)} ms  (min ${fullWalk.min.toFixed(2)}, max ${fullWalk.max.toFixed(2)})   no threshold in v0.1`,
-    `  epoch root build, 256 leaves                                  : ${treeBuild.median.toFixed(2)} ms  (min ${treeBuild.min.toFixed(2)}, max ${treeBuild.max.toFixed(2)})   threshold < 10 ms`,
-    `  inclusion proof verification (per proof, 100 per run)         : ${(proofVerify.median / 100).toFixed(4)} ms                       threshold < 1 ms`,
+    `  epoch root build, 256 leaves                                  : ${treeBuild.median.toFixed(2)} ms  (min ${treeBuild.min.toFixed(2)}, max ${treeBuild.max.toFixed(2)})   reported, no threshold (D-137)`,
+    `  inclusion proof verification (per proof, 100 per run)         : ${(proofVerify.median / 100).toFixed(4)} ms                       reported, no threshold (D-137)`,
     "",
   ];
   console.log(lines.join("\n"));
 
+  // §4.4a keeps one wall-clock bound and it is this one: the 1,000-record chain walk under 50 ms,
+  // asserted here because this test runs on the CI runner rather than against a machine description.
   assert.ok(chainWalk.median < 50, `§4.4a: 1,000-record chain walk took ${chainWalk.median.toFixed(2)} ms`);
-  assert.ok(treeBuild.median < 10, `§4.4a: 256-leaf epoch build took ${treeBuild.median.toFixed(2)} ms`);
-  assert.ok(proofVerify.median / 100 < 1, `§4.4a: inclusion proof verification took ${(proofVerify.median / 100).toFixed(4)} ms`);
+  // The epoch-root and proof-verification bounds were removed from §4.4a by D-137, after two machines
+  // matching its description measured 7 ms and 17.6-19.5 ms for the Rust equivalent. These two rows are
+  // implementation-independent, so the removal applies here as well: the figures are reported above and
+  // nothing is asserted. A review found these assertions still live after the amendment (PR #59, round
+  // two, High 2) — they would have failed on a slow runner against bounds the specification no longer
+  // states.
 });

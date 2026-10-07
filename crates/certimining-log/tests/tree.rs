@@ -491,29 +491,30 @@ mod with_real_keccak {
         assert_eq!(first.leaves, second.leaves);
     }
 
-    /// §4.4a's threshold: 256 leaves in under 10 ms. A debug build measures an order of magnitude
-    /// slower than the release build the threshold is about, so the number is reported either way
-    /// and asserted only where the comparison means something.
+    /// §4.4a's epoch-root figure, reported. **This asserted `< 10 ms` in release builds and no longer
+    /// does (D-137).** Two machines matching §4.4a's own description measured the chain-walk row at 7 ms
+    /// and 17.6-19.5 ms, so the three wall-clock bounds were removed; a review found this assertion
+    /// still live afterwards (PR #59, round two, High 2). The structural check stays — a build that does
+    /// not produce a complete tree is a defect at any speed — and the duration is printed.
     #[test]
     #[cfg_attr(
         miri,
         ignore = "a timing measurement under an interpreter measures the interpreter"
     )]
-    fn a_256_leaf_epoch_builds_inside_the_threshold() {
+    fn a_256_leaf_epoch_builds_a_complete_tree_and_its_time_is_reported() {
         let real = submissions(128);
         let start = std::time::Instant::now();
         let built =
             BuiltEpoch::build::<NativeKeccak>(24, 8, &TEST_MASTER_KEY, &real).expect("builds");
         let elapsed = start.elapsed();
         assert_eq!(built.leaves.len(), 256);
-        println!("tree build, 256 leaves: {:?}", elapsed);
-        if cfg!(debug_assertions) {
-            println!("debug build: §4.4a's 10 ms threshold is not asserted here");
-        } else {
-            assert!(
-                elapsed < std::time::Duration::from_millis(10),
-                "§4.4a: 256 leaves in under 10 ms, measured {elapsed:?}"
-            );
-        }
+        println!(
+            "tree build, 256 leaves: {elapsed:?} ({} build, §4.4a: reported, no threshold)",
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            }
+        );
     }
 }
