@@ -25,6 +25,27 @@ does not say `pass`.
 `payload_digest` flipped, in the signed preimage and in the hex displayed beside it, so the two
 halves still agree and the signature is what refuses it. The epoch root is unchanged throughout.
 
+## The status page
+
+`http://localhost:8730/status.html`, served by the same command. Where the three scenes are offline
+and synthetic on purpose, this one reads Solana devnet in your browser through the verifier this
+repository ships: the last published epoch against your own UTC day index, and a row per epoch with
+its root, its slot and whether anchor B has attached.
+
+It is read-only. It holds no key, publishes nothing, and has no path to the batcher. It is **not an
+operator console** — no alerting, no scheduling, no control — and the daily cycle is still run by
+hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)), so a non-zero distance is a
+person being late rather than a process that failed. The page says all of that on itself.
+
+Every outlined region explains itself on hover, and **Take the tour** walks the five explanations in
+order for a reader who skipped them. `demo/test/status.test.mjs` fails if a region has no
+explanation or an explanation has no region, because a tour that silently skips what a newcomer is
+looking at is worse than no tour.
+
+The failure it is built around is the one a status page gets wrong: an unreachable endpoint renders
+as an empty table, which reads exactly like a log that has published nothing. Those are opposite
+facts, so a read that fails says so and the counts are cleared.
+
 ## What this is not
 
 It is a demonstration, not a test, and the repository's tests are the authority for every property it

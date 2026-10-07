@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%91%BE%3C/text%3E%3C/svg%3E">
+<title>CertiMining — deployment status</title>
+<script type="importmap">
+{
+  "imports": {
+    "@noble/hashes/": "./build/vendor/@noble/hashes/",
+    "@noble/curves/": "./build/vendor/@noble/curves/"
+  }
+}
+</script>
+<style>
+  :root {
+    --ink: #17191c; --paper: #fbfaf8; --rule: #d8d4cc; --muted: #5d6066;
+    --differs: #b4531a; --differs-bg: #fdeee2; --good: #1d6b3f; --bad: #9c2323;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* The mark, until there is a real one. A wash, not a highlighter: enough to stop a
+       box blending into the page, not enough to compete with the bytes. */
+    --accent: #6b4fa8; --accent-wash: color-mix(in srgb, var(--accent) 9%, transparent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8e6e1; --paper: #16181b; --rule: #33373d; --muted: #9ba0a8;
+      --differs: #f0a06a; --differs-bg: #3a2515; --good: #74c69d; --bad: #e58b8b;
+    --accent: #b49ae8; --accent-wash: color-mix(in srgb, var(--accent) 14%, transparent);
+      --accent: #b49ae8; --accent-wash: color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8e6e1; --paper: #16181b; --rule: #33373d; --muted: #9ba0a8;
+    --differs: #f0a06a; --differs-bg: #3a2515; --good: #74c69d; --bad: #e58b8b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 16px/1.55 ui-serif, Georgia, "Times New Roman", serif;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 2.5rem 16px 6rem; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 1.25rem; margin-bottom: 2rem; }
+  h1 { font-size: 1.7rem; margin: 0 0 .4rem; letter-spacing: -.01em; }
+  h2 { font-size: 1.15rem; margin: 0 0 .3rem; }
+  .lede, .sub { color: var(--muted); margin: 0; }
+  .sub { font-size: .9rem; }
+  section { border-top: 1px solid var(--rule); padding-top: 1.75rem; margin-top: 2.25rem; }
+  .tag {
+    font: 600 .72rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); display: block; margin-bottom: .45rem;
+  }
+  .bar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+  button {
+    font: 600 .82rem/1 var(--mono); color: var(--ink); background: transparent;
+    border: 1px solid var(--rule); border-radius: 999px; padding: .5rem .9rem; cursor: pointer;
+  }
+  button:hover, button:focus-visible { border-color: var(--ink); }
+  .note {
+    margin: 1rem 0; padding: .8rem 1rem; border-left: 3px solid var(--accent);
+    background: var(--accent-wash); font-size: .95rem;
+  }
+  .note.behind { border-left-color: var(--differs); }
+  .note.level { border-left-color: var(--good); }
+  .note.ahead, .note.bad { border-left-color: var(--bad); font-weight: 600; }
+  .counts { display: flex; gap: 1.75rem; flex-wrap: wrap; margin: 1.1rem 0; }
+  .counts div { min-width: 6rem; }
+  .counts .n { font: 600 1.6rem/1.1 var(--mono); display: block; }
+  .counts .k { font-size: .82rem; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; margin-top: .9rem; font-size: .9rem; }
+  th {
+    text-align: left; font: 600 .72rem/1 var(--mono); letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); padding: .5rem .6rem; border-bottom: 1px solid var(--rule);
+  }
+  td { padding: .5rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  td.mono { font: .78rem/1.5 var(--mono); word-break: break-all; }
+  .pill { font: 600 .68rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .pill.dual { color: var(--good); }
+  .pill.single { color: var(--differs); }
+  .pill.unanswered { color: var(--bad); }
+  ul.limits { margin: .6rem 0 0; padding-left: 1.1rem; }
+  ul.limits li { margin-bottom: .35rem; }
+
+  /* The explanations. A region carries one; the tour walks them in order. */
+  [data-explain] { position: relative; }
+  [data-explain].lit {
+    outline: 2px solid var(--differs); outline-offset: 6px; border-radius: 2px;
+  }
+  .pop {
+    position: absolute; z-index: 20; max-width: 30rem; left: 0; top: calc(100% + 10px);
+    background: var(--paper); color: var(--ink);
+    border: 1px solid var(--ink); border-radius: 4px; padding: .8rem .95rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: .88rem;
+  }
+  .pop h4 { margin: 0 0 .35rem; font: 600 .74rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .pop p { margin: 0; }
+  .pop .step { margin-top: .7rem; display: flex; gap: .5rem; align-items: center; }
+  .pop .step span { font: .72rem/1 var(--mono); color: var(--muted); margin-right: auto; }
+  .hint { font-size: .82rem; color: var(--muted); }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>The log, as it stands right now</h1>
+  <p class="lede" id="what-this-is" data-explain>
+    Read from Solana devnet by your browser, with the same verifier a counterparty would run. This
+    page holds no key, publishes nothing, and cannot change anything.
+  </p>
+  <div class="bar">
+    <button id="tour" type="button">Take the tour</button>
+    <button id="refresh" type="button">Read the chain again</button>
+    <span class="hint">Hover any outlined area for what it means.</span>
+  </div>
+  <p class="sub" style="margin-top:.9rem"><a href="./index.html">← the three scenes</a></p>
+</header>
+
+<section>
+  <span class="tag">Sequence</span>
+  <h2>Where the log has got to</h2>
+  <div id="lag" data-explain>
+    <div class="note" id="lag-note">Reading the chain…</div>
+  </div>
+  <div class="counts" id="counts" data-explain></div>
+</section>
+
+<section>
+  <span class="tag">Epochs</span>
+  <h2>Every epoch this log says it published</h2>
+  <div id="table" data-explain>
+    <table>
+      <thead>
+        <tr><th>Epoch</th><th>Root</th><th>Slot</th><th>Anchors</th></tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="4">Reading the chain…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <span class="tag">Boundaries</span>
+  <h2>What this page does not tell you</h2>
+  <div id="limits" data-explain>
+    <ul class="limits">
+      <li><strong>It is not an operator console.</strong> No alerting, no scheduling, no control, no
+        key. The daily cycle is run by hand, which is recorded as D-117.</li>
+      <li><strong><code>dual</code> is the receipt's own claim.</strong> Nothing here checks a Bitcoin
+        block header against Bitcoin.</li>
+      <li><strong>One endpoint, one view.</strong> Everything above came from a single RPC provider.</li>
+      <li><strong>Devnet.</strong></li>
+      <li><strong>No record counts.</strong> How many filings an epoch held is not on chain, by
+        design. That is what the first scene demonstrates.</li>
+    </ul>
+  </div>
+</section>
+
+</div>
+<script type="module" src="./status.js"></script>
+</body>
+</html>
