@@ -136,6 +136,9 @@ vectors() {
   # constant is hand-written and no generator ever sees it, which is how a live receipt digest reached
   # demo/app.js and passed everything.
   cargo xtask check-live-values || return 1
+  # H-36: the deployment record against the files it describes. Offline, like everything in
+  # this group; what compares against the chain is scripts/live-values-from-chain.py.
+  cargo xtask check-record || return 1
 }
 
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).
