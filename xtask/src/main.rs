@@ -23,6 +23,7 @@
 
 mod demo;
 mod live_values;
+mod record;
 mod spec;
 
 use std::collections::BTreeMap;
@@ -85,6 +86,11 @@ fn main() {
         Some("check-live-values") => {
             live_values::check_synthetic_surface(&repo_root());
         }
+        // The deployment record against the files it describes (H-36). Separate from the live-values
+        // check because that one reads values and this one reads the prose and tables around them.
+        Some("check-record") => {
+            record::check_record(&repo_root());
+        }
         // E-14's demo fixtures (D-126). A separate command: the demo's scenes are not conformance
         // vectors, and regenerating one must not be able to rewrite the other.
         Some("gen-demo") => {
@@ -98,6 +104,7 @@ fn main() {
             eprintln!("usage: cargo xtask gen-vectors [destination directory]");
             eprintln!("       cargo xtask gen-demo [destination directory]");
             eprintln!("       cargo xtask check-live-values");
+            eprintln!("       cargo xtask check-record");
             if let Some(cmd) = other {
                 eprintln!("unknown command: {cmd}");
             }
