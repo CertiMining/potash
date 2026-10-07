@@ -102,8 +102,10 @@ export const EXPLANATIONS = [
     title: "What you are looking at",
     body:
       "A read-only view of a log that is running. Every number below was read from Solana devnet by " +
-      "your browser just now, using the same verifier a counterparty would run. This page holds no " +
-      "key, publishes nothing, and cannot change anything.",
+      "your browser just now, with the account decoder the verifier ships. It reads the chain and " +
+      "decodes what it finds; it walks no proof and checks no signature, so nothing here is " +
+      "verification — Scene 2 is. This page holds no key, publishes nothing, and cannot change " +
+      "anything.",
   },
   {
     id: "lag",

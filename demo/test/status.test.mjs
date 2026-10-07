@@ -101,6 +101,24 @@ test("no explanation claims more than the architecture carries", () => {
   }
 });
 
+test("neither the page nor the tour claims to verify anything", () => {
+  // The page runs the verifier's account decoder, not its verification path: it walks no proof and
+  // checks no signature. The first draft said "the same verifier a counterparty would run", which
+  // invites a reader to believe verification is happening here. It is not, and Scene 2 is where it is.
+  const html = readFileSync(join(DEMO, "status.html"), "utf8");
+  const tour = EXPLANATIONS.map((e) => `${e.title} ${e.body}`).join(" ");
+  for (const [where, text] of [["status.html", html], ["the tour", tour]]) {
+    assert.ok(
+      /walks no proof and checks no signature/.test(text),
+      `${where} does not say what it declines to check`,
+    );
+    assert.ok(
+      !/same verifier a counterparty would run/.test(text),
+      `${where} claims to be the verifier a counterparty runs, and it is the decoder half`,
+    );
+  }
+});
+
 test("the page says dual is the receipt's own claim, and says devnet", () => {
   const html = readFileSync(join(DEMO, "status.html"), "utf8");
   assert.match(html, /Nothing here checks a Bitcoin\s+block header against Bitcoin/);
