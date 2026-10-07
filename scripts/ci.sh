@@ -352,8 +352,9 @@ ts() {
   check "ts vectors and packages" npm --prefix ts test
   # E-14's demo shares this group because it shares the runtime and the verifier it is built on: the
   # footprint Scene 1 diffs is round-tripped through the verifier's own account decoder, so a layout
-  # that drifted from §2.4 fails here rather than on screen.
-  check "demo fixtures and footprint" node --test "demo/test/*.test.mjs"
+  # that drifted from §2.4 fails here rather than on screen. E-17's status page is in the same glob,
+  # and its tests are about what the page says when a read fails rather than about any layout.
+  check "demo fixtures, footprint and status" node --test "demo/test/*.test.mjs"
   group_result ts
 }
 

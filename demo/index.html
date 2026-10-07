@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%91%BE%3C/text%3E%3C/svg%3E">
 <title>CertiMining — three scenes</title>
 <script type="importmap">
 {
@@ -17,11 +18,16 @@
     --ink: #17191c; --paper: #fbfaf8; --rule: #d8d4cc; --muted: #5d6066;
     --differs: #b4531a; --differs-bg: #fdeee2; --good: #1d6b3f; --bad: #9c2323;
     --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* The mark, until there is a real one. A wash, not a highlighter: enough to stop a
+       box blending into the page, not enough to compete with the bytes. */
+    --accent: #6b4fa8; --accent-wash: color-mix(in srgb, var(--accent) 9%, transparent);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --ink: #e8e6e1; --paper: #16181b; --rule: #33373d; --muted: #9ba0a8;
       --differs: #f0a06a; --differs-bg: #3a2515; --good: #74c69d; --bad: #e58b8b;
+    --accent: #b49ae8; --accent-wash: color-mix(in srgb, var(--accent) 14%, transparent);
+      --accent: #b49ae8; --accent-wash: color-mix(in srgb, var(--accent) 14%, transparent);
     }
   }
   :root[data-theme="dark"] {
@@ -46,8 +52,8 @@
     color: var(--muted); display: block; margin-bottom: .45rem;
   }
   .verdict {
-    margin: 1rem 0; padding: .8rem 1rem; border-left: 3px solid var(--rule);
-    background: color-mix(in srgb, var(--ink) 4%, transparent); font-size: .95rem;
+    margin: 1rem 0; padding: .8rem 1rem; border-left: 3px solid var(--accent);
+    background: var(--accent-wash); font-size: .95rem;
   }
   .verdict.good { border-left-color: var(--good); }
   .verdict.bad { border-left-color: var(--bad); font-weight: 600; }
@@ -80,7 +86,8 @@
     padding-left: .8rem; margin: .8rem 0;
   }
   .limit {
-    font-size: .88rem; background: color-mix(in srgb, var(--ink) 5%, transparent);
+    font-size: .88rem; background: var(--accent-wash);
+    border-left: 3px solid var(--accent);
     padding: .85rem 1rem; margin: 1.25rem 0 0;
   }
   .limit strong { font-variant: all-small-caps; letter-spacing: .04em; }
