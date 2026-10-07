@@ -186,15 +186,19 @@ described rather than an argument that it will.
 | 20729 | `0x93d90db1…8984c1` | 507274820 | Bitcoin block 969,809 | `anchors/epochs/20729.ots` | `dual` |
 | 20730 | `0xc37e64d3…6c92d5` | 507274885 | Bitcoin block 969,869 | `anchors/epochs/20730.ots` | `dual` |
 | 20731 | `0x4a37066f…890d15` | 507636283 | Bitcoin block 969,968 | `anchors/epochs/20731.ots` | `dual` |
-| 20732 | `0xcfa92cc7…1ae465` | 508282376 | *pending* | *not yet committed* | `single` |
-| 20733 | `0xdc1aa505…f4b513` | 508282423 | *pending* | *not yet committed* | `single` |
+| 20732 | `0xcfa92cc7…1ae465` | 508282376 | Bitcoin block 970,294 | `anchors/epochs/20732.ots` | `dual` |
+| 20733 | `0xdc1aa505…f4b513` | 508282423 | Bitcoin block 970,294 | `anchors/epochs/20733.ots` | `dual` |
 
-**Epochs 20732 and 20733 are mid-cycle, and the table says so rather than waiting until the rows look
-finished.** Both were published and stamped on day 20733; their OpenTimestamps receipts carry calendar
-attestations only, so `attach_anchor_receipt` has not run, `receipt_digest` is still zero on chain for
-both and they read `single`. That is D-112's two stages in the state between them, and INV-ANCH-05's
-honest degradation: `single` here means no Bitcoin-anchored receipt exists for those epochs yet, which
-is true. Epoch 20731 sat in this state for two days and left it on day 20733, at block 969,968.
+**No epoch is mid-cycle: every published epoch now reads `dual`.** 20732 and 20733 were published and
+stamped early on day 20733 and attached later the same day, both at block 970,294 — they were stamped
+minutes apart and share a block, which the wait is not a constant and cycles four and five also showed.
+Epoch 20731 sat between the two stages for two days and left it on day 20733, at block 969,968.
+
+That is the state on the day this was written and it is not a property of the design. D-112 spends the
+one write-once opportunity on the upgraded receipt, so every newly published epoch reads `single` for
+the hours between publication and a Bitcoin block, and the table will show `single` again the next time
+an epoch is published. INV-ANCH-04 budgets that latency; INV-ANCH-05 forbids reporting `dual` on a
+calendar's promise.
 Each receipt is committed and its row completed once a block confirms it, because `receipt_digest` is
 write-once (INV-ANCH-03) and the one opportunity is spent on the upgraded form.
 
@@ -263,9 +267,8 @@ epoch, `cargo xtask check-live-values` accepts decimals of six digits or more, a
 and compares both fields. Epoch numbers are still absent on purpose: a UTC day index is a date rather than
 something the deployment produced, and the demo is legitimately about epoch 20723.
 
-Every **attached** receipt — epochs 20723 to 20731 — is committed and every one is the upgraded form, so
-`ots verify` reaches a Bitcoin block header rather than a calendar's promise. Epochs 20732 and 20733 are
-stamped and neither committed nor attached, which the rows above say.
+Every **attached** receipt — epochs 20723 to 20733, which is all of them — is committed and every one is
+the upgraded form, so `ots verify` reaches a Bitcoin block header rather than a calendar's promise.
 
 **This sentence has been wrong in both directions, and that is a fact about hand-kept records rather
 than about this one.** It once said "every receipt" without qualification, which overstated (PR #57,
@@ -287,6 +290,8 @@ document's word:
 | 20729 | `anchors/epochs/20729.ots` | 2,599 | `9df34f124391509df8949f2efe359aa253ca721f950ff1fdbde7b27e0dd9436f` | `0x770178b7ca09fa52b0d99aeb6aa82cc36fd3c24f5fa0a5e6051ab432a7ee299c` |
 | 20730 | `anchors/epochs/20730.ots` | 2,634 | `ffebe180c51d1b0ababb6d16c069d736a9891bc0c6640af16789689976b1376d` | `0xa4020a0c14087b0316d0bf9ae623c320dd9aa2fa63fe3a307e7d5ede46b23be7` |
 | 20731 | `anchors/epochs/20731.ots` | 3,707 | `53347acb6079a911dc9623cde6b6ea4157208015b99eecde93119cb14c38da5e` | `0x59e12c7770ec794367cbc0f069518f900074f523d97b785700069f12f9b7ce16` |
+| 20732 | `anchors/epochs/20732.ots` | 3,849 | `149641b35a58472e9205c53b5d2ed5bc1809ff9b8841772751ea2dc7bf45cba8` | `0x6fc016569fd8e8433ed6e53b8d0a8a5463f877833e7990e36d25e66f1c531630` |
+| 20733 | `anchors/epochs/20733.ots` | 3,884 | `820f3f8b8f3a89c707e487ef9ccf74d2200a87a1994b4accfe7c57e227464d42` | `0xf9cc11346e1ee774353071c712aa470f314dc6ded91059856be5fd7932f4a2af` |
 
 **The wait is not a constant and the table shows it.** Across five cycles the confirmations landed
 anywhere from six blocks to a few hundred after publication, and two epochs stamped minutes apart
