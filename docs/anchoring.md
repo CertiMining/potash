@@ -186,6 +186,8 @@ described rather than an argument that it will.
 | 20729 | `0x93d90db1…8984c1` | 507274820 | Bitcoin block 969,809 | `anchors/epochs/20729.ots` | `dual` |
 | 20730 | `0xc37e64d3…6c92d5` | 507274885 | Bitcoin block 969,869 | `anchors/epochs/20730.ots` | `dual` |
 | 20731 | `0x4a37066f…890d15` | 507636283 | *pending* | *not yet committed* | `single` |
+| 20732 | `0xcfa92cc7…1ae465` | 508282376 | *pending* | *not yet committed* | `single` |
+| 20733 | `0xdc1aa505…f4b513` | 508282423 | *pending* | *not yet committed* | `single` |
 
 **Epoch 20731 is mid-cycle, and the table says so rather than waiting until the row looks finished.**
 It was published and stamped on day 20731; its OpenTimestamps receipt carries calendar attestations
@@ -204,22 +206,25 @@ calendar's attestation at block 969,627, and naming one of two is the convention
 Neither height is checked against Bitcoin by anything in this repository, which is H-12
 ([#48](https://github.com/CertiMining/potash/issues/48)).
 
-**A day has been missed three times. The first two were paid the next day; the third is open.** Nothing
-published on day 20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing
-published on day 20729 either; on day 20730 both 20729 and 20730 were published and stamped, so
-`last_epoch` was the current UTC day index again on day 20731. Nothing was published on day 20732, and
-that day is still owed: `last_epoch` stands at 20731, and the next publication this program will accept
-is 20732, whatever day it arrives on. `sequence_lag` reports the distance; this file does not record it,
-because a distance written here ages into a false one. An earlier version of this paragraph said the log
-had caught up both times and stayed caught up, which was true when it was written and is not true now —
-a claim about a live sequence goes stale on its own, with nothing editing it.
+**A day has been missed three times, and all three were paid the day after.** Nothing published on day
+20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing published on day
+20729 either; on day 20730 both 20729 and 20730 were published and stamped. Nothing published on day
+20732; on day 20733 both 20732 and 20733 were published and stamped, so `last_epoch` is the current UTC
+day index again.
+
+**This paragraph has now gone stale twice, which is the argument for not writing the distance down.** It
+read "missed twice, and both times the log caught up" for two days after the third miss made it false,
+and the correction that replaced it — "the third is open" — was itself false within the hour, because the
+day was paid. Nothing edited either sentence; the sequence moved underneath them. So the distance from
+`last_epoch` to the current day is not recorded here at all: `sequence_lag` reports it, against a clock,
+which is where §2.3 and INV-IFACE-01 put the clock.
 
 **Epoch 20731 was published with the key D-138 moved out of the repository, and that is recorded rather
 than quietly corrected.** The cycle for that day was run from a working clone still on a feature branch
 from 3 October, which predates the custody fix, so the harness it ran held the old constant. 20731's
 published root reproduces exactly from `[0x5a; 32]` and this repository alone — checked, not assumed.
 `publish_checkpoint` writes once per epoch, so it stands. The affected range is 20723 through 20731,
-and the rotation is unproven until an epoch is published under the replacement key. `publish_checkpoint` takes `last_epoch + 1` and nothing else, so a skipped day
+and the rotation held from epoch 20732 on. **That is now shown rather than asserted.** 20732 and 20733 were published from a clean checkout of `main` with the master key read from outside the repository, and the harness that built them refuses `[0x5a; 32]` outright, so neither root could have come from the exposed constant. Epochs 20723 through 20731 remain affected and stand as published. `publish_checkpoint` takes `last_epoch + 1` and nothing else, so a skipped day
 does not vanish — it stays owed, and every later epoch is published one day late until it is paid
 back. Epochs 20726 and 20727 share a Bitcoin block because they were stamped minutes apart and the
 calendars aggregated them into the same one.
