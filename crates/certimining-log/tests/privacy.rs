@@ -799,6 +799,16 @@ fn v_z_03_a_proof_leaks_nothing_about_a_sibling() {
 
 /// Every real submission's slot, against its submission order, its issuer and its time in the epoch.
 fn position_correlations(epochs: u64) -> [f64; 3] {
+    // **The function defends its own sample (H-33).** Pinning `EPOCHS_VZ04` stops the constant being
+    // edited; it does nothing about a caller that passes something else, and the bound this returns
+    // against is computed from a sample of 400. A review found nine epochs green under the unchanged
+    // bound. The literal is deliberate: taking it from the constant would make the check restate the
+    // thing it is checking, which is the defect this unit spent five rounds on.
+    assert!(
+        epochs >= 400,
+        "V-Z-04's bound is computed from a sample of 400 epochs and this run has {epochs}; a smaller \
+         sample does not widen the bound, it just measures less"
+    );
     let mut slots: Vec<f64> = Vec::new();
     let mut orders: Vec<f64> = Vec::new();
     let mut issuers: Vec<f64> = Vec::new();
@@ -923,6 +933,17 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
         slots.len(),
         epochs,
         REAL_PER_EPOCH
+    );
+
+    // The sample that actually arrived, not the one the loop was asked for (H-33). Each epoch owes
+    // `REAL_PER_EPOCH` placements and the per-epoch check above enforces that one epoch at a time;
+    // this is the total those are supposed to add up to.
+    let owed = epochs as usize * REAL_PER_EPOCH;
+    assert_eq!(
+        slots.len(),
+        owed,
+        "{epochs} epochs of {REAL_PER_EPOCH} submissions owe {owed} observations and {} arrived",
+        slots.len()
     );
 
     [
