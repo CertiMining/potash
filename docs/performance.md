@@ -12,7 +12,29 @@ turned out not to be reproducible.
 | Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
 | Inclusion proof verification | **none** (D-137) | the same two | 0.0023–0.0043 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
-| Full verification including per-record Ed25519 | **none in v0.1** | nothing; printed | 399 ms |
+| Full verification including per-record Ed25519 | **none in v0.1** | nothing asserts it; `benches/thresholds.rs` prints it | 465–486 ms on the development machine, 7 Oct 2026; 399 ms when the row was written, which does not reproduce — see below |
+
+## The Ed25519 row moved and this does not explain why
+
+The row was written at `bc85524` reading **399 ms**. Two runs on 7 Oct 2026, on an Apple M2 with 16 GiB
+under macOS 25.6.0, measured **460.3–474.0** and **464.7–486.0 ms**. The two runs agree with each other
+and neither reproduces 399.
+
+What was checked before recording the new figure, because a changed measurement usually means a changed
+measurement rather than changed code: the record count is `RECORDS = 10_000` in both, `chain_of(true)`
+built all ten thousand in both, and both walk the same chain through `walk::<DalekVerifier>`. So the two
+numbers are over the same workload with the same verifier.
+
+What changed in between is the harness around it. E-13's fourth round moved every fixture's construction
+to before the first `measure`, because pinning the fixtures a function happens to build first protects
+only those — a review had made the signed branch a hundredth of its size and the row still printed
+"10,000 records". A consequence nobody was aiming at is that the signed chain is no longer built
+immediately before it is walked, so it is not hot in cache the way it was at `bc85524`. That is a
+plausible cause and it is **not** a demonstrated one: establishing it would mean reordering the harness
+to see the number move, which would undo the fix that produced the honest figure.
+
+So the new number is recorded, the old one is kept beside it, and the gap is stated rather than
+reconciled. §4.4a asserts nothing here (D-137), so nothing gates on either.
 
 ## The wall-clock bounds are gone (D-137)
 
