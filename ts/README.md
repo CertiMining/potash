@@ -6,9 +6,19 @@ with the one exception the provenance section below states. No other implementat
 specification was read while it was built, which is the only reason agreement between the two
 carries any information.
 
-The document's version label has moved between rounds, so the text this was last checked against is
-identified by content: SHA-256 `3e59f5ace0d70616df88d51f7bd7f39f78636c76b08c9b93027997c0e8bb90b7`,
-754 lines.
+The document's version label has moved between rounds, so this identified the text it was last read
+against by content. **That pin does not resolve, and saying so is the point of pinning by content.**
+It named SHA-256 `3e59f5ace0d70616df88d51f7bd7f39f78636c76b08c9b93027997c0e8bb90b7` at 754 lines, and
+no committed version of `../docs/TCU-02_CertiMining_Anchored_Log_v0.1.md` has that hash, or 754
+lines, in any commit on any branch — most likely it was taken from a working copy outside the
+repository. A reader cannot obtain the text it names, which makes the pin unusable for the purpose it
+was written for.
+
+The specification as committed today is SHA-256 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`,
+831 lines. This verifier has **not** been re-read against it line by line, and that is not what
+carries the conformance claim anyway: what does is the committed vectors in `../vectors/`, which this
+implementation reproduces on every push in CI'"'"'s `ts` group, against an engine built from the same
+document. A divergence between the two implementations fails there.
 
 It satisfies INV-DISC-01, INV-DISC-03 and INV-IFACE-01 and reproduces every committed vector. It
 satisfies INV-DISC-02 as far as a §2.5 package allows: the chain-segment walk that invariant asks
