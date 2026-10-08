@@ -2,19 +2,30 @@
  * §4.1's KAT-01 and KAT-02, which pin the two primitives this verifier takes from a library.
  * `npm test` runs this file first and stops if it fails, as §4.1 requires.
  *
- * What is and is not a published constant here is marked. The specification names published
- * vectors for the 135/136/137-byte rate boundary without carrying them, and neither the document
- * nor `vectors/` contains them, so those three lengths are checked against Node's own SHA-3
- * implementation instead: `keccak_256` and `sha3_256` in this library are one sponge over one
- * Keccak-f[1600] permutation at one rate, differing only in the pad byte, so agreement with
- * OpenSSL at exactly those lengths exercises the absorption boundary the row is about. It is a
- * cross-implementation check, not the published KAT, and is labelled as such (SPEC-DEFECTS.md).
+ * What is and is not a published constant here is marked.
+ *
+ * **The rate-boundary cases are published values, read from the Keccak team's own file.** This
+ * file previously said the repository did not carry them and checked those lengths against Node's
+ * SHA-3 instead, which is a self-consistency check: a library computing Keccak-256 wrongly at
+ * exactly those lengths, consistently, would have passed it — and the rate boundary is where an
+ * absorption bug lives (H-09). The repository has carried
+ * `crates/certimining-core/tests/data/ShortMsgKAT_256.txt` since E-01, vendored byte for byte from
+ * the Keccak team's round-3 archive with its provenance and hash recorded beside it. E-11 was
+ * written from the specification without reading the Rust tree, and a vendored third-party data
+ * file was caught in that net; reading it costs nothing, because it is the Keccak team's bytes and
+ * not this project's implementation of anything.
+ *
+ * The SHA-3 comparison and the streaming-versus-one-shot check are kept as the separate properties
+ * they are, below the published values rather than in place of them.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { keccak_256, sha3_256 } from "@noble/hashes/sha3.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { fromHex, toHex, utf8 } from "../src/bytes.ts";
 import { ed25519Verify, keccak256 } from "../src/hash.ts";
 
@@ -31,7 +42,57 @@ test("KAT-01: Keccak-256 against published vectors", () => {
   );
 });
 
-test("KAT-01: the rate boundary at 135, 136 and 137 bytes", () => {
+/**
+ * The five cases §4.1 names, read from the Keccak team's round-3 file exactly as the Rust side reads
+ * them: `Len` counts bits, and `Len = 0` prints `Msg = 00` although the message is empty.
+ *
+ * Read strictly. Each length must appear exactly once with its message and digest on the two lines
+ * that follow, and anything else throws rather than silently yielding fewer cases — a parser that
+ * returns an empty list makes a loop over it pass, which is the shape of defect this row exists to
+ * catch in the first place.
+ */
+const KAT_FILE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../crates/certimining-core/tests/data/ShortMsgKAT_256.txt",
+);
+
+function publishedCases(): { bits: number; msg: Uint8Array; md: string }[] {
+  const lines = readFileSync(KAT_FILE, "utf8").split("\n").map((l) => l.replace(/\r$/, ""));
+  return [0, 8, 1080, 1088, 1096].map((bits) => {
+    const at = lines.reduce<number[]>((acc, l, i) => (l === `Len = ${bits}` ? [...acc, i] : acc), []);
+    const [found] = at;
+    if (at.length !== 1 || found === undefined) {
+      throw new Error(`ShortMsgKAT_256.txt: "Len = ${bits}" appears ${at.length} times, expected once`);
+    }
+    const msgLine = lines[found + 1] ?? "";
+    const mdLine = lines[found + 2] ?? "";
+    if (!msgLine.startsWith("Msg = ") || !mdLine.startsWith("MD = ")) {
+      throw new Error(`ShortMsgKAT_256.txt: Len = ${bits} is not followed by Msg and MD`);
+    }
+    const hex = msgLine.slice(6).trim();
+    const msg = bits === 0 ? new Uint8Array(0) : fromHex(`0x${hex}`);
+    if (msg.length * 8 !== bits) {
+      throw new Error(`ShortMsgKAT_256.txt: Len = ${bits} carries ${msg.length} bytes`);
+    }
+    return { bits, msg, md: `0x${mdLine.slice(5).trim().toLowerCase()}` };
+  });
+}
+
+test("KAT-01: the rate boundary, against the Keccak team's published digests", () => {
+  const cases = publishedCases();
+  assert.equal(cases.length, 5, "§4.1 names five lengths");
+  for (const c of cases) {
+    assert.equal(toHex(keccak256(c.msg)), c.md, `published Keccak-256 at Len = ${c.bits} bits`);
+    // The same message absorbed in two pieces, cut at the 136-byte rate, must agree (D-05).
+    const cut = Math.min(136, c.msg.length);
+    const streamed = keccak_256.create();
+    streamed.update(c.msg.subarray(0, cut));
+    streamed.update(c.msg.subarray(cut));
+    assert.equal(toHex(streamed.digest()), c.md, `split at byte ${cut}, Len = ${c.bits} bits`);
+  }
+});
+
+test("KAT-01: Keccak-256 and SHA3-256 are one sponge with different padding", () => {
   for (const len of [1, 135, 136, 137, 272]) {
     const input = new Uint8Array(len).map((_, i) => (i * 37 + 11) & 0xff);
     // Same sponge, same rate, different pad byte: OpenSSL is the independent side.
