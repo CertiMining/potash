@@ -267,13 +267,15 @@ not by running the suite again.
 
 ## What none of this covers
 
-**The targets themselves are not linted.** `checks` runs
-`cargo clippy --workspace --all-targets -- -D warnings`, which does cover test code — P-03 was caught by
-it on first writing — but `fuzz/` is a separate workspace and `--workspace` does not reach it. The same
-two-graph argument that made `deny` check the fuzz manifest applies to clippy, and it has not been
-applied: §4.5 asks nothing about lints on the targets, and adding `-D warnings` over
-`libfuzzer_sys::fuzz_target!` expansions is scope this unit did not take. It is one `check` line in
-`checks()` if that changes.
+**The targets are linted, over the second graph (H-18).** `checks` runs
+`cargo clippy --workspace --all-targets -- -D warnings`, which covers test code — P-03 was caught by
+it on first writing — but `fuzz/` is a separate workspace and `--workspace` does not reach it, the same
+gap that made `deny` check the fuzz manifest as a second graph (D-135). `checks` now runs
+`cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings` as well.
+
+Two things were unknown when this was filed and are now answered: the `libfuzzer_sys::fuzz_target!`
+expansions are lint-clean as written, and the run takes about sixteen seconds, which is cheap enough
+for the push pipeline rather than the nightly one.
 
 Fuzzing and properties establish that code does not panic and that stated relations hold on generated
 input. They do not establish that the relations are the right ones, and they are not a cryptographic

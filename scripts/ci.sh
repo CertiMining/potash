@@ -49,6 +49,49 @@ licence_headers() {
   echo "licence headers: every tracked .rs file carries one"
 }
 
+# **A lint suppression is a decision, so it is recorded and nothing else may appear (H-03).**
+#
+# H-03 was filed believing clippy had a blind spot: E-07's review saw two warnings in a test build
+# that the clippy runs did not report. That does not reproduce. With a dead constant placed in a
+# compiled test target, `cargo clippy --workspace --all-targets --no-default-features --features
+# solana -- -D warnings` fails outright, while `cargo test` for the same target reports it as a
+# warning. Clippy is the stricter of the two, which is the arrangement `checks` assumes.
+#
+# What is invisible is anything under an `allow`, and there are exactly two in the tree, each for a
+# stated reason. The risk is not these two; it is a third added quietly, because `allow(dead_code)`
+# at the top of a file silences the whole file forever. So the set is pinned here: a new suppression
+# fails this check until it is added below with its reason, which is the review the attribute itself
+# would not get.
+SUPPRESSIONS="crates/certimining-log/tests/common/mod.rs xtask/src/spec.rs"
+lint_suppressions() {
+  local found expected unexpected=0 f
+  found="$(git ls-files '*.rs' | xargs grep -lE 'allow\((dead_code|unused)' 2>/dev/null | sort | tr '\n' ' ')"
+  expected="$(printf '%s\n' $SUPPRESSIONS | sort | tr '\n' ' ')"
+  for f in $found; do
+    case " $expected " in
+      *" $f "*) ;;
+      *)
+        echo "lint suppression not recorded in scripts/ci.sh: $f" >&2
+        unexpected=$((unexpected + 1))
+        ;;
+    esac
+  done
+  for f in $expected; do
+    case " $found " in
+      *" $f "*) ;;
+      *)
+        echo "recorded suppression no longer present, so the record is stale: $f" >&2
+        unexpected=$((unexpected + 1))
+        ;;
+    esac
+  done
+  if [ "$unexpected" -ne 0 ]; then
+    echo "lint suppressions: $unexpected file(s) disagree with the recorded set (H-03)" >&2
+    return 1
+  fi
+  echo "lint suppressions: $(printf '%s\n' $expected | grep -c . ) recorded, none added"
+}
+
 file_mode() {
   local m
   m="$(stat -c '%a' "$1" 2>/dev/null)"
@@ -197,6 +240,7 @@ checks() {
   # the same severity as a failing test and costs a second to find.
   check "claims" scripts/claim-check.sh
   check "licence headers" licence_headers
+  check "lint suppressions" lint_suppressions
   check "fmt" cargo fmt --all --check
   check "clippy, no default features" cargo clippy --workspace --all-targets --no-default-features -- -D warnings
   check "clippy, default" cargo clippy --workspace --all-targets -- -D warnings
@@ -224,6 +268,9 @@ checks() {
   # needs no OpenTimestamps client and no network.
   check "client, ots feature" cargo clippy -p certimining-client --all-targets --features ots -- -D warnings
   check "anchor b" cargo test -p certimining-client --features ots --test ots
+  # H-18: `fuzz/` is its own Cargo workspace (D-131), so `--workspace` above never reaches §4.5's
+  # five targets. Sixteen seconds, and they are lint-clean, so there is no reason to leave them out.
+  check "clippy fuzz" cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
   check "bare metal core, no default features" cargo build -p certimining-core --target thumbv7em-none-eabihf --no-default-features
   check "bare metal core, default" cargo build -p certimining-core --target thumbv7em-none-eabihf
   check "bare metal log, no default features" cargo build -p certimining-log --target thumbv7em-none-eabihf --no-default-features
