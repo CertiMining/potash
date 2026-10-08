@@ -49,47 +49,55 @@ licence_headers() {
   echo "licence headers: every tracked .rs file carries one"
 }
 
-# **A lint suppression is a decision, so it is recorded and nothing else may appear (H-03).**
+# **A lint suppression is a decision, so it is recorded with its count and nothing else may appear.**
 #
-# H-03 was filed believing clippy had a blind spot: E-07's review saw two warnings in a test build
-# that the clippy runs did not report. That does not reproduce. With a dead constant placed in a
-# compiled test target, `cargo clippy --workspace --all-targets --no-default-features --features
-# solana -- -D warnings` fails outright, while `cargo test` for the same target reports it as a
-# warning. Clippy is the stricter of the two, which is the arrangement `checks` assumes.
+# H-03 was filed believing clippy had a blind spot. It does not: with a dead constant in a compiled
+# test target, `cargo clippy --workspace --all-targets --no-default-features --features solana --
+# -D warnings` fails outright while `cargo test` only warns. What is invisible is anything under an
+# `allow`, because that attribute at the top of a file silences it forever.
 #
-# What is invisible is anything under an `allow`, and there are exactly two in the tree, each for a
-# stated reason. The risk is not these two; it is a third added quietly, because `allow(dead_code)`
-# at the top of a file silences the whole file forever. So the set is pinned here: a new suppression
-# fails this check until it is added below with its reason, which is the review the attribute itself
-# would not get.
-SUPPRESSIONS="crates/certimining-log/tests/common/mod.rs xtask/src/spec.rs"
+# **The first version of this check could be defeated by the strongest suppression there is.** It
+# matched only `allow(dead_code` and `allow(unused`, so a review added `#![allow(warnings)]` to a
+# tracked file and both this check and `cargo clippy -- -D warnings` accepted it. It also recorded
+# only file names, so a second suppression inside an already-listed file was free, and it matched
+# the text anywhere on a line, so a comment mentioning one counted as one.
+#
+# So: any `allow(...)` attribute, at the start of a line, counted per file, against a recorded count.
+SUPPRESSIONS="crates/certimining-log/tests/common/mod.rs:1 xtask/src/spec.rs:1"
 lint_suppressions() {
-  local found expected unexpected=0 f
-  found="$(git ls-files '*.rs' | xargs grep -lE 'allow\((dead_code|unused)' 2>/dev/null | sort | tr '\n' ' ')"
-  expected="$(printf '%s\n' $SUPPRESSIONS | sort | tr '\n' ' ')"
-  for f in $found; do
-    case " $expected " in
-      *" $f "*) ;;
+  local wrong=0 f n expected found_files="" entry
+  # `#[allow(` or `#![allow(` with only whitespace before it, so prose about one is not one.
+  while IFS=: read -r f n; do
+    [ -n "$f" ] || continue
+    found_files="$found_files $f:$n"
+  done < <(git ls-files '*.rs' | xargs grep -cE '^[[:space:]]*#!?\[allow\(' 2>/dev/null | grep -v ':0$')
+  for entry in $found_files; do
+    f="${entry%%:*}"
+    n="${entry##*:}"
+    expected=""
+    for e in $SUPPRESSIONS; do [ "${e%%:*}" = "$f" ] && expected="${e##*:}"; done
+    if [ -z "$expected" ]; then
+      echo "lint suppression not recorded in scripts/ci.sh: $f carries $n" >&2
+      wrong=$((wrong + 1))
+    elif [ "$expected" != "$n" ]; then
+      echo "lint suppressions in $f: $n present, $expected recorded" >&2
+      wrong=$((wrong + 1))
+    fi
+  done
+  for e in $SUPPRESSIONS; do
+    case " $found_files " in
+      *" $e "*) ;;
       *)
-        echo "lint suppression not recorded in scripts/ci.sh: $f" >&2
-        unexpected=$((unexpected + 1))
+        echo "recorded suppression no longer present as written, so the record is stale: $e" >&2
+        wrong=$((wrong + 1))
         ;;
     esac
   done
-  for f in $expected; do
-    case " $found " in
-      *" $f "*) ;;
-      *)
-        echo "recorded suppression no longer present, so the record is stale: $f" >&2
-        unexpected=$((unexpected + 1))
-        ;;
-    esac
-  done
-  if [ "$unexpected" -ne 0 ]; then
-    echo "lint suppressions: $unexpected file(s) disagree with the recorded set (H-03)" >&2
+  if [ "$wrong" -ne 0 ]; then
+    echo "lint suppressions: $wrong disagreement(s) with the recorded set (H-03)" >&2
     return 1
   fi
-  echo "lint suppressions: $(printf '%s\n' $expected | grep -c . ) recorded, none added"
+  echo "lint suppressions: $(printf '%s\n' $SUPPRESSIONS | grep -c .) recorded, counts match, none added"
 }
 
 file_mode() {

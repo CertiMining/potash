@@ -13,11 +13,29 @@ import { lagReport, epochRows, summarise, EXPLANATIONS } from "./status-model.js
 
 const $ = (id) => document.getElementById(id);
 
+/**
+ * **Through `textContent`, because the text is the endpoint's (review of #107, M1).** This built the
+ * failure row with `innerHTML` and an interpolated `e.message`, so a response-controlled error could
+ * put markup and event handlers into this page's origin. The message is worth showing — it is how a
+ * reader tells a dead endpoint from a dead log — and nothing about showing it requires parsing it as
+ * HTML.
+ */
 function failure(message) {
   $("lag-note").className = "note bad";
   $("lag-note").textContent = message;
-  $("rows").innerHTML = `<tr><td colspan="4">${message}</td></tr>`;
-  $("counts").innerHTML = "";
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = 4;
+  cell.textContent = message;
+  row.append(cell);
+  $("rows").replaceChildren(row);
+  $("counts").replaceChildren();
+}
+
+/** Everything interpolated into markup goes through this, whatever this page believes its source is. */
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
 }
 
 function short(hex) {
@@ -65,16 +83,18 @@ async function read() {
     ["dual", counts.dual, "with a receipt attached"],
     ["single", counts.single, "awaiting anchor B"],
     ...(counts.unanswered > 0 ? [["unanswered", counts.unanswered, "no account returned"]] : []),
-  ].map(([k, n, label]) => `<div><span class="n">${n}</span><span class="k">${label}</span></div>`).join("");
+  ].map(([k, n, label]) => `<div><span class="n">${esc(n)}</span><span class="k">${esc(label)}</span></div>`).join("");
 
   $("rows").innerHTML = rows.map((r) => {
     if (r.state === "unanswered") {
-      return `<tr><td class="mono">${r.epoch}</td><td colspan="3"><span class="pill unanswered">unanswered</span> — ${r.detail}</td></tr>`;
+      // `detail` is this page's own prose, but it is built beside values that are not, so it goes
+      // through the same escaping as everything else rather than relying on where it came from.
+      return `<tr><td class="mono">${esc(r.epoch)}</td><td colspan="3"><span class="pill unanswered">unanswered</span> — ${esc(r.detail)}</td></tr>`;
     }
     return `<tr>
-      <td class="mono">${r.epoch}</td>
-      <td class="mono" title="${r.root}">${short(r.root)}</td>
-      <td class="mono">${r.publishedSlot}</td>
+      <td class="mono">${esc(r.epoch)}</td>
+      <td class="mono" title="${esc(r.root)}">${esc(short(r.root))}</td>
+      <td class="mono">${esc(r.publishedSlot)}</td>
       <td><span class="pill ${r.state}">${r.state}</span></td>
     </tr>`;
   }).join("");
