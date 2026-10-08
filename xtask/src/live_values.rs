@@ -99,14 +99,13 @@ pub fn refuse_live_values(root: &Path, files: &[(String, String)]) {
             if !lower.contains(&v.lower) {
                 continue;
             }
-            // An exemption may be recorded under the artifact's own file name, which is how the
-            // generator knows it, or under its repository path, which is how the tree walk does.
-            // Either spelling exempts the same file, so a pair written once keeps working whichever
-            // side finds it.
-            let basename = name.rsplit('/').next().unwrap_or(name).to_string();
-            if allowed.contains(&(name.clone(), v.lower.clone()))
-                || allowed.contains(&(basename, v.lower.clone()))
-            {
+            // **The exact path, and nothing else (H-25 review, H3).** A basename was accepted too,
+            // so that an exemption written for a generated file kept working when the tree walk
+            // found it under a path. One exemption for `(allowed.json, value)` therefore exempted
+            // that value in every other `allowed.json` anywhere in the surface — a review passed two
+            // different files through one entry. Both callers now key by the artifact's destination
+            // in the repository, so one spelling is enough and it is the specific one.
+            if allowed.contains(&(name.clone(), v.lower.clone())) {
                 continue;
             }
             found.push(format!("  {name} carries {} ({})", v.value, v.what));
@@ -275,26 +274,48 @@ pub fn check_synthetic_surface(root: &Path) {
 
 /// Everything readable as text under `dir`, keyed by the name the exemption list uses: the file's own
 /// name for a generated artifact, and its repository-relative path otherwise.
+/// **Every failure here is loud, because a quiet one reads as "carries nothing" (H-09's class).**
+///
+/// This function had four ways to drop a file silently: a directory it could not open, an entry it
+/// could not stat, a file that was not valid UTF-8, and anything whose name began with a dot. A
+/// review put a listed live value after one invalid UTF-8 byte and the artifact vanished from the
+/// scan while a readable sibling kept the directory's "contributed files" assertion satisfied. A
+/// gate that maps "I could not look" onto "there is nothing there" is the defect this repository
+/// has named fifteen times.
+///
+/// So: an unreadable directory or entry panics, and a file is read as **bytes** and searched as
+/// bytes. The values are base58 and hex, which are ASCII, so `from_utf8_lossy` preserves every one
+/// of them while replacing only the sequences that were never going to match anything.
 fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
+    let entries = std::fs::read_dir(dir).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e}. A directory in the synthetic surface that cannot be \
+             read is not a directory that carries nothing",
+            dir.display()
+        )
+    });
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("{}: an entry could not be read: {e}", dir.display()));
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         // Build output is not committed and is a copy of dependencies that legitimately hold nothing
-        // of ours; `node_modules` likewise.
-        if name == "build" || name == "node_modules" || name == "dist" || name.starts_with('.') {
+        // of ours; `node_modules` likewise. `.git` is not part of any artifact. Nothing else is
+        // skipped by name: `demo/.gitignore` is tracked, and a dot is not a reason to stop looking.
+        if name == "build" || name == "node_modules" || name == "dist" || name == ".git" {
             continue;
         }
         if path.is_dir() {
             collect(&path, root, out);
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue; // not text; nothing to read a base58 string out of
-        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+            panic!(
+                "{}: {e}. A file that cannot be read is not a file that carries nothing",
+                path.display()
+            )
+        });
+        let text = String::from_utf8_lossy(&bytes).into_owned();
         let relative = path
             .strip_prefix(root)
             .map(|p| p.to_string_lossy().into_owned())
