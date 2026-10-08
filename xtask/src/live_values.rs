@@ -99,14 +99,13 @@ pub fn refuse_live_values(root: &Path, files: &[(String, String)]) {
             if !lower.contains(&v.lower) {
                 continue;
             }
-            // An exemption may be recorded under the artifact's own file name, which is how the
-            // generator knows it, or under its repository path, which is how the tree walk does.
-            // Either spelling exempts the same file, so a pair written once keeps working whichever
-            // side finds it.
-            let basename = name.rsplit('/').next().unwrap_or(name).to_string();
-            if allowed.contains(&(name.clone(), v.lower.clone()))
-                || allowed.contains(&(basename, v.lower.clone()))
-            {
+            // **The exact path, and nothing else (H-25 review, H3).** A basename was accepted too,
+            // so that an exemption written for a generated file kept working when the tree walk
+            // found it under a path. One exemption for `(allowed.json, value)` therefore exempted
+            // that value in every other `allowed.json` anywhere in the surface — a review passed two
+            // different files through one entry. Both callers now key by the artifact's destination
+            // in the repository, so one spelling is enough and it is the specific one.
+            if allowed.contains(&(name.clone(), v.lower.clone())) {
                 continue;
             }
             found.push(format!("  {name} carries {} ({})", v.value, v.what));
@@ -221,22 +220,51 @@ pub fn check_list_shape(root: &Path) {
 /// because a hand-written page is not something a generator inspects. The gate has to look at the
 /// working tree as well as at what it is about to write.
 ///
-/// The surface is named rather than inferred. A tree-wide scan would need an allow-list holding
-/// `docs/anchoring.md`, `ANNOUNCED_PROGRAM_ID`, `README.md`, the deploy script, the cluster harnesses
-/// and the program's own `declare_id!` — every one of which holds live values because its subject is
-/// the deployment — and an allow-list that long is a gate that no longer refuses anything. What is
-/// scanned is what is synthetic by nature: the demo and the vectors.
+/// The surface is named rather than inferred, and a tree-wide scan is still the wrong shape: it would
+/// need an allow-list holding `docs/anchoring.md`, `ANNOUNCED_PROGRAM_ID`, `README.md`, the deploy
+/// script and the program's own `declare_id!` — every one of which holds live values because its
+/// subject is the deployment — and an allow-list that long is a gate that no longer refuses anything.
+///
+/// **What the named surface missed was the tests (H-25).** It was the demo and the vectors, on the
+/// argument that those are synthetic by nature. So are fixtures and constants under `ts/test/` and
+/// `crates/*/tests/`, and a review showed the bypass concretely: the already-listed publication slot
+/// `504985662`, placed in a constant in `ts/test/units.test.ts`, passed. The discipline was avoidable
+/// by choosing where to put a value, which is not a discipline.
+///
+/// Widening to the test directories cost **two** exemptions, both in `ts/test/units.test.ts`, both
+/// for §2.4's derivation check whose whole subject is the announced deployment. The cluster harnesses
+/// needed none: they reach the program through `certimining_checkpoint::ID` rather than a literal, so
+/// they carry no live value to find. The allow-list the paragraph above warns about did not appear,
+/// because what makes an artifact legitimate is its subject, and a test of a derivation has one.
+/// What is synthetic by nature: the demo, the vectors, and every test and fixture directory. Not the
+/// cluster harnesses' crate root, the deploy script or the documents whose subject is the deployment.
+const SYNTHETIC_SURFACE: [&str; 9] = [
+    "demo",
+    "vectors",
+    "ts/test",
+    "crates/certimining-core/tests",
+    "crates/certimining-log/tests",
+    "crates/certimining-client/tests",
+    "programs/certimining-checkpoint/tests",
+    "programs/core-harness/tests",
+    "benches",
+];
+
 pub fn check_synthetic_surface(root: &Path) {
     check_list_shape(root);
     let mut files: Vec<(String, String)> = Vec::new();
-    for dir in ["demo", "vectors"] {
+    // Every directory must contribute. `files.len() > 10` was the old floor, and it would have been
+    // met by eight of these nine going missing — a renamed directory is exactly how a surface stops
+    // being scanned without anyone noticing, which is the whole of H-25 in one line.
+    for dir in SYNTHETIC_SURFACE {
+        let before = files.len();
         collect(&root.join(dir), root, &mut files);
+        assert!(
+            files.len() > before,
+            "{dir} contributed no files to the synthetic surface: it was renamed, emptied or moved, \
+             and the scan would pass anything it used to hold"
+        );
     }
-    assert!(
-        files.len() > 10,
-        "the synthetic surface is {} files, which means the walk found nothing and would pass anything",
-        files.len()
-    );
     refuse_live_values(root, &files);
     println!(
         "live-values: {} files in the synthetic surface carry no value that exists on chain",
@@ -246,26 +274,48 @@ pub fn check_synthetic_surface(root: &Path) {
 
 /// Everything readable as text under `dir`, keyed by the name the exemption list uses: the file's own
 /// name for a generated artifact, and its repository-relative path otherwise.
+/// **Every failure here is loud, because a quiet one reads as "carries nothing" (H-09's class).**
+///
+/// This function had four ways to drop a file silently: a directory it could not open, an entry it
+/// could not stat, a file that was not valid UTF-8, and anything whose name began with a dot. A
+/// review put a listed live value after one invalid UTF-8 byte and the artifact vanished from the
+/// scan while a readable sibling kept the directory's "contributed files" assertion satisfied. A
+/// gate that maps "I could not look" onto "there is nothing there" is the defect this repository
+/// has named fifteen times.
+///
+/// So: an unreadable directory or entry panics, and a file is read as **bytes** and searched as
+/// bytes. The values are base58 and hex, which are ASCII, so `from_utf8_lossy` preserves every one
+/// of them while replacing only the sequences that were never going to match anything.
 fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
+    let entries = std::fs::read_dir(dir).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e}. A directory in the synthetic surface that cannot be \
+             read is not a directory that carries nothing",
+            dir.display()
+        )
+    });
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("{}: an entry could not be read: {e}", dir.display()));
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         // Build output is not committed and is a copy of dependencies that legitimately hold nothing
-        // of ours; `node_modules` likewise.
-        if name == "build" || name == "node_modules" || name == "dist" || name.starts_with('.') {
+        // of ours; `node_modules` likewise. `.git` is not part of any artifact. Nothing else is
+        // skipped by name: `demo/.gitignore` is tracked, and a dot is not a reason to stop looking.
+        if name == "build" || name == "node_modules" || name == "dist" || name == ".git" {
             continue;
         }
         if path.is_dir() {
             collect(&path, root, out);
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue; // not text; nothing to read a base58 string out of
-        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+            panic!(
+                "{}: {e}. A file that cannot be read is not a file that carries nothing",
+                path.display()
+            )
+        });
+        let text = String::from_utf8_lossy(&bytes).into_owned();
         let relative = path
             .strip_prefix(root)
             .map(|p| p.to_string_lossy().into_owned())

@@ -170,9 +170,12 @@ fn gen_vectors(dir: &Path) {
     // No synthetic artifact carries a value that exists on chain (owner, 28 Sep 2026). Checked before
     // a byte is written, so a fabricated provenance never reaches the working tree at all.
     live_values::check_list_shape(&repo_root());
+    // Keyed by where the artifact belongs in the repository, not by where this run happens to write
+    // it. A generated file's identity is `vectors/X.json` whether it is regenerated into the tree or
+    // into a temporary directory for the check, and an exemption names that (H-25 review, H3).
     let pending: Vec<(String, String)> = files
         .iter()
-        .map(|(name, value)| (name.clone(), to_text(value)))
+        .map(|(name, value)| (format!("vectors/{name}"), to_text(value)))
         .collect();
     live_values::refuse_live_values(&repo_root(), &pending);
 

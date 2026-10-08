@@ -213,14 +213,30 @@ mod the_pinned_client {
                 .map(|b| format!("\\{:03o}", b))
                 .collect::<String>()
         };
-        let mut f = std::fs::File::create(&path).expect("the fake can be written");
-        writeln!(
-            f,
-            "#!/bin/sh\nprintf '%b' '{}'\nprintf '%b' '{}' >&2",
-            escape(stdout),
-            escape(stderr)
-        )
-        .expect("script");
+        // **Closed and on disk before it is executable, and executable before the path escapes.**
+        // Unique names (above) stopped a fake being rewritten while a previous one ran. They did not
+        // make this ordering explicit, and the same symptom returned on a Linux runner in a second
+        // test: a fake that should be accepted was refused, which is what `check_version` reports
+        // when the binary cannot be launched at all. Linux refuses to exec a file that any process
+        // holds open for writing, so the handle is closed here rather than at the end of the
+        // function, after `sync_all` has put the bytes on disk.
+        //
+        // Whether that ordering was the cause is not established — it was never reproduced on macOS,
+        // which does not enforce ETXTBSY — so this removes the doubt rather than fixing a proven
+        // fault. If a Linux runner refuses a fake again, the remaining suspect is the exec itself and
+        // not the write.
+        {
+            let mut f = std::fs::File::create(&path).expect("the fake can be written");
+            writeln!(
+                f,
+                "#!/bin/sh\nprintf '%b' '{}'\nprintf '%b' '{}' >&2",
+                escape(stdout),
+                escape(stderr)
+            )
+            .expect("script");
+            f.sync_all()
+                .expect("the fake reaches the disk before anything executes it");
+        }
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("mode");
         path
     }

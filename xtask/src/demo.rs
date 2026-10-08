@@ -245,11 +245,12 @@ pub fn gen_demo(dir: &Path) {
     // tree carrying a live value somewhere it never looked.
     crate::live_values::check_list_shape(&repo_root());
     crate::live_values::check_synthetic_surface(&repo_root());
+    // As in `gen-vectors`: the destination, not the run's output directory (H-25 review, H3).
     let mut pending: Vec<(String, String)> = files
         .iter()
-        .map(|(name, value)| (name.clone(), to_text(value)))
+        .map(|(name, value)| (format!("demo/fixtures/{name}"), to_text(value)))
         .collect();
-    pending.push(("README.md".to_string(), sidecar.clone()));
+    pending.push(("demo/fixtures/README.md".to_string(), sidecar.clone()));
     crate::live_values::refuse_live_values(&repo_root(), &pending);
 
     let mut manifest = String::new();
