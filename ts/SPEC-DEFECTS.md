@@ -265,13 +265,26 @@ the build before anything else executes". Only KAT-03 is committed under `vector
 **What forced the question.** Writing KAT-01. An implementer working from this document alone, as
 this unit requires, cannot obtain the rate-boundary constants.
 
-**What this verifier does.** Pins Keccak-256 of the empty string and of "abc", and RFC 8032 §7.1
-TEST 1 and TEST 2, whose key pair the corpus itself depends on. For 1, 135, 136, 137 and 272 bytes
-it checks the library's SHA3-256 against the platform's own SHA-3, which is the same sponge over
-the same permutation at the same rate with a different pad byte, and checks that Keccak-256 and
-SHA3-256 disagree and that streaming and one-shot absorption agree. That exercises the absorption
-boundary the row is about; it is labelled in the test as a cross-implementation check and not as
-the published KAT.
+**What this verifier does, since H-09.** It asserts the Keccak team's own published digests for all
+five lengths, read from `crates/certimining-core/tests/data/ShortMsgKAT_256.txt` — the round-3
+known-answer file, vendored byte for byte with its provenance recorded beside it and its SHA-256
+pinned in `scripts/ci.sh` before KAT-01 runs. The same message absorbed in two pieces, cut at the
+136-byte rate, must produce the same digest.
+
+**The defect in the document stands; the defect in this verifier does not.** §4.1 still names the
+vectors without carrying them, so an implementer working from the document alone still cannot obtain
+them — which is what this entry records. But the repository has carried that file since E-01, and
+this verifier spent four units checking the boundary against the platform's SHA-3 instead. That was
+self-consistency: a library computing Keccak-256 wrongly at exactly those lengths, consistently in
+both paths, would have passed, and the rate boundary is where an absorption bug lives.
+
+The cause was this unit's own rule. E-11 was written from the specification without reading the Rust
+tree, and a vendored third-party data file was caught in that net. Reading it costs the unit nothing:
+it is the Keccak team's bytes, not this project's implementation of anything, and the independence
+the rule protects is of implementations.
+
+The SHA3-256 comparison and the streaming-versus-one-shot check are kept, below the published values
+rather than in place of them, as the separate properties they always were.
 
 ---
 
