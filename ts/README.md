@@ -15,9 +15,23 @@ repository. A reader cannot obtain the text it names, which makes the pin unusab
 was written for.
 
 The specification as committed today is SHA-256 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`,
-831 lines. This verifier has **not** been re-read against it line by line, and that is not what
-carries the conformance claim anyway: what does is the committed vectors in `../vectors/`, which this
-implementation reproduces on every push in CI'"'"'s `ts` group, against an engine built from the same
+831 lines. **It was re-read against that text on 7 October 2026.** What was compared, and what each comparison
+found:
+
+| Checked against | Result |
+|---|---|
+| §2.5's package shape, field by field | the nine `record` fields, `preimage_borsh`, `chain`, `qp_signature`, `inclusion` and `anchor` match exactly, and no field §2.5 omits is accepted |
+| INV-DISC-01 | `c` is read only from inside `preimage_borsh`; an unlisted field refuses the package at any depth |
+| INV-DISC-02 | satisfied as far as a §2.5 package allows — the chain-segment walk has no content past `seq` 1 and the result says so rather than passing (SD-19) |
+| INV-DISC-03 | `flags` excluded from the digest comparison, recomputed when the caller supplies chain context, and a mismatch reported as a discrepancy rather than a refusal |
+| INV-IFACE-01 | no clock is read anywhere in `src/`, or in the tests |
+| §2.4's address derivation | derives `CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7` at bump 250 for the log's configuration, and the announced deployment holds exactly that — including a checkpoint published after this verifier was written |
+
+That was a reading of §2.5, §2.4 and those four invariants against the implementation. It was **not** a
+reading of all 831 lines, and what it did not cover is what a §2.5 verifier does not implement.
+
+What carries the claim continuously is separate and stronger: what does is the committed vectors in `../vectors/`, which this
+implementation reproduces on every push in CI's `ts` group, against an engine built from the same
 document. A divergence between the two implementations fails there.
 
 It satisfies INV-DISC-01, INV-DISC-03 and INV-IFACE-01 and reproduces every committed vector. It
