@@ -10,3 +10,5 @@ V-P-12.json  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address §2.4 pub
 V-P-12.json  0xabb9dc3b417c0d0fe2b99d109e5d1b0b8b71c7e693c20e756cabdf7e6d30d6fc  the same address, as bytes
 V-P-12.json  H3ERVV7P3yNQxXXJrzVvmS2Nzh9qBd283kcAgMHzHDNn  the two-seed case, answered for by the cluster, which is the check
 V-P-12.json  0xee4d543bd97a4e39c47cf3e12e017b329fe9d1b5bd0ee7bb9942f98206bb612f  the same address, as the bytes the vector carries
+ts/test/units.test.ts  By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  §2.4's derivation checked against the announced deployment, which is this test's subject (H-25)
+ts/test/units.test.ts  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address that derivation must reproduce, and the reason the test is worth running (H-25)

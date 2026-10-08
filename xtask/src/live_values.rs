@@ -221,22 +221,51 @@ pub fn check_list_shape(root: &Path) {
 /// because a hand-written page is not something a generator inspects. The gate has to look at the
 /// working tree as well as at what it is about to write.
 ///
-/// The surface is named rather than inferred. A tree-wide scan would need an allow-list holding
-/// `docs/anchoring.md`, `ANNOUNCED_PROGRAM_ID`, `README.md`, the deploy script, the cluster harnesses
-/// and the program's own `declare_id!` — every one of which holds live values because its subject is
-/// the deployment — and an allow-list that long is a gate that no longer refuses anything. What is
-/// scanned is what is synthetic by nature: the demo and the vectors.
+/// The surface is named rather than inferred, and a tree-wide scan is still the wrong shape: it would
+/// need an allow-list holding `docs/anchoring.md`, `ANNOUNCED_PROGRAM_ID`, `README.md`, the deploy
+/// script and the program's own `declare_id!` — every one of which holds live values because its
+/// subject is the deployment — and an allow-list that long is a gate that no longer refuses anything.
+///
+/// **What the named surface missed was the tests (H-25).** It was the demo and the vectors, on the
+/// argument that those are synthetic by nature. So are fixtures and constants under `ts/test/` and
+/// `crates/*/tests/`, and a review showed the bypass concretely: the already-listed publication slot
+/// `504985662`, placed in a constant in `ts/test/units.test.ts`, passed. The discipline was avoidable
+/// by choosing where to put a value, which is not a discipline.
+///
+/// Widening to the test directories cost **two** exemptions, both in `ts/test/units.test.ts`, both
+/// for §2.4's derivation check whose whole subject is the announced deployment. The cluster harnesses
+/// needed none: they reach the program through `certimining_checkpoint::ID` rather than a literal, so
+/// they carry no live value to find. The allow-list the paragraph above warns about did not appear,
+/// because what makes an artifact legitimate is its subject, and a test of a derivation has one.
+/// What is synthetic by nature: the demo, the vectors, and every test and fixture directory. Not the
+/// cluster harnesses' crate root, the deploy script or the documents whose subject is the deployment.
+const SYNTHETIC_SURFACE: [&str; 9] = [
+    "demo",
+    "vectors",
+    "ts/test",
+    "crates/certimining-core/tests",
+    "crates/certimining-log/tests",
+    "crates/certimining-client/tests",
+    "programs/certimining-checkpoint/tests",
+    "programs/core-harness/tests",
+    "benches",
+];
+
 pub fn check_synthetic_surface(root: &Path) {
     check_list_shape(root);
     let mut files: Vec<(String, String)> = Vec::new();
-    for dir in ["demo", "vectors"] {
+    // Every directory must contribute. `files.len() > 10` was the old floor, and it would have been
+    // met by eight of these nine going missing — a renamed directory is exactly how a surface stops
+    // being scanned without anyone noticing, which is the whole of H-25 in one line.
+    for dir in SYNTHETIC_SURFACE {
+        let before = files.len();
         collect(&root.join(dir), root, &mut files);
+        assert!(
+            files.len() > before,
+            "{dir} contributed no files to the synthetic surface: it was renamed, emptied or moved, \
+             and the scan would pass anything it used to hold"
+        );
     }
-    assert!(
-        files.len() > 10,
-        "the synthetic surface is {} files, which means the walk found nothing and would pass anything",
-        files.len()
-    );
     refuse_live_values(root, &files);
     println!(
         "live-values: {} files in the synthetic surface carry no value that exists on chain",
