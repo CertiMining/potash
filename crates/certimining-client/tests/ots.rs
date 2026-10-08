@@ -192,7 +192,22 @@ mod the_pinned_client {
     /// writes the bytes through `printf '%b'` with the octal escapes spelled out, so a test can say
     /// "no trailing newline", "CRLF", "a tab in front" or "on stderr instead".
     fn raw_fake(dir: &std::path::Path, stdout: &str, stderr: &str) -> std::path::PathBuf {
-        let path = dir.join("ots");
+        // **A fresh name per fake, because the last one may still be running.** Every fake was
+        // written to `dir/ots`, so a test that executed one and then rewrote the same path raced the
+        // kernel: on Linux, executing a file whose write handle is still open fails with ETXTBSY,
+        // "text file busy". `check_version` maps a failure to launch and a wrong version onto the
+        // same `Err`, so the test failed saying the pinned version was refused when what actually
+        // happened is that the binary could not be run at all. macOS does not enforce ETXTBSY, so
+        // this only ever failed on a CI runner, and only under enough load to open the window —
+        // once in eight runs here, never in a thousand locally.
+        //
+        // The fix removes the shared path rather than sleeping until the race closes, because a
+        // sleep tuned to one machine is a flake waiting for a slower one.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let path = dir.join(format!(
+            "ots-{}",
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         let escape = |s: &str| -> String {
             s.bytes()
                 .map(|b| format!("\\{:03o}", b))
