@@ -9,7 +9,8 @@ Each entry records a place where TCU-02 does not determine the answer, what was 
 document says, the readings available, and which vector or invariant forced the question.
 
 **Which text.** The version label on `spec/TCU-02_CertiMining_Anchored_Log_v0.1.md` has moved between
-rounds (0.1.16, then 0.1.18, now "0.1.14 plus unmerged amendments on this branch"), so the document
+rounds (0.1.16, then 0.1.18 — both **branch-local numbers, never released, superseded by v0.2.0**),
+so the document
 is identified here by content: every entry below was last checked against the file whose SHA-256 is
 `3e59f5ace0d70616df88d51f7bd7f39f78636c76b08c9b93027997c0e8bb90b7`, 754 lines.
 
@@ -328,7 +329,7 @@ document should still say it.
 
 ## SD-14 · §1.4, §2.4, INV-ANCH-01 — nothing relates `published_unix` to the epoch it publishes
 
-**New in v0.1.18.**
+**New in v0.1.18**, a branch-local number never released; the text it names is in v0.2.0.
 
 **What was needed.** Whether a verifier may conclude anything from comparing
 `floor(published_unix / 86400)` with `CheckpointAccount.epoch`, now that §1.4 gives the epoch an
@@ -362,7 +363,7 @@ check.
 
 ## SD-15 · §2.4 — what a reader does with a `LogConfig` no conforming `initialize` could have written
 
-**New in v0.1.18.**
+**New in v0.1.18**, a branch-local number never released; the text it names is in v0.2.0.
 
 **What was needed.** Whether to refuse a `LogConfig` whose `start_epoch` cannot be a day index the
 chain reported, or whose `last_epoch` is not at least `start_epoch - 1`.
@@ -379,7 +380,7 @@ older log "remain verifiable forever".
    an earlier version unreadable, against INV-TREE-06's promise.
 
 **What forced the question.** The live devnet deployment carries `start_epoch = 0` and
-`last_epoch = 1`, which no conforming `initialize` under v0.1.18 could write: it is the pre-amendment
+`last_epoch = 1`, which no conforming `initialize` under v0.1.18 — now v0.2.0 — could write: it is the pre-amendment
 state D-109 describes, where the first publishable epoch is 2 January 1970. Reading 1 makes the only
 existing deployment unreadable by a conforming verifier.
 

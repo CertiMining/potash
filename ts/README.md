@@ -14,8 +14,13 @@ lines, in any commit on any branch — most likely it was taken from a working c
 repository. A reader cannot obtain the text it names, which makes the pin unusable for the purpose it
 was written for.
 
-The specification as committed today is SHA-256 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`,
-831 lines. **It was re-read against that text on 7 October 2026.** What was compared, and what each comparison
+**It was re-read on 7 October 2026 against SHA-256
+`9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
+committed today is **v0.2.0**, SHA-256 `711598e1e89611713ab300b088e67f859857e11766a53f27142082eaccf08864`,
+834 lines, and the findings below carry to it: v0.2.0 differs from the text that was read by
+sixteen lines added and fifteen removed, every one of them the version line, the changelog line or an
+amendment marker losing the words "on this branch, unmerged". No technical content changed, which is
+checkable with `git diff` over the two revisions rather than taken on this sentence's word. What was compared, and what each comparison
 found:
 
 | Checked against | Result |

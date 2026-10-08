@@ -163,9 +163,18 @@ record rather than the code.
 
 **Branches do not number the specification (D-103).** Three branches amending one document cannot
 number linearly, and two of them both claimed `v0.1.18`. A branch's version line reads
-`0.1.14 plus unmerged amendments on this branch`, where `0.1.14` is what `main` holds, and its
-in-text notes say "on this branch, unmerged" or "before this branch". One spec-only pull request
-assigns the next linear number to everything merged since, in merge order.
+`<what main holds> plus unmerged amendments on this branch`, and its in-text notes say "on this
+branch, unmerged" or "before this branch". One spec-only pull request then assigns the next number to
+everything merged since.
+
+**That pass has been run once, and the markers are a debt until it is.** `main` carried twelve of
+them — eleven in-text notes and the version line — for as long as it took anyone to read the document
+as a reader would, which is what E-16's claim sweep eventually did. On `main` each one says a part of
+the document is not in the repository, which is false there and misleading in the artifact a reader
+meets first. **v0.2.0** consolidated all of them: it is the number for everything merged since
+v0.1.14, and the branch-local numbers 0.1.15 to 0.1.19 were never released. So: a branch may carry
+markers, `main` may not, and the consolidating pull request is owed the moment a branch with markers
+merges — not at some later tidy-up.
 
 ## Rewriting a stacked branch
 
