@@ -22,10 +22,12 @@
 ///
 /// Serialising is the fix rather than a retry: a retry would hide a race that is real, and these
 /// tests take under a second between them.
+#[cfg(feature = "ots")]
 pub(crate) static FAKES: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Taken by every test below that writes a fake or runs one. A poisoned lock is another test having
 /// failed, which is not a reason for this one to stop reporting its own result.
+#[cfg(feature = "ots")]
 pub(crate) fn serial() -> std::sync::MutexGuard<'static, ()> {
     FAKES.lock().unwrap_or_else(|e| e.into_inner())
 }
