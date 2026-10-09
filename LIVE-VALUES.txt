@@ -132,6 +132,10 @@ CVjVcA6wYYGz3hJBEWoy55WdRyd2LWtbjbBbhNF84tvM  checkpoint address, epoch 20732
 CzCN6AgMw6gjY4c2uHxD2dYGyKuiQzxAfUJifdeoGj3u  checkpoint address, epoch 20733
 0xaaccddb6b5fb6f90f34e71e6ab9be5cff68f420f63cc02ee0a6093774b80482a  checkpoint address, epoch 20732, as bytes
 0xb21782dc711274f4ba3f3698e24216d363e33d2931905726858145bdd75128e8  checkpoint address, epoch 20733, as bytes
+2HgcsYF3LRsPrUkENc2PhRS8F7tbNcwjVR6CV4ZFFZGd  checkpoint address, epoch 20734
+5DcZV9A8Wvth5a88mCrJTEWU64U4HBiA4jVpcJm1yNk7  checkpoint address, epoch 20735
+0x1321c6d0960840b4776f524108ca83ef9a795ee8e7de5fefba1c1d78366746da  checkpoint address, epoch 20734, as bytes
+0x3ea9ece2ca585a76a25cbc1ba3196bea40875b31068ad7f94cc911a806c9deb8  checkpoint address, epoch 20735, as bytes
 0xdc349df9f57964294692bebc3b192906a40b43b3de2d2414a73b581bdc6d0791  published root, epoch 20723
 0x8ab166bab0ffffa380ff1929cdb24c58bf0043741944739f217d3bb968f02891  published root, epoch 20724
 0x0d872549657176aa136bef759843b1dfc5b2d5b33e4521f5cd999d4d57a86443  published root, epoch 20725
@@ -143,6 +147,8 @@ CzCN6AgMw6gjY4c2uHxD2dYGyKuiQzxAfUJifdeoGj3u  checkpoint address, epoch 20733
 0x4a37066fae1c4f97bab6f6fc12e6c6c2af18b7e638d05f89f73513433e890d15  published root, epoch 20731
 0xcfa92cc7f5b4a51e7cce447439b2856668100f6e9611722653dd15600f1ae465  published root, epoch 20732
 0xdc1aa505b733996aaa55e0ed07cc267d65bc3036fa93dc9391d9c5b06cf4b513  published root, epoch 20733
+0x602451d1c5fd19aa793a82d53616584dea5176b7b5a3c6b53cb10e9706699933  published root, epoch 20734
+0x6aa9a23ce5d8467e8d64f847456f83ef504e64f3b0bcc9e87ec6db1154cb6afa  published root, epoch 20735
 
 # The publication slot and timestamp of every epoch, which a review found were never listed at all
 # (PR #57, round one, High). Two of a checkpoint's fields are decimal and this file accepted only
@@ -163,6 +169,8 @@ CzCN6AgMw6gjY4c2uHxD2dYGyKuiQzxAfUJifdeoGj3u  checkpoint address, epoch 20733
 507636283  published slot, epoch 20731
 508282376  published slot, epoch 20732
 508282423  published slot, epoch 20733
+509018081  published slot, epoch 20734
+509018123  published slot, epoch 20735
 1790559280  published unix timestamp, epoch 20723
 1790562009  published unix timestamp, epoch 20724
 1790685854  published unix timestamp, epoch 20725
@@ -174,6 +182,8 @@ CzCN6AgMw6gjY4c2uHxD2dYGyKuiQzxAfUJifdeoGj3u  checkpoint address, epoch 20733
 1791180700  published unix timestamp, epoch 20731
 1791334989  published unix timestamp, epoch 20732
 1791335001  published unix timestamp, epoch 20733
+1791510569  published unix timestamp, epoch 20734
+1791510579  published unix timestamp, epoch 20735
 0xb0191834ee402a4f4e961a7f3974865b2c6f8c184835e18706e0974515a1cdf7  attached receipt digest, epoch 20723
 0x5b6f5fd971c3bc05e2164c35bf357dbbe73595b5f326a579739d4c0f16e89cf8  attached receipt digest, epoch 20724
 0x5046e0f027962a041ccb254a1d8c1b76dc4019d1b5b242c06fe68a5b0fc6c28b  attached receipt digest, epoch 20725
@@ -198,6 +208,8 @@ L6oGSoScooUL29an86QFzWahX5qhMAesnCVp4fwXkHjNXhkXG3Bgot6Yi2kQBDzfoCctqjYwKHDJjWer
 2fsKyTUkJLSLS5wt7bmMgT1XtGM1yGigGYb8Q7N9MrdAsDyJ1Q2zESo1aivAMfS6f8h5rbK5YhchPF9FKYX63TZ4  publish_checkpoint signature, epoch 20731
 t3QBzhRcVWdmtpT7kJiV6YQf9ZHQKaXpph1A9d2wZP1xDea2HFRfBAjbgTMbz462NDQPtwMoewubQmtLGfUp4xV  publish_checkpoint signature, epoch 20732
 5RBkTAQtPd27opHVWmkyHB6biaHX2YPCck6MjChSjDAjMd9Cr1eoVhXBzEGfzY6BnKVtZ5tw9NEKQZgXfLmAaoaT  publish_checkpoint signature, epoch 20733
+5bhhNC13qu7LRgGD5eBcP3x6eMppVCg5ZjrMoBqWuFpwdC1Gwk8yGHk4yiEPtmKBsSQMP9dAQog3ieaxciP4MbLV  publish_checkpoint signature, epoch 20734
+24muHpmGie9LFQsVA2te6VGrmNhP2SeptKrrgBxUJb5TCUhhW3LVZZVikaoREJjeMkAvr2jBX3yBJx4WEfCSdASD  publish_checkpoint signature, epoch 20735
 5GQKE7N92h9yScJDqLsMV2hx5vogGsHdZGMrZGvpifEhwaGBBDLNj21HUpE4G5LEbZNHXsShyV3Yw3DJvhSMzmGm  attach_anchor_receipt signature, epoch 20723
 3ri9n1YSk4twGAUNJmgHrnqsxkCperoi8VegevtGYAg5Zrje2DtjbsHhfNEHGnACkX7VT6ggVRpmtrXdynhq1SQA  attach_anchor_receipt signature, epoch 20724
 24tcWkjWZNVArdRK97CNUdh91LeqowV5QHUSmPpAXnQNHLAYygVuwwkkXmv1DXSU5T9wjjfJupzP5GRmELbtgHmB  attach_anchor_receipt signature, epoch 20725
