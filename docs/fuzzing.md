@@ -143,12 +143,23 @@ commit that first recorded it landed after PR #55's head was taken:
 - **H-21** ([#61](https://github.com/CertiMining/potash/issues/61)) P-02's accepted lane derives URI form
   and claimed-key presence from the same parity bit, so two of four valid combinations never occur and a
   partial commit in one of them passed 10,000 cases.
-- **H-22** ([#62](https://github.com/CertiMining/potash/issues/62)) F-01 reduces an accepted checkpoint to
-  its epoch, so a forced-zero root passed a million runs.
-- **H-23** ([#63](https://github.com/CertiMining/potash/issues/63)) F-02 never requires raw input over 256
-  bytes to be refused.
-- **H-24** ([#64](https://github.com/CertiMining/potash/issues/64)) F-04's genuine-proof control is one
-  fixed epoch, so refusing every *other* genuine proof survives.
+- ~~**H-22** F-01 reduces an accepted checkpoint to its epoch, so a forced-zero root passed a million
+  runs.~~ **Closed.** F-01 compares every field `decode_checkpoint` returns, in both lanes.
+- ~~**H-23** F-02 never requires raw input over 256 bytes to be refused.~~ **Closed.** The rule is
+  asserted against the input's own length, because the result of an over-long input is the thing that
+  should not exist.
+- ~~**H-24** F-04's genuine-proof control is one fixed epoch, so refusing every *other* genuine proof
+  survives.~~ **Closed.** A second genuine proof is built from the input each iteration, at height 4
+  to 6; the fixed control keeps height 8.
+
+Each was closed by running the reviewer's own mutant against the repaired target: a forced-zero root,
+a removed length refusal, and a `verify` that refuses every proof outside epoch 20723. All three now
+fail, and all three passed before.
+
+**F-04's cost went up and the table above has not been re-measured.** Building a second epoch per
+iteration took 200,000 runs from about 2 seconds to 121 on the development machine, so the nightly's
+figure for that row will move. The row is a measurement and is left as the last one taken rather than
+estimated forward; `scripts/ci.sh fuzz` records the next.
 
 The fifth was in V-Z-04, a §4.4 release blocker, and went out as its own pull request rather than waiting
 behind a unit.
