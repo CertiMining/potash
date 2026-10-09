@@ -22,7 +22,14 @@
 //! review-enforced, and H-20 removes the need for that carve-out.
 //!
 //! An earlier version of this paragraph said slot numbers were deliberately uncovered, which the
-//! decimal support contradicts.
+//! decimal support contradicts. H-34 recorded that paragraph as still stale; it had already been
+//! corrected by then, and this sentence says so rather than leaving the next reader to check.
+//!
+//! **Each entry is validated against the class it declares (H-34).** The list names what every value
+//! is, and nothing read it: an entry was accepted if it resembled hex, base58 or a decimal, whichever
+//! matched, and none of the three was checked properly. A reviewer listed thirty-two capital `O`
+//! characters as a program id and `18446744073709551616` as a slot, and both passed the whole static
+//! gate. The description now decides which check runs.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -175,32 +182,137 @@ fn check_recorded_short_values(root: &Path) {
     println!("live-values: {checked} recorded short-value uses match the files that hold them");
 }
 
+/// Base58 in the alphabet Bitcoin and Solana use, decoded only far enough to know its length.
+///
+/// The alphabet excludes `0`, `O`, `I` and `l` precisely because they are confusable, and the old
+/// check accepted every one of them: a reviewer listed thirty-two capital `O` characters and the
+/// gate took it for an address. Decoding is by the schoolbook base-256 accumulation, which is
+/// enough to tell a 32-byte key from a 64-byte signature; nothing here needs the bytes themselves.
+fn base58_len(s: &str) -> Option<usize> {
+    const ALPHABET: &[u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    let mut bytes: Vec<u8> = Vec::new();
+    for c in s.bytes() {
+        let digit = ALPHABET.iter().position(|a| *a == c)?;
+        let mut carry = digit;
+        for b in bytes.iter_mut().rev() {
+            carry += (*b as usize) * 58;
+            *b = (carry & 0xff) as u8;
+            carry >>= 8;
+        }
+        while carry > 0 {
+            bytes.insert(0, (carry & 0xff) as u8);
+            carry >>= 8;
+        }
+    }
+    // Each leading `1` is a leading zero byte, which the accumulation above never produces.
+    Some(bytes.len() + s.bytes().take_while(|c| *c == b'1').count())
+}
+
+/// What an entry's own description says it is. The list names the class of every value it holds, and
+/// until H-34 nothing read it: an entry was accepted if it resembled *any* of three shapes, so a
+/// signature could be listed with a program id's length and a slot could be any six digits.
+#[derive(Debug, PartialEq)]
+enum Shape {
+    /// `0x` and 64 lowercase nybbles: a 32-byte digest or an address written as bytes.
+    Hex32,
+    /// A 32-byte base58 identifier: a program id, an address, an authority.
+    Base58Key,
+    /// A 64-byte base58 transaction signature.
+    Base58Signature,
+    /// A Solana slot, which is a `u64`.
+    Slot,
+    /// A unix timestamp, which §2.4 stores as an `i64`.
+    UnixTimestamp,
+}
+
+fn declared_shape(what: &str) -> Shape {
+    if what.contains("as bytes") || what.contains("digest") || what.contains("root") {
+        Shape::Hex32
+    } else if what.contains("signature") {
+        Shape::Base58Signature
+    } else if what.contains("slot") {
+        Shape::Slot
+    } else if what.contains("timestamp") {
+        Shape::UnixTimestamp
+    } else {
+        Shape::Base58Key
+    }
+}
+
+/// **Every entry is checked against the shape it declares, not against any of three (H-34).**
+///
+/// The old check accepted a value resembling hex, base58 or a decimal, whichever matched. It
+/// validated none of them properly: hex by its `0x` prefix and length and not its characters, base58
+/// by ASCII alphanumeric and so including the four characters the alphabet excludes, and decimals by
+/// having six digits and not by fitting the field. Two reviewer probes passed the whole static gate:
+/// thirty-two capital `O` characters, and `18446744073709551616`, which is one past `u64::MAX`.
+///
+/// No committed entry was malformed, so this was a defect in the promise rather than an escape. A
+/// list whose integrity check cannot reject a malformed entry is a list nobody is checking.
 pub fn check_list_shape(root: &Path) {
     check_recorded_short_values(root);
     for v in live_values(root) {
-        let looks_like_hex = v.value.starts_with("0x") && v.value.len() == 66;
-        let looks_like_base58 = v.value.len() >= 32
-            && v.value.len() <= 88
-            && v.value.chars().all(|c| c.is_ascii_alphanumeric());
-        // **A third shape, added after a review found the second gap this file has had.** The rule
-        // covers "no value from a live deployment", unqualified, and two of a checkpoint's fields are
-        // decimal: `published_slot` and `published_unix`. Only hex and base58 were accepted here, so a
-        // slot could not be listed even by someone who wanted to — and `demo/test/footprint.test.mjs`
-        // carried epoch 20723's real slot beside a fabricated root and a fabricated receipt digest,
-        // which is the exact pairing this rule was written for, while both halves of the gate exited 0.
-        //
-        // Six digits or more, all decimal. The floor is there because short numbers are everywhere in a
-        // fixture — lengths, counts, epoch day indices — and listing one would make the gate match text
-        // that has nothing to do with the deployment. Epoch numbers are deliberately **not** listed for
-        // that reason: a UTC day index is a date, not something the deployment produced, and the demo is
-        // legitimately about epoch 20723.
-        let looks_like_decimal = v.value.len() >= 6 && v.value.chars().all(|c| c.is_ascii_digit());
-        assert!(
-            looks_like_hex || looks_like_base58 || looks_like_decimal,
-            "LIVE-VALUES.txt: {:?} is not a 32-byte hex value, a base58 identifier, or a decimal of six \
-             digits or more, and the rule covers those three shapes",
-            v.value
-        );
+        let shape = declared_shape(&v.what);
+        let wrong = |why: &str| -> String {
+            format!(
+                "LIVE-VALUES.txt: {:?} is recorded as {:?}, which this list reads as {shape:?}, and {why}",
+                v.value, v.what
+            )
+        };
+        match shape {
+            Shape::Hex32 => {
+                assert!(
+                    v.value.len() == 66
+                        && v.value.starts_with("0x")
+                        && v.value[2..]
+                            .bytes()
+                            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)),
+                    "{}",
+                    wrong("that is `0x` and exactly 64 lowercase hexadecimal characters")
+                );
+            }
+            Shape::Base58Key => {
+                assert_eq!(
+                    base58_len(&v.value),
+                    Some(32),
+                    "{}",
+                    wrong("that is a base58 identifier decoding to 32 bytes")
+                );
+            }
+            Shape::Base58Signature => {
+                assert_eq!(
+                    base58_len(&v.value),
+                    Some(64),
+                    "{}",
+                    wrong("that is a base58 signature decoding to 64 bytes")
+                );
+            }
+            Shape::Slot => {
+                assert!(
+                    v.value.parse::<u64>().is_ok() && !v.value.starts_with('0'),
+                    "{}",
+                    wrong("that is a slot, which is a `u64` written without a leading zero")
+                );
+            }
+            Shape::UnixTimestamp => {
+                assert!(
+                    v.value.parse::<i64>().is_ok() && !v.value.starts_with('0'),
+                    "{}",
+                    wrong("that is a publication time, which §2.4 stores as an `i64`")
+                );
+            }
+        }
+        // The six-digit floor stays, and it is about matching rather than about shape: a short
+        // number is everywhere in a fixture, so listing one would make the gate match text that has
+        // nothing to do with the deployment. `check_recorded_short_values` governs the exceptions.
+        if matches!(shape, Shape::Slot | Shape::UnixTimestamp) {
+            assert!(
+                v.value.len() >= 6,
+                "LIVE-VALUES.txt: {:?} is under six digits, which would make the gate match counters \
+                 and lengths throughout the corpus",
+                v.value
+            );
+        }
     }
     // Every exemption must name a value the list actually holds, or it is silently dead.
     let known: BTreeSet<String> = live_values(root).into_iter().map(|v| v.lower).collect();
