@@ -8,7 +8,8 @@
 //! 2. `LogConfig`, which a client decodes to learn a log's height and epoch range.
 //! 3. `CheckpointAccount`, which a client decodes to learn an epoch's root.
 //! 4. `decode_config`, the client's public placement of an untrusted `LogConfig` account.
-//! 5. `decode_checkpoint`, the same for a checkpoint, including the epoch it was asked about.
+//! 5. `decode_checkpoint`, the same for a checkpoint, including the epoch it was asked about, and
+//!    **every field it returns** rather than the epoch alone (H-22).
 //!
 //! **The last two were missing, and that was the serious half (PR #55, round two, E12-04.)** An earlier
 //! version of this file said the first three were the only decoders a counterparty's bytes reach, which
@@ -58,12 +59,19 @@ const LOG_CONFIG_DISCRIMINATOR: [u8; 8] = [0x1c, 0xf0, 0x75, 0x7f, 0x1a, 0xa6, 0
 /// This is the point of the target: an oracle that says "one of these errors is fine" would have passed
 /// the defect that prompted it. The conditions are in §2.4's order, which is the order the decoder must
 /// apply them in, so a reordering is a finding too.
+/// Every field §2.4 lays out, in its order. The oracle returned the epoch alone, so five fields
+/// came back unchecked: a review made `decode_checkpoint` return `root: [0; 32]` and this target
+/// completed a million iterations green (H-22). A client trusting that root would have verified an
+/// inclusion proof against a root the chain does not hold, which is the one thing this decoder is
+/// for.
+type Fields = (u64, [u8; 32], u64, i64, [u8; 32], u8);
+
 fn expected_checkpoint(
     owner: &Pubkey,
     program_id: &Pubkey,
     data: &[u8],
     epoch: u64,
-) -> Result<u64, Refused> {
+) -> Result<Fields, Refused> {
     if owner != program_id {
         return Err(Refused::NotTheProgram);
     }
@@ -81,7 +89,14 @@ fn expected_checkpoint(
     if account.epoch != epoch {
         return Err(Refused::WrongEpoch);
     }
-    Ok(account.epoch)
+    Ok((
+        account.epoch,
+        account.root,
+        account.published_slot,
+        account.published_unix,
+        account.receipt_digest,
+        account.anchor_kind,
+    ))
 }
 
 /// The same for `decode_config`, which has no epoch to disagree about.
@@ -178,7 +193,16 @@ fuzz_target!(|data: &[u8]| {
         0
     };
 
-    let got = decode_checkpoint(&owner, &program_id, data, epoch).map(|c| c.epoch);
+    let got = decode_checkpoint(&owner, &program_id, data, epoch).map(|c| {
+        (
+            c.epoch,
+            c.root,
+            c.published_slot,
+            c.published_unix,
+            c.receipt_digest,
+            c.anchor_kind,
+        )
+    });
     let want = expected_checkpoint(&owner, &program_id, data, epoch);
     assert_eq!(
         got,
@@ -230,7 +254,16 @@ fuzz_target!(|data: &[u8]| {
         candidate.extend_from_slice(&disc);
         candidate.extend_from_slice(data);
 
-        let got = decode_checkpoint(&program_id, &program_id, &candidate, epoch).map(|c| c.epoch);
+        let got = decode_checkpoint(&program_id, &program_id, &candidate, epoch).map(|c| {
+            (
+                c.epoch,
+                c.root,
+                c.published_slot,
+                c.published_unix,
+                c.receipt_digest,
+                c.anchor_kind,
+            )
+        });
         let want = expected_checkpoint(&program_id, &program_id, &candidate, epoch);
         assert_eq!(
             got,
