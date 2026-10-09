@@ -169,6 +169,93 @@ mod key_handling {
     }
 }
 
+/// **A file is not a submission (H-14).**
+///
+/// `submit` is idempotent per epoch by file existence, which is right: only one digest can ever be
+/// attached (INV-ANCH-03), so a restarting worker must not stamp twice. It read existence as
+/// success. A `stamp` that left a partial `.ots` and exited non-zero produced a file that every
+/// later call accepted as "already done", every `upgrade` then failed to parse, and the epoch never
+/// anchored with nothing saying why.
+#[cfg(feature = "ots")]
+mod an_existing_receipt_is_parsed_before_it_is_believed {
+    use super::the_pinned_client::{client, fake};
+    use certimining_client::{AnchorB, ReferenceClient};
+
+    /// A document and a receipt that timestamps it, carrying a calendar's pending attestation and no
+    /// Bitcoin one — the ordinary state of a receipt between `stamp` and confirmation.
+    ///
+    /// Generated once with `opentimestamps` 0.2.0's own writer over the bytes `00..1f`, which is why
+    /// it parses: it is that library's output, not a hand-built guess at the format. The crate is a
+    /// dependency of this one behind `ots` and not a dev-dependency, so the bytes are recorded here
+    /// rather than rebuilt in the test, which would add it to every test build.
+    const DOCUMENT: [u8; 32] = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
+        0x1e, 0x1f,
+    ];
+    const PENDING_RECEIPT: &str = "004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e892940108630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd0083dfe30d2ef90c8e2e2d68747470733a2f2f616c6963652e6274632e63616c656e6461722e6f70656e74696d657374616d70732e6f7267";
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// A client over a fresh directory, with an epoch already stamped: the root beside the receipt
+    /// bytes the caller supplies.
+    fn with_existing(
+        tag: &str,
+        receipt_bytes: &[u8],
+        stamped: &[u8; 32],
+    ) -> (ReferenceClient, u64) {
+        let dir = std::env::temp_dir().join(format!("cm-h14-{tag}-{}", std::process::id()));
+        let receipts = dir.join("receipts");
+        std::fs::create_dir_all(&receipts).expect("a temporary directory");
+        let epoch = 20_000u64;
+        std::fs::write(receipts.join(format!("{epoch}.root")), stamped).expect("the root");
+        std::fs::write(receipts.join(format!("{epoch}.root.ots")), receipt_bytes)
+            .expect("the receipt");
+        (client(fake(&dir, "v0.7.2"), receipts), epoch)
+    }
+
+    /// The control. Without it a `submit` that refused every existing receipt would pass the two
+    /// tests below, which is the failure those tests exist to catch one level down.
+    #[test]
+    fn a_receipt_that_parses_and_awaits_bitcoin_is_accepted() {
+        let (c, epoch) = with_existing("ok", &hex(PENDING_RECEIPT), &DOCUMENT);
+        let pending = c
+            .submit(epoch, &DOCUMENT)
+            .expect("a pending receipt is the ordinary state between stamp and confirmation");
+        assert_eq!(pending.epoch, epoch);
+        assert_eq!(pending.root, DOCUMENT);
+    }
+
+    #[test]
+    fn a_receipt_that_does_not_parse_is_refused_rather_than_counted_as_done() {
+        let (c, epoch) = with_existing("corrupt", b"not an OpenTimestamps file", &DOCUMENT);
+        let err = c
+            .submit(epoch, &DOCUMENT)
+            .expect_err("a partial stamp must not read as a completed submission");
+        assert!(err.contains("does not parse"), "{err}");
+        // The remedy belongs in the message: this is met by a person at a terminal, and the file is
+        // the only evidence that anything went wrong.
+        assert!(err.contains("Remove it and submit again"), "{err}");
+    }
+
+    #[test]
+    fn a_receipt_over_a_different_document_is_refused() {
+        // The root beside it matches what the caller asked for, so the existing check passes; the
+        // receipt timestamps something else, which only parsing can see.
+        let other = [0xAAu8; 32];
+        let (c, epoch) = with_existing("wrong", &hex(PENDING_RECEIPT), &other);
+        let err = c
+            .submit(epoch, &other)
+            .expect_err("a receipt over another digest attests nothing about this epoch");
+        assert!(err.contains("timestamps a digest other than"), "{err}");
+    }
+}
+
 /// D-113's pin, enforced rather than assumed.
 ///
 /// The executable is whatever the configured path points at. A review built a fake reporting
@@ -181,7 +268,7 @@ mod the_pinned_client {
 
     /// A fake whose output is `echo`ed, so it always ends in a newline. Kept for the cases where the
     /// framing is not what is under test.
-    fn fake(dir: &std::path::Path, prints: &str) -> std::path::PathBuf {
+    pub(super) fn fake(dir: &std::path::Path, prints: &str) -> std::path::PathBuf {
         raw_fake(dir, &format!("{prints}\n"), "")
     }
 
@@ -241,7 +328,7 @@ mod the_pinned_client {
         path
     }
 
-    fn client(exe: std::path::PathBuf, receipts: std::path::PathBuf) -> ReferenceClient {
+    pub(super) fn client(exe: std::path::PathBuf, receipts: std::path::PathBuf) -> ReferenceClient {
         ReferenceClient {
             executable: exe,
             receipts,

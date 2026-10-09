@@ -249,6 +249,35 @@ impl AnchorB for ReferenceClient {
                     receipt.display()
                 ));
             }
+            // **A file is not a submission (H-14).** Existence alone was the test, so a `stamp` that
+            // left a partial or unreadable `.ots` and exited non-zero produced a file that every
+            // later call read as "already done": the epoch never anchored, every `upgrade` found
+            // bytes it could not parse, and nothing said why. Existence mapped onto success, which
+            // is the shape this repository keeps finding.
+            //
+            // So the receipt is parsed before it is believed. `NotYetConfirmed` is the ordinary
+            // state of a receipt waiting for a Bitcoin block and is accepted; anything that does not
+            // parse, or that timestamps something else, is refused here rather than hours later.
+            let bytes =
+                std::fs::read(&receipt).map_err(|e| format!("{}: {e}", receipt.display()))?;
+            match verify_receipt(&bytes, &existing) {
+                Ok(_) | Err(ReceiptRefused::NotYetConfirmed) => {}
+                Err(ReceiptRefused::Unparsable(why)) => {
+                    return Err(format!(
+                        "{}: a receipt exists for epoch {epoch} and does not parse ({why}). It was \
+                         left by a stamp that did not finish. Nothing can upgrade or attach it. \
+                         Remove it and submit again.",
+                        receipt.display()
+                    ));
+                }
+                Err(ReceiptRefused::WrongRoot) => {
+                    return Err(format!(
+                        "{}: a receipt exists for epoch {epoch} and timestamps a digest other than \
+                         the root beside it. The pair on disk disagree and neither can be trusted.",
+                        receipt.display()
+                    ));
+                }
+            }
             return Ok(PendingReceipt {
                 epoch,
                 root: *root,
