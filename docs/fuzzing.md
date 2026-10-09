@@ -140,9 +140,10 @@ A third review round found five instances, none High. Four went to Post-deadline
 ruling of 3 Oct 2026 — below High goes to hardening and the unit closes. The pointer is here because the
 commit that first recorded it landed after PR #55's head was taken:
 
-- **H-21** ([#61](https://github.com/CertiMining/potash/issues/61)) P-02's accepted lane derives URI form
-  and claimed-key presence from the same parity bit, so two of four valid combinations never occur and a
-  partial commit in one of them passed 10,000 cases.
+- ~~**H-21** P-02's accepted lane derives URI form and claimed-key presence from the same parity bit,
+  so two of four valid combinations never occur and a partial commit in one of them passed 10,000
+  cases.~~ **Closed.** The two come from independent bits — the key from `category`'s parity, the URI
+  from `qp_key`'s first byte — so all four combinations occur.
 - ~~**H-22** F-01 reduces an accepted checkpoint to its epoch, so a forced-zero root passed a million
   runs.~~ **Closed.** F-01 compares every field `decode_checkpoint` returns, in both lanes.
 - ~~**H-23** F-02 never requires raw input over 256 bytes to be refused.~~ **Closed.** The rule is
@@ -153,8 +154,9 @@ commit that first recorded it landed after PR #55's head was taken:
   to 6; the fixed control keeps height 8.
 
 Each was closed by running the reviewer's own mutant against the repaired target: a forced-zero root,
-a removed length refusal, and a `verify` that refuses every proof outside epoch 20723. All three now
-fail, and all three passed before.
+a removed length refusal, a `verify` that refuses every proof outside epoch 20723, and a
+`previous_category` committed for every shape but `https://` with a claimed key. All four now fail,
+and all four passed before.
 
 **F-04's cost went up and the table above has not been re-measured.** Building a second epoch per
 iteration took 200,000 runs from about 2 seconds to 121 on the development machine, so the nightly's
