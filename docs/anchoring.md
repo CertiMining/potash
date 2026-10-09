@@ -192,8 +192,15 @@ described rather than an argument that it will.
 | 20731 | `0x4a37066f…890d15` | 507636283 | Bitcoin block 969,968 | `anchors/epochs/20731.ots` | `dual` |
 | 20732 | `0xcfa92cc7…1ae465` | 508282376 | Bitcoin block 970,294 | `anchors/epochs/20732.ots` | `dual` |
 | 20733 | `0xdc1aa505…f4b513` | 508282423 | Bitcoin block 970,294 | `anchors/epochs/20733.ots` | `dual` |
+| 20734 | `0x602451d1…699933` | 509018081 | *pending* | *not yet committed* | `single` |
+| 20735 | `0x6aa9a23c…cb6afa` | 509018123 | *pending* | *not yet committed* | `single` |
 
-**No epoch is mid-cycle: every published epoch now reads `dual`.** 20732 and 20733 were published and
+**Epochs 20734 and 20735 are mid-cycle.** Both were published and stamped on day 20735, and their
+receipts carry calendar attestations only until a Bitcoin block confirms them. Two days were owed:
+nothing was published on day 20734, and day 20735 paid both — the fourth time the cadence has been
+missed and the fourth time the next day paid it.
+
+**Before them, every published epoch read `dual`.** 20732 and 20733 were published and
 stamped early on day 20733 and attached later the same day, both at block 970,294 — they were stamped
 minutes apart and share a block, which the wait is not a constant and cycles four and five also showed.
 Epoch 20731 sat between the two stages for two days and left it on day 20733, at block 969,968.
