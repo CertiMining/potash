@@ -140,9 +140,11 @@ A third review round found five instances, none High. Four went to Post-deadline
 ruling of 3 Oct 2026 — below High goes to hardening and the unit closes. The pointer is here because the
 commit that first recorded it landed after PR #55's head was taken:
 
-- **H-21** ([#61](https://github.com/CertiMining/potash/issues/61)) P-02's accepted lane derives URI form
-  and claimed-key presence from the same parity bit, so two of four valid combinations never occur and a
-  partial commit in one of them passed 10,000 cases.
+- ~~**H-21** P-02's accepted lane derives URI form and claimed-key presence from the same parity bit,
+  so two of four valid combinations never occur and a partial commit in one of them passed 10,000
+  cases.~~ **Closed.** The two come from independent bits — the key from `category`'s parity, the URI
+  from `qp_key`'s first byte — so all four combinations occur. The reviewer's partial commit, which
+  skipped `previous_category` only for `https://` with a claimed key, now fails.
 - **H-22** ([#62](https://github.com/CertiMining/potash/issues/62)) F-01 reduces an accepted checkpoint to
   its epoch, so a forced-zero root passed a million runs.
 - **H-23** ([#63](https://github.com/CertiMining/potash/issues/63)) F-02 never requires raw input over 256

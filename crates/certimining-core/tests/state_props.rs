@@ -177,8 +177,17 @@ fn valid_against(snapshot: &ChainSnapshot, template: &RecordLeafInput) -> Record
     // §1.3's five categories, 0 to 4, transcribed from the specification rather than imported from the
     // engine: an oracle that shares a production constant agrees with a defect in it (M-02).
     r.category = template.category % 5;
-    // Both §1.3 URI forms, so the accepted lane is not one spelling.
-    r.payload_uri = if template.category.is_multiple_of(2) {
+    // Both §1.3 URI forms, so the accepted lane is not one spelling — and chosen by a **different**
+    // bit from the claimed key above (H-21).
+    //
+    // Both were `category`'s parity, so two of the four valid combinations never occurred: an
+    // `https://` record with a matching claimed key, and an `ipfs://` record without one. A review
+    // changed `apply` to omit `previous_category` only for the first of those and all 10,000 cases
+    // passed. A partial commit in a shape the generator cannot reach is invisible, however many
+    // cases run.
+    //
+    // `qp_key` is generated independently of `category`, so its first byte is an independent bit.
+    r.payload_uri = if template.qp_key[0].is_multiple_of(2) {
         PayloadUri::from_slice(b"ipfs://bafyvalid").expect("fits")
     } else {
         PayloadUri::from_slice(b"https://example.test/a").expect("fits")

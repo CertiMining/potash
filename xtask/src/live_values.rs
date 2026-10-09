@@ -295,8 +295,16 @@ pub fn check_list_shape(root: &Path) {
                 );
             }
             Shape::UnixTimestamp => {
+                // **Signed, because the field is (H-28).** §2.4 stores `published_unix` as an `i64`
+                // and `scripts/live-values-from-chain.py` reads it signed, so a negative time is
+                // decoded from the chain and reported as missing from a list that could not hold it:
+                // the minus sign is not a digit. No list content satisfied both halves of the gate
+                // for a value the field admits. Not reachable on the announced deployment, whose
+                // clock writes present seconds, but the two halves disagreed about the domain of a
+                // field they both claim to cover.
+                let digits = v.value.strip_prefix('-').unwrap_or(&v.value);
                 assert!(
-                    v.value.parse::<i64>().is_ok() && !v.value.starts_with('0'),
+                    v.value.parse::<i64>().is_ok() && !digits.starts_with('0'),
                     "{}",
                     wrong("that is a publication time, which §2.4 stores as an `i64`")
                 );
@@ -306,9 +314,12 @@ pub fn check_list_shape(root: &Path) {
         // number is everywhere in a fixture, so listing one would make the gate match text that has
         // nothing to do with the deployment. `check_recorded_short_values` governs the exceptions.
         if matches!(shape, Shape::Slot | Shape::UnixTimestamp) {
+            // The floor is on the magnitude, not the string: a sign is not a digit, and `-100000`
+            // is as specific a thing to search a corpus for as `100000` (H-28).
+            let digits = v.value.strip_prefix('-').unwrap_or(&v.value);
             assert!(
-                v.value.len() >= 6,
-                "LIVE-VALUES.txt: {:?} is under six digits, which would make the gate match counters \
+                digits.len() >= 6,
+                "LIVE-VALUES.txt: {:?} has under six digits, which would make the gate match counters \
                  and lengths throughout the corpus",
                 v.value
             );
