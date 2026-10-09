@@ -93,11 +93,21 @@ test("the tour covers every outlined region, and outlines every region it covers
   );
 });
 
-test("no explanation claims more than the architecture carries", () => {
-  const banned = /\bfraud\b|double[- ]pledge|guarantee|prevents?\b|immutable|compliant/i;
-  for (const e of EXPLANATIONS) {
-    assert.ok(!banned.test(e.title), `${e.id}: title overclaims`);
-    assert.ok(!banned.test(e.body), `${e.id}: body overclaims`);
+test("nothing on the page claims more than the architecture carries", () => {
+  // **`compliant` without `compliance`, and the tour without the page (review of #107, M2).** The
+  // first version matched `compliant` only, so "It assures regulatory compliance" — §4.6's forbidden
+  // phrase, close to verbatim — passed, and it read `EXPLANATIONS` while the page's own prose went
+  // unchecked. §4.6 is enforced repository-wide by `scripts/claim-check.sh`; this is the scoped
+  // check for the page, and a scoped check that misses the phrase it is scoped to is not one.
+  const banned = /\bfraud\b|double[- ]pledge|guarantee|prevents?\b|immutable|complian(t|ce)/i;
+  const html = readFileSync(join(DEMO, "status.html"), "utf8").replace(/<!--[\s\S]*?-->/g, "");
+  const sources = [
+    ["status.html", html],
+    ...EXPLANATIONS.map((e) => [`the tour's "${e.id}"`, `${e.title} ${e.body}`]),
+  ];
+  for (const [where, text] of sources) {
+    const hit = banned.exec(text);
+    assert.equal(hit, null, `${where} overclaims: ${hit?.[0]}`);
   }
 });
 

@@ -173,7 +173,66 @@ pub fn check_record(root: &Path) {
         }
     }
 
-    // 2. Each row's byte count, sha256 and attached digest are what the committed file produces.
+    // 2. Every epoch named by a committed receipt or a receipt row appears in the epoch table.
+    //    Without this the three sets agree pairwise and contradict each other as a whole: a review
+    //    supplied receipts for epochs 1 and 3 and epoch rows for 1 and 2, and this passed.
+    let in_epoch_table: BTreeMap<u64, &EpochRow> =
+        epoch_rows.iter().map(|r| (r.epoch, r)).collect();
+    for epoch in committed.keys() {
+        if !in_epoch_table.contains_key(epoch) {
+            problems.push(format!(
+                "anchors/epochs/{epoch}.ots is committed and the epoch table has no row for epoch {epoch}"
+            ));
+        }
+    }
+    for row in &receipt_rows {
+        if !in_epoch_table.contains_key(&row.epoch) {
+            problems.push(format!(
+                "the receipt table has a row for epoch {} and the epoch table does not",
+                row.epoch
+            ));
+        }
+    }
+
+    // 3. Every path either table prints is the path that epoch's receipt actually has. The rows were
+    //    keyed by epoch alone, so a row could name `anchors/epochs/99999.ots`, or a file that does
+    //    not exist, and still be checked against the right bytes and pass.
+    for row in &receipt_rows {
+        let owed = format!("anchors/epochs/{}.ots", row.epoch);
+        if row.path != owed {
+            problems.push(format!(
+                "the receipt table's row for epoch {} names {} and that epoch's receipt is {owed}",
+                row.epoch, row.path
+            ));
+        }
+    }
+    for row in &epoch_rows {
+        match (&row.receipt, row.status.as_str()) {
+            (Some(path), _) => {
+                let owed = format!("anchors/epochs/{}.ots", row.epoch);
+                if *path != owed {
+                    problems.push(format!(
+                        "epoch {}'s row names {path} and that epoch's receipt is {owed}",
+                        row.epoch
+                    ));
+                }
+            }
+            // A `single` row that names a receipt is a row mid-edit: the status says anchor B has
+            // not attached and the cell says which file it attached.
+            (None, "single") => {}
+            (None, _) => {}
+        }
+    }
+    for row in &epoch_rows {
+        if row.status == "single" && row.receipt.is_some() {
+            problems.push(format!(
+                "epoch {} reads single and its row names a receipt; one of the two is stale",
+                row.epoch
+            ));
+        }
+    }
+
+    // 4. Each row's byte count, sha256 and attached digest are what the committed file produces.
     for row in &receipt_rows {
         let Some(bytes) = committed.get(&row.epoch) else {
             continue;
@@ -207,7 +266,7 @@ pub fn check_record(root: &Path) {
         }
     }
 
-    // 3. `dual` owes a committed receipt; `single` owes none. This is the pair that went wrong in both
+    // 5. `dual` owes a committed receipt; `single` owes none. This is the pair that went wrong in both
     //    directions on 7 October, in prose, while the table beside it was right.
     for row in &epoch_rows {
         match row.status.as_str() {
@@ -241,7 +300,7 @@ pub fn check_record(root: &Path) {
         }
     }
 
-    // 4. INV-ANCH-02: the published range runs unbroken, so the table's epochs are contiguous.
+    // 6. INV-ANCH-02: the published range runs unbroken, so the table's epochs are contiguous.
     let mut listed: Vec<u64> = epoch_rows.iter().map(|r| r.epoch).collect();
     listed.sort_unstable();
     for pair in listed.windows(2) {
@@ -253,7 +312,7 @@ pub fn check_record(root: &Path) {
         }
     }
 
-    // 5. The count the README states in prose, against the rows. This is the one that was wrong: the
+    // 7. The count the README states in prose, against the rows. This is the one that was wrong: the
     //    README said five while the table held nine, for two days.
     let dual = epoch_rows.iter().filter(|r| r.status == "dual").count();
     let claimed = readme
