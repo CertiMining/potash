@@ -65,15 +65,45 @@ fn number(cell: &str) -> Option<usize> {
 /// Matching on shape rather than on a heading means a table that moves in the document is still
 /// found, and a row added to the wrong table is caught by the checks below rather than silently
 /// parsed as the other kind.
-fn parse(markdown: &str) -> (Vec<EpochRow>, Vec<ReceiptRow>) {
+/// A table's own furniture: the header, and the `|---|---|` rule under it.
+fn is_furniture(cells: &[String]) -> bool {
+    cells
+        .first()
+        .is_some_and(|f| f.eq_ignore_ascii_case("epoch"))
+        || cells
+            .iter()
+            .all(|c| !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':'))
+}
+
+/// **A row that does not parse is reported, not skipped (review of da87ce5, M-01).**
+///
+/// Both of these used to `continue`: an epoch cell that is not a number, and a byte count that is
+/// not one. A review changed `20735` to `epoch-20735` and the row left the table as far as every
+/// check downstream was concerned, while `check-record` exited 0 — the same shape this module was
+/// written against, in the module written against it.
+///
+/// A line beginning with `|` in a five- or six-cell table is a row unless it is the header or the
+/// rule beneath it. If it is a row, it owes a readable epoch, and a receipt row owes a readable
+/// size.
+fn parse(markdown: &str) -> (Vec<EpochRow>, Vec<ReceiptRow>, Vec<String>) {
     let mut epochs = Vec::new();
     let mut receipts = Vec::new();
-    for line in markdown.lines() {
+    let mut malformed = Vec::new();
+    for (number_of, line) in markdown.lines().enumerate() {
         if !line.trim_start().starts_with('|') {
             continue;
         }
         let c = cells(line);
+        if !matches!(c.len(), 5 | 6) || is_furniture(&c) {
+            continue;
+        }
         let Some(epoch) = c.first().and_then(|f| f.parse::<u64>().ok()) else {
+            malformed.push(format!(
+                "docs/anchoring.md line {}: {:?} is not an epoch, and the row is in a table whose \
+                 rows are checked, so it would have left the table unnoticed",
+                number_of + 1,
+                c.first().cloned().unwrap_or_default()
+            ));
             continue;
         };
         match c.len() {
@@ -84,21 +114,25 @@ fn parse(markdown: &str) -> (Vec<EpochRow>, Vec<ReceiptRow>) {
                 status: c[5].clone(),
             }),
             // Epoch | Receipt | Bytes | sha256 of the file | Digest attached on chain
-            5 => {
-                if let Some(bytes) = number(&c[2]) {
-                    receipts.push(ReceiptRow {
-                        epoch,
-                        path: c[1].clone(),
-                        bytes,
-                        sha256: c[3].clone(),
-                        digest: c[4].clone(),
-                    });
-                }
-            }
+            5 => match number(&c[2]) {
+                Some(bytes) => receipts.push(ReceiptRow {
+                    epoch,
+                    path: c[1].clone(),
+                    bytes,
+                    sha256: c[3].clone(),
+                    digest: c[4].clone(),
+                }),
+                None => malformed.push(format!(
+                    "docs/anchoring.md line {}: epoch {epoch}'s receipt row gives its size as {:?}, \
+                     which is not a number of bytes",
+                    number_of + 1,
+                    c[2]
+                )),
+            },
             _ => {}
         }
     }
-    (epochs, receipts)
+    (epochs, receipts, malformed)
 }
 
 /// §2.5's receipt digest: `Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)`, the length a little-endian
@@ -122,9 +156,9 @@ pub fn check_record(root: &Path) {
     let anchoring =
         std::fs::read_to_string(root.join("docs/anchoring.md")).expect("docs/anchoring.md");
     let readme = std::fs::read_to_string(root.join("README.md")).expect("README.md");
-    let (epoch_rows, receipt_rows) = parse(&anchoring);
+    let (epoch_rows, receipt_rows, malformed) = parse(&anchoring);
 
-    let mut problems: Vec<String> = Vec::new();
+    let mut problems: Vec<String> = malformed;
 
     if epoch_rows.is_empty() || receipt_rows.is_empty() {
         // A parser that silently matches nothing reports a clean record for a document it never read,
