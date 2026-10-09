@@ -52,6 +52,43 @@ fuzz_target!(|input: Input| {
              epoch's own root",
         );
 
+    // **A second genuine proof, and this one varies (H-24).** The control above is one epoch, one
+    // leaf, one identifier and one height, so it is one slot and one path. Arbitrary input is
+    // overwhelmingly a refusal and supplies no second genuine proof, which leaves path-selective
+    // refusal alive: a review made `verify` refuse every proof whose epoch is not 20723 and this
+    // target stayed green, because its only genuine proof was at 20723 and every other proof it
+    // generated was permitted to refuse.
+    //
+    // So a genuine epoch is built from the input as well. The height is 4 to 6 rather than the
+    // deployment's 8: the fixed control already covers 8, and a second full-height tree per
+    // iteration would double this target's cost for variety the lower trees already provide.
+    let varied_height = 4 + (input.height % 3);
+    let mut varied_id = [0u8; 16];
+    varied_id[..8].copy_from_slice(&input.epoch.to_le_bytes());
+    varied_id[8] = input.height;
+    if let Ok(varied) = <BuiltEpoch as EpochTree>::build::<NativeKeccak>(
+        input.epoch,
+        varied_height,
+        &[0x5a; 32],
+        &[(varied_id, input.leaf)],
+    ) {
+        let proof = varied
+            .proof(&varied_id)
+            .expect("an epoch the engine built holds the submission it was built from");
+        <ProofVerifier as InclusionVerifier>::verify::<NativeKeccak>(
+            &input.leaf,
+            &proof,
+            &varied.root,
+        )
+        .unwrap_or_else(|e| {
+            panic!(
+                "the engine's own proof was refused ({e:?}) for epoch {}, height {varied_height}: a \
+                 verifier that accepts one epoch's paths and refuses another's is not verifying",
+                input.epoch
+            )
+        });
+    }
+
     // §4.5 asks whether an out-of-bounds read is reachable here. **It is not reachable through the
     // sibling list at all**, and the reason is worth stating rather than fuzzing for: `siblings` is a
     // `heapless::Vec` of capacity 16, which is §1.8's maximum height, so a longer path cannot be

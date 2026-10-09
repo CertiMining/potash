@@ -14,6 +14,13 @@
 //!    that is not idempotent would make one tenure hash two ways depending on how often it had been
 //!    through, which is the defect INV-ENC-01 exists to prevent.
 //! 4. An accepted result contains only A–Z and 0–9.
+//! 5. Raw input over 256 bytes is refused, whatever the filtered result would have been (H-23).
+//!    §1.3 and D-25 both require it, and nothing here asked: a review removed the production
+//!    `tenure_raw.len() > 256` check and this target ran a million iterations green. `A` followed by
+//!    256 underscores is 257 raw bytes and must be `0x11`; the mutant returned canonical `A`, which
+//!    is non-empty, inside 64 bytes, inside the alphabet and idempotent, so every assertion above
+//!    passed. A constraint on accepted output cannot see a rule about what should never be
+//!    accepted.
 #![no_main]
 
 use certimining_core::{AssetId, AssetIdentity, NativeKeccak, RegistryError};
@@ -84,6 +91,14 @@ fuzz_target!(|data: &[u8]| {
         Err(other) => panic!("canonicalize returned {other:?}, and §1.3 allows only 0x11"),
     };
 
+    // §1.3 and D-25: over 256 raw bytes is `0x11`, whoever the input is and whatever survives the
+    // filter. Asserted against the input's own length rather than the result's, because the result
+    // of an over-long input is the thing that should not exist (H-23).
+    assert!(
+        data.len() <= 256,
+        "accepted {} raw bytes; §1.3 and D-25 refuse anything over 256 with 0x11",
+        data.len()
+    );
     let bytes = first.as_slice();
     assert!(
         (1..=64).contains(&bytes.len()),
