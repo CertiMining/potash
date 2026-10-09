@@ -6,6 +6,30 @@
 //! 18 September and carrying `BitcoinBlockHeaderAttestation(967489)`. Nothing here reaches a
 //! network: the receipt is on disk and the Bitcoin attestation inside it is what is read.
 
+/// **One thread at a time may write a fake and run one (ETXTBSY).**
+///
+/// Linux refuses to `execve` a file that any process holds open for writing. The test harness runs
+/// tests in threads, and `Command::output` forks: the child inherits every descriptor open at that
+/// instant, and the kernel's deny-write check happens *during* the exec, before `O_CLOEXEC` closes
+/// them. So one thread writing a fake can make another thread's exec fail with "text file busy",
+/// whichever files each is touching.
+///
+/// Two earlier attempts treated the symptom. PR #104 gave each fake its own path, which removed
+/// rewriting-while-running; PR #109 closed and synced the handle before the file became executable,
+/// which removed the single-threaded window. Neither could help, because the descriptor that breaks
+/// the exec belongs to a *different* thread. A CI runner then failed with the error named outright:
+/// `/tmp/cm-h14-wrong-22227/ots-0: Text file busy (os error 26)`.
+///
+/// Serialising is the fix rather than a retry: a retry would hide a race that is real, and these
+/// tests take under a second between them.
+pub(crate) static FAKES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Taken by every test below that writes a fake or runs one. A poisoned lock is another test having
+/// failed, which is not a reason for this one to stop reporting its own result.
+pub(crate) fn serial() -> std::sync::MutexGuard<'static, ()> {
+    FAKES.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 use certimining_client::receipt_digest;
 use certimining_core::{Digest, NativeKeccak, TAG_RCPT};
 
@@ -223,6 +247,7 @@ mod an_existing_receipt_is_parsed_before_it_is_believed {
     /// tests below, which is the failure those tests exist to catch one level down.
     #[test]
     fn a_receipt_that_parses_and_awaits_bitcoin_is_accepted() {
+        let _serial = crate::serial();
         let (c, epoch) = with_existing("ok", &hex(PENDING_RECEIPT), &DOCUMENT);
         let pending = c
             .submit(epoch, &DOCUMENT)
@@ -233,6 +258,7 @@ mod an_existing_receipt_is_parsed_before_it_is_believed {
 
     #[test]
     fn a_receipt_that_does_not_parse_is_refused_rather_than_counted_as_done() {
+        let _serial = crate::serial();
         let (c, epoch) = with_existing("corrupt", b"not an OpenTimestamps file", &DOCUMENT);
         let err = c
             .submit(epoch, &DOCUMENT)
@@ -245,6 +271,7 @@ mod an_existing_receipt_is_parsed_before_it_is_believed {
 
     #[test]
     fn a_receipt_over_a_different_document_is_refused() {
+        let _serial = crate::serial();
         // The root beside it matches what the caller asked for, so the existing check passes; the
         // receipt timestamps something else, which only parsing can see.
         let other = [0xAAu8; 32];
@@ -337,6 +364,7 @@ mod the_pinned_client {
 
     #[test]
     fn a_client_reporting_another_version_is_refused() {
+        let _serial = crate::serial();
         let dir = std::env::temp_dir().join(format!("cm-ots-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a temporary directory");
         let c = client(fake(&dir, "v9.9.9"), dir.join("receipts"));
@@ -384,6 +412,7 @@ mod the_pinned_client {
     /// the pinned client: the bytes it writes are `v0.7.2\n` on stdout and nothing on stderr.
     #[test]
     fn only_the_exact_bytes_on_stdout_are_accepted() {
+        let _serial = crate::serial();
         let dir = std::env::temp_dir().join(format!("cm-ots-raw-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a temporary directory");
 
@@ -420,6 +449,7 @@ mod the_pinned_client {
 
     #[test]
     fn an_executable_that_is_not_there_is_refused_rather_than_ignored() {
+        let _serial = crate::serial();
         let c = client(
             std::path::PathBuf::from("/nonexistent/ots"),
             std::env::temp_dir(),
