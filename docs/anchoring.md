@@ -192,13 +192,14 @@ described rather than an argument that it will.
 | 20731 | `0x4a37066f…890d15` | 507636283 | Bitcoin block 969,968 | `anchors/epochs/20731.ots` | `dual` |
 | 20732 | `0xcfa92cc7…1ae465` | 508282376 | Bitcoin block 970,294 | `anchors/epochs/20732.ots` | `dual` |
 | 20733 | `0xdc1aa505…f4b513` | 508282423 | Bitcoin block 970,294 | `anchors/epochs/20733.ots` | `dual` |
-| 20734 | `0x602451d1…699933` | 509018081 | *pending* | *not yet committed* | `single` |
-| 20735 | `0x6aa9a23c…cb6afa` | 509018123 | *pending* | *not yet committed* | `single` |
+| 20734 | `0x602451d1…699933` | 509018081 | Bitcoin block 970,582 | `anchors/epochs/20734.ots` | `dual` |
+| 20735 | `0x6aa9a23c…cb6afa` | 509018123 | Bitcoin block 970,572 | `anchors/epochs/20735.ots` | `dual` |
+| 20736 | `0x6bb7ac8d…3fd867` | 509670816 | *pending* | *not yet committed* | `single` |
 
-**Epochs 20734 and 20735 are mid-cycle.** Both were published and stamped on day 20735, and their
-receipts carry calendar attestations only until a Bitcoin block confirms them. Two days were owed:
-nothing was published on day 20734, and day 20735 paid both — the fourth time the cadence has been
-missed and the fourth time the next day paid it.
+**Epoch 20736 is mid-cycle.** It was published and stamped on day 20736, and its receipt carries
+calendar attestations only until a Bitcoin block confirms it. 20734 and 20735 left that state on day
+20736, at blocks 970,582 and 970,572 — the later epoch confirmed in the earlier block, which is what
+INV-ANCH-04 means by budgeting the latency rather than bounding it.
 
 **Before them, every published epoch read `dual`.** 20732 and 20733 were published and
 stamped early on day 20733 and attached later the same day, both at block 970,294 — they were stamped
@@ -278,7 +279,7 @@ epoch, `cargo xtask check-live-values` accepts decimals of six digits or more, a
 and compares both fields. Epoch numbers are still absent on purpose: a UTC day index is a date rather than
 something the deployment produced, and the demo is legitimately about epoch 20723.
 
-Every **attached** receipt — epochs 20723 to 20733, which is all of them — is committed and every one is
+Every **attached** receipt — epochs 20723 to 20735 — is committed and every one is
 the upgraded form, so `ots verify` reaches a Bitcoin block header rather than a calendar's promise.
 
 **This sentence has been wrong in both directions, and that is a fact about hand-kept records rather
@@ -303,6 +304,8 @@ document's word:
 | 20731 | `anchors/epochs/20731.ots` | 3,707 | `53347acb6079a911dc9623cde6b6ea4157208015b99eecde93119cb14c38da5e` | `0x59e12c7770ec794367cbc0f069518f900074f523d97b785700069f12f9b7ce16` |
 | 20732 | `anchors/epochs/20732.ots` | 3,849 | `149641b35a58472e9205c53b5d2ed5bc1809ff9b8841772751ea2dc7bf45cba8` | `0x6fc016569fd8e8433ed6e53b8d0a8a5463f877833e7990e36d25e66f1c531630` |
 | 20733 | `anchors/epochs/20733.ots` | 3,884 | `820f3f8b8f3a89c707e487ef9ccf74d2200a87a1994b4accfe7c57e227464d42` | `0xf9cc11346e1ee774353071c712aa470f314dc6ded91059856be5fd7932f4a2af` |
+| 20734 | `anchors/epochs/20734.ots` | 3,848 | `867bd6275a305ea6ebc4d67c976060a498b2c3f514b1b889f43ebc2d23001585` | `0xf0eb017e3c65128323ec8539e730244fdc556b387fcc6e605f164fd9d13d2c7b` |
+| 20735 | `anchors/epochs/20735.ots` | 3,848 | `fd8fd9304d230fdd5c60a562daae900a79e1f45ef3db4d8104ebbabc60454c26` | `0x1a56cfbc7d8a12eebc7ae74def60f58352173ed28f595f822eb74cbf54611408` |
 
 **The wait is not a constant and the table shows it.** Across five cycles the confirmations landed
 anywhere from six blocks to a few hundred after publication, and two epochs stamped minutes apart
