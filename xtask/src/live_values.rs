@@ -361,7 +361,7 @@ pub fn check_list_shape(root: &Path) {
 /// because what makes an artifact legitimate is its subject, and a test of a derivation has one.
 /// What is synthetic by nature: the demo, the vectors, and every test and fixture directory. Not the
 /// cluster harnesses' crate root, the deploy script or the documents whose subject is the deployment.
-const SYNTHETIC_SURFACE: [&str; 9] = [
+const SYNTHETIC_SURFACE: [&str; 10] = [
     "demo",
     "vectors",
     "ts/test",
@@ -371,6 +371,12 @@ const SYNTHETIC_SURFACE: [&str; 9] = [
     "programs/certimining-checkpoint/tests",
     "programs/core-harness/tests",
     "benches",
+    // H-25 widened this to every test directory and missed the one that is not called `tests`. A
+    // review placed a listed live slot in `fuzz/fuzz_targets/` and the gate passed it, while the
+    // same value was refused in all seven of the others. `fuzz/corpus` and `fuzz/artifacts` are
+    // generated inputs rather than authored artifacts and are deliberately not walked: a corpus is
+    // libFuzzer's bytes, and a coincidental run of base58 characters there is noise, not a claim.
+    "fuzz/fuzz_targets",
 ];
 
 pub fn check_synthetic_surface(root: &Path) {

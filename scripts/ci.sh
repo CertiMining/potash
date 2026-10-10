@@ -67,10 +67,16 @@ SUPPRESSIONS="crates/certimining-log/tests/common/mod.rs:1 xtask/src/spec.rs:1"
 lint_suppressions() {
   local wrong=0 f n expected found_files="" entry
   # `#[allow(` or `#![allow(` with only whitespace before it, so prose about one is not one.
+  # Rust permits whitespace between every token of an attribute, so `#![allow (warnings)]` is the
+  # same attribute as `#![allow(warnings)]` and compiles identically. The first pattern here assumed
+  # none, and a review slipped `#![allow (warnings)]` past both this check and
+  # `cargo clippy -- -D warnings` (review of da87ce5, M-02). Each gap below is optional whitespace.
   while IFS=: read -r f n; do
     [ -n "$f" ] || continue
     found_files="$found_files $f:$n"
-  done < <(git ls-files '*.rs' | xargs grep -cE '^[[:space:]]*#!?\[allow\(' 2>/dev/null | grep -v ':0$')
+  done < <(git ls-files '*.rs' \
+    | xargs grep -cE '^[[:space:]]*#[[:space:]]*!?[[:space:]]*\[[[:space:]]*allow[[:space:]]*\(' 2>/dev/null \
+    | grep -v ':0$')
   for entry in $found_files; do
     f="${entry%%:*}"
     n="${entry##*:}"
