@@ -56,9 +56,9 @@ inside the Solana runtime and outside it, across every committed preimage.
 - The landing-delay correlation above ran **once**, over 200 consecutive epochs at one epoch per
   minute on one endpoint. A day-long cadence would sample network conditions this run did not. That
   run is filed for after the submission deadline.
-- Anchor B has completed **eleven** cycles on the deployed log, epochs 20723 to 20733, which is every
-  epoch it has published. All eleven read `dual` and all eleven receipts are committed under
-  `anchors/epochs/`. Eleven cycles are eleven instances, not a measured latency. A newly published
+- Anchor B has completed **thirteen** cycles on the deployed log, epochs 20723 to 20735. All thirteen
+  read `dual` and all thirteen receipts are committed under `anchors/epochs/`. Thirteen cycles are
+  thirteen instances, not a measured latency. A newly published
   epoch reads `single` for the hours between publication and a Bitcoin block, by design (D-112), so
   that column is a snapshot rather than a property.
   The cadence INV-ANCH-01 asks for has also already been missed four times — nothing published on
