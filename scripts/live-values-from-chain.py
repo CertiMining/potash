@@ -410,9 +410,11 @@ def main() -> int:
     print(
         f"live-values: of the fields this script reads — addresses, roots, publication slots and "
         f"timestamps, receipt digests, the authority and every **transaction id** "
-        f"`getSignaturesForAddress` returns **and every signature inside those transactions** — the "
-        f"chain holds nothing {LIST.name} does not. Not read: bumps and epoch numbers, which are "
-        f"review-enforced (H-20)."
+        f"`getSignaturesForAddress` returns **and every signature inside those transactions** — "
+        f"**the announced deployment** holds nothing {LIST.name} does not. Not read: bumps and epoch "
+        f"numbers, which are review-enforced (H-20). Not asked at all: the two superseded "
+        f"deployments, which still own 2 and 213 accounts on devnet and whose addresses this list "
+        f"does not hold (H-26)."
     )
     return 0
 
