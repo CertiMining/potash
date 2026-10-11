@@ -29,9 +29,14 @@
 //! reader never asks a superseded program what it owns. Supersession does not remove an account from
 //! devnet and does not make its provenance synthetic.
 //!
-//! Closing that means either listing those 215 accounts or narrowing the rule to the announced
-//! deployment, and the second is the owner's to decide rather than a tool's. Until then both
-//! messages say which deployment they asked, so neither claims more than it checked.
+//! **Closed by listing them.** All 215 addresses and their byte forms are in the list, enumerated
+//! once from `getProgramAccounts` on 11 October 2026, so the static gate refuses them in a synthetic
+//! artifact exactly as it refuses the announced deployment's. The rule stayed as written; narrowing
+//! it to the announced deployment was the alternative and was the owner's to take, not a tool's.
+//!
+//! The chain reader still asks only the announced deployment, and still says so. These were
+//! enumerated once rather than reconciled on every run: a superseded program's account set does not
+//! grow, because nothing publishes to it any more.
 //!
 //! An earlier version of this paragraph said slot numbers were deliberately uncovered, which the
 //! decimal support contradicts. H-34 recorded that paragraph as still stale; it had already been
@@ -408,8 +413,8 @@ pub fn check_synthetic_surface(root: &Path) {
     }
     refuse_live_values(root, &files);
     println!(
-        "live-values: {} files in the synthetic surface carry no value this list holds, and this \
-         list covers the announced deployment (H-26)",
+        "live-values: {} files in the synthetic surface carry no value this list holds — the \
+         announced deployment, and every account the two superseded ones own (H-26)",
         files.len()
     );
 }
