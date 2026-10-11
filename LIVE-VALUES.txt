@@ -260,3 +260,440 @@ QmggTMPZ2FUhWapRe732E5yxsrHXdokT4KTJprPUnkvMWZUEcZpAviNqm7ZEfNQH6jjgk2rVPeWKrQpk
 2XUvtgV2AHeWfUKCvgWz9J75uQ4r4vC4Ccxu57SqqEukbAaganyhYF4PiyM7ittkzgibjaYbGQhkj38yVDSfiBYp  co-signature inside the attach_anchor_receipt signature, epoch 20730
 2AaH7Spw86LUUupSHDJKsNwpges3QTFeMhUPx4ypzyX1SeSAZ1Gqnh8HKsdvbGJGo4LGTpiBSCV1dQBJoij56kZy  co-signature inside the attach_anchor_receipt signature, epoch 20729
 2gpMiYf6ZEEMTQgoc6sb3f4PeDYyS2FiS3bnz69cwdkFkH5xis5N6oMitAqbmwvA4y9MyPTWU23tuvgNfq6BHuZu  co-signature inside the publish_checkpoint signature, epoch 20732
+
+# Accounts owned by the two superseded deployments (H-26). Supersession does not remove an
+# account from devnet and does not make its provenance synthetic: a fixture carrying one of
+# these addresses would assert a relationship with a deployment that really existed. The
+# static gate refuses them here. `scripts/live-values-from-chain.py` still asks only the
+# announced deployment and says so, so these are listed rather than reconciled against chain
+# on every run — enumerated once from `getProgramAccounts` on 11 October 2026.
+2twLmyNHCVmUDPLoKCAgeZbuQ9Eknu5xZZoK7ToaGuWv  account owned by the program superseded 24 September
+0x1c29c06f954140f34f53f04186fb6329254dca22d814503e9933bf260f855bbf  account owned by the program superseded 24 September, as bytes
+DEoAdvXnMNYxuboN1MXUJRUynbixzF42DCBPUV6wvafw  account owned by the program superseded 24 September
+0xb5d4fe6de7cee2b71d5c512ae857f63d026e180636182873c7e324d88ac9b2be  account owned by the program superseded 24 September, as bytes
+2584t5aMC8GBU2yLgpkGQAB3KtsW8d69Ajjz2tNh3oji  account owned by the program superseded 25 September
+0x0fea003092070c296aa1add0a72346a5ad0200fc6c8da1eede259c1ee9586155  account owned by the program superseded 25 September, as bytes
+25Ax676eFfHZ77ErT16dRPh56ZYpteiErdcRzVk8RFHg  account owned by the program superseded 25 September
+0x0fed42ab89ae588c1957a5c0ef9e5a7208120ef84f406767ffc0555a8f14c04f  account owned by the program superseded 25 September, as bytes
+27UuNTzvHr4F6N7mwCbhqxi5pULCUBfnebDhjdyo7NHU  account owned by the program superseded 25 September
+0x1084b8c31fafafed5355cc1055db5adbd82f64566da2de78edda982c8971227f  account owned by the program superseded 25 September, as bytes
+29tgWU8Sg23SuxzkYBQ9cc8R6L8GXtgBPMuYj9jeJw7b  account owned by the program superseded 25 September
+0x1122c4fd2cef08472f40d3b4e96ddcbf1008b0d8ba355ada5427dd403603a54e  account owned by the program superseded 25 September, as bytes
+2DE7ULVmPEpBkPzn6QYtwEbXC1FZN38SdNmYUPqq4tVo  account owned by the program superseded 25 September
+0x11fd7b60657a00aeef4b5abe4b0aad568cdd8d130e2beb78323ff43bdf1cd42a  account owned by the program superseded 25 September, as bytes
+2GNEBiRVHx6Ykt2KrZYfTXgbV26ca8AGxGvoxa374hg7  account owned by the program superseded 25 September
+0x12cb669f9c92e30b31769c4d1d83766a4cb7b939c209eba46eb9553e97034254  account owned by the program superseded 25 September, as bytes
+2PsjWLWxGquatUw71UPzRwEetCf3B11gJ5EYHnQAPB2J  account owned by the program superseded 25 September
+0x14b7d41bfe78379fcf514289b8746183ee37946af2eb2a23cac20c80fa4ba453  account owned by the program superseded 25 September, as bytes
+2PuSDvqnLoLW81r9n8XjC7ADkYsyqYUdT6hVc29XCkz9  account owned by the program superseded 25 September
+0x14b9c0c6a60578ed5f353f7031fdee1cc5e58eb7fedf5f1bdce5b12f5ec33c56  account owned by the program superseded 25 September, as bytes
+2Sw2YEQHc1AeouE91LyqFUL2BMMJEzKVnbob25DPA12E  account owned by the program superseded 25 September
+0x15804b8e4d8c72bf1fb0a875af451b6962a909588a590d72f1ea6f2e0a6f500f  account owned by the program superseded 25 September, as bytes
+2TF24x81LQPpEq1BHfoHrYCN9DnyoGbD4C8KPgt8DtE1  account owned by the program superseded 25 September
+0x1594a37d9ce0a11a159cfa4b72b6db0d563c82014b07b457cebdbf4ae5c42c0e  account owned by the program superseded 25 September, as bytes
+2WLqAFnFQPULYesgAa8kL5wzjaFHjZeGnDyd7MqrAQVC  account owned by the program superseded 25 September
+0x165ff3df215bdfe46f8a1396082429af8a7606cbdb8a6f87f7372b3948cc4617  account owned by the program superseded 25 September, as bytes
+2Wpztws8HBy1gkx4QA2rfsgzHnohQ6kEaS6WiQqJzWkc  account owned by the program superseded 25 September
+0x167fcd583d330c6df214cd2c238a08a7dfbdc9832ec8efba96c80153f295bf2d  account owned by the program superseded 25 September, as bytes
+2gcCFnnYBYL13rNyEw5feGrJE1TZQsYaBv3NWTu1u9xe  account owned by the program superseded 25 September
+0x190121ece93f6ab904c53c2e34aa21a4abb3434da905bd2252081fc1d25f7a5b  account owned by the program superseded 25 September, as bytes
+2kJVF4HACntq4aG9pgBHyXi4WssWatohTKfeGSB7h5TN  account owned by the program superseded 25 September
+0x19f36f2ba059041276d280bbc738c33b24cd391de1a421f265459a334599aa29  account owned by the program superseded 25 September, as bytes
+2s5SrgxALEqSWcPeaCeo3NwgrgnzWfSKhsMNrSoEs4Cg  account owned by the program superseded 25 September
+0x1bafc117b700313527c05858a90854633d2280a12c443aff5c934ff227459631  account owned by the program superseded 25 September, as bytes
+2ta49J9sBwZHD23SWBs1UcANJBv7yUY7agScVhCPhNNT  account owned by the program superseded 25 September
+0x1c11aec43142d07af810c4b1132eec23d57278be10d5edc8a4e87c0805028d50  account owned by the program superseded 25 September, as bytes
+34WEd2qXZwJBpyHkuYSbLzhWrh5f45K1mTN5yMnASy7N  account owned by the program superseded 25 September
+0x1e9d2c17325d8cc85339e6c1ce764eb6b3b96e958226adf366b3ef632df5e8e9  account owned by the program superseded 25 September, as bytes
+37ej96bkFfZFckEC7zhk4GPKtPxn3SR1fGtgL1PGYQwL  account owned by the program superseded 25 September
+0x1f6b8428c869defe761e436ca3c0fca4466c21a91b7a4009861e6b016b478d93  account owned by the program superseded 25 September, as bytes
+3A8vkfkWNhNTGdD8NFQDKW4qLA5XQdzV2ZX8tbFnt4Dq  account owned by the program superseded 25 September
+0x200e90601ac80b30d6f135003b401820beb678cb23a8440be185072255a1a1dc  account owned by the program superseded 25 September, as bytes
+3Abx2UUvETwnBewzYuXyviRN7jvmrycTysdu7p3qPthE  account owned by the program superseded 25 September
+0x202d1e2641c53bd6078d21544092bada22831ed8dd97cf700c0cb6d98d63adb9  account owned by the program superseded 25 September, as bytes
+3ExWTUXKhbdVwFpA2UHmCxWbLnz6kNnh71B9LFR5f7ZT  account owned by the program superseded 25 September
+0x214aaff428df918fd47b5b236a5b19055ceb04b59fda19a90dd7a3817f120e62  account owned by the program superseded 25 September, as bytes
+3MriTe4r7icC6NTupKAaKB6Vp8nzkexgtDYYehXyAMK8  account owned by the program superseded 25 September
+0x230f33e7c3f6b25b0318a5f454110d6dd028fb0948b098a0d5bee2e9cbec1613  account owned by the program superseded 25 September, as bytes
+3VGkycmFNFYsqJ8y1xekFpYvbJCwVxy9G9YuFcsShczv  account owned by the program superseded 25 September
+0x24f57451a911d68e612f2f943c9f257bbfa54fca1d768f85f14922e04ac00edb  account owned by the program superseded 25 September, as bytes
+3h9qjNEqWBskRatnyPuoPzUQUWeHCVhPv3UJQmMwqvJR  account owned by the program superseded 25 September
+0x28009a12244b2aaa862f4fc0332ff0db58e557d0201226ba03073b0301613946  account owned by the program superseded 25 September, as bytes
+3jui22kH4LaQgFvURRvJUfnrHVzPv4WTokvHZaoRYHKU  account owned by the program superseded 25 September
+0x28b55d32e80af621e9a5a400cbf893ef6e65c81e12a9c4db55bdc9e9ee2449c7  account owned by the program superseded 25 September, as bytes
+3pjTHvMjXvrrduavYpGJgSycZTBA48egtbZgXHavEZte  account owned by the program superseded 25 September
+0x29f1ac8a45e663f1bf7c0a5260b1d32c5373461db56c3778688540f4c202d82b  account owned by the program superseded 25 September, as bytes
+3rvgZNV83Yn22AwuACYoerPDtPcyeDU4wdjcv8KjeABE  account owned by the program superseded 25 September
+0x2a81882f263c08b0a3345bfdd411487eab94f12e15586307e28d0ff431c3397d  account owned by the program superseded 25 September, as bytes
+3toe1RDTDF93UPkRXAd6AtRVCv6WhgPV9w71z27av1FT  account owned by the program superseded 25 September
+0x2afcba9b53a587d1fa4a0d182023f05a88c0961f47629368e3f072d616d46f1e  account owned by the program superseded 25 September, as bytes
+3xGHKWCUdvkj75szX732hRmpZVabGFaWAXdeCgx7jBkL  account owned by the program superseded 25 September
+0x2bdf98d7d77aa8888527f0ff3d50f566ed4a2030340741d11c4a78c23b90cfc9  account owned by the program superseded 25 September, as bytes
+3yWoWunAAGxxmD2PD81vv4tRgm7e33PwogA5G7KmQE4Q  account owned by the program superseded 25 September
+0x2c3198ac99c5937394e8f46f90fd230e4cd5bac5d439c76d7677f67140a12631  account owned by the program superseded 25 September, as bytes
+4BNkAhFDm6gXwjZEY9zfn2tPhPgVdmDEAKxTUaqgKhu9  account owned by the program superseded 25 September
+0x2f3b7486f15300b79a3899274556d46fff987f7ac281e53a610809cfb1c7d570  account owned by the program superseded 25 September, as bytes
+4FqqecfRr5CtKruJ6xaNBZ23tzgS5MPuCmZ13ar7sr2u  account owned by the program superseded 25 September
+0x30606a0e0d2a7d84f84f0163c48a4fdbd1845dbf607069df95ce434c3ab41d62  account owned by the program superseded 25 September, as bytes
+4Q4zPgw7wzWJodj3RP3GrNM6fHijwcfBmzyuzoEvVLYP  account owned by the program superseded 25 September
+0x327bee2a5376ec13f66ec48219d780d90be8371efa3c0a7a524290d51166a898  account owned by the program superseded 25 September, as bytes
+4RAYg7g2m4SSBrbKpysLzMjUL9FucT6w9anaNEndf2Mh  account owned by the program superseded 25 September
+0x32c3cb44c69d98928715447ccc254658b46df86d5c0b356980228c8c27b4fbe4  account owned by the program superseded 25 September, as bytes
+4ZsE67UZaU2VfadL3QqqUjJY1fBzuuPHbptsJPa1wX8e  account owned by the program superseded 25 September
+0x34fe6fdf528f01e4db265b483e4ff7d907bc64863167a5ac1dc81547c7f1c203  account owned by the program superseded 25 September, as bytes
+4hLr6GSzvnYYgeGp5N4podXYcTqi2XbAVXfdk2L7tzx6  account owned by the program superseded 25 September
+0x36e8bbc8a3b257413493d13789abb2d4250ea6e713318c9d92d648a84d46ca77  account owned by the program superseded 25 September, as bytes
+4uBRZhwWZAEYqswr4a1MnVBbjqxxmgjN3bydqvBRgVJt  account owned by the program superseded 25 September
+0x39f10c7b5daad2f7b4b0dc0784e6cec4888dffc1fcc62a16ac976da783aa8115  account owned by the program superseded 25 September, as bytes
+52Vznze3LQQdzygJzYdpu1udDE28k6y2ttdN2KD65E1U  account owned by the program superseded 25 September
+0x3bd11d69015591f88e09437b80685a28876b77cabc980cb760e8a380081ea45f  account owned by the program superseded 25 September, as bytes
+5411U9bjvZfihVNopXrEjkSh2nJHZX5FvJ3YgiadC7BF  account owned by the program superseded 25 September
+0x3c337fcf59d71aa7bc796c9f2b65fd101f8519df0d6d3db3a0542eb11673e982  account owned by the program superseded 25 September, as bytes
+5AdLFeViK7GxHs7B2uotWeii63WhZ5Cne2dy4C5WszVv  account owned by the program superseded 25 September
+0x3de60e3e99d0de40c02ed718b99996296f0581550e8fef20bfccc1e77be160f1  account owned by the program superseded 25 September, as bytes
+5Nh95KhKK8uNWDtfT4b44N8nuyHRzbG8Di4wXQxqFQ87  account owned by the program superseded 25 September
+0x40fd548b66f7b5ec63847084970901457d5310327d4189c8e54faa3ccc2c9928  account owned by the program superseded 25 September, as bytes
+5Yw4ezeynrmpeSanmxQG28e11C6E74bndnpmzsrm9rQ6  account owned by the program superseded 25 September
+0x439ce1cd2621d4b91d6e60f304b76a2203b8a0f15c4c3e7d0ab1d3c35fc021bf  account owned by the program superseded 25 September, as bytes
+5cFxCQyZWh4EYJNsxCuFexn63mc1mnZ1o8x97ZhFjBaX  account owned by the program superseded 25 September
+0x4476fb5fada243434af736cbf0a7ce48756a5694378d3a7af18a629e0df35e70  account owned by the program superseded 25 September, as bytes
+5dgVRUpS6pXNN4dA2oRutrSGUuCfPnUHZQvjnKdupdxp  account owned by the program superseded 25 September
+0x44d44ef08733064135a567df1b772aa6a8f82d31cde5c463b6b2c8e6936eb5cd  account owned by the program superseded 25 September, as bytes
+5kPjccCCBGZt6DxeFEJQmtDaPFyfCgGyHXNxU8HqMVVo  account owned by the program superseded 25 September
+0x468c6dc1253ca4dbfee122044c4644a83c6c8f91f862c66132e6d60dc7dd46d6  account owned by the program superseded 25 September, as bytes
+5rcdqazEqDdzGVMjbVpkiPMctRsvvmarwe9APXppcwuB  account owned by the program superseded 25 September
+0x482480080ea825e62a618541f4a37463d85f97b08a4d684a60669838588992b2  account owned by the program superseded 25 September, as bytes
+5wjsBUjutU6zuuc7BBPjvKSNnuCU1tmCudFFrmm3fx82  account owned by the program superseded 25 September
+0x497494475283dba24b74e31d5e939cfaca9b558775c40f9eb652ddf5f69d5763  account owned by the program superseded 25 September, as bytes
+5yDGZKH83eCAkWFbGCmjagiXjTgaKhgCzBo7yK2Thgb6  account owned by the program superseded 25 September
+0x49d5250dcec89727caf199f2b0e22f419507bf3ab7f8a7030dc854fcbd4ef635  account owned by the program superseded 25 September, as bytes
+617tP95dhVGqkafGjHPEDwHMjAP9ZoYzc2j7PqtDRMNR  account owned by the program superseded 25 September
+0x4a523874edfb6206de1ccbf94c8ffc984b08978206b5791e7bf4eed209c0740a  account owned by the program superseded 25 September, as bytes
+61Sp5wMQ17h7Td5Qy779H9sJ9T6KYMdFGc1LQA3rSFtU  account owned by the program superseded 25 September
+0x4a679ec19203656e5dc267b04837c472566d884d198773c1ef30dc1c8d85fd99  account owned by the program superseded 25 September, as bytes
+64PmDaqwbYGbtnNhxJc4oDBZcsV2YHLYxteH4iu1FXMV  account owned by the program superseded 25 September
+0x4b28ea1f7d5f68ae89950083c2241a76e6df2f0bc164576d800edcfc247f874c  account owned by the program superseded 25 September, as bytes
+68e1JVtHUUR8fJs2pc59GUN5i3uLtzuuQch9pVrWxCLH  account owned by the program superseded 25 September
+0x4c3f579b1444ad75b988e8f3da0f7f7beea219f4f52dfc2cce04cd758fc74a72  account owned by the program superseded 25 September, as bytes
+6Hzi6aLSEVxmWzakojxj4xKpmqcDnu5gWcqcbhKV3Wsf  account owned by the program superseded 25 September
+0x4ea4fa95b25034c6014b9ad284a46b4be85de1e9879d12db10ec01df366c15de  account owned by the program superseded 25 September, as bytes
+6Ko9QgX1V7uSHNdCU2Y6KRR5f2TWo7YeVn9YwHfRPhBY  account owned by the program superseded 25 September
+0x4f1b10c34894b1f6acad3ea1c68cc84dcf2b893e9b7f487c9b8281abb74eccb3  account owned by the program superseded 25 September, as bytes
+6PCQFJQkp1QSw9VEZkAaB9gLtM6myNCZroYAbYZoN3gV  account owned by the program superseded 25 September
+0x4ffa1a75ce7072e5f86a519d780626d56e614c7ff483994038201517328b6b22  account owned by the program superseded 25 September, as bytes
+6PfBJRSApcMprzs97EJoqo5CUDWCUz5vFC9GQ3jJtLkV  account owned by the program superseded 25 September
+0x50186145e78e2c0deb30f26548e502db6359272c27d0d5c10430343cefebccce  account owned by the program superseded 25 September, as bytes
+6U5y15U6UcM9io6dsgMnHmCaC3SAd8eUvhPQsMkhvsAB  account owned by the program superseded 25 September
+0x513abb24d7a5c925458070821056f5246222531617b19fab8d2c10d54bc51ec4  account owned by the program superseded 25 September, as bytes
+6VWrDQpNLy4L8XCk5PbbjPDFKnEhvQXFpntgRyGATRo6  account owned by the program superseded 25 September
+0x51987275e5478f950b5fd93fef87c9b8ec6eb21287ccf1a6cac493b6f6e622d1  account owned by the program superseded 25 September, as bytes
+6crAH1QYj6xzRMw7vW67gfiJXhWhfEchdetEpe17hvDm  account owned by the program superseded 25 September
+0x5379592795f835ee43dd03c21279bcc5e7b8e9fcc1804693288a6b820d2d23b8  account owned by the program superseded 25 September, as bytes
+6feNXQMm5ZaUrybmUvv8ZY1A1ir1VbcEJaesCNqjayNF  account owned by the program superseded 25 September
+0x5430c2d24fc293a52c6632a7b10615109d36de91d397965578f99fe253141d38  account owned by the program superseded 25 September, as bytes
+6g2b4NCCQskfW5yxxXTTRqQJfuhupsnBPwNknhGtJ2tZ  account owned by the program superseded 25 September
+0x5449e17f2ba4b7dca413d540bb7e67c161c92a1c6240f5fcec1e5a3513681b8a  account owned by the program superseded 25 September, as bytes
+6hyWyrQ7vMKvVv9ii3v6J4S42QMKpa75pHN8YzADVdmj  account owned by the program superseded 25 September
+0x54c99223b52ad327887ad4ab4d4a5c48295dedc84d93d226eff6115812a029b2  account owned by the program superseded 25 September, as bytes
+6jMUgdeiN9KVBfECR3YfrhBWG1vLyjZPVbtNJxJwWC7n  account owned by the program superseded 25 September
+0x5523fb7c79188401162d3c7b92dcdc4d9648021c8df5bba79f78de00ed420edd  account owned by the program superseded 25 September, as bytes
+6kyyKsHe2juoTpBkobobggHAcmstSuoUZ1Jn4mHkxc4p  account owned by the program superseded 25 September
+0x558ed3ae5b939f750526e6ed5b58df33efc4d2d1f0e11e1c19b86c7a89f1e091  account owned by the program superseded 25 September, as bytes
+78B9S5TbEG24MjzzBUTppthUZCu7ut12BPVrhdb4EH1z  account owned by the program superseded 25 September
+0x5afca89cffb311ca51e726e8598df5bb5eb670109402fe7506ca64dfbb5e52f1  account owned by the program superseded 25 September, as bytes
+7P8Aw7XuVNbhgWrGLnGNdxArsimVHUyrk5ZY3EgKgrvh  account owned by the program superseded 25 September
+0x5ed10207641fcb81746a72838c0f8ed6895ff05b9a635deac7bf2a3278c21fe6  account owned by the program superseded 25 September, as bytes
+7nZS7r3Jz75nSGof4bqw3LV5atDzzY97XzSVSJkmDv6g  account owned by the program superseded 25 September
+0x64d1ee1ea337e1d8686badee80fbb036289b7848f760cf45077a542258ebbefd  account owned by the program superseded 25 September, as bytes
+7oGxvpo8QUy37RQimReBaNP4XCnFprHK1VZ4XMFFErfw  account owned by the program superseded 25 September
+0x6500e3bf6feb606e73bb6cf64c33b2f0478499dfa8742b49aa674081d7c4915e  account owned by the program superseded 25 September, as bytes
+7paDiN8wRFgJ5kudxH8V5tXjtF4Eqp6DcuCag8nUNEsN  account owned by the program superseded 25 September
+0x6555fb0b97a86388c7840f735d7a15b53ddb215cea0074f0c64e842ea3d85595  account owned by the program superseded 25 September, as bytes
+7qbHZcSKkPR3Z2siq2KBzAeecU5bQhBgz2AykCMQjzcr  account owned by the program superseded 25 September
+0x6598c466ef8db584a244d06fe693670a22ce0975f9343b6711035b7fedc042e3  account owned by the program superseded 25 September, as bytes
+7uZq6pkcyBZeo1yc5qVrZF3YVPgWRrv5PyrBvxjbrJfz  account owned by the program superseded 25 September
+0x669d71a0a378d2b2b2abb4bad740c63dc6a6dcee6609e64034129c4c6d1caa81  account owned by the program superseded 25 September, as bytes
+8B9dpTm8TNZxR97LRbUoje8gvyvbYie35hkRYXqBgnPv  account owned by the program superseded 25 September
+0x6a9b6145e4edcf727ce79b26382dbca8f55f78d4775e87e75a9744f682c6383d  account owned by the program superseded 25 September, as bytes
+8C9XnnDv93nb7uMNy8QccD8Wt8n37NihERC5Nfz49Bvp  account owned by the program superseded 25 September
+0x6adcd7df0d161cf24e2600e47fdf29d138ffeb1e31d369f76e6044d280648ca9  account owned by the program superseded 25 September, as bytes
+8CqkFbxwyneYyyeuqbdgKFbFWSVtNSRm8rnne7JSbJjy  account owned by the program superseded 25 September
+0x6b0a5078f881187edea6fbb722ab60cef71dc25f038a43e9dea9078db2f4dda0  account owned by the program superseded 25 September, as bytes
+8F9F336ggcgdX9ATcptM2CrHxQyB2yemxtvqmt3m7Bit  account owned by the program superseded 25 September
+0x6ba142514f9d3420e6f7c5dc28be20b7e50693819875531e774d665438f19695  account owned by the program superseded 25 September, as bytes
+8FB3XJbAFmKTAUeG8gcdKCWFSUSkYYqdiqAu4KRJZocc  account owned by the program superseded 25 September
+0x6ba34bc82719f0b9ab0d92fd6fa42749690383e7fe27efd4543563e3f8648499  account owned by the program superseded 25 September, as bytes
+8HXA9Ds259VW58jyMyMci4GJTXBRSspw5shG7jC5b4Ze  account owned by the program superseded 25 September
+0x6c3d3364b325f4b1732d7060a8380c156d469b101969c6250c42a4c9ad0b96c1  account owned by the program superseded 25 September, as bytes
+8NZUFxt5btWJr6kkzSmZBDN6qj8G5jRTMURZTFTnEYBx  account owned by the program superseded 25 September
+0x6d87b82969cf97e854be16253a4e32b75f3082a554e244db939b622f02bab06f  account owned by the program superseded 25 September, as bytes
+8RaEKaLs8ohWyYZz3Gs5aGpHjLEcHtiTkEL1CLN4TMp5  account owned by the program superseded 25 September
+0x6e4d521fd3ea928814308c3b795e455dce0bf5be5b71c7d1e4c273f9be222b1a  account owned by the program superseded 25 September, as bytes
+8SkbKrCybPD8pNhnNF5EaaBw89mFRmmgnFNsK6DKdf7y  account owned by the program superseded 25 September
+0x6e9a9e3da134f75fa5815c0e607b23a832cf6ca518033ec316d7813047c4f16c  account owned by the program superseded 25 September, as bytes
+8bN9q7HcprmvCyzUaUB82q2yQnuQD41AymXBJAW4xmFZ  account owned by the program superseded 25 September
+0x70cf790fd75da9ec9ca1e11ae4b99aed91039d9b41d7e884606f7d8525549f24  account owned by the program superseded 25 September, as bytes
+8hEqtKs85AbXeoATwCESAK2gYwqedcHcTgQRFAWA1Q6p  account owned by the program superseded 25 September
+0x7250b16879abda8cab9197ea0d8091efdae8928b12fb590084ec002711460d7d  account owned by the program superseded 25 September, as bytes
+8mtVuHNosfkdBiQNw9J8jSDZatfLQiXbwmhvDXyt8cLu  account owned by the program superseded 25 September
+0x738197e8e7bb456cb6978eb141a4d8a2a53f90b9e2eb2bcd8f089b0d499bfb36  account owned by the program superseded 25 September, as bytes
+8psTCCJriwzC6p9iEDWV2M27LFoUcf2MTbotvC5vKbvu  account owned by the program superseded 25 September
+0x744526fe85b27f7590b9c11b526b88a5c712c23df44390c79280bd68ff73b4de  account owned by the program superseded 25 September, as bytes
+8vDS8WzGEXnHpEoTJQZ9kRNs1XxfA7CnRU8tCvSupsk7  account owned by the program superseded 25 September
+0x75a3a6533c033aaa80e17c94cacff37c4329281872887978d9488f22e9ee4fc4  account owned by the program superseded 25 September, as bytes
+8yzfBN1EDSze9ivausUqcgZUjKZFhfUUaHMSRdgGKmW8  account owned by the program superseded 25 September
+0x769b873741018be449d5315c1bc30ed8c68741f5f78308357dd6134271d844e9  account owned by the program superseded 25 September, as bytes
+91Bwxit5Z4ujVPjES9RzZTLW9qNxv64Fm8saosiniXZ5  account owned by the program superseded 25 September
+0x76e9dfb7eb95e11e101d46a1adff5fb4b69a7af2bbd000eb3492306cfc7b30d4  account owned by the program superseded 25 September, as bytes
+928xK8z3ofo5YkP1mPtpkBHzKD1yAM498bFJpBWp3Kqd  account owned by the program superseded 25 September
+0x772811c829428ab47766a72bac43bb42b5344bb696f34c94d5b19e014e66adec  account owned by the program superseded 25 September, as bytes
+936LJjR35UD3E6RQXX2pG34yoyCjUC5sXyDzdz3kwTsa  account owned by the program superseded 25 September
+0x7766afd950a9d84585a1d2611198537546924ac98b7ba42be3f8d7d50ade21bd  account owned by the program superseded 25 September, as bytes
+94f64s9PSgvrDzraZAFEYVLjpWa8aU8mscmFDREzsqFC  account owned by the program superseded 25 September
+0x77cd4da83e0c73f741b965a8a865772086d789047ae7b448384101e0ae748d77  account owned by the program superseded 25 September, as bytes
+95oLLRe5gWGVwZ6WoxD9swP1FiUkWwefFZD6n8HmF9NP  account owned by the program superseded 25 September
+0x7818353be04ce62c842f2d2907dd68d8d0d9c78e0880761724f98b8b7cd34628  account owned by the program superseded 25 September, as bytes
+9F7ZMmTsvvQYu3nnwvxDopTRjcPcpStZ95wyY4LeB7S  account owned by the program superseded 25 September
+0x021c9aaaca4c3b3d27d5e1665eeb68e7494dc114716a1b05fd85f015df712175  account owned by the program superseded 25 September, as bytes
+9MBQp5L3Njq7ZTSzzZw7ai7M97nu8gHBut4PVnbrWT91  account owned by the program superseded 25 September
+0x7c08e201604702fa88a044a03b4513c1065465e4e28ec9afeb1de1c2f65a3c90  account owned by the program superseded 25 September, as bytes
+9V3o2719yY3xt7mrxkWFdBJrtSC3tmbrUL9xdHimaKp5  account owned by the program superseded 25 September
+0x7e0ceaa6d1c70862ef618c930bc89c918b0300506504f5db27bfcd42586d84ba  account owned by the program superseded 25 September, as bytes
+9aMvhrcYwDKFSYgYNpvwsC9dgahkDD6vTaRCZ5ArBbJT  account owned by the program superseded 25 September
+0x7f6952b98d89cb156fa79edc51e8dbf077659025885a9389e418381c9c4872fc  account owned by the program superseded 25 September, as bytes
+9e7SHWC7n1VUBDB4Ha58piBVByi4JN3PeCE9xcCHdstp  account owned by the program superseded 25 September
+0x805f43326220056f89c7c04898fecb0cda834b82fef2a171147ed88ee65d3385  account owned by the program superseded 25 September, as bytes
+9efys8PQdBcdbupajMF56boPqrmi7BabhufCwgpZXR8p  account owned by the program superseded 25 September
+0x80840f86817ada3afe74b47b8ac9bec7b5844a30cacb63f2a02495c16689a9f5  account owned by the program superseded 25 September, as bytes
+9hqFVU7ZVisdUaLModN3rFW9n1JpfQACqUPceUyaHise  account owned by the program superseded 25 September
+0x815348b7176f5aefdd0d9fa6ebb8f68e8becea5edd983763bc1ccfbc027edb0d  account owned by the program superseded 25 September, as bytes
+9iCGFxXhWxtRdJz7rbYyx8znvtW2vEN8SDpxxPdNaL2L  account owned by the program superseded 25 September
+0x816b0b34bb1330b3c628d09ddcc7ddb92a95f156f8030686a4d3650cf326c5f1  account owned by the program superseded 25 September, as bytes
+9mNhAGWs8Pq6fMWwfourLtoc4xMYZP6QsZ22LTGCi9Tp  account owned by the program superseded 25 September
+0x823b9425725619459e079bf3ef7033fdb8d29e0e92d3e517928f4c62da1b18ab  account owned by the program superseded 25 September, as bytes
+9pBLjHhN1yTfcCPR8MkCTFBgUKXnSm97AV5d1tyjuy4W  account owned by the program superseded 25 September
+0x82f37c2edc6d468f78cabcdcf90a58ee191f237ad2db59788b654f0dd200332b  account owned by the program superseded 25 September, as bytes
+9uQPJEBTZ5UugSFYcXUeL1UQxjYyxeTsLaYqv75t3xiD  account owned by the program superseded 25 September
+0x844a236a7c8e18353f692e3dc71918a3144c8bdc8c833d8d21d0a9bfaf5b8512  account owned by the program superseded 25 September, as bytes
+A578xuhyBKHMatkKVDvWQspeMGURB3f2ZcXWQQ8bBFzS  account owned by the program superseded 25 September
+0x86c671eee1d6c0457c4fdc792c6c83e0194b890bc3b663f335a6b55e14bc044b  account owned by the program superseded 25 September, as bytes
+AUed6rRRAhhv8YZsVCtP246WVwcrFsHzWP9gYkiZmBbH  account owned by the program superseded 25 September
+0x8cce676c73c45b0393e71c8a5b50819240bad1d8aec6fa93c3eeaf8105c6dbec  account owned by the program superseded 25 September, as bytes
+AWYrZRKrnQfJas71Txefpzzp79hnfT9PayJRaHUfFXA3  account owned by the program superseded 25 September
+0x8d4b0b33c1261d21a573091a19026eede5a6011f2676276b959bdf8d2f7e0b34  account owned by the program superseded 25 September, as bytes
+AWiTb2dADkBDGgcSJQZN5yiWSd5FYHtzpUTFKxNCRpLv  account owned by the program superseded 25 September
+0x8d55e727e8dacbb77fa9333e87016120318e2736e29ead2535bd76b35bfbb26f  account owned by the program superseded 25 September, as bytes
+AeACM3YA7tiBLkV7PGtTPkurhixHkrLThAQR5tPR9LY2  account owned by the program superseded 25 September
+0x8f3e11dd831afe377ad26581427c16d2089e86071a4a2ed0380e373f351f41f3  account owned by the program superseded 25 September, as bytes
+AeG4xMtEPrc4nXpHgud9HuRYmjaR1HDimaFnYzWzPWz7  account owned by the program superseded 25 September
+0x8f44b5bd447d6f1cf958ff0b6cd92b28e512f8f93d44a79f65bff3b8ab58dbe4  account owned by the program superseded 25 September, as bytes
+AiqxCpFBSg9Pe63Jn8xRZKRd1RQVu4TcsADiR26D9JvZ  account owned by the program superseded 25 September
+0x90715870df8381c226b3374386ed432a6ae52406e3481e8862aa22dd35734ce6  account owned by the program superseded 25 September, as bytes
+Ame6kvMrBVznwU4QDVF3X6u5YURCXq9sv2X22coThuKm  account owned by the program superseded 25 September
+0x9128afab3cdfd06855a05dd4e954426e1853d9bc56bd39bf701265e2c7fada70  account owned by the program superseded 25 September, as bytes
+AoM3jYPUv3RHundsbDmpKKRXWAGk1t3NqWV7EvgnxLEr  account owned by the program superseded 25 September
+0x919891215dd41470a791a0332b5fcaa3d4881e714ece2a350910362ccea06857  account owned by the program superseded 25 September, as bytes
+ApjErrneJxYxnom7MC1s86AudyMNNT3kZ15FqTgbexwx  account owned by the program superseded 25 September
+0x91f33d77a7215276256880c6c4e7510094c88408bde9d3939c76c266265baef7  account owned by the program superseded 25 September, as bytes
+ApzpxK34igSPLUgpfyxoJwcrQvqF5fkvvMUjtWemp6oX  account owned by the program superseded 25 September
+0x9204dd859d32476ee1ec98081444e1fe5ebb84d5c11235fcafc6707ff8fa1536  account owned by the program superseded 25 September, as bytes
+ArsZ6TgSTHF3kaX1ddbDqsEgtvo3dCRC85h3pEDWHqPB  account owned by the program superseded 25 September
+0x927fcd86837f26461d4948a4a694ba604dab6e7cae3c15c1c3a30ec87301e556  account owned by the program superseded 25 September, as bytes
+AsWLcgR7WXvzC7QrLfP5K9REcq4XMLhW37qC3uWoXyG4  account owned by the program superseded 25 September
+0x92a9654572b5a8761a2a8b997f99f2b6cb2be18820d6d1717da497309bfbfcf9  account owned by the program superseded 25 September, as bytes
+Avy26R9PnpTKy8ssbRTqutBjWXw62euK3SCTXvjXsqSm  account owned by the program superseded 25 September
+0x938c4e51c89faba5a0de1e1b03239629499bb369e21cdc47b3c574ee5f599ec6  account owned by the program superseded 25 September, as bytes
+AwLFJCx5xneCpkcxmMHGhhREJiW9EaYXe9GuSuyGFs4Z  account owned by the program superseded 25 September
+0x93a44ee021129a727bef16402379612828a2cfd9dcb08e5b49eab49b07cf4c76  account owned by the program superseded 25 September, as bytes
+B3zMp75rD6Tntjdq5mkPZPU7KVkAxCC8szeKGLQVi3ii  account owned by the program superseded 25 September
+0x9558e2ffefae3b749a6731a987527f5124d9a05513dbab9ac17c886b4f309f83  account owned by the program superseded 25 September, as bytes
+B7UJFagRHCJF4AKvu6ozAPr9sDQZ8b8vTTgM5p53gS1F  account owned by the program superseded 25 September
+0x963d382c843ee487632b2183a810fd9099a7d01963b09a618347235da5e8d70a  account owned by the program superseded 25 September, as bytes
+BAaJ3zfvRByTd2vLioPX6v5fYqb6KQEwHWdvVgYrHj2b  account owned by the program superseded 25 September
+0x9708bdffc0c524a3297dcfc9b0a1953fcff6b473dc9c5e51738aa08a5489b3f4  account owned by the program superseded 25 September, as bytes
+BBvwopinJB85pvvD3yB1mWqkiT9V7sxnz6tKaJVUQuj5  account owned by the program superseded 25 September
+0x9761ac50c3f1a5fcc036e3881ab2e3818e32803a4f2138739cf4ca7c75de3d60  account owned by the program superseded 25 September, as bytes
+BFKCQpc4eqRWGxy1AgusgxLt74ZCssUc92hZ7qStHiMc  account owned by the program superseded 25 September
+0x983f93617578db330ef1a6639b94e68625624deaba99f14b1dae2007f0fb47bf  account owned by the program superseded 25 September, as bytes
+BNRzfpNSY3whZsBWRbYNnnH833SxZT5TvcFxWFkkVVcK  account owned by the program superseded 25 September
+0x9a1253d03f65191f138ded785b2bf3374ab838ffe89cb56d772210159be4e6e0  account owned by the program superseded 25 September, as bytes
+Bcqmg9TP5fHXMke6PjXLTJpzqw2G7uQAxtJDTXkdevMu  account owned by the program superseded 25 September
+0x9dc357a01e3229cfa340dd8c0acb64cd78ef3a0322da05c24834d3c32ae9e398  account owned by the program superseded 25 September, as bytes
+BggxrjpGYqXeyU3iyiMBVzbtiBQUuduaaFSaVisT9n38  account owned by the program superseded 25 September
+0x9ebfb50ab9c55068c46a93fe50fff64401d45b31ac889ecfa54059d7f9c24f2f  account owned by the program superseded 25 September, as bytes
+BmSdn8BVp4FpdQnZvaSJNns2BN9iXpFnDQ8ke7ERhQ8C  account owned by the program superseded 25 September
+0x9ff768d0cb1e937f2292a221db2ec1edb1efa29b865313455a6ee70933440fbd  account owned by the program superseded 25 September, as bytes
+BnLrPWciEU66KeENLGVQNJVYDFuzTbVJ4fjXYohAJXVK  account owned by the program superseded 25 September
+0xa03273acd98c96409564878db662960a14ac7a22c2f3bab3bc71481135a4eada  account owned by the program superseded 25 September, as bytes
+Bq45rJtZCkJmULiSjdwiv1j7gq6U78UMgZaHFi8hekfe  account owned by the program superseded 25 September
+0xa0e43c196d5d2d4eaac6969e7431c1cbfc9de73e74ff77e2a7f28a93cb319cb5  account owned by the program superseded 25 September, as bytes
+BtF5fPYeY7CdnQj3W3m3jygquRwQrTeuSp5vyemEZyYZ  account owned by the program superseded 25 September
+0xa1b569484e3a55b6a7a03cd991bcbbd6575630cdb822a788631c2dde9e3fa196  account owned by the program superseded 25 September, as bytes
+CAbTrYMDgzDwEb6bJjTRFeLQGyzYGVd6H3vX2vpyUi12  account owned by the program superseded 25 September
+0xa5e5c03bd12d135d41d1c2abdd77d0b3c0f71c45b9603d95efb0e636caf6fe9d  account owned by the program superseded 25 September, as bytes
+CEAcUsQr3vSYQGg4oNWN8jd2XQTyix8FfScTHoVDdr9j  account owned by the program superseded 25 September
+0xa6cff987d353aa21d35444538ca171bf55228e00d0d320ea7c75aa7964e1b13e  account owned by the program superseded 25 September, as bytes
+CYoS7KLPC7KEdXhc62xbNMpUYqnuE3PffLo4sbvCBRcs  account owned by the program superseded 25 September
+0xab9610296efe451bcd59ea790a045430a3bc3ea13bc096a5639384476c1cff60  account owned by the program superseded 25 September, as bytes
+CxutoDQXkikS1sqWMMBzEwTd8QGpkjxWKwhSBon3ct9p  account owned by the program superseded 25 September
+0xb1c34e9ac67a4bce892fdc96bce16ecc1cbe5fb4b680c9746b8c0ea4b4918463  account owned by the program superseded 25 September, as bytes
+Cz1xghANuz1bFdi9ovjriwX2jNjGR9GAjS5gzajBXLie  account owned by the program superseded 25 September
+0xb20bbf743dff1f2c2e0dc88350db702ac46885c7297456252066ee232839ba6b  account owned by the program superseded 25 September, as bytes
+D2VrGxNyapxmhg52NmKESJ7QtQzZo9nPNAMfghhGTgz4  account owned by the program superseded 25 September
+0xb2ae71b99e037d777c19a3e0924049374862faa478a9640d8eb42c450ff1e7e9  account owned by the program superseded 25 September, as bytes
+D2wDTyiC79SHytVu8fHjtjfBHdrnyMGUDmoFN8TEfNUd  account owned by the program superseded 25 September
+0xb2cb1ffb2cadf47b315ef1eae485bd600db8c397725e5ac197a33688e3935a76  account owned by the program superseded 25 September, as bytes
+D3yFTatXjj5yoQzs5LRSXxUEhmKKfissHx5qgj6FBUFM  account owned by the program superseded 25 September
+0xb30f01893a46ce5915b22720eba3010dd49add52050d50d150169de241c7629c  account owned by the program superseded 25 September, as bytes
+D6142yid8yL8vKVtis9UD8xufAdgu1cN5VsugrQPRYVL  account owned by the program superseded 25 September
+0xb39434d0cd8939a54a3786fcccee06193edd90cb0b86d53ca0ad7d9affb25607  account owned by the program superseded 25 September, as bytes
+D6AAChs43scNz5kGPeRr19fLb3nYjDYxtsQDcmygTtiE  account owned by the program superseded 25 September
+0xb39e80bce2c09925f14baa9b1860855d7fcd9ad1d59884ee0bda3669b6795c83  account owned by the program superseded 25 September, as bytes
+D7No3wzWG6thh5SwGGcHTB1HfgQMXvzaqwqYFnaRQ61n  account owned by the program superseded 25 September
+0xb3ee5ed93be6d0625ee30bbbc42278896b032dfffb9720db82015f07f00751d9  account owned by the program superseded 25 September, as bytes
+DB623uv7xhZq3XbJmMVjd2wJrDe3Ld98iCuu3WyK3FHA  account owned by the program superseded 25 September
+0xb4e1b9a6a0aa53a5db5c1904e6555f9d43b5e4e5d8223c216eab561d0b1c2051  account owned by the program superseded 25 September, as bytes
+DCm9YMeSQyNEv7Xyp7kcq4Afqn23qC7za1RamEvURYSU  account owned by the program superseded 25 September
+0xb54f8caa44ff2fac030c7a12f4420f070d400b6106f946c3c4dcc46b3e9613f1  account owned by the program superseded 25 September, as bytes
+DDpBV57PzHVKbXSwFwiiGxfuk1kHjAkSuMZw2NeHStGh  account owned by the program superseded 25 September
+0xb5948f6e6b02536199cbe05ed155b477eadd3f66dc1afde5cd61527cc2744482  account owned by the program superseded 25 September, as bytes
+DH9jgvN2VkQfbJwmaRPZ81qNH5NaqLewMvfKUwgAuJJi  account owned by the program superseded 25 September
+0xb66f69f4ecdce779c0c3506f86ef9510314ef9b6822cfbd8edc7908cdcf5c377  account owned by the program superseded 25 September, as bytes
+DS7zJjWiz8BSKugHELSgktE8iewy5j8KAjUAgyGQgRS4  account owned by the program superseded 25 September
+0xb8bbaa2bff1c23a9c89dba1e9475e86c10fdbf27a63028cad22be4b55cec3c75  account owned by the program superseded 25 September, as bytes
+DZBFkpGrbhoYi1MtFLN1GT3JcQ5B5qv935v8EVYWDPBe  account owned by the program superseded 25 September
+0xba8a6c777c2ed5edb2d2fa12fa8f651d84c29757f33c9ec567d7b1c23ad3f711  account owned by the program superseded 25 September, as bytes
+DbS7UuLTsyZ2T6oGVtjYWMXH3h7aZQJG8rnjsTy241dn  account owned by the program superseded 25 September
+0xbb1e6272b419a9c691877f13f19944ba9db4ea712f81e625641efc826fd9365d  account owned by the program superseded 25 September, as bytes
+DgKXvU5nBqSFfr7YNNyX84cpGuVho4s3KVy1cGuDtBjg  account owned by the program superseded 25 September
+0xbc5ed9a3a0181633aecafe83b91d33dff3583f2f30fa1c6cd125eaeef8f1818b  account owned by the program superseded 25 September, as bytes
+DixK1CPvNJ4T2aYRtJvSjnaA81YmHHTsHQ2XnLGdiy7S  account owned by the program superseded 25 September
+0xbd0b9890e004284719f20f1af91c6bfea51d6273cb26a0b47652893cbc332f9d  account owned by the program superseded 25 September, as bytes
+DjbaULwcVjDGVa4LWdDmqtUQFYDeuy3KEcgQfURuRJk4  account owned by the program superseded 25 September
+0xbd35bbc969d4957ceb139444b51f2c35236185b1e49a9bb3b824673c0bd2c3e5  account owned by the program superseded 25 September, as bytes
+DqWMYGB3Dcmvsr6UhKWTfYMzQLgBgyAEw68AQbNKk1nW  account owned by the program superseded 25 September
+0xbeb9501127dcf3708c1c878ba6ee7a908806a4c63b912199801981aeda999947  account owned by the program superseded 25 September, as bytes
+DxhHnY1BqNa3utizQ4nxhBnLpabmPyEQdRxsqTouCd9a  account owned by the program superseded 25 September
+0xc090be341ed661b1ec2dc91a6633907d60b2f3a7816deadf1a5e4a1c5f287739  account owned by the program superseded 25 September, as bytes
+E8XWnmPDg65ef4gkBxp1unSkboaGzi6HQa4T9xCxLWCu  account owned by the program superseded 25 September
+0xc3157f5f5861dc343069250a15ff204b13d8cc215b50b3368c7291eb2add7cce  account owned by the program superseded 25 September, as bytes
+EB3YQT4R4rknyde3eUos3U5iLCsvRWsQJQEG99H86V3z  account owned by the program superseded 25 September
+0xc3ba9c9c8e962495bdcc5bc5d5b5a848698d3b858f9d577804270a45ff4fe3d5  account owned by the program superseded 25 September, as bytes
+EHXi7nmcyfZhG7qu2pcj3kf3GhAiABBDUbwubJAiJsUV  account owned by the program superseded 25 September
+0xc563f2175245518e9b84bd0ffd36623ada758b54e9ce6a1fe9cbc44bbc296d5a  account owned by the program superseded 25 September, as bytes
+EJ3w3CTfMoENf1GWJxmZWwS5oYDXHWC7vqPLG5Kyo2Fp  account owned by the program superseded 25 September
+0xc5861e60f1dd6086f2aa5294dbe7725b9e9aafcd5ac220a948d509f03fe931ef  account owned by the program superseded 25 September, as bytes
+ETffGQoVt8nnMBeYX3HFE8GVTeQu4PB77eGnKRocfEiG  account owned by the program superseded 25 September
+0xc7fcbe69beae8ff03e6ad269fc8bfc41ca7d4db7c8a73a5052f724acb4ed6c0d  account owned by the program superseded 25 September, as bytes
+ETysZC37jhQsZx17iAoBHoz8HZYZ9McieiPBsEKpu25i  account owned by the program superseded 25 September
+0xc81156070592a929d38d62e598f2cfcf4e35419a87e0d757b54a7de221fde9c5  account owned by the program superseded 25 September, as bytes
+EXcRPSrjsF9xrzBPLqf2ZGnXY8pbvCLMp9W5vmtdVPaV  account owned by the program superseded 25 September
+0xc8ff67845244652a89f80ae623d987c9db429959bf6808bebb062ce31c3597ae  account owned by the program superseded 25 September, as bytes
+EbM6uzktYnk7hRaQx14o8XQDUiiq3zAx6V3ef9paM3hS  account owned by the program superseded 25 September
+0xc9f4682b4a62b5b10be8a8d98c75786175bdbe2efcecd203ad69d6ea53219801  account owned by the program superseded 25 September, as bytes
+Eicdb1k3V6h3oywsK2tReFboX8uJSxArsU3FuPAbZpRC  account owned by the program superseded 25 September
+0xcbd107f5761d9ff99f60634638800fc5dd03baf4f2d9377dacacb332cfbd4c57  account owned by the program superseded 25 September, as bytes
+EoMGXSPquxejJ8xXwEStLtuyzt2smncefr2npabMdUmC  account owned by the program superseded 25 September
+0xcd07906166461b49c27bb1da4a06541120fcd35b0c12a069b296206b262405af  account owned by the program superseded 25 September, as bytes
+EqKqBippfhpyLTtW6ywnmbgL3P9wbihd1SdN3ANPuogp  account owned by the program superseded 25 September
+0xcd8919d4ab9fbf26b5be8e87aca30ecb1f1c655735eb00f6f10f9ca85bf2095d  account owned by the program superseded 25 September, as bytes
+EuajPpxudkNr76V7vMhgcctpRofjTRawUJzBf8CyvRbm  account owned by the program superseded 25 September
+0xcea045941eb071069bb5d9914e1cf015f197df0154e1174ef01c6cabcce521a8  account owned by the program superseded 25 September, as bytes
+EwrBXe4KTCjfKjFebktogerf9T3hHL1kHawLMVwpxDY8  account owned by the program superseded 25 September
+0xcf34e748ec7d1396d801ad8405dc1cba72a1237b5764a04d078acc29c4a3bd05  account owned by the program superseded 25 September, as bytes
+EzsfRFAC37XbNw2E7baPoxA96rN5i3CYfATTEF6qVjKF  account owned by the program superseded 25 September
+0xcffb51fed72795906c982a2fb4e40e4f73009506a0eacfffb82c0c97b290098a  account owned by the program superseded 25 September, as bytes
+F7tLBbJ9CM6vD2JBbLybkoh78HAP27LCvZ7JViLmQ8m  account owned by the program superseded 25 September
+0x039dea8e6c1764235b5fd46e87851ad2a6bcbe684f838404759f74ec5b55012e  account owned by the program superseded 25 September, as bytes
+F8Qd8HVSQUMnNNbZ89QbHmW1WXWcY9mFAkcGHxwBgXUf  account owned by the program superseded 25 September
+0xd1e964a0e099de5502343749bafdd11961f9a4bf750e55e7d9b23ad064ae8fb4  account owned by the program superseded 25 September, as bytes
+F9YtQAXR4bX1PqgVwz321YVdRkVKKyJgAbGbDEFHHo8o  account owned by the program superseded 25 September
+0xd23451392b58addbc67c1369a469af392a90560f3ef03bf1906fc70b6b0e77bc  account owned by the program superseded 25 September, as bytes
+FAeRrjfMx1n215XEerh2tZWvP58HC8V9nWhfAViZRapW  account owned by the program superseded 25 September
+0xd27c2a357852f2ce65d20bd8a7fa0af9a0cbbf2bd72fcecd3e54ee4d3fce6847  account owned by the program superseded 25 September, as bytes
+FDghjY692T1krGz44JCjJbd9t1RPVoUBmRrvLpf92gf1  account owned by the program superseded 25 September
+0xd3437a6c0bee7ce5e99503c62fc03e04a18c9ddde5cd7bb7b64fbc8fe490fdc0  account owned by the program superseded 25 September, as bytes
+FRY2BDg8gXFezzTcBTNN2KsimfqJUgoajDYNppQbL4or  account owned by the program superseded 25 September
+0xd64ca1919af564a3a7ee8311fdc1f9cd31c7f942a9f9781988b0a41af6242ec1  account owned by the program superseded 25 September, as bytes
+FXe74muaCKCKzmfNfxti1pmZ7kY1xDus5QpKxiNdVhKd  account owned by the program superseded 25 September
+0xd7dcfed9e8258729cae2c8f59c80ba92fcddcdad9f845085e937df5d1ea82058  account owned by the program superseded 25 September, as bytes
+FYimUDv6BKKP6xRPdziz85zizBkgFm22UzsYb468gmnL  account owned by the program superseded 25 September
+0xd823d90af1e53bc0f56c6d2f19d0912028c14a07cba3b7c480201cfbcbf606dd  account owned by the program superseded 25 September, as bytes
+FkrwkygrG4tbEmmVLvbUSsHGhE6RrtX2RzdWjmjaRfAe  account owned by the program superseded 25 September
+0xdb4010515c2dab450fe235abda177db3cc250e919f7d286a545ce6d42538c997  account owned by the program superseded 25 September, as bytes
+FoUzC14EsJmaZEXGFvMdcktzV7oVRtht3vHr62yS8dnd  account owned by the program superseded 25 September
+0xdbebfa641c2dcea895d6fa2bd6ff6dd09cdf3b2329c1d35aa93deeb775887bce  account owned by the program superseded 25 September, as bytes
+Fq3MBsDZiWrnj38KkTVThLHcNerNVt2QvAVcw3EyJtzh  account owned by the program superseded 25 September
+0xdc5226985247f320b189b5e809175c4ecce04e575997a0d5454d35d13ee25706  account owned by the program superseded 25 September, as bytes
+FxWtNPodzTWQbpJZ6MUPdM1d7cuCKAfQMkdwQ1REs25  account owned by the program superseded 25 September
+0x03d4e7139f13762253c8fd93c3ee24258cfdfd61384e467e1f92ae1a28fc6f8e  account owned by the program superseded 25 September, as bytes
+Fy5yeeLG1xUFfbDgxwLFkdaGNJ2L42J4HYYDqpiNa8Ah  account owned by the program superseded 25 September
+0xde61c4fb35146e41788cd9a3c9fefa2d3f438c64fe2f2e6f0b8dd8b25cfaa206  account owned by the program superseded 25 September, as bytes
+G3wviNCzUseRimP2Zu5eNUhWJQDG2bpcVva6rvFiNRPN  account owned by the program superseded 25 September
+0xdfa09215878ee3b7f9db5d1d7d5cea2833ebf6b4aebef79be3b1aced4f7abcc9  account owned by the program superseded 25 September, as bytes
+G6s37zTJS7yuT8CRpXBTX1EyK5E9ztGA2DYnJKrL8LPC  account owned by the program superseded 25 September
+0xe05fc8d26498642bc69a048f51abeff5aaba8fd3c650378cdf4c36a1f6e50f9b  account owned by the program superseded 25 September, as bytes
+GTCKZVwCD1hY19RCUpiYNACM5NaG6YpGzwGcphzWb3o4  account owned by the program superseded 25 September
+0xe595345a44acf4f267d570c36362b896ae33dce362181c1d92821706c71a69f7  account owned by the program superseded 25 September, as bytes
+GX4C7rmojfpJaTFS78BsLLt4YXEDVqVHbNj6Agnq6gEK  account owned by the program superseded 25 September
+0xe69256476ba539b3b3682a9eb44d49156ab6d93c4933989d0bb8be8266df05a8  account owned by the program superseded 25 September, as bytes
+Gb4PUv7TJKGj8Dz2kmNaiLVQiBG4FmnHYkhqh8QasKty  account owned by the program superseded 25 September
+0xe798e1bcad1c8dffda98af273d9ab96dd5cd8568e922a0219cf22d8570b8684e  account owned by the program superseded 25 September, as bytes
+GfELu5meyDPtGuc9rMeP4AADW4YinuenZvRruECxMqQX  account owned by the program superseded 25 September
+0xe8aa7631b0dfcb04f21ba9c54e2734c3a8df766e03c7222c0597054f2ba5bbc4  account owned by the program superseded 25 September, as bytes
+GxZGo68AuNj66L37TwM71oGFcovQzzU2SaqBhJL9RHUa  account owned by the program superseded 25 September
+0xed1abd2396511cb3a759e0b8ac9ec7da9b1dfd79900e718227a3c72feebcc3df  account owned by the program superseded 25 September, as bytes
+H3Er6LJYpGgfKwxNB6EVfCE99sdDGETvEZp3AHpJD4eF  account owned by the program superseded 25 September
+0xee4dcf024a65f6a92b5a80772cdd922d732c4a6c6376d2266e816b30233f22ac  account owned by the program superseded 25 September, as bytes
+H4PoEzAeeeBmwyM4D9krAhkZoDHWMGwdrE76fY1EqMeX  account owned by the program superseded 25 September
+0xee99829c11b89d2eb016c7e837dcf70e9533b5ad3a37af8f58b4bd7a7c516e60  account owned by the program superseded 25 September, as bytes
+H5uHeyKgzLpgVZowrTzu4r7ikTw1cwnmowGTCS6sD1cX  account owned by the program superseded 25 September
+0xeefc6f718d3cecfb82d72fc43256d07a45cb8c2f27d57e529d6b316f9ad8d2ec  account owned by the program superseded 25 September, as bytes
+HHhci24wKKTnLUFBkBVm3oXq5SxLjLqe9PgFyZdHydC5  account owned by the program superseded 25 September
+0xf2023540bf84fa085902dc5a92d91de253d3920e6099d3db4f43a649c281cfd2  account owned by the program superseded 25 September, as bytes
+HNBqQdoRKzpeFWCviRMmdwVJQFwYax7DPfx3DkadA7Ug  account owned by the program superseded 25 September
+0xf32870449d2588a81332a3139da302f0e154460675d98f81143d0fe93298cb25  account owned by the program superseded 25 September, as bytes
+HNhXjQvKb6Xa1kUPJBQ3M55rkVLRhUT9CMbVX1hTJGni  account owned by the program superseded 25 September
+0xf34a03dae313b95475516e1540509b16cc909e8176403f7888759b798b6433bf  account owned by the program superseded 25 September, as bytes
+HWLcoVCrgjtjpeCG5PWGKAmRARgHv9hPBJGwFKSqj5Dm  account owned by the program superseded 25 September
+0xf53f03fe51cdac3846e7e680c3c40b174340a091f8798c6d6bd6accf1c5d6524  account owned by the program superseded 25 September, as bytes
+HYWMRasADttk5NUiEbsqQkr67YgM7iUenjazUrK6q76T  account owned by the program superseded 25 September
+0xf5cd2f39522d9cf7ff35b24b8fb49a94a309c9dac39d5a2b7e4ba7d12abe9ee4  account owned by the program superseded 25 September, as bytes
+HZt1cLnBNhwc6wXj4R9LmGpm2ExT1TwYXHZRqnmxsdAo  account owned by the program superseded 25 September
+0xf62741254059a116f327bd6b402ad05c07ce150a73188249c6c19f6963564648  account owned by the program superseded 25 September, as bytes
+Hf9LfR3wTFdoxws9YzxAmEHHGJMXZSjJg6FbSd3cG5tG  account owned by the program superseded 25 September
+0xf7807d92124bdd6fc2c06b494f94353d6d001e9b5a18550a99dafd3d13b0ee75  account owned by the program superseded 25 September, as bytes
+HxHarnshTqdkK56EmbV9T6sRogtcrrapkGot2pPoKDSN  account owned by the program superseded 25 September
+0xfbe4afc7ff5f80e6bc52a3d30150e35fb05b081be2a7483bd5ba8e91a8e7421f  account owned by the program superseded 25 September, as bytes
+Hy64E6yo2SPAey2BE5wENCn5kCTHQKNYeRyjar3LXHNZ  account owned by the program superseded 25 September
+0xfc193b8786e93638d492ec8015f828cc420b274ce95b13f691b3ac2aa7410a02  account owned by the program superseded 25 September, as bytes
+J51tCZUBhZF5GQKX4AUVfszXi3qsu27AS4AnWmvWEw3Z  account owned by the program superseded 25 September
+0xfd9dffc59dc341560bf5b48d502492c1e0320079c11a0e777d0950d1b0410da4  account owned by the program superseded 25 September, as bytes
+J8JKVwJLGyy3GcFhvcmUh86XfPske7bL7em7yVzrXkkw  account owned by the program superseded 25 September
+0xfe7553752ea0efefbc10b408d12b5d667231d44d6ebec791eec4298489e9ed60  account owned by the program superseded 25 September, as bytes
+J8SNKoUBN1kgsyzDas63vGQUFnw49vKPHsbMfbQP9T4B  account owned by the program superseded 25 September
+0xfe7e6d3d1cbeb3724c0e656967d5137abe9d49c3281d517621bff20e38786be0  account owned by the program superseded 25 September, as bytes
+J98zEFwsfCvELsAUEfnFZhNngP4hvQJLo6Snjhy3Fb4J  account owned by the program superseded 25 September
+0xfeac5ad4dfb8619bdd8cd41301a7230bb4064de9445d1ac18bd572554fe020d7  account owned by the program superseded 25 September, as bytes
+JAiEvWCLphWaDPanTvK3qfveRbmqiRaU2TUn9Jt36Tms  account owned by the program superseded 25 September
+0xff1389090fb46f5b444cc147c181cf6d4399cf8237d2125c9e10474d297cf4da  account owned by the program superseded 25 September, as bytes
+LKWTg9HRVMAMN5jSF5ee7jSDB7KHWtUUsHHoFGYsr8t  account owned by the program superseded 25 September
+0x04f2f65ce66243a4b5e05c4a53423d411d519903ebdc36b2b8c47d8aa13af54d  account owned by the program superseded 25 September, as bytes
+QHPDYtUzm1VyvHpdDiewPLpfvNrmw9WiS85UQtVBw3m  account owned by the program superseded 25 September
+0x05f6e20a773d75e4ed1701ea335215cedb263642b2d287737de911150ac529a8  account owned by the program superseded 25 September, as bytes
+Tx6n5AzYGsgVXRgdkn71mjw39VP1A5XVcwwxgvceZMG  account owned by the program superseded 25 September
+0x06e76700f22df7502c52880572f84fb51faf0f5a8f127fdfb99289b0e676276f  account owned by the program superseded 25 September, as bytes
+V1jqn7JD2AwDQNaxF7BWxjHtrnBTFpGfn5Hcc51MiVW  account owned by the program superseded 25 September
+0x072d190bafee038a726b72348c2aec1b6c3cbbd86e4beb6f9d5e657a13df9919  account owned by the program superseded 25 September, as bytes
+VANShjJ8aFSTh3tokTtQJfHz9ph9QNjkBUxtFGxrVQL  account owned by the program superseded 25 September
+0x0736db658bf64110c1ac6a556c2bf8269f645fc9df2a8efc8f23ff940ed6cdb1  account owned by the program superseded 25 September, as bytes
+YVUcT2m6WCdWHL9dt8rc7gpdDPvnUasXCqkc64VWoPp  account owned by the program superseded 25 September
+0x081133fbb18ef72c7671277b72f342d652ab38d3cadd7a79c2b597054c32fc8b  account owned by the program superseded 25 September, as bytes
+Zvfzh7fs2me1Fh92UtU3F3CyVH5vD9gTKgwegweJbn6  account owned by the program superseded 25 September
+0x086f45fc223f22463a5c99798fc55da0f4952b2908467bb20f1536afe17f44f7  account owned by the program superseded 25 September, as bytes
+h36Uf4QXD36wxkgYDSYmS5Jph7DuHMuQCVZ2yd3XQFe  account owned by the program superseded 25 September
+0x0a4199bd04653fb355f8ab89e7c9bb0b588e659c36e1c63818606e96b80c4b5d  account owned by the program superseded 25 September, as bytes
+ibXCvPF2CvvbpecGtjumRDBSZ6TgxHeRuiXfj2XRVEq  account owned by the program superseded 25 September
+0x0aa7d8900c5adec23c59a7aa1620e31dd833dadfca65ce5e92dfa4b356b001d2  account owned by the program superseded 25 September, as bytes
+kBAnwhrQx2kdGAKiPskFhbw6mkGBKbLfyKgYVSsGSu5  account owned by the program superseded 25 September
+0x0b0f790459f6121274adc14495e42f6389c1806675f90ba2326be37b944bb5e8  account owned by the program superseded 25 September, as bytes
