@@ -24,11 +24,11 @@ are compared: root, publication slot, publication timestamp, receipt digest, aut
 value inside an account, and an earlier version of this paragraph said it was — a review found a live
 checkpoint bump sitting in a synthetic fixture while this script reported nothing missing, because it
 never reads offset 99 (PR #57, round two, H-01). The program account gives the ProgramData address, which
-gives the upgrade authority. **Transaction ids** are paged to exhaustion for the program and every account it owns. That is the
-`signature` field of each `getSignaturesForAddress` entry, which is a transaction's *first* signature —
-not every signature it carries. A review found the announced deployment's 13 transactions hold 25
-signatures between them, so 12 co-signatures are neither listed nor compared (H-29). An earlier version
-of the message below said "every signature", which was false. A response without a `result` member is a failure, not an absence.
+gives the upgrade authority. **Transaction ids** are paged to exhaustion for the program and every account it owns, and since H-29
+each transaction is then fetched so that **every signature it carries** is compared. The id is only a
+transaction's *first* signature: every publication and attachment here is signed by the payer and the
+checkpoint authority, so each carries two, and a review found the 13 transactions of that day held 25
+signatures between them with 12 compared by nothing. A response without a `result` member is a failure, not an absence.
 
 **What it still cannot do, stated rather than implied.** A superseded deployment's values are not
 reachable from the announced one: `HS82CAXg…` and `jzJzgKWM…` are in the list by hand and this check
@@ -182,13 +182,40 @@ def listed_values() -> dict[str, str]:
     return out
 
 
+def signatures_in(transaction_id: str) -> list[str]:
+    """Every signature the transaction carries, in its own order.
+
+    `getTransaction` returns the signed transaction, whose `signatures` array holds one entry per
+    required signer. A response without that array is a failure rather than a transaction with no
+    signers: a signed transaction always has at least one, so an empty or absent array means the
+    answer was not what it claimed to be, and reading it as "no co-signatures" is the shape of defect
+    this script exists against.
+    """
+    result = rpc(
+        "getTransaction",
+        [transaction_id, {"encoding": "json", "maxSupportedTransactionVersion": 0}],
+    )
+    if not isinstance(result, dict):
+        raise SystemExit(
+            f"live-values: getTransaction for {transaction_id} returned {type(result).__name__}, "
+            "not a transaction. The co-signatures inside it cannot be read, so this check cannot "
+            "say the list is complete."
+        )
+    signatures = (result.get("transaction") or {}).get("signatures")
+    if not isinstance(signatures, list) or not signatures:
+        raise SystemExit(
+            f"live-values: the transaction {transaction_id} came back without a signatures array. "
+            "A signed transaction has at least one, so this is a malformed answer rather than a "
+            "transaction with no signers."
+        )
+    return [s for s in signatures if isinstance(s, str)]
+
+
 def signatures_for(address: str) -> list[str]:
     """Every transaction id returned for an address, paged to exhaustion rather than capped.
 
     Each entry of `getSignaturesForAddress` carries one `signature` field, which is the transaction's
-    first signature and serves as its id. The co-signatures inside those transactions are not read and
-    are not listed; that gap is H-29. Round three corrected this module's own docstring and the success
-    message and left this one saying "every signature", which is the claim both of those retracted.
+    first signature and serves as its id. `signatures_in` below reads the rest.
     """
     found: list[str] = []
     before = None
@@ -341,9 +368,22 @@ def main() -> int:
                 "script the layout, or record why the account is out of scope."
             )
 
+    # **Every signature in the transaction, not only the one that names it (H-29).** A transaction id
+    # is a transaction's *first* signature. Every publication and attachment here is signed by two
+    # keys, the payer and the checkpoint authority, so each carries two and only one was read: a
+    # review found 13 transactions holding 25 signatures between them, leaving 12 that nothing
+    # compared. None appeared in a fixture, so there was no live instance — but inserting one left
+    # both halves of the gate green, which is the exposure the rule exists against.
+    seen_transactions: set[str] = set()
     for address in addresses:
         for signature in signatures_for(address):
             check(signature, f"a signature touching {address}")
+            if signature in seen_transactions:
+                continue
+            seen_transactions.add(signature)
+            for co in signatures_in(signature):
+                if co != signature:
+                    check(co, f"a co-signature inside transaction {signature[:8]}…")
 
     for line in dict.fromkeys(refusals):
         print(f"live-values: {line}", file=sys.stderr)
@@ -370,9 +410,9 @@ def main() -> int:
     print(
         f"live-values: of the fields this script reads — addresses, roots, publication slots and "
         f"timestamps, receipt digests, the authority and every **transaction id** "
-        f"`getSignaturesForAddress` returns — **the announced deployment** holds nothing {LIST.name} "
-        f"does not. Not read: bumps and epoch numbers, which are review-enforced (H-20), and the "
-        f"co-signatures inside each transaction (H-29). Not asked at all: the two superseded "
+        f"`getSignaturesForAddress` returns **and every signature inside those transactions** — "
+        f"**the announced deployment** holds nothing {LIST.name} does not. Not read: bumps and epoch "
+        f"numbers, which are review-enforced (H-20). Not asked at all: the two superseded "
         f"deployments, which still own 2 and 213 accounts on devnet and whose addresses this list "
         f"does not hold (H-26)."
     )
