@@ -21,6 +21,18 @@
 //! than by principle: both are short enough that listing them would match unrelated text, so they are
 //! review-enforced, and H-20 removes the need for that carve-out.
 //!
+//! **What neither half asks (H-26).** The rule is unqualified — no value from a live deployment, in
+//! any synthetic artifact — and these two checks cover the *announced* deployment. The superseded
+//! program ids `HS82CAXg…` and `jzJzgKWM…` are listed, but nothing derived from them is: a review
+//! found they still own 2 and 213 accounts on devnet, and none of those addresses is here. Placing
+//! one in a fixture passes both halves, because the static gate has no value to match and the chain
+//! reader never asks a superseded program what it owns. Supersession does not remove an account from
+//! devnet and does not make its provenance synthetic.
+//!
+//! Closing that means either listing those 215 accounts or narrowing the rule to the announced
+//! deployment, and the second is the owner's to decide rather than a tool's. Until then both
+//! messages say which deployment they asked, so neither claims more than it checked.
+//!
 //! An earlier version of this paragraph said slot numbers were deliberately uncovered, which the
 //! decimal support contradicts. H-34 recorded that paragraph as still stale; it had already been
 //! corrected by then, and this sentence says so rather than leaving the next reader to check.
@@ -396,7 +408,8 @@ pub fn check_synthetic_surface(root: &Path) {
     }
     refuse_live_values(root, &files);
     println!(
-        "live-values: {} files in the synthetic surface carry no value that exists on chain",
+        "live-values: {} files in the synthetic surface carry no value this list holds, and this \
+         list covers the announced deployment (H-26)",
         files.len()
     );
 }
