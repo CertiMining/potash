@@ -9,6 +9,30 @@ publishes on the epoch cadence and lets anyone fetch a root by deriving its addr
 describes what `certimining-checkpoint` and `certimining-client` do; TCU-02 §1.5, §2.3 and §2.4 are the
 contract they follow.
 
+## The repository is anchored too, and separately
+
+The epochs below anchor the *log*. `anchors/` anchors this *repository*: a manifest naming a commit,
+its tree and the digests of the documents a counterparty reads, stamped through OpenTimestamps the
+same way an epoch root is. The tree hash already commits to every tracked byte; the per-file digests
+are there so a reader can check one document without reconstructing the tree.
+
+| Manifest | Commit | Receipt | Status |
+|---|---|---|---|
+| `anchors/0001-0258f51.txt` | `0258f51`, the specification's first publication | `anchors/0001-0258f51.txt.ots` | `dual` — six Bitcoin attestations |
+| `anchors/0002-62abe20.txt` | `62abe20`, the submission head | `anchors/0002-62abe20.txt.ots` | **`single`** — calendar attestations only |
+
+**0002 reads `single`, and the row says so rather than waiting until it looks finished.** It was
+stamped on 11 October 2026 and its receipt carries the calendars' promises; a Bitcoin block confirms
+it hours later and the upgraded receipt replaces it in an ordinary commit. That is the same two-stage
+shape D-112 gives an epoch, and the same honesty INV-ANCH-05 requires of one: a calendar's promise is
+not an anchor, and a row claiming otherwise would be the defect this document exists against.
+
+Unlike an epoch's `receipt_digest`, nothing here is write-once — these are files, not an on-chain
+field — so replacing the pending receipt costs a commit and no more.
+
+**The commit a manifest names is the parent of the commit that carries it**, unavoidably: a manifest
+cannot contain its own hash. `scripts/anchor-repo.sh` is the procedure, and it refuses a dirty tree.
+
 ## Three instructions, and no fourth
 
 `initialize` writes the authority and the tree height once, refusing a height outside `[4, 16]` with
