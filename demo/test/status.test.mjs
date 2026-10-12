@@ -20,6 +20,7 @@ import {
   EXPLAINED_REGIONS,
   epochRows,
   lagReport,
+  short,
   summarise,
 } from "../status-model.js";
 
@@ -134,4 +135,28 @@ test("the page says dual is the receipt's own claim, and says devnet", () => {
   assert.match(html, /Nothing here checks a Bitcoin\s+block header against Bitcoin/);
   assert.match(html, /Devnet/);
   assert.match(html, /not an operator console/i);
+});
+
+// **A root is shortened to one `0x`, whichever spelling it arrives in (found by looking at the page).**
+// `short` lived in `status.js`, beside the DOM, where no test here could import it. It prepended `0x`
+// to a value that already carried one, so every row of the live epoch table read
+// `0x0xdc349d…6d0791` while all seventeen of these tests passed. The fix moved the function into the
+// module these tests can reach, which is the part worth keeping.
+test("a root is shortened to one 0x, whichever spelling it arrives in", () => {
+  // Synthetic, and deliberately so: the first draft of this test used epoch 20723's real published
+  // root, and `cargo xtask check-live-values` refused the file — by the bare spelling, which it
+  // could not see until the repair for the review of PR #121 taught it that `0x` is a convention of
+  // the list rather than part of the value.
+  const bare = "0123456789abcdef".repeat(4);
+  assert.equal(short(bare), "0x01234567…abcdef");
+  assert.equal(short(`0x${bare}`), "0x01234567…abcdef", "a prefixed root must not gain a second 0x");
+  assert.equal(short(`0X${bare}`), "0x01234567…abcdef", "including the upper-case spelling");
+});
+
+test("a shortened root carries exactly one 0x", () => {
+  for (const spelling of ["ab".repeat(32), `0x${"ab".repeat(32)}`]) {
+    const out = short(spelling);
+    assert.equal(out.match(/0x/gi).length, 1, `${out} should carry one prefix`);
+    assert.match(out, /^0x[0-9a-f]{8}…[0-9a-f]{6}$/, `${out} should be 0x, eight, ellipsis, six`);
+  }
 });
