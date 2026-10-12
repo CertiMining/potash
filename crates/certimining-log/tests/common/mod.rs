@@ -293,14 +293,12 @@ pub fn combined_scores(matrix: &[[f64; FEATURE_COUNT]]) -> Vec<f64> {
     // reads a manufactured 50% as perfect indistinguishability. That is the defect this unit was opened
     // to fix, in the classifier rather than in Pearson. At least one feature must vary, or there is
     // nothing to classify on and no result to report.
-    // **Liveness is not a per-epoch property, and asserting it here was wrong (PR #69, round four,
-    // L-02).** Round three made every feature refuse zero deviation inside this function, which runs
-    // once per epoch. A review then built a valid full epoch through the production tree whose real
-    // leaves genuinely contained no zero byte and no adjacent equal bytes: the zero-byte and
-    // longest-run columns were correctly constant, and the gate aborted a sample that was fine. A
-    // feature that does not vary in one epoch has nothing to say about that epoch; it is an instrument
-    // failure only if it never varies across the whole sample. The callers accumulate that, through
-    // `feature_deviations`, and assert it where their statistic is reported.
+    // **Liveness is not a per-epoch property (L-02).** This function runs once per epoch, and a
+    // valid full epoch can genuinely contain no zero byte and no adjacent equal bytes, making those
+    // columns correctly constant. A feature that does not vary in one epoch has nothing to say about
+    // that epoch; it is an instrument failure only if it never varies across the whole sample. The
+    // callers accumulate that through `feature_deviations` and assert it where the statistic is
+    // reported.
     matrix
         .iter()
         .map(|row| {
@@ -431,9 +429,9 @@ pub fn pearson(observed: &[f64], feature: &[f64], feature_name: &str) -> f64 {
     // placement outcome passed the privacy gate. A review forced all 25,600 observed slots to zero and
     // V-Z-04 reported correlation 0 for order, issuer and time, and passed.
     //
-    // The two series are not interchangeable, which an earlier version of these messages got backwards:
-    // every caller passes the **observed** placement first and the feature second, and the feature's own
-    // name is passed in so a failure says which of order, issuer or time was flat.
+    // The two series are not interchangeable: every caller passes the **observed** placement first
+    // and the feature second, and the feature's name is passed in so a failure says which of order,
+    // issuer or time was flat.
     //
     // There is deliberately no epsilon here. Pearson's r is scale invariant, so an absolute floor would
     // make a unitless statistic depend on units. The support a valid sample owes is semantic and belongs
