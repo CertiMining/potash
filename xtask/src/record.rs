@@ -86,18 +86,13 @@ const RECEIPT_HEADER: [&str; 5] = [
 
 /// A table's own furniture: the header, and the `|---|---|` rule under it.
 ///
-/// **Recognised by the whole header, not by its first cell (review of PR #121, M-01).** This used to
-/// return true for any row whose first cell was `epoch` under case folding, so changing the live row
-/// for 20736 from `20736` to `Epoch` turned that row into furniture. It left the table; the thirteen
-/// `dual` rows above it were still contiguous; `check-record` printed `13 epoch rows` where it had
-/// printed 14 and exited 0.
+/// **Matched entire, not by the first cell (review of PR #121, M-01).** Spelling the live 20736 row
+/// `Epoch` used to make it furniture: it left the table, the rows above stayed contiguous, and
+/// `check-record` printed 13 rows instead of 14 and exited 0.
 ///
-/// A row that calls itself the header and is believed is the same defect as a row that calls itself
-/// `epoch-20735` and is skipped — the one the malformed-row report below exists for — reached through
-/// the one line that still mapped an unreadable epoch onto "not a data row". Both headers are now
-/// matched entire, so a row can only be furniture by being the furniture. If a header is ever
-/// reworded, every row in that table is reported as malformed, which is loud and is the right
-/// direction: a table this cannot find is a table it cannot check.
+/// A row believed to be the header is the same defect as one skipped for an unreadable epoch, which
+/// the malformed-row report below already covered. A reworded header now makes every row in its
+/// table malformed — loud, and the right direction: a table this cannot find is one it cannot check.
 fn is_furniture(cells: &[String]) -> bool {
     let header = |expected: &[&str]| {
         cells.len() == expected.len()
@@ -190,6 +185,144 @@ fn receipt_digest(receipt: &[u8]) -> Option<String> {
 }
 
 /// Checks the record against the files, and exits non-zero naming every disagreement.
+/// Collapses runs of whitespace so a claim that wraps across lines is still one sentence.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The text between `after` and `until`, if both are present in that order.
+fn between<'a>(haystack: &'a str, after: &str, until: &str) -> Option<&'a str> {
+    let start = haystack.find(after)? + after.len();
+    let rest = &haystack[start..];
+    let end = rest.find(until)?;
+    Some(&rest[..end])
+}
+
+/// The days a publication was owed and did not come, derived from the chain's own timestamps.
+///
+/// **Derived, not transcribed (H-42, #127).** On 12 October `docs/anchoring.md` claimed three misses
+/// and the README four; the chain said five. Nothing here read either sentence.
+///
+/// An epoch whose publication landed on a later UTC day than its own number was paid late.
+/// `LIVE-VALUES.txt` holds every `published_unix`, and the chain reader fails closed unless that
+/// list is complete, so these timestamps are reconciled against devnet by a different gate.
+///
+/// The log's first epoch is excluded, as both documents say: its day had already turned before the
+/// program existed. Excluded by position, so the carve-out needs no editing as the log grows.
+fn missed_days(root: &Path) -> Result<Vec<u64>, String> {
+    let listing = std::fs::read_to_string(root.join("LIVE-VALUES.txt"))
+        .map_err(|e| format!("LIVE-VALUES.txt: {e}"))?;
+    late_epochs(&listing)
+}
+
+/// The derivation itself, over the text of the list, so it can be tested without a repository.
+fn late_epochs(listing: &str) -> Result<Vec<u64>, String> {
+    let mut published: BTreeMap<u64, i64> = BTreeMap::new();
+    for line in listing.lines() {
+        let Some((value, what)) = line.split_once("  ") else {
+            continue;
+        };
+        let Some(epoch) = what.trim().strip_prefix("published unix timestamp, epoch ") else {
+            continue;
+        };
+        let (Ok(epoch), Ok(unix)) = (epoch.trim().parse::<u64>(), value.trim().parse::<i64>())
+        else {
+            continue;
+        };
+        published.insert(epoch, unix);
+    }
+    if published.is_empty() {
+        return Err(
+            "LIVE-VALUES.txt holds no publication timestamps, so the cadence claims in the README \
+             and docs/anchoring.md rest on nothing this check can read"
+                .to_string(),
+        );
+    }
+    let first = *published.keys().next().expect("not empty");
+    Ok(published
+        .iter()
+        .filter(|(epoch, unix)| {
+            **epoch != first && u64::try_from(**unix / 86_400).is_ok_and(|day| day > **epoch)
+        })
+        .map(|(epoch, _)| *epoch)
+        .collect())
+}
+
+/// The cadence claims in both documents, against the days the chain says were missed.
+fn check_cadence(root: &Path, readme: &str, anchoring: &str, problems: &mut Vec<String>) {
+    let missed = match missed_days(root) {
+        Ok(missed) => missed,
+        Err(why) => {
+            problems.push(why);
+            return;
+        }
+    };
+    let spelled: Vec<String> = missed.iter().map(u64::to_string).collect();
+    let chain = format!("{} ({})", missed.len(), spelled.join(", "));
+
+    let readme_line = one_line(readme);
+    match between(&readme_line, "has also already been missed ", " times").and_then(word_to_number)
+    {
+        Some(n) if n == missed.len() => {}
+        Some(n) => problems.push(format!(
+            "the README says the cadence has been missed {n} times and the publication timestamps \
+             say {chain}"
+        )),
+        None => problems.push(
+            "the README no longer says how many times the cadence has been missed, so nothing \
+             checks it"
+                .to_string(),
+        ),
+    }
+
+    match between(&readme_line, "nothing published on day ", " —") {
+        Some(list) => {
+            let named: Vec<String> = list
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .collect();
+            if named != spelled {
+                problems.push(format!(
+                    "the README names days {} as missed and the publication timestamps say {chain}",
+                    named.join(", ")
+                ));
+            }
+        }
+        None => problems.push(
+            "the README no longer names the days the cadence was missed, so nothing checks them"
+                .to_string(),
+        ),
+    }
+
+    let anchoring_line = one_line(anchoring);
+    match between(&anchoring_line, "A day has been missed ", " times").and_then(word_to_number) {
+        Some(n) if n == missed.len() => {}
+        Some(n) => problems.push(format!(
+            "docs/anchoring.md says a day has been missed {n} times and the publication timestamps \
+             say {chain}"
+        )),
+        None => problems.push(
+            "docs/anchoring.md no longer says how many times a day has been missed, so nothing \
+             checks it"
+                .to_string(),
+        ),
+    }
+
+    match between(&anchoring_line, "and all ", " were paid the day after").and_then(word_to_number)
+    {
+        Some(n) if n == missed.len() => {}
+        Some(n) => problems.push(format!(
+            "docs/anchoring.md says all {n} missed days were paid and the publication timestamps \
+             say {chain}"
+        )),
+        None => problems.push(
+            "docs/anchoring.md no longer says every missed day was paid, so nothing checks it"
+                .to_string(),
+        ),
+    }
+}
+
 pub fn check_record(root: &Path) {
     let anchoring =
         std::fs::read_to_string(root.join("docs/anchoring.md")).expect("docs/anchoring.md");
@@ -197,6 +330,8 @@ pub fn check_record(root: &Path) {
     let (epoch_rows, receipt_rows, malformed) = parse(&anchoring);
 
     let mut problems: Vec<String> = malformed;
+    // The cadence claims in both documents, against the days the chain says were missed (H-42).
+    check_cadence(root, &readme, &anchoring, &mut problems);
 
     if epoch_rows.is_empty() || receipt_rows.is_empty() {
         // A parser that silently matches nothing reports a clean record for a document it never read,
@@ -411,7 +546,8 @@ pub fn check_record(root: &Path) {
     if problems.is_empty() {
         println!(
             "record: {} committed receipts, {} epoch rows ({dual} dual), every digest recomputed from \
-             the committed bytes; the README's count matches the table",
+             the committed bytes; the README's count matches the table, and both documents' cadence \
+             claims match the publication timestamps",
             committed.len(),
             epoch_rows.len()
         );
@@ -502,6 +638,62 @@ mod tests {
         assert_eq!(epochs.len(), 1, "the mutated row is not a row");
         assert_eq!(malformed.len(), 1, "but it is reported rather than skipped");
         assert!(malformed[0].contains("Epoch"), "{:?}", malformed);
+    }
+
+    /// H-42's derivation: an epoch published on a later UTC day than its own number was paid late.
+    const LISTING: &str = "\
+# a comment, and a blank line follow
+
+1790476800  published unix timestamp, epoch 20723
+1790563200  published unix timestamp, epoch 20724
+1790736000  published unix timestamp, epoch 20726
+1790822400  published unix timestamp, epoch 20727
+0xdeadbeef  something that is not a timestamp, epoch 99999
+";
+
+    #[test]
+    fn an_epoch_published_on_a_later_day_is_late() {
+        // 20723 -> day 20723 on the nose, 20724 -> 20724, 20726 -> day 20726, 20727 -> 20727.
+        assert_eq!(late_epochs(LISTING).unwrap(), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn a_day_late_is_reported_and_the_first_epoch_is_not() {
+        // Move 20726 a day later, and 20723 — the first — a day later too.
+        let moved = LISTING
+            .replace(
+                "1790736000  published unix timestamp, epoch 20726",
+                "1790822400  published unix timestamp, epoch 20726",
+            )
+            .replace(
+                "1790476800  published unix timestamp, epoch 20723",
+                "1790563200  published unix timestamp, epoch 20723",
+            );
+        assert_eq!(
+            late_epochs(&moved).unwrap(),
+            vec![20726],
+            "the log's first epoch is excluded by position, as both documents say"
+        );
+    }
+
+    #[test]
+    fn a_listing_with_no_timestamps_is_a_failure_not_an_empty_answer() {
+        let err = late_epochs("# nothing here\n").unwrap_err();
+        assert!(err.contains("no publication timestamps"), "{err}");
+    }
+
+    #[test]
+    fn a_claim_that_wraps_across_lines_is_still_one_sentence() {
+        let wrapped = "has also already been missed five\n  times \u{2014} nothing published on day 1, 2 \u{2014}";
+        let line = one_line(wrapped);
+        assert_eq!(
+            between(&line, "has also already been missed ", " times"),
+            Some("five")
+        );
+        assert_eq!(
+            between(&line, "nothing published on day ", " \u{2014}"),
+            Some("1, 2")
+        );
     }
 
     /// A row of six cells whose first is `epoch` but which is not the header.
