@@ -82,7 +82,7 @@ fn baseline() -> (f64, Vec<(String, f64)>) {
 }
 
 #[test]
-fn wall_clock_measures_stay_inside_their_band() {
+fn wall_clock_measures_are_compared_against_the_baseline() {
     // Constant by design: the point is to refuse a debug run, where the figures would be several times
     // over and the failure would say nothing. Written as a conditional panic rather than an assertion,
     // because `assert!` on a compile-time constant is a clippy error and a cfg-gated `panic!` makes the
@@ -261,13 +261,29 @@ fn wall_clock_measures_stay_inside_their_band() {
         missing.len(),
         missing.join("\n")
     );
-    assert!(
-        over.is_empty(),
-        "§4.4a, D-132: a wall-clock measure drifted past its band:\n{}\nThis is a regression detector \
-         and §4.4a no longer states a wall-clock threshold at all (D-137); thresholds.rs reports those \
-         figures rather than asserting them. \
-         If the slowdown is real, find it; if the runner changed, the baseline is re-measured and \
-         re-committed with the reason.",
-        over.join("\n")
-    );
+    // **Report-only until the band is calibrated (owner, 12 Oct 2026, H-37 and H-31).** This failed a
+    // pull request containing no Rust at all, by 0.9% of the limit, while the same run passed on `main`
+    // minutes earlier. The band is 50% and `BASELINE.toml` says outright that the number is a guess:
+    // it was chosen wide because a band that flakes gets disabled, and it flaked anyway.
+    //
+    // A gate nobody trusts is worse than no gate, because its failures are read as noise and a real
+    // one goes with them. So the drift is printed and the run does not fail on it. **This is not a
+    // decision that the band does not matter** — it is a decision not to assert a bound derived from
+    // one sample. Timings from at least twenty CI runs set the band from measured spread, the
+    // derivation is recorded, and this becomes a failing gate again.
+    //
+    // Everything else here still fails: a missing baseline row, a non-finite band or baseline, a
+    // fixture that is not the size its label claims, a no-op closure, and a proof verifier that
+    // accepts a corrupted leaf. What is suspended is the comparison against an uncalibrated number,
+    // not the instrument's own controls.
+    if over.is_empty() {
+        println!("band: every measure is inside its limit");
+    } else {
+        println!(
+            "band: {} measure(s) above the limit, reported and not asserted while the band is \
+             uncalibrated (H-37, H-31):\n{}",
+            over.len(),
+            over.join("\n")
+        );
+    }
 }

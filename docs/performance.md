@@ -66,9 +66,15 @@ machine, and D-137 then removed the absolute half outright, which leaves:
   chain walk is cross-checked against the state machine, the proof is verified, and the workload is
   pinned to the sizes its rows name.
 - **In CI**, the runner is held to its own previous figures: `benches/band.rs` reads
-  `benches/BASELINE.toml` and fails if a measure drifts more than `band_percent` above its baseline. Since
-  D-137 this is the only wall-clock gate in the repository. It is a regression detector, not a
-  performance claim.
+  `benches/BASELINE.toml` and compares each measure against its baseline plus `band_percent`.
+  **It reports drift and does not fail on it** (owner, 12 Oct 2026, H-37, H-31): the band is one
+  sample's 50% guess, it failed a pull request containing no Rust by 0.9% of the limit, and a gate
+  whose failures read as noise takes a real one down with them. Timings from at least twenty CI runs
+  will set the band from measured spread, the derivation recorded, and it becomes a failing gate
+  again. Its other assertions still fail — a missing baseline row, a non-finite band or baseline, a
+  fixture that is not the size its label claims, a timed no-op, a verifier accepting a corrupted
+  leaf. **So there is currently no wall-clock gate in the repository**, which D-137 had already left
+  as the only one.
 
 An absent baseline entry **fails** and prints what it measured. A baseline nobody measured would be a
 gate that cannot fail, and this repository has filed that defect more than once.
