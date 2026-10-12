@@ -56,14 +56,14 @@ inside the Solana runtime and outside it, across every committed preimage.
 - The landing-delay correlation above ran **once**, over 200 consecutive epochs at one epoch per
   minute on one endpoint. A day-long cadence would sample network conditions this run did not. That
   run is filed for after the submission deadline.
-- Anchor B has completed **thirteen** cycles on the deployed log, epochs 20723 to 20735. All thirteen
-  read `dual` and all thirteen receipts are committed under `anchors/epochs/`. Thirteen cycles are
-  thirteen instances, not a measured latency. A newly published
+- Anchor B has completed **fourteen** cycles on the deployed log, epochs 20723 to 20736. All fourteen
+  read `dual` and all fourteen receipts are committed under `anchors/epochs/`. Fourteen cycles are
+  fourteen instances, not a measured latency. A newly published
   epoch reads `single` for the hours between publication and a Bitcoin block, by design (D-112), so
   that column is a snapshot rather than a property.
-  The cadence INV-ANCH-01 asks for has also already been missed four times — nothing published on
-  day 20726, 20729, 20732 or 20734 — and each time the next day paid both the owed epoch and its
-  own. That is what a cadence run by hand does, there being no worker
+  The cadence INV-ANCH-01 asks for has also already been missed five times — nothing published on
+  day 20726, 20729, 20732, 20734 or 20737 — and each time the next day paid both the owed epoch and
+  its own. That is what a cadence run by hand does, there being no worker
   ([#49](https://github.com/CertiMining/potash/issues/49)). The distance from `last_epoch` to the
   current day is not recorded here, because a distance written down ages into a false claim;
   `sequence_lag` reports it against a clock.
