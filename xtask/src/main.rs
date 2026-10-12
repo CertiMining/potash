@@ -1649,6 +1649,64 @@ fn trees(files: &mut BTreeMap<String, Value>) {
         ),
     );
 
+    // V-P-07: a zero-record epoch at H = 8 (H-08, #42).
+    //
+    // §4.3 asks for a valid root, published, with an indistinguishable footprint, and V-P-08 asks
+    // both implementations to agree on all of it. The Rust side has always tested the empty epoch —
+    // `programs/certimining-checkpoint/tests/privacy.rs` builds one and compares its footprint with a
+    // 255-record epoch's — but there was no vector, so the TypeScript side had nothing to agree
+    // about and V-P-08's criterion reported green over the case it was most needed for. Constant-rate
+    // publication under INV-ANCH-01 turns on an empty epoch publishing exactly like a full one, and
+    // count-hiding under V-Z-01 turns on it being indistinguishable.
+    let none = submission_set(0, 1);
+    assert!(
+        none.is_empty(),
+        "V-P-07: the whole point of this vector is that nothing was filed"
+    );
+    let empty = build_epoch(20_403, height, &none);
+    assert_eq!(
+        empty.leaves.len(),
+        spec::DEPLOYED_CAPACITY,
+        "V-P-07: §1.4's C = 256 does not depend on how many records an epoch holds"
+    );
+    assert!(
+        empty.assignment.is_empty(),
+        "V-P-07: nothing was filed, so nothing holds a slot"
+    );
+    // The claim is width, not equality: the same shape, a different root. Asserting both here means
+    // a generator that silently produced a full tree, or one that produced the same root for every
+    // epoch, fails while the vector is written rather than after it is committed.
+    let full_for_shape = build_epoch(20_403, height, &submission_set(255, 3_000));
+    assert_eq!(
+        empty.leaves.len(),
+        full_for_shape.leaves.len(),
+        "V-P-07: a zero-record epoch and a full one are the same width, which is the claim"
+    );
+    assert_ne!(
+        empty.root, full_for_shape.root,
+        "V-P-07: indistinguishable means the same footprint, never the same root"
+    );
+    files.insert(
+        "V-P-07.json".into(),
+        vector(
+            "V-P-07",
+            "§4.3",
+            "A zero-record epoch at H = 8: 256 padding leaves, no assignment, no proofs, and a root as valid and as wide as any other epoch's.",
+            epoch_inputs(empty.epoch, height, &none),
+            epoch_expected(&empty, Vec::new()),
+            &[
+                MASTER_KEY_NOTE,
+                LEAVES_NOTE,
+                "Every leaf is padding derived from the epoch key, so the account this epoch \
+                 publishes and the instruction that publishes it are the same length and the same \
+                 layout as a full epoch's, and differ only inside `root`. That is the \
+                 indistinguishable footprint §4.3 asks for and what V-Z-01's count-hiding rests on.",
+                "There are no proofs because there is nothing to prove the inclusion of. An empty \
+                 `proofs` array is this vector's content, not an omission from it.",
+            ],
+        ),
+    );
+
     // V-P-06b: the same leaf set at H = 4 and H = 12, where the proof length tracks H exactly.
     let twelve = submission_set(12, 2_000);
     let mut heights = Map::new();
