@@ -135,12 +135,24 @@ fn gen_vectors(dir: &Path) {
     if dir.exists() {
         let mut entries = fs::read_dir(dir).expect("the destination can be read");
         if entries.next().is_some() {
+            // **The remedy names the temporary-directory route, not a deletion (H-44, #135).** It
+            // used to say `rm -rf vectors && cargo xtask gen-vectors`, and following that panicked:
+            // `check_recorded_short_values` reads every path in LIVE-VALUES.txt's recorded block, and
+            // three of those entries name `vectors/V-P-12.json`. The directory this tool told you to
+            // delete is one a gate it runs needs. Generating elsewhere and copying across is what
+            // `scripts/ci.sh vectors` already does.
             eprintln!(
                 "{} already holds files, and this tool never deletes.",
                 dir.display()
             );
-            eprintln!("Remove the directory yourself, then run the command again:");
-            eprintln!("    rm -rf {} && cargo xtask gen-vectors", dir.display());
+            eprintln!("Generate into a temporary directory and copy the result across:");
+            eprintln!("    cargo xtask gen-vectors \"$(mktemp -d)/out\"");
+            eprintln!();
+            eprintln!(
+                "Do not `rm -rf {}` first: the live-value gate reads files in it before generation,",
+                dir.display()
+            );
+            eprintln!("so deleting it makes this command panic instead (H-44).");
             std::process::exit(2);
         }
     } else {
