@@ -428,11 +428,9 @@ const vP06: Handler = (v) => {
 };
 
 const vP13: Handler = (v) => {
-  // **The container, not the digests inside it (H-04).** Every digest a §2.5 package carries was
-  // already pinned by a committed vector. The container was not: packages were assembled on this
-  // side from V-P-09's record and V-P-05's epoch and checked against the code that assembled them,
-  // so a disagreement between the two implementations about the shape of a package would not have
-  // been caught. This vector is the container as the generator emits it.
+  // **The container, not the digests inside it (H-04).** Packages were assembled on this side and
+  // checked against the code that assembled them, so the two implementations could disagree about
+  // a package's shape unchallenged. This vector is the container as the generator emits it.
   const pkg = v.expected.package;
   assert.equal(pkg.schema, DISCLOSURE_SCHEMA, "§2.5 names the schema");
   assert.deepEqual(
@@ -441,8 +439,8 @@ const vP13: Handler = (v) => {
     "§2.5's fields, and no others",
   );
 
-  // The verifier this repository ships, run over the committed bytes: it recomputes the leaf from
-  // `preimage_borsh`, checks the QP signature over those bytes, and walks the proof to the root.
+  // The shipped verifier over the committed bytes: recompute the leaf, check the signature, walk
+  // the proof to the root.
   const root = { epoch: big(v.inputs.epoch), root: fromHex(v.expected.root, 32) };
   const report = verifyDisclosurePackage(pkg, { root, configuredHeight: num(v.inputs.height) });
   assert.equal(report.ok, true, `the committed package must verify: ${report.failure?.message}`);
@@ -454,9 +452,8 @@ const vP13: Handler = (v) => {
     `inclusion must be checked, not skipped: ${JSON.stringify(report.checks)}`,
   );
 
-  // The anchor block is placeholders, and this vector exists partly to keep it that way. A
-  // generated artifact may not claim an anchoring it does not have, which is the defect E-14's
-  // fixture carried.
+  // Placeholders, and this vector exists partly to keep them that way: a generated artifact may
+  // not claim an anchoring it does not have, which is what E-14's fixture did.
   assert.equal(pkg.anchor.solana_slot, 0, "no slot, because nothing published this epoch");
   assert.equal(pkg.anchor.solana_tx, "1".repeat(64), "a placeholder transaction, visibly so");
   assert.equal(

@@ -1707,16 +1707,14 @@ fn trees(files: &mut BTreeMap<String, Value>) {
         ),
     );
 
-    // V-P-13: a §2.5 disclosure package, generated here rather than assembled in a test (H-04, #32).
+    // V-P-13: a §2.5 disclosure package (H-04, #32).
     //
-    // Every digest inside a package was already pinned by a committed vector. The *container* was
-    // not: `ts/test/packages.ts` builds packages on the TypeScript side from V-P-09's record and
-    // V-P-05's epoch, and checks them against the implementation that produced them, so a
-    // disagreement between the two implementations about the shape of a §2.5 package would not have
-    // been caught by anything.
+    // Every digest inside a package was pinned by a committed vector; the *container* was not.
+    // `ts/test/packages.ts` assembles packages and checks them against the code that assembled
+    // them, so the two implementations could disagree about a package's shape unchallenged.
     //
-    // The builder is `demo::disclosure_json`, the same one the demo fixtures use, so the vector and
-    // the fixtures cannot drift apart into two Rust opinions about the container.
+    // Built by `demo::disclosure_json`, the same builder the demo fixtures use, so the vector and
+    // the fixtures cannot drift into two Rust opinions about the container.
     let package_tenure = AssetId::<NativeKeccak>::canonicalize(TENURE_RAW).expect("canonical");
     let package_commitment = AssetId::<NativeKeccak>::commitment(J, R, &package_tenure)
         .expect("the commitment is defined");
@@ -1727,8 +1725,8 @@ fn trees(files: &mut BTreeMap<String, Value>) {
     let package_preimage = leaf_preimage_of(&package_chain, &package_record);
     let package_applied = package_chain.apply(&package_record).expect("accepted");
     let package_head = package_chain.head();
-    // The epoch that holds it: the record's leaf beside one other, so the proof has a real sibling
-    // at the bottom rather than padding, which is the case a verifier is likelier to get wrong.
+    // Two leaves, so the proof's bottom sibling is real rather than padding — the case a verifier
+    // is likelier to get wrong.
     let mut package_set = submission_set(1, 4_000);
     package_set.push((vector_submission_id(4_100), package_applied.leaf));
     let package_epoch = build_epoch(20_404, height, &package_set);
@@ -1783,14 +1781,12 @@ fn trees(files: &mut BTreeMap<String, Value>) {
             }),
             &[
                 MASTER_KEY_NOTE,
-                "The anchor block is placeholders and visibly so: this epoch was built here and \
-                 published nowhere, so there is no transaction, slot or receipt to name. A vector \
-                 may not claim provenance it does not have, however much more concrete it would \
-                 look — which is the defect E-14's fixture carried and D-140 records.",
-                "`preimage_borsh` holds the 161-byte leaf preimage, and §1.3 puts the asset \
-                 commitment at its bytes 8 to 39. INV-DISC-01 places it there and nowhere else, \
-                 because the QP signature is over those bytes and a verifier cannot check it \
-                 without them.",
+                "The anchor block is placeholders and visibly so: this epoch was published \
+                 nowhere, so there is no transaction, slot or receipt to name. A vector may not \
+                 claim provenance it does not have — the defect E-14's fixture carried (D-140).",
+                "`preimage_borsh` holds the 161-byte leaf preimage, where §1.3 puts the asset \
+                 commitment at bytes 8 to 39. INV-DISC-01 places it there and nowhere else: the QP \
+                 signature is over those bytes and a verifier cannot check it without them.",
             ],
         ),
     );

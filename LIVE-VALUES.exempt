@@ -51,13 +51,10 @@ vectors/KAT-03.txt  0x3333333333333333333333333333333333333333333333333333333333
 vectors/V-N-09.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
 vectors/V-N-18.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
 
-# V-P-13 carries `ASSESSMENT_DIGEST`, which is `[0x33; 32]` (H-04). Unlike the entries above, this
-# file was written after the 24 September deployment published that constant, so it does not predate
-# it — but the direction of travel is the same and is the only thing that matters: `0x3333…3333` is
-# this repository's generator constant, used by every record vector, and the harness sent it to a
-# throwaway program. Nothing about V-P-13 borrows from that deployment.
+# V-P-13 carries `ASSESSMENT_DIGEST`, `[0x33; 32]` (H-04). It postdates the 24 September
+# publication, unlike the entries above, but the direction of travel is the same and is what
+# matters: this is a generator constant a harness sent to a throwaway program, not a value borrowed
+# from it.
 #
-# Every future vector carrying a record will need a line like this one. That is the standing cost of
-# listing the two repository-authored placeholders rather than narrowing the rule to exclude them,
-# which was the owner's call to make and was not taken. H-45 (#137) records the choice.
+# Every future record vector will need a line like this. H-45 (#137) records that cost.
 vectors/V-P-13.json  0x3333333333333333333333333333333333333333333333333333333333333333  the generator's own ASSESSMENT_DIGEST, which a devnet harness happened to publish to a superseded program
