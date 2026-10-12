@@ -19,13 +19,20 @@ are there so a reader can check one document without reconstructing the tree.
 | Manifest | Commit | Receipt | Status |
 |---|---|---|---|
 | `anchors/0001-0258f51.txt` | `0258f51`, the specification's first publication | `anchors/0001-0258f51.txt.ots` | `dual` — six Bitcoin attestations |
-| `anchors/0002-62abe20.txt` | `62abe20`, the submission head | `anchors/0002-62abe20.txt.ots` | **`single`** — calendar attestations only |
+| `anchors/0002-62abe20.txt` | `62abe20`, the submission head | `anchors/0002-62abe20.txt.ots` | `dual` — three Bitcoin attestations |
 
-**0002 reads `single`, and the row says so rather than waiting until it looks finished.** It was
-stamped on 11 October 2026 and its receipt carries the calendars' promises; a Bitcoin block confirms
-it hours later and the upgraded receipt replaces it in an ordinary commit. That is the same two-stage
-shape D-112 gives an epoch, and the same honesty INV-ANCH-05 requires of one: a calendar's promise is
-not an anchor, and a row claiming otherwise would be the defect this document exists against.
+**0002 read `single` for a day, and the row said so rather than waiting until it looked finished.**
+It was stamped on 11 October 2026 with the calendars' promises and nothing more, and the row named
+that state. `ots upgrade` found Bitcoin attestations on 12 October, at blocks 970,999, 971,007 and
+971,047, and the upgraded receipt replaced the pending one in an ordinary commit. The upgraded
+receipt stamps the same manifest digest, `98623454cc709268dbfa3ef050d02ded7d935eb431c6cf332ee3265b1c4c3e84`,
+so it is the same timestamp and not a second one.
+
+That two-stage shape is the one D-112 gives an epoch, and the honesty INV-ANCH-05 requires of one: a
+calendar's promise is not an anchor, and a row claiming otherwise would be the defect this document
+exists against. As with every epoch row, the block heights are the ones the receipt carries and
+nothing in this repository checks them against Bitcoin, which is H-12
+([#48](https://github.com/CertiMining/potash/issues/48)).
 
 Unlike an epoch's `receipt_digest`, nothing here is write-once — these are files, not an on-chain
 field — so replacing the pending receipt costs a commit and no more.
