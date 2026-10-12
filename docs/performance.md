@@ -14,69 +14,47 @@ turned out not to be reproducible.
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
 | Full verification including per-record Ed25519 | **none in v0.1** | nothing asserts it; `benches/thresholds.rs` prints it | 465–486 ms on the development machine, 7 Oct 2026; 399 ms when the row was written, which does not reproduce — see below |
 
-## The Ed25519 row moved and this does not explain why
+## The Ed25519 row moved, and nothing here explains why
 
-The row was written at `bc85524` reading **399 ms**. Two runs on 7 Oct 2026, on an Apple M2 with 16 GiB
-under macOS 25.6.0, measured **460.3–474.0** and **464.7–486.0 ms**. The two runs agree with each other
-and neither reproduces 399.
+The row was written at `bc85524` reading **399 ms**. Two runs on 7 Oct 2026, same machine, measured
+460.3–474.0 and 464.7–486.0 ms. They agree with each other; neither reproduces 399.
 
-What was checked before recording the new figure, because a changed measurement usually means a changed
-measurement rather than changed code: the record count is `RECORDS = 10_000` in both, `chain_of(true)`
-built all ten thousand in both, and both walk the same chain through `walk::<DalekVerifier>`. So the two
-numbers are over the same workload with the same verifier.
+It is not the hardware. `benches/thresholds.rs` measures four rows in one run, and on that day the
+other three landed inside their recorded ranges — only this one moved. It is not the workload: both
+figures are 10,000 records through `walk::<DalekVerifier>`. The plausible cause is E-13's fourth
+round moving every fixture's construction ahead of the first `measure`, which leaves the signed chain
+no longer hot in cache. That is **not demonstrated**: showing it would mean reordering the harness to
+watch the number move, undoing the fix that produced the honest figure.
 
-**The same machine's other figures did not move**, which is what rules out "a different machine" as the
-explanation. `benches/thresholds.rs` measures four rows in one run. On 7 October this machine measured
-the chain walk at 7.15–8.00 ms, and the row above attributes 7 ms to this machine. The epoch root and the
-inclusion proof landed inside their recorded ranges too. Only the Ed25519 row moved, so whatever moved it
-is specific to that row rather than to the hardware the run happened on.
-
-What changed in between is the harness around it. E-13's fourth round moved every fixture's construction
-to before the first `measure`, because pinning the fixtures a function happens to build first protects
-only those — a review had made the signed branch a hundredth of its size and the row still printed
-"10,000 records". A consequence nobody was aiming at is that the signed chain is no longer built
-immediately before it is walked, so it is not hot in cache the way it was at `bc85524`. That is a
-plausible cause and it is **not** a demonstrated one: establishing it would mean reordering the harness
-to see the number move, which would undo the fix that produced the honest figure.
-
-So the new number is recorded, the old one is kept beside it, and the gap is stated rather than
-reconciled. §4.4a asserts nothing here (D-137), so nothing gates on either.
+So the new number is recorded, the old one kept beside it, and the gap stated rather than reconciled.
+§4.4a asserts nothing here (D-137), so nothing gates on either.
 
 ## The wall-clock bounds are gone (D-137)
 
-§4.4a carried three of them and no longer does. The chain-walk row began at `< 5 ms`, written before
-anything here had timed the walk; D-136 amended it to `< 10 ms` after E-13 measured 7.1 ms. Then an
-independent review ran the same assertion on **a different machine matching §4.4a's own description** —
-Apple M2, 8 cores, macOS 26.6.2 — and measured medians of 17.92, 16.65 and 19.52 ms. While the section
-was being amended, this machine, which had measured 7 ms idle, measured 13.77 ms with another suite
-running beside it.
+§4.4a carried three and no longer does. Four values from **7 to 19.5 ms** were measured for the chain
+walk, all on hardware matching §4.4a's own description — 7 ms idle and 13.8 ms loaded on this machine,
+17.6–19.5 ms on another conforming M2. **The description does not determine the figure**, so a bound
+stated against it is not a property of this system, and the rows lost their thresholds rather than
+tracking the slowest machine anyone tried (D-136, then D-137).
 
-Four values from 7 to 19.5 ms, all on hardware matching the specification's words. **The description does
-not determine the figure.** A bound stated against it is not a property of this system, so the owner
-removed the three rows rather than raising a number a second time and having it track the slowest machine
-anyone tried.
-
-What asserts absolutely is now only what can: the compute figures, which are deterministic and were
-confirmed against the announced deployment's own transactions. What catches a slowdown in the *code* is
-the band, holding one runner to its own previous numbers. What the wall-clock measures give you is a
-record, with the machine named — and a record has to be read, which is why `scripts/ci.sh thresholds` is
-on CONTRIBUTING's run-before-submission list rather than in CI.
+What still asserts absolutely is what can: the compute figures, which are deterministic and confirmed
+against the announced deployment's own transactions. What catches a slowdown in the *code* is the
+band, holding one runner to its own previous numbers. The wall-clock measures are a record with the
+machine named — and a record has to be read, which is why `scripts/ci.sh thresholds` is on
+CONTRIBUTING's run-before-submission list rather than in CI.
 
 ## Two kinds of number, and why they are gated differently (D-132)
 
 **Compute units are deterministic.** The same instruction against the same program costs the same CU on
 any machine, so §1.8's limits are asserted absolutely in CI and have been since E-08.
 
-§4.4a also says the figures are "recorded per commit", and until E-13 they were not: they reached a
-`println!` that disappears with the run, which let `publish_checkpoint` drift anywhere inside its 15,000
-bound without anyone seeing. The measured figures are now committed in `compute.rs` and asserted
+§4.4a requires the figures "recorded per commit". They are committed in `compute.rs` and asserted
 **exactly** — `initialize` 13,735 CU, `publish_checkpoint` 8,810, `attach_anchor_receipt` 5,687 — so a
 change to the program changes a line in the diff. Three consecutive runs gave byte-identical figures,
-which is what makes equality the right assertion rather than a tolerance. A runtime bump may legitimately
-move them; `litesvm` is pinned at `=0.16.0` against Agave 4.2.2, and if that pin moves the figures are
-re-measured and re-committed naming the version that moved them. Not widened into a bound — §1.8's bounds
-are separate assertions in the same test, and a figure inside its bound can still drift a long way
-unseen.
+which is what makes equality right rather than a tolerance. A runtime bump may legitimately move them:
+`litesvm` is pinned at `=0.16.0` against Agave 4.2.2, and if that pin moves the figures are re-measured
+and re-committed naming the version that moved them. Not widened into a bound — §1.8's bounds are
+separate assertions in the same test, and a figure inside its bound can still drift a long way unseen.
 
 **Wall-clock is not.** A shared runner is slower and noisier than a laptop by an amount nobody controls,
 so asserting fixed figures there would either flake or be loose enough to mean nothing. D-132 split it by
@@ -116,29 +94,21 @@ scripts/ci.sh bench        # the Criterion distributions behind them
 scripts/ci.sh bench-band   # what CI runs: this machine against the committed baseline
 ```
 
-## The threshold that changed, then went (D-136, then D-137)
+## What "hash recomputation only" measures
 
-§4.4a's chain-walk row read **< 5 ms**, and 5 ms was never measured — it was written when §4.4a was
-restored, before anything in the repository timed the walk. E-13 timed it: **7.1 ms**, over by 40%. D-136
-amended the row to the measurement with a gate above it, because a threshold the implementation misses is
-a claim the specification cannot carry. That bound held two days: a second machine matching §4.4a's own
-description measured 17.6–19.5 ms, and D-137 removed the row's threshold rather than raise it again. The
-measurement discipline below is why the second figure was believed.
+§4.4a's row says "hash recomputation only", and two measurements have to be told apart. A verifier
+does, for each record, `leafₙ` then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)` — two Keccak-256
+invocations, no condition judged. `AssetChain::apply` is the issuer's path and judges every §1.3
+condition on top of the same two hashes. Both are measured and named: the walk 7.1 ms, `apply`
+7.3 ms. **The 0.2 ms between them is the whole state machine**, so the cost is hashing and no work on
+the state machine would have reached the 5 ms the row once carried.
 
-Two measurements had to be told apart to get there. §4.4a's row says "hash recomputation only", and its
-own note says the figure "is achievable only for the hash chain". That is what a verifier does — for each
-record `leafₙ`, then `hₙ = Keccak256(TAG_HEAD ‖ hₙ₋₁ ‖ leafₙ)`, two Keccak-256 invocations and no
-condition judged. `AssetChain::apply` is the issuer's path and judges every §1.3 condition on top of the
-same two hashes. The first version of the bench measured `apply` and reported 7.73 ms as the miss; both
-are now measured and named, and `apply` costs 7.3 ms. **The 0.2 ms between them is the whole state
-machine**, which is why no work on it would have reached 5 ms: the cost is hashing.
-
-Rejected, and recorded in §4.4a rather than dropped: RustCrypto `sha3`'s `asm` feature measures
-**5.16 ms**, a 27% gain that still missed the old 5 ms, and changing how the system's hash primitive is
-built is not a performance decision to take under deadline. The per-call overhead of the preimage path is
-unexamined and is H-19 ([#58](https://github.com/CertiMining/potash/issues/58)), with the constraint that
-nothing there may weaken INV-ENC-01's staged tag writing — the guarantee that a caller cannot omit a tag
-is worth more than the milliseconds.
+Rejected and recorded in §4.4a rather than dropped: RustCrypto `sha3`'s `asm` feature measures
+**5.16 ms**, a 27% gain, and changing how the system's hash primitive is built is not a performance
+decision to take under deadline. The preimage path's per-call overhead is unexamined — H-19
+([#58](https://github.com/CertiMining/potash/issues/58)) — with the constraint that nothing there may
+weaken INV-ENC-01's staged tag writing: a caller being unable to omit a tag is worth more than the
+milliseconds.
 
 ## Warm-up is part of the instrument, not a detail
 
@@ -148,24 +118,18 @@ as much as they measure code. Criterion warms up for seconds before recording an
 figure describes steady state, so these have to as well. An instrument that disagrees with the figure it
 is checking is not checking it.
 
-The figure reported, and the one `band.rs` compares, is the **median** of seven. The best of N reports
-only the moments the operating system left alone and the worst reports the moments it did not; the median
-is the figure that moves when the code moves. All three are printed, because a figure reported without its
-spread is the single-sample problem D-132 rejected — and the spread is what made D-137 visible.
+The reported figure, and the one `band.rs` compares, is the **median** of seven: the best of N reports
+only the moments the operating system left alone, the worst only the moments it did not. All three are
+printed, because a figure without its spread is the single-sample problem D-132 rejected — and the
+spread is what made D-137 visible.
 
-## Two implementations, and a table that could not tell them apart
+## Two implementations, measured separately
 
 §4.4a's epoch-root and inclusion-proof rows are implementation-independent, and both implementations
-meet them — by very different margins. Rust builds a 256-leaf epoch root in **0.195 ms** and the
-TypeScript verifier in **2.66 ms**; Rust verifies an inclusion proof in **0.0023 ms** and TypeScript in
-**0.0288 ms**. Both are real measurements of real code and neither is wrong.
-
-The README's table published the TypeScript figures for those two rows without saying so, beside a row
-that was explicitly labelled TypeScript, which made them read as the Rust ones. Nothing was stale and no
-number was invented; the defect was that a reader could not tell which implementation a row described.
-Every row now names it. Reviewing this is also what caught the one figure that *was* wrong — the
-README's 10,310 CU for `publish_checkpoint`, against 8,810 measured in LiteSVM and 8,810 consumed on
-chain, on a program whose source has not changed since that figure was written.
+meet them by very different margins. Rust builds a 256-leaf epoch root in **0.195 ms**, the TypeScript
+verifier in **2.66 ms**; Rust verifies an inclusion proof in **0.0023 ms**, TypeScript in
+**0.0288 ms**. Both are real measurements of real code. Every row that reports a figure names the
+implementation that produced it, because an order of magnitude separates them.
 
 ## What these figures do not establish
 
