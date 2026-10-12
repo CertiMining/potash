@@ -229,22 +229,18 @@ described rather than an argument that it will.
 | 20737 | `0x08182e24…d0b812` | 510088056 | *pending* | *not yet committed* | `single` |
 | 20738 | `0x34540294…406f02` | 510088067 | *pending* | *not yet committed* | `single` |
 
-**Epochs 20737 and 20738 are mid-cycle.** Both were published and stamped on day 20738, and their
-receipts carry calendar attestations only until a Bitcoin block confirms them. 20736 left that state
-on day 20738, at block 970,857, after about a day and a half. Before it, 20734 and 20735 left it on
-day 20736, at blocks 970,582 and 970,572 — the later epoch confirmed in the earlier block, which is
-what INV-ANCH-04 means by budgeting the latency rather than bounding it.
+**Epochs 20737 and 20738 are mid-cycle**, published and stamped on day 20738 with calendar
+attestations only. **`single` is a snapshot, not a property.** D-112 spends the one write-once
+opportunity on the upgraded receipt, so every newly published epoch reads `single` for the hours
+before a Bitcoin block confirms it, and the table will show `single` again the next time one is
+published. INV-ANCH-04 budgets that latency; INV-ANCH-05 forbids reporting `dual` on a calendar's
+promise.
 
-**Before them, every published epoch read `dual`.** 20732 and 20733 were published and
-stamped early on day 20733 and attached later the same day, both at block 970,294 — they were stamped
-minutes apart and share a block, which the wait is not a constant and cycles four and five also showed.
-Epoch 20731 sat between the two stages for two days and left it on day 20733, at block 969,968.
-
-That is the state on the day this was written and it is not a property of the design. D-112 spends the
-one write-once opportunity on the upgraded receipt, so every newly published epoch reads `single` for
-the hours between publication and a Bitcoin block, and the table will show `single` again the next time
-an epoch is published. INV-ANCH-04 budgets that latency; INV-ANCH-05 forbids reporting `dual` on a
-calendar's promise.
+**The wait is not a constant and the table shows it.** 20736 confirmed after about a day and a half;
+20734 and 20735 confirmed on day 20736 at blocks 970,582 and 970,572, the later epoch landing in the
+earlier block; 20732 and 20733 were stamped minutes apart and share block 970,294; 20731 sat between
+the two stages for two days. That is what INV-ANCH-04 means by budgeting the latency rather than
+bounding it.
 Each receipt is committed and its row completed once a block confirms it, because `receipt_digest` is
 write-once (INV-ANCH-03) and the one opportunity is spent on the upgraded form.
 
@@ -268,15 +264,12 @@ day a publication actually landed on, and an epoch whose quotient exceeds its ow
 By that reading epoch 20723 is late too, by a day, and it is not counted here — a log's first
 publishable epoch is its `start_epoch`, and day 20723 had already turned before the program existed.
 
-**This paragraph has now gone stale four times, which is the argument for not writing the distance
-down.** It read "missed twice, and both times the log caught up" for two days after the third miss made
-it false, and the correction that replaced it — "the third is open" — was itself false within the hour,
-because the day was paid. It then said "three times" through the fourth miss on day 20734 and the fifth
-on day 20737, which is three days and two misses, and nothing in this repository could have told anyone:
-`cargo xtask check-record` reads the README's cycle count against the epoch table and does not read this
-sentence at all, which is H-42 ([#127](https://github.com/CertiMining/potash/issues/127)). Nothing edited either sentence; the sequence moved underneath them. So the distance from
-`last_epoch` to the current day is not recorded here at all: `sequence_lag` reports it, against a clock,
-which is where §2.3 and INV-IFACE-01 put the clock.
+**The distance from `last_epoch` to the current day is not recorded here.** A written distance ages
+into a false claim: this paragraph went stale four times before the count was derived rather than
+transcribed. `sequence_lag` reports it against a clock, which is where §2.3 and INV-IFACE-01 put the
+clock. The counts above are now checked — `cargo xtask check-record` derives the missed days from the
+publication timestamps in `LIVE-VALUES.txt` and fails if either this document or the README disagrees
+(H-42).
 
 **Epoch 20731 was published with the key D-138 moved out of the repository, and that is recorded rather
 than quietly corrected.** The cycle for that day was run from a working clone still on a feature branch
@@ -298,26 +291,14 @@ interchangeable, and cycles four and five showed it — both were published, sta
 up here, while their receipt digests and attach signatures went unlisted until the script was run again
 on 2 Oct 2026. The static gate passed throughout; what was missing was the list's own completeness.
 
-**An earlier version of this paragraph said the static gate passed "because nothing was fabricated", and
-that was an overclaim a review refuted (PR #57, round one, High).** Something fabricated was there. At
-that head `demo/test/footprint.test.mjs` built a synthetic checkpoint carrying epoch 20723's **real**
-publication slot beside a root and a receipt digest invented for the fixture — a live provenance value
-lending credibility to data published nowhere, which is precisely the pairing LIVE-VALUES.txt was written
-after. Both halves of the gate exited 0, and neither was wrong to: the list accepted only 32-byte hex and
-base58, so a decimal slot could not be listed even deliberately, and the chain script never read those two
-offsets. The rule was unqualified and its enforcement had a shape-sized hole in it.
-
-What a static pass establishes is therefore narrower than that sentence claimed: no **listed** value
-appears in the synthetic surface. And two classes are deliberately unlisted — bumps and epoch day
-indices, which substring matching cannot hold without firing on unrelated text. The owner ruled on
-4 Oct 2026 that those are review-enforced against a subject test: a short live value may not appear in a
-synthetic artifact unless the artifact's subject is the announced deployment, and the use is recorded in
-`LIVE-VALUES.txt` by file, value and occurrence, where a reviewer checks it. The earlier wording was
-"a synthetic artifact uses a value no live account holds", which was already false when written — the
-demo is about epoch 20723 and V-P-12 carries the live bumps 250 and 255 because the deployment is its
-subject — so a reviewer had no predicate that admitted those and rejected what the rule is for. `LIVE-VALUES.txt` carries the reasoning and H-20 removes the need for it. It says nothing about live values the list does not hold. Three things
-changed rather than the claim being softened — `published_slot` and `published_unix` are listed for every
-epoch, `cargo xtask check-live-values` accepts decimals of six digits or more, and the chain script reads
+**What a static pass establishes is narrow: no *listed* value appears in the synthetic surface.** Two
+classes are deliberately unlisted — bumps and epoch day indices, which substring matching cannot hold
+without firing on unrelated text. Those are review-enforced against a subject test (owner, 4 Oct
+2026): a short live value may not appear in a synthetic artifact unless the artifact's subject is the
+announced deployment, and the use is recorded in `LIVE-VALUES.txt` by file, value and occurrence.
+H-20 removes the need for that carve-out. The pass says nothing about live values the list does not
+hold. `published_slot` and `published_unix` are listed for every epoch,
+`cargo xtask check-live-values` accepts decimals of six digits or more, and the chain script reads
 and compares both fields. Epoch numbers are still absent on purpose: a UTC day index is a date rather than
 something the deployment produced, and the demo is legitimately about epoch 20723.
 
