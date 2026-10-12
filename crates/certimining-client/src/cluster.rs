@@ -98,10 +98,9 @@ impl Cluster {
         payer: &dyn Signer,
         authority: &dyn Signer,
     ) -> Result<(Digest, crate::BitcoinClaim), AttachRefused> {
-        // **The root comes from the chain, not from the caller.** An earlier version took it as an
-        // argument and verified the receipt against whatever was handed in, which checks that a
-        // receipt and a digest agree and not that either is this epoch's. A caller holding a receipt
-        // for some other root would have attached it to this epoch and the check would have passed.
+        // **The root comes from the chain, not from the caller.** Taking it as an argument checks
+        // only that a receipt and a digest agree, not that either is this epoch's: a caller holding
+        // a receipt for some other root would attach it here and pass.
         let found = crate::root_for_epoch(self, &self.program_id, epoch)
             .map_err(|e| AttachRefused::Cluster(format!("{e:?}")))?;
         let published = match &found {

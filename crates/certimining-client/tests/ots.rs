@@ -14,14 +14,9 @@
 /// them. So one thread writing a fake can make another thread's exec fail with "text file busy",
 /// whichever files each is touching.
 ///
-/// Two earlier attempts treated the symptom. PR #104 gave each fake its own path, which removed
-/// rewriting-while-running; PR #109 closed and synced the handle before the file became executable,
-/// which removed the single-threaded window. Neither could help, because the descriptor that breaks
-/// the exec belongs to a *different* thread. A CI runner then failed with the error named outright:
-/// `/tmp/cm-h14-wrong-22227/ots-0: Text file busy (os error 26)`.
-///
-/// Serialising is the fix rather than a retry: a retry would hide a race that is real, and these
-/// tests take under a second between them.
+/// Per-path fakes and closing the handle before exec both fail to help, because the descriptor that
+/// breaks the exec belongs to a *different* thread. Serialising is the fix rather than a retry: a
+/// retry would hide a race that is real, and these tests take under a second between them.
 #[cfg(feature = "ots")]
 pub(crate) static FAKES: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

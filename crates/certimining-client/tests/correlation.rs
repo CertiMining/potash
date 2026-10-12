@@ -114,11 +114,10 @@ fn build(epoch: u64, records: usize) -> (Digest, Duration) {
 
 /// Retries a cluster read through a transient fault.
 ///
-/// A 200-minute run on a public endpoint meets DNS failures, rate limits and dropped connections.
-/// The first attempt at this gate died at epoch 13 of 200 on a name-resolution error, which measured
-/// nothing and cost the run. A fault here is not evidence about the property under test, so it is
-/// retried rather than recorded; a fault that outlasts the retries stops the run, because a gap in
-/// the series would bias exactly what the series is measuring.
+/// A 200-minute run on a public endpoint meets DNS failures, rate limits and dropped connections. A
+/// fault here is not evidence about the property under test, so it is retried rather than recorded.
+/// A fault outlasting the retries stops the run: a gap in the series would bias exactly what the
+/// series measures.
 fn with_retry<T>(what: &str, mut attempt: impl FnMut() -> Result<T, String>) -> T {
     let mut waited = Duration::from_secs(1);
     for _ in 0..6 {
@@ -136,22 +135,18 @@ fn with_retry<T>(what: &str, mut attempt: impl FnMut() -> Result<T, String>) -> 
 
 /// Pearson's r for V-Z-01, with the two roles kept apart (PR #69, M-01).
 ///
-/// **This returned 0.0 whenever either series was constant, called "the honest answer".** It is not:
-/// r is undefined when a variance is zero, and 0.0 is the *best* score against §4.4's bound, so an
-/// unmeasurable run passed as a clean one. A review found it while checking the same defect in V-Z-04's
-/// helper, and noted that the prose claiming V-Z-04 was the only instance was therefore wrong.
+/// **Zero variance refuses; it does not return 0.0.** r is undefined when a variance is zero, and
+/// 0.0 is the *best* score against §4.4's bound, so returning it lets an unmeasurable run pass as a
+/// clean one.
 ///
-/// The two series are not symmetric here, which is why they are named rather than positional:
+/// The series are named rather than positional because they are not symmetric:
 ///
-///   * A constant **feature** — record count, or build time — means the comparison was never run. The
-///     run varies the record count deliberately, so a flat one is a defect in the harness, and a flat
-///     build time means 200 publications all quantised to one millisecond and the build-time half of
-///     V-Z-01 established nothing. Both refuse.
-///   * A constant **observation** — the landing delay — refuses too, and the reasoning that once
-///     exempted it was wrong. It ran: if every epoch landed in the same time, delay did not follow
-///     record count or build time, which is what V-Z-01 asserts, so a flat delay is favourable. That
-///     holds of an ideal measurement and says nothing about this one, because a collapsed slot reading
-///     produces an identical series. §4.4 asks for |r| < 0.2 and an undefined r does not meet it.
+///   * A constant **feature** — record count, or build time — means the comparison never ran. The run
+///     varies the record count deliberately, so a flat one is a harness defect; a flat build time
+///     means 200 publications quantised to one millisecond.
+///   * A constant **observation** — the landing delay — refuses too. A flat delay looks favourable,
+///     but a collapsed slot reading produces an identical series, and §4.4 asks for |r| < 0.2, which
+///     an undefined r does not meet.
 fn pearson(feature: &[f64], feature_name: &str, delays: &[f64]) -> f64 {
     let n = feature.len() as f64;
     let mf = feature.iter().sum::<f64>() / n;
@@ -283,19 +278,13 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
                 .map_err(|e| format!("{e:?}"))
         });
         let wall = reference.elapsed();
-        // **An impossible observation is not a zero delay (PR #69, round three, High).** This was
-        // `saturating_sub`, so a publication slot below the slot read before submission — which cannot
-        // happen on a monotone chain and means the reading is wrong — became a delay of 0. A review
-        // produced 199 such pairs and the whole series collapsed to {0, 1}, which passed both bounds
-        // *and* slipped under the constant-delay refusal added earlier in this unit, because a series
-        // of almost-all zeros is not constant. That is the third time in this unit that a failed
-        // observation was mapped onto a passing value; it refuses now instead.
-        // **A lower bound is half an observation (PR #69, round four, H-03).** Round three refused a
-        // slot below the pre-submit snapshot; nothing refused one above the chain's own head. A stale
-        // or mixed read, a wrong account or a decoding fault can return a slot arbitrarily far in the
-        // future, and one such outlier drags both correlations well under the bound — a review showed
-        // `u64::MAX` passing at r = 0.025 and -0.111. The observation has to sit inside a bracket, read
-        // at the same endpoint and the same commitment as the first snapshot.
+        // **An impossible observation is not a zero delay, and a bracket needs both ends.** A slot
+        // below the pre-submit snapshot cannot happen on a monotone chain and means the reading is
+        // wrong; `saturating_sub` turned it into a delay of 0, which passes a correlation bound and
+        // is not even constant enough to trip the flat-series refusal. A slot *above* the chain's own
+        // head is equally impossible — a stale or mixed read can return one arbitrarily far ahead, and
+        // a single such outlier drags both correlations under the bound. So the observation must sit
+        // inside a bracket read at the same endpoint and commitment as the first snapshot.
         let after = with_retry("get_slot after", || {
             rpc.get_slot().map_err(|e| e.to_string())
         });
