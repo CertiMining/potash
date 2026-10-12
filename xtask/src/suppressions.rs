@@ -119,8 +119,9 @@ fn in_file(root: &Path, path: &str) -> usize {
         .unwrap_or_else(|e| panic!("{path} is tracked and unreadable: {e}"));
     // A file that does not lex is a file whose contents this check cannot account for, which is a
     // failure rather than a zero. `cargo check` would reject it anyway; this says so first.
-    let stream = TokenStream::from_str(&text)
-        .unwrap_or_else(|e| panic!("{path} does not tokenise, so its suppressions cannot be counted: {e}"));
+    let stream = TokenStream::from_str(&text).unwrap_or_else(|e| {
+        panic!("{path} does not tokenise, so its suppressions cannot be counted: {e}")
+    });
     let mut found = 0;
     count(stream, &mut found);
     found
@@ -162,9 +163,9 @@ pub fn check_suppressions(root: &Path) {
     for (path, found) in &present {
         match RECORDED.iter().find(|(p, _)| p == path) {
             None => wrong.push(format!("{path} carries {found} and is not recorded")),
-            Some((_, expected)) if expected != found => {
-                wrong.push(format!("{path} carries {found}, and {expected} is recorded"))
-            }
+            Some((_, expected)) if expected != found => wrong.push(format!(
+                "{path} carries {found}, and {expected} is recorded"
+            )),
             Some(_) => {}
         }
     }
@@ -226,7 +227,9 @@ mod tests {
              rustfmt, clippy and the whole checks group"
         );
         assert_eq!(
-            count_in("# /* a */ ! /* b */ [ /* c */ allow /* d */ ( /* e */ warnings ) ] fn f() {}"),
+            count_in(
+                "# /* a */ ! /* b */ [ /* c */ allow /* d */ ( /* e */ warnings ) ] fn f() {}"
+            ),
             1,
             "a comment in every gap Rust admits"
         );
