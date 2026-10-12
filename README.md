@@ -13,23 +13,29 @@ Every decision behind the build: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 ## Status: not audited
 
 No external audit has completed, and no figure below was measured by anyone outside this project.
-What has run is independent review, in rounds, against posted heads: two on the Anchor program and the
-anchor client, two on anchor B, three on the TypeScript verifier, two on the demo, three on the fuzz
-and property harness, three on the benchmarks, four on a publication cycle and its live-value record,
-and **six on §4.4's privacy instrument**. Each round found defects in the previous round's fixes,
-which is the reason for counting them rather than declaring the work reviewed — and why the longest
-count is against the privacy tests, which are the release blockers.
+What has run is independent review, in rounds, against posted heads:
 
-This list named four of those eight until 7 October, having been written when four was the number and
-not revisited as the others were reviewed. There is no OpenTimestamps worker to review: the daily cycle is run by
-hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
+| Reviewed | Rounds |
+|---|---|
+| §4.4's privacy instrument | **6** |
+| A publication cycle and its live-value record | 4 |
+| The TypeScript verifier | 3 |
+| The fuzz and property harness | 3 |
+| The benchmarks | 3 |
+| The Anchor program and the anchor client | 2 |
+| Anchor B | 2 |
+| The demo | 2 |
 
-**What is measured.** These are numbers this repository produces and checks, not estimates. Each row
-names which implementation produced it, because two of them exist and they differ by an order of
-magnitude; an earlier version of this table did not, and its Rust and TypeScript figures could not be
-told apart. Rust figures are release builds via `scripts/ci.sh thresholds` and `scripts/ci.sh bench`,
-on the reference machine §4.4a names — Apple M2, 8 cores, macOS 26.6.2 — except the chain-walk range,
-which spans two machines both matching that description and is why D-137 removed the bound.
+Every round found defects in the previous round's fixes. That is why they are counted rather than
+called reviewed, and why the longest count is against the privacy tests, which are the release
+blockers. There is no OpenTimestamps worker to review: the daily cycle is run by hand
+(D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
+
+**What is measured.** Numbers this repository produces and checks, not estimates. Each row names the
+implementation that produced it, because the two differ by an order of magnitude. Rust figures are
+release builds via `scripts/ci.sh thresholds` and `scripts/ci.sh bench` on the reference machine
+§4.4a names — Apple M2, 8 cores, macOS 26.6.2. The chain-walk range spans two machines both matching
+that description, which is why D-137 removed its bound.
 
 | | Threshold | Measured | By |
 |---|---|---|---|
@@ -56,35 +62,29 @@ inside the Solana runtime and outside it, across every committed preimage.
 - The landing-delay correlation above ran **once**, over 200 consecutive epochs at one epoch per
   minute on one endpoint. A day-long cadence would sample network conditions this run did not. That
   run is filed for after the submission deadline.
-- Anchor B has completed **fourteen** cycles on the deployed log, epochs 20723 to 20736. All fourteen
-  read `dual` and all fourteen receipts are committed under `anchors/epochs/`. Fourteen cycles are
-  fourteen instances, not a measured latency. A newly published
-  epoch reads `single` for the hours between publication and a Bitcoin block, by design (D-112), so
-  that column is a snapshot rather than a property.
-  The cadence INV-ANCH-01 asks for has also already been missed five times — nothing published on
-  day 20726, 20729, 20732, 20734 or 20737 — and each time the next day paid both the owed epoch and
-  its own. That is what a cadence run by hand does, there being no worker
-  ([#49](https://github.com/CertiMining/potash/issues/49)). The distance from `last_epoch` to the
-  current day is not recorded here, because a distance written down ages into a false claim;
-  `sequence_lag` reports it against a clock.
-  `docs/anchoring.md` carries the roots, the slots, the blocks and the receipt digests.
+- Anchor B has completed **fourteen** cycles on the deployed log, epochs 20723 to 20736, all `dual`
+  with their receipts committed under `anchors/epochs/`. Fourteen instances, not a measured latency:
+  a newly published epoch reads `single` for the hours before a Bitcoin block confirms it (D-112),
+  so that column is a snapshot. The cadence INV-ANCH-01 asks for has also already been missed five
+  times — nothing published on day 20726, 20729, 20732, 20734 or 20737 — and each time the next day
+  paid both the owed epoch and its own, which is what a cadence run by hand does
+  ([#49](https://github.com/CertiMining/potash/issues/49)). The distance from `last_epoch` to today
+  is not written here, because a written distance ages into a false claim; `sequence_lag` reports it
+  against a clock. `docs/anchoring.md` carries the roots, slots, blocks and receipt digests.
 - The fuzz and property harness exists (§4.5's five targets and four properties,
-  [`docs/fuzzing.md`](docs/fuzzing.md)) and **has not accumulated a history**. The nightly job is new,
-  so what is behind it is single runs at the stated counts, not a record of nights that found nothing.
-  F-05 runs 25,000 iterations rather than a million because one unit may build a 65,536-leaf tree; it
-  explores four orders of magnitude less input than F-01, and that is a cost, not a judgement that less
-  suffices.
+  [`docs/fuzzing.md`](docs/fuzzing.md)) and **has not accumulated a history**. The nightly job is
+  new, so behind it are single runs at the stated counts, not a record of quiet nights. F-05 runs
+  25,000 iterations rather than a million because one unit may build a 65,536-leaf tree — four
+  orders of magnitude less input than F-01, which is a cost, not a judgement that less suffices.
 - The count-hiding property is computational, not information-theoretic, and rests on the batcher's
   key custody. Both are stated in Appendix A of the specification as RES-09 and RES-03.
-- **The announced log does not demonstrate count-hiding, and never did (D-138).** Its record set is a
-  public constant: the publication harness builds every epoch from three records whose submission ids
-  and leaves are written in `crates/certimining-client/tests/publish_epoch.rs`. A property that hides
-  how many records an epoch held cannot be shown by a log whose record count is in its own source.
-  Epochs 20723 to 20731 can be rebuilt from this repository alone, 20731 included, because the cycle
-  for that day was run from a checkout that predated the key's move, which is recorded with the cycle.
-  From epoch 20732 the roots no longer rebuild from this repository, the master key being outside it —
-  which changes nothing about count-hiding, because the record count is still written in the harness.
-  What exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
+- **The announced log does not demonstrate count-hiding, and never did (D-138).** Its record set is
+  a public constant: the harness builds every epoch from three records whose submission ids and
+  leaves sit in `crates/certimining-client/tests/publish_epoch.rs`. A property hiding how many
+  records an epoch held cannot be shown by a log whose record count is in its own source. Epochs
+  20723 to 20731 rebuild from this repository alone; from 20732 they do not, the master key having
+  moved outside it — which changes nothing here, because the count is still in the harness. What
+  exercises count-hiding is §4.4's privacy tests and the demo, not the deployment.
 
 ## What this asserts
 
@@ -97,11 +97,6 @@ statement of its position and no evidence for it: §1.3's leaf preimage covers n
 `head`, so no signature binds them, and an inclusion proof binds only the leaf (D-129, SD-19). The
 TypeScript verifier reports this rather than passing over it — `chainPosition.established` is `false`
 with the reason, and the check line reads `unestablished`.
-
-An earlier version of this section said a counterparty could establish that a record existed "in a
-stated position of a stated asset's chain", which asserted the one thing a package on its own cannot
-show. The specification, the demo and the verifier all carried the limit; this file was the only
-place that had dropped it.
 
 ## What this does not assert
 
