@@ -176,6 +176,10 @@ v0.1.14, and the branch-local numbers 0.1.15 to 0.1.19 were never released. So: 
 markers, `main` may not, and the consolidating pull request is owed the moment a branch with markers
 merges — not at some later tidy-up.
 
+Amendments since then take the next number as they land rather than waiting to be consolidated again:
+**v0.2.1** adds V-P-13 to §4.2 and changes nothing else (H-04). A reader checking which text they
+hold should use the SHA-256 and line count `ts/README.md` pins, which move with the document.
+
 ## Rewriting a stacked branch
 
 Units stack: E-14 sits on E-11, E-15 sat on E-10. When the branch underneath moves, the one above is

@@ -16,8 +16,9 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.0**, SHA-256 `711598e1e89611713ab300b088e67f859857e11766a53f27142082eaccf08864`,
-834 lines, and the findings below carry to it: v0.2.0 differs from the text that was read by
+committed today is **v0.2.1**, SHA-256 `b669854d872d696510adf6d16357f3329a5e14b5ae5a76a1cba84fc721d9e722`,
+839 lines. v0.2.1 adds V-P-13 to §4.2 and changes nothing else (H-04), so the findings below carry
+to it exactly as they carried to v0.2.0, which differed from the text that was read by
 sixteen lines added and fifteen removed, every one of them the version line, the changelog line or an
 amendment marker losing the words "on this branch, unmerged". No technical content changed, which is
 checkable with `git diff` over the two revisions rather than taken on this sentence's word. What was compared, and what each comparison

@@ -29,7 +29,7 @@ import {
   readTagged,
 } from "../src/preimage.ts";
 import { TAG_HEAD, TAG_LEAF } from "../src/tags.ts";
-import { readLeafPreimage } from "../src/disclosure.ts";
+import { DISCLOSURE_SCHEMA, readLeafPreimage, verifyDisclosurePackage } from "../src/disclosure.ts";
 import { RegistryFailure } from "../src/errors.ts";
 import {
   PDA_MARKER,
@@ -427,6 +427,61 @@ const vP06: Handler = (v) => {
   }
 };
 
+const vP13: Handler = (v) => {
+  // **The container, not the digests inside it (H-04).** Every digest a §2.5 package carries was
+  // already pinned by a committed vector. The container was not: packages were assembled on this
+  // side from V-P-09's record and V-P-05's epoch and checked against the code that assembled them,
+  // so a disagreement between the two implementations about the shape of a package would not have
+  // been caught. This vector is the container as the generator emits it.
+  const pkg = v.expected.package;
+  assert.equal(pkg.schema, DISCLOSURE_SCHEMA, "§2.5 names the schema");
+  assert.deepEqual(
+    Object.keys(pkg).sort(),
+    ["anchor", "chain", "inclusion", "preimage_borsh", "qp_signature", "record", "schema"],
+    "§2.5's fields, and no others",
+  );
+
+  // The verifier this repository ships, run over the committed bytes: it recomputes the leaf from
+  // `preimage_borsh`, checks the QP signature over those bytes, and walks the proof to the root.
+  const root = { epoch: big(v.inputs.epoch), root: fromHex(v.expected.root, 32) };
+  const report = verifyDisclosurePackage(pkg, { root, configuredHeight: num(v.inputs.height) });
+  assert.equal(report.ok, true, `the committed package must verify: ${report.failure?.message}`);
+  assertBytes(report.leaf!, v.expected.leaf, "the leaf the verifier recomputed");
+
+  // No check may be reported as passing without having run.
+  assert.ok(
+    report.checks.some((c) => c.name.toLowerCase().includes("inclusion") && c.status === "pass"),
+    `inclusion must be checked, not skipped: ${JSON.stringify(report.checks)}`,
+  );
+
+  // The anchor block is placeholders, and this vector exists partly to keep it that way. A
+  // generated artifact may not claim an anchoring it does not have, which is the defect E-14's
+  // fixture carried.
+  assert.equal(pkg.anchor.solana_slot, 0, "no slot, because nothing published this epoch");
+  assert.equal(pkg.anchor.solana_tx, "1".repeat(64), "a placeholder transaction, visibly so");
+  assert.equal(
+    pkg.anchor.ots_receipt_digest,
+    `0x${"00".repeat(32)}`,
+    "a zero receipt digest is a record of absence, not a receipt",
+  );
+
+  // The inclusion block agrees with the tree this side builds from the same inputs.
+  const built = buildEpoch(
+    big(v.inputs.epoch),
+    num(v.inputs.height),
+    fromHex(v.inputs.master_key, 32),
+    realSet(v),
+  );
+  assertBytes(built.root, v.expected.root, "the epoch this side builds reaches the committed root");
+  assert.equal(num(pkg.inclusion.epoch), Number(big(v.inputs.epoch)), "the package names its epoch");
+  assert.equal(pkg.inclusion.height, num(v.inputs.height), "the package names H");
+  assert.equal(
+    pkg.inclusion.siblings.length,
+    num(v.inputs.height),
+    "§4.2: the proof length is H, whatever the tree holds",
+  );
+};
+
 const vP07: Handler = (v) => {
   const masterKey = fromHex(v.inputs.master_key, 32);
   const epoch = big(v.inputs.epoch);
@@ -703,6 +758,7 @@ export const HANDLERS: Record<string, Handler> = {
   "V-P-06": vP06,
   "V-P-06b": vP06b,
   "V-P-07": vP07,
+  "V-P-13": vP13,
   "V-P-09": vP09,
   "V-P-10": vP10,
   "V-P-11": vP11,

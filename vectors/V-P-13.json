@@ -1,0 +1,89 @@
+{
+  "description": "A §2.5 disclosure package as the generator emits it: the container itself, so both implementations agree about its shape and not only about the digests inside it.",
+  "expected": {
+    "leaf": "0xa241b01adec22d718a6e1c6f792bfe5d128838f2d1d405065e9cb550d263798e",
+    "leaf_preimage": "0x434d76314c454146b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd010000000000000022222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0200f15365000000009cf0536500000000",
+    "package": {
+      "anchor": {
+        "ots_receipt_digest": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "solana_slot": 0,
+        "solana_tx": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "chain": {
+        "genesis": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
+        "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+        "prev_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c"
+      },
+      "inclusion": {
+        "epoch": "20404",
+        "height": 8,
+        "siblings": [
+          "0x68252b9646f7a1393f99ecf541a2cec51209d107e6988f88a843116f4be0cc0b",
+          "0xacafd8155aad2cc4911cad84bed0875adde938ced2c0e0edfc103b4b08af84db",
+          "0x7d1bbd138fb90acf55ac355a7e97a2a13516691b73c0a4cdb8483f8358a04f6f",
+          "0x2d162e2a8facfed8fc0de15166c3e6bc94976157178daeae67a5ff73eb2fffca",
+          "0xb853bf97b864b0fb70077183ff17d266e6d37e10194187c237a38620e1b93241",
+          "0x15e242177818f606134b24f8fc257d63daeb8ed08571cc6ebf6b5da2d988b675",
+          "0x9befff006bee801f6377240ccfccfbc349251f97bd0a7043c8bd3cbd016280e9",
+          "0xcb55fe73a6333e6671ed9af102f43b1b59090d3c919da811f358551f3d85a838"
+        ],
+        "slot_index": 26
+      },
+      "preimage_borsh": "Q012MUxFQUa5jscHi3jyODAcD74QiWZc9fx+RENDUqXJN5Hi0Vq13QEAAAAAAAAAIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaAgDxU2UAAAAAnPBTZQAAAAA=",
+      "qp_signature": "0xd6fb79cf32677e366f81805ae75d95d12d3fb3d3453b16bc50c81976ad6cc4ead67c9fe2cdb2bfa27f0ada9c36c5174381189a491d8e699071037f915e2e040e",
+      "record": {
+        "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "category": 2,
+        "change_identified_at": "1699999900",
+        "effective_at": "1700000000",
+        "flags": 0,
+        "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "payload_uri": "ipfs://bafyexamplepayload",
+        "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "seq": "1"
+      },
+      "schema": "certimining/v1/disclosure"
+    },
+    "root": "0xdf53385e23544e0891aa1e2b3ac0b81b2c33882a87e7e39ade75524de5813dbd"
+  },
+  "id": "V-P-13",
+  "inputs": {
+    "asset_commitment": "0xb98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd",
+    "capacity": "256",
+    "epoch": "20404",
+    "height": "8",
+    "master_key": "0x434d76312054455354204d4153544552204b45592c204e4f5420534543524554",
+    "real": [
+      {
+        "leaf": "0x840579ac637e190804ee3fa76d4dbce352770f7fc1c690bed493e25bf86fda0c",
+        "submission_id": "0xa00f0000000000000000000000000000"
+      },
+      {
+        "leaf": "0xa241b01adec22d718a6e1c6f792bfe5d128838f2d1d405065e9cb550d263798e",
+        "submission_id": "0x04100000000000000000000000000000"
+      }
+    ],
+    "record": {
+      "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "category": "2",
+      "change_identified_at": "1699999900",
+      "effective_at": "1700000000",
+      "expected_qp_key": null,
+      "ext_commitment": null,
+      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_uri": "ipfs://bafyexamplepayload",
+      "prev_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
+      "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "seq": "1",
+      "signature": "0xd6fb79cf32677e366f81805ae75d95d12d3fb3d3453b16bc50c81976ad6cc4ead67c9fe2cdb2bfa27f0ada9c36c5174381189a491d8e699071037f915e2e040e"
+    }
+  },
+  "notes": [
+    "The master key is a specification test key, not a real one: its bytes spell out what it is. Every epoch key, slot and padding leaf here follows from it, so the whole tree is reproducible. A real k_master never appears in this repository (INV-TREE-05).",
+    "The anchor block is placeholders and visibly so: this epoch was built here and published nowhere, so there is no transaction, slot or receipt to name. A vector may not claim provenance it does not have, however much more concrete it would look — which is the defect E-14's fixture carried and D-140 records.",
+    "`preimage_borsh` holds the 161-byte leaf preimage, and §1.3 puts the asset commitment at its bytes 8 to 39. INV-DISC-01 places it there and nowhere else, because the QP signature is over those bytes and a verifier cannot check it without them.",
+    "The qualified person's key is RFC 8032 §7.1's published specification test key, not a real identity. Its private half is public, so every signature here is reproducible."
+  ],
+  "schema_version": "1",
+  "spec": "§2.5"
+}
