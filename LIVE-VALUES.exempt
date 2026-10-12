@@ -17,3 +17,36 @@ vectors/V-P-12.json  H3ERVV7P3yNQxXXJrzVvmS2Nzh9qBd283kcAgMHzHDNn  the two-seed 
 vectors/V-P-12.json  0xee4d543bd97a4e39c47cf3e12e017b329fe9d1b5bd0ee7bb9942f98206bb612f  the same address, as the bytes the vector carries
 ts/test/units.test.ts  By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  §2.4's derivation checked against the announced deployment, which is this test's subject (H-25)
 ts/test/units.test.ts  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address that derivation must reproduce, and the reason the test is worth running (H-25)
+
+# The two placeholder constants the 24 September deployment holds (review of PR #121, H-01).
+# These travelled out of the repository, not into it: `0xabab…abab` and `0x3333…3333` are this
+# repository's own stand-ins, and `crates/certimining-client/tests/devnet.rs` published them to
+# a throwaway program on 24 September. Every file below predates that publication and carries
+# the constant for its own reasons. The rule stays unqualified — the values are listed in
+# `LIVE-VALUES.txt`, so a *new* artifact reaching for either one still fails generation — and
+# the files that legitimately hold them are named here by exact path, which is what this file is
+# for. Narrowing the rule to exclude values the repository itself authored was the alternative,
+# and it is the owner's to take, not a tool's.
+ts/test/packages.ts  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/KAT-03.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-01.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-01.json  0xabababababababababababababababababababababababababababababababab  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-02.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-03.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-04.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-05.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-06.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-07.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-07b.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-08.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-20.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-23.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-23.json  0xabababababababababababababababababababababababababababababababab  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-24.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-24.json  0xabababababababababababababababababababababababababababababababab  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-N-25.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-P-03.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/V-P-11.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
+vectors/KAT-03.txt  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
+vectors/V-N-09.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
+vectors/V-N-18.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with

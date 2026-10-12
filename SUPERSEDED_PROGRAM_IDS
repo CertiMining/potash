@@ -1,0 +1,14 @@
+# The deployments that were announced and then replaced (review of PR #121, H-01).
+#
+# Supersession does not remove a program from devnet, and it does not make what that program owns
+# synthetic. The rule is unqualified — no value from a live deployment in any synthetic artifact,
+# fixture or page constant — so these are read by scripts/live-values-from-chain.py on every run,
+# exactly as ANNOUNCED_PROGRAM_ID is, and everything they hold is in LIVE-VALUES.txt.
+#
+# They were listed by hand and asked nothing before. The list held their 215 account addresses and
+# none of the 640 values inside those accounts, and a real root from the second one sat in a fuzz
+# target with `check-live-values` exiting 0. Enumerating addresses is not enumerating values.
+#
+# One line per program: the base58 address, then the date it was superseded.
+HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB  24 September 2026
+jzJzgKWMo7QhCADuVSGT2cT5VkHjhHEz5tkgDugL3no  25 September 2026

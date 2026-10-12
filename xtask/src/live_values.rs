@@ -29,14 +29,28 @@
 //! reader never asks a superseded program what it owns. Supersession does not remove an account from
 //! devnet and does not make its provenance synthetic.
 //!
-//! **Closed by listing them.** All 215 addresses and their byte forms are in the list, enumerated
-//! once from `getProgramAccounts` on 11 October 2026, so the static gate refuses them in a synthetic
-//! artifact exactly as it refuses the announced deployment's. The rule stayed as written; narrowing
-//! it to the announced deployment was the alternative and was the owner's to take, not a tool's.
+//! **Listing the addresses did not list the values (review of PR #121, H-01).** The repair above put
+//! all 215 addresses and their byte forms in the list and said the gap was closed. It was not. A
+//! review decoded every one of those accounts — 213 checkpoints and 2 LogConfigs, nothing
+//! unrecognised — and found 640 values inside them that no check had ever asked for: 213 roots, 213
+//! publication slots, 213 publication timestamps and one non-zero receipt digest. Inserting one of
+//! those roots into a fuzz target left this gate exiting 0 while it printed that the surface carried
+//! no value the list holds, which was true only because the list did not hold it. Asking about
+//! addresses and reporting on values is the same substitution the paragraph above describes, made by
+//! the repair for it.
 //!
-//! The chain reader still asks only the announced deployment, and still says so. These were
-//! enumerated once rather than reconciled on every run: a superseded program's account set does not
-//! grow, because nothing publishes to it any more.
+//! All 640 are now listed, with the 434 transaction signatures of those two deployments, their
+//! ProgramData addresses and the slot each program was last deployed in. Two of the 640 travelled
+//! the other way: `0xabab…abab` and `0x3333…3333` are this repository's own placeholder constants,
+//! which `crates/certimining-client/tests/devnet.rs` published to the 24 September program. They are
+//! listed anyway, because the rule is unqualified and narrowing it is the owner's decision and not a
+//! tool's, and the 23 files that legitimately carry them are named in `LIVE-VALUES.exempt` by exact
+//! path.
+//!
+//! `scripts/live-values-from-chain.py` now asks every deployment in `ANNOUNCED_PROGRAM_ID` and
+//! `SUPERSEDED_PROGRAM_IDS`, rather than listing the superseded ones by hand and reading neither.
+//! The enumerate-once argument was that a superseded program's accounts cannot grow, which is true
+//! and was never the problem: nothing had enumerated what they already contained.
 //!
 //! An earlier version of this paragraph said slot numbers were deliberately uncovered, which the
 //! decimal support contradicts. H-34 recorded that paragraph as still stale; it had already been
@@ -56,6 +70,16 @@ struct LiveValue {
     value: String,
     lower: String,
     what: String,
+    /// Every spelling of this value a file could carry, lowercased.
+    ///
+    /// **`0x` is a convention of the list, not part of the value (found while repairing H-01).**
+    /// The list writes a 32-byte value as `0x` and 64 nybbles, and the match required that prefix,
+    /// so the same bytes spelled bare went straight through: a real root from the superseded
+    /// 25 September deployment, pasted into a fuzz target without the prefix, left
+    /// `check-live-values` exiting 0 and printing that the surface carried no value this list holds.
+    /// Three committed files already carried a listed digest in that spelling and nothing had ever
+    /// seen them. The value is the bytes; the prefix is how a reader is shown them.
+    needles: Vec<String>,
 }
 
 fn repo_file(root: &Path, name: &str) -> String {
@@ -73,10 +97,16 @@ fn live_values(root: &Path) -> Vec<LiveValue> {
         let (value, what) = line
             .split_once("  ")
             .unwrap_or_else(|| panic!("LIVE-VALUES.txt: no description on {line:?}"));
+        let lower = value.trim().to_lowercase();
+        let mut needles = vec![lower.clone()];
+        if let Some(bare) = lower.strip_prefix("0x") {
+            needles.push(bare.to_string());
+        }
         out.push(LiveValue {
             value: value.trim().to_string(),
-            lower: value.trim().to_lowercase(),
+            lower,
             what: what.trim().to_string(),
+            needles,
         });
     }
     assert!(!out.is_empty(), "LIVE-VALUES.txt lists nothing");
@@ -113,6 +143,24 @@ fn exemptions(root: &Path) -> BTreeSet<(String, String)> {
 ///
 /// `files` is what the generator is about to write: the name it will be written under, and its text.
 pub fn refuse_live_values(root: &Path, files: &[(String, String)]) {
+    let found = offences(root, files);
+    assert!(
+        found.is_empty(),
+        "a generated artifact carries a value that exists on chain:\n{}\n\n\
+         No value from a live deployment appears in a synthetic artifact, fixture or page constant \
+         (owner, 28 Sep 2026). If the artifact's subject really is the announced deployment, record \
+         the pair in LIVE-VALUES.exempt with the reason; if it merely looked more concrete for \
+         carrying one, that is the defect this rule exists for.",
+        found.join("\n")
+    );
+}
+
+/// Every `(file, value)` pair in `files` that the rule refuses, as the lines a reader would see.
+///
+/// Separate from the assertion so that `prove_the_gate_detects` can ask the detector a question and
+/// read its answer. A gate whose detection has never been exercised is a gate that reports what its
+/// acceptance predicate rewards, which is the defect this whole module keeps finding in itself.
+fn offences(root: &Path, files: &[(String, String)]) -> Vec<String> {
     let values = live_values(root);
     let allowed = exemptions(root);
     let mut found: Vec<String> = Vec::new();
@@ -120,7 +168,7 @@ pub fn refuse_live_values(root: &Path, files: &[(String, String)]) {
     for (name, text) in files {
         let lower = text.to_lowercase();
         for v in &values {
-            if !lower.contains(&v.lower) {
+            if !v.needles.iter().any(|n| lower.contains(n)) {
                 continue;
             }
             // **The exact path, and nothing else (H-25 review, H3).** A basename was accepted too,
@@ -136,14 +184,57 @@ pub fn refuse_live_values(root: &Path, files: &[(String, String)]) {
         }
     }
 
-    assert!(
-        found.is_empty(),
-        "a generated artifact carries a value that exists on chain:\n{}\n\n\
-         No value from a live deployment appears in a synthetic artifact, fixture or page constant \
-         (owner, 28 Sep 2026). If the artifact's subject really is the announced deployment, record \
-         the pair in LIVE-VALUES.exempt with the reason; if it merely looked more concrete for \
-         carrying one, that is the defect this rule exists for.",
-        found.join("\n")
+    found
+}
+
+/// One root the 25 September deployment still stores, taken from the list rather than hardcoded.
+fn a_superseded_root(root: &Path) -> String {
+    for line in repo_file(root, "LIVE-VALUES.txt").lines() {
+        let Some((value, what)) = line.split_once("  ") else {
+            continue;
+        };
+        if what.contains("root stored in the account") && what.contains("superseded") {
+            return value.trim().to_string();
+        }
+    }
+    panic!(
+        "LIVE-VALUES.txt holds no root from a superseded deployment. Either the list lost 213 \
+         values or the description changed; this check cannot prove it detects anything without one."
+    );
+}
+
+/// Proves the gate refuses a live value in each directory of the surface, before trusting a pass.
+///
+/// **Asked for by the review of PR #121 (H-01).** The gate had reported that 111 files carried no
+/// value this list holds while a real root from the superseded 25 September deployment sat in
+/// `fuzz/fuzz_targets/fuzz_apply.rs` — because the list did not hold it, so there was nothing to
+/// match, and "no match" and "nothing to match with" print the same sentence. The same shape had
+/// already been found once, in `fuzz/fuzz_targets` not being walked at all (H-25).
+///
+/// A pass therefore means nothing on its own. This runs the detector against a file in every
+/// directory of the surface, with a value the list really holds and no exemption, and requires each
+/// to be refused; and against the same file with no live value in it, and requires silence. Both
+/// directions, because a detector that refuses everything is as useless as one that refuses nothing.
+fn prove_the_gate_detects(root: &Path) {
+    let value = a_superseded_root(root);
+    for dir in SYNTHETIC_SURFACE {
+        let name = format!("{dir}/a-file-no-generator-writes.json");
+        let carrying = vec![(name.clone(), format!("{{\"root\": \"{value}\"}}"))];
+        let offended = offences(root, &carrying);
+        assert!(
+            offended.iter().any(|line| line.contains(&name)),
+            "the gate did not refuse {value} in {name}, so a pass over {dir} means nothing: {offended:?}"
+        );
+        let clean = vec![(name.clone(), "{\"root\": \"0x00\"}".to_string())];
+        assert!(
+            offences(root, &clean).is_empty(),
+            "the gate refused a file holding no live value, so its refusals carry no information"
+        );
+    }
+    println!(
+        "live-values: the gate was shown to refuse a live root in each of the {} directories of the \
+         surface, and to accept the same file without one",
+        SYNTHETIC_SURFACE.len()
     );
 }
 
@@ -398,6 +489,7 @@ const SYNTHETIC_SURFACE: [&str; 10] = [
 
 pub fn check_synthetic_surface(root: &Path) {
     check_list_shape(root);
+    prove_the_gate_detects(root);
     let mut files: Vec<(String, String)> = Vec::new();
     // Every directory must contribute. `files.len() > 10` was the old floor, and it would have been
     // met by eight of these nine going missing — a renamed directory is exactly how a surface stops
@@ -414,7 +506,8 @@ pub fn check_synthetic_surface(root: &Path) {
     refuse_live_values(root, &files);
     println!(
         "live-values: {} files in the synthetic surface carry no value this list holds — the \
-         announced deployment, and every account the two superseded ones own (H-26)",
+         announced deployment, and the two superseded ones, their accounts and what those accounts \
+         store",
         files.len()
     );
 }

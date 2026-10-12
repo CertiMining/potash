@@ -30,11 +30,18 @@ transaction's *first* signature: every publication and attachment here is signed
 checkpoint authority, so each carries two, and a review found the 13 transactions of that day held 25
 signatures between them with 12 compared by nothing. A response without a `result` member is a failure, not an absence.
 
-**What it still cannot do, stated rather than implied.** A superseded deployment's values are not
-reachable from the announced one: `HS82CAXg…` and `jzJzgKWM…` are in the list by hand and this check
-neither confirms nor refutes them — a review swept all 29 entries and named 27, the two exceptions
-being exactly those. It also cannot prove the list is minimal: an entry for something that never
-existed on chain would sit there unchallenged.
+**Every deployment, not only the announced one (review of PR #121, H-01).** `HS82CAXg…` and
+`jzJzgKWM…` used to be in the list by hand with this script confirming and refuting nothing about
+them, and the paragraph here said so plainly. Saying so was not enough: between them those two still
+own 215 accounts holding 640 values that no check had ever asked for, and a real root from the second
+one sat in a fuzz target with both halves of the gate green. They are now read on every run, from
+`SUPERSEDED_PROGRAM_IDS`, exactly as the announced one is — accounts, the values inside them,
+ProgramData, the deploy slot and every transaction signature. That is roughly 220 additional
+transactions and 440 signatures, and it is why this script is run by hand rather than in CI.
+
+**What it still cannot do, stated rather than implied.** It cannot prove the list is minimal: an
+entry for something that never existed on chain would sit there unchallenged. It reads the fields
+named above and not every byte of an account, which is how a live bump once reached a fixture.
 
 **And it refuses rather than guesses.** An account the program owns whose length, discriminator or
 schema version this script does not recognise makes the whole run exit non-zero. Reading offsets whose
@@ -62,6 +69,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LIST = ROOT / "LIVE-VALUES.txt"
 PROGRAM_FILE = ROOT / "ANNOUNCED_PROGRAM_ID"
+SUPERSEDED_FILE = ROOT / "SUPERSEDED_PROGRAM_IDS"
 RPC = os.environ.get("CERTIMINING_RPC", "https://api.devnet.solana.com")
 
 # §2.4's CheckpointAccount: 8 discriminator, 2 schema, 8 epoch, 32 root, 8 slot, 8 unix, 32 receipt
@@ -289,19 +297,45 @@ def base58(data: bytes) -> str:
     return bytes(reversed(out)).decode()
 
 
+def program_ids(path: Path, what: str) -> list[str]:
+    """Every base58 program id in a one-id-per-line file, comments and blank lines ignored."""
+    out: list[str] = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        token = line.split()[0]
+        if not (32 <= len(token) <= 44 and token.isalnum()):
+            raise SystemExit(f"live-values: {path.name}: {token!r} is not a program id")
+        out.append(token)
+    if not out:
+        raise SystemExit(f"live-values: {path.name} names no {what}")
+    return out
+
+
+def deployments() -> list[tuple[str, str]]:
+    """Every deployment this repository has announced, superseded ones included.
+
+    **The superseded ones are asked, not assumed (review of PR #121, H-01).** They used to be listed
+    by hand and read by nothing: `LIVE-VALUES.txt` held their 215 account addresses and none of the
+    640 values inside those accounts, and the static gate had nothing to match, so a real root from
+    the 25 September deployment sat in a fuzz target with both halves of the gate green. The
+    enumerate-once argument was that a superseded program's accounts cannot change, which is true and
+    was not the problem: nobody had enumerated what they contained. A check that asks is a check that
+    cannot be wrong about what it did not ask.
+    """
+    out = [(program_ids(PROGRAM_FILE, "announced program id")[0], "the announced deployment")]
+    for identifier in program_ids(SUPERSEDED_FILE, "superseded program id"):
+        out.append((identifier, f"the deployment superseded as {identifier[:8]}…"))
+    return out
+
+
 def main() -> int:
     if not LIST.exists():
         raise SystemExit(f"live-values: {LIST} is missing")
-    if not PROGRAM_FILE.exists():
-        raise SystemExit(f"live-values: {PROGRAM_FILE} is missing")
-
-    program = ""
-    for token in PROGRAM_FILE.read_text().split():
-        if 32 <= len(token) <= 44 and token.isalnum():
-            program = token
-            break
-    if not program:
-        raise SystemExit(f"live-values: no program id in {PROGRAM_FILE}")
+    for required in (PROGRAM_FILE, SUPERSEDED_FILE):
+        if not required.exists():
+            raise SystemExit(f"live-values: {required} is missing")
 
     listed = listed_values()
     missing: list[str] = []
@@ -324,73 +358,87 @@ def main() -> int:
         check(base58(raw), what)
         check("0x" + raw.hex(), f"{what}, as bytes")
 
-    program_bytes = base58_decode(program)
-    check_address(program_bytes, "the announced program id")
+    def enumerate_deployment(identifier: str, label: str) -> list[str]:
+        """Every address one deployment holds, with every value inside each of them checked.
 
-    # The program account, which names its ProgramData, which names the upgrade authority.
-    account = rpc("getAccountInfo", [program, {"encoding": "base64"}])
-    value = (account or {}).get("value")
-    if not value:
-        raise Unreachable(f"{program}: the cluster does not know this program")
-    data = base64.b64decode(value["data"][0])
-    # An upgradeable program account is a 4-byte tag then the 32-byte ProgramData address.
-    if len(data) >= 36:
-        program_data = base58(data[4:36])
-        check(program_data, "the ProgramData address")
-        pd = rpc("getAccountInfo", [program_data, {"encoding": "base64"}])
-        pd_value = (pd or {}).get("value")
-        if pd_value:
-            pd_data = base64.b64decode(pd_value["data"][0])
-            # 4-byte tag, 8-byte slot, 1-byte option, then the 32-byte upgrade authority.
-            if len(pd_data) >= 45 and pd_data[12] == 1:
-                check(base58(pd_data[13:45]), "the upgrade authority")
+        **Run for every deployment, not only the announced one (review of PR #121, H-01).** This body
+        ran once. The two superseded programs were in the list by hand, and this script said so and
+        asked them nothing: between them they still own 215 accounts holding 213 roots, 213
+        publication slots, 213 publication timestamps and a receipt digest, none of which any check
+        had ever requested. Asking costs one `getSignaturesForAddress` per account, which is why this
+        script has never been in CI and still is not.
+        """
+        check_address(base58_decode(identifier), f"{label}'s program id")
+        # The program account, which names its ProgramData, which names the upgrade authority.
+        account = rpc("getAccountInfo", [identifier, {"encoding": "base64"}])
+        value = (account or {}).get("value")
+        if not value:
+            raise Unreachable(f"{identifier}: the cluster does not know this program")
+        data = base64.b64decode(value["data"][0])
+        # An upgradeable program account is a 4-byte tag then the 32-byte ProgramData address.
+        if len(data) >= 36:
+            program_data = base58(data[4:36])
+            check(program_data, "the ProgramData address")
+            pd = rpc("getAccountInfo", [program_data, {"encoding": "base64"}])
+            pd_value = (pd or {}).get("value")
+            if pd_value:
+                pd_data = base64.b64decode(pd_value["data"][0])
+                # 4-byte tag, 8-byte slot, 1-byte option, then the 32-byte upgrade authority.
+                if len(pd_data) >= 45 and pd_data[12] == 1:
+                    check(base58(pd_data[13:45]), "the upgrade authority")
 
-    # **Discovery from the chain, not from the list.** Every account the program owns.
-    owned = rpc("getProgramAccounts", [program, {"encoding": "base64"}]) or []
-    addresses = [program]
-    for entry in owned:
-        address = entry["pubkey"]
-        addresses.append(address)
-        account_data = base64.b64decode(entry["account"]["data"][0])
-        raw_address = base58_decode(address)
-        if len(account_data) == CHECKPOINT_LEN and schema_1(account_data, CHECKPOINT_DISCRIMINATOR):
-            check_address(raw_address, "a checkpoint address")
-            check(hex32(account_data, CHECKPOINT_ROOT), f"a root stored at {address}")
-            # **The publication slot and timestamp, added after a review (PR #57, round one, High).**
-            # Both are values the deployment produced and both were invisible to this script and
-            # unlistable in LIVE-VALUES.txt, which accepted only hex and base58. A fixture carried a
-            # real slot beside a fabricated root and a fabricated receipt digest and both halves of the
-            # gate exited 0. They are little-endian u64 and i64 at §2.4's offsets, compared as the
-            # decimal text the list holds.
-            check(str(le_u64(account_data, CHECKPOINT_SLOT)), f"a published slot stored at {address}")
-            check(str(le_i64(account_data, CHECKPOINT_UNIX)), f"a published timestamp stored at {address}")
-            digest = hex32(account_data, CHECKPOINT_RECEIPT)
-            if int(digest, 16) != 0:
-                check(digest, f"a receipt digest stored at {address}")
-        elif len(account_data) == LOG_CONFIG_LEN and schema_1(account_data, LOG_CONFIG_DISCRIMINATOR):
-            check_address(raw_address, "the LogConfig address")
-            check(base58(account_data[LOG_CONFIG_AUTHORITY[0] : LOG_CONFIG_AUTHORITY[1]]),
-                  "the checkpoint authority")
-        else:
-            # **Fail closed, unconditionally.** An earlier version checked the address and carried on,
-            # with a comment claiming it failed closed; it did not. If both spellings of the address
-            # happened to be listed, an account carrying unlisted values inside it exited 0 — a review
-            # built one with an unknown discriminator and another with schema 2 and watched both pass.
-            #
-            # Not reading offsets whose meaning has not been established is right, and it is exactly
-            # why this cannot report completeness: the script does not know what a layout it does not
-            # recognise contains, so it cannot say the list holds everything. Listing the address does
-            # not establish anything about the interior. A new account shape is a person's problem, and
-            # they find out here.
-            check_address(raw_address, "an unrecognised account's address")
-            refusals.append(
-                f"{address} is owned by the program and this script cannot read it: "
-                f"{len(account_data)} bytes, discriminator "
-                f"{account_data[0:8].hex() if len(account_data) >= 8 else '(too short)'}, schema "
-                f"{int.from_bytes(account_data[8:10], 'little') if len(account_data) >= 10 else '(too short)'}. "
-                "Nothing inside it was read, so the list cannot be shown to hold its values. Teach this "
-                "script the layout, or record why the account is out of scope."
-            )
+        # **Discovery from the chain, not from the list.** Every account the program owns.
+        owned = rpc("getProgramAccounts", [identifier, {"encoding": "base64"}]) or []
+        found = [identifier]
+        for entry in owned:
+            address = entry["pubkey"]
+            found.append(address)
+            account_data = base64.b64decode(entry["account"]["data"][0])
+            raw_address = base58_decode(address)
+            if len(account_data) == CHECKPOINT_LEN and schema_1(account_data, CHECKPOINT_DISCRIMINATOR):
+                check_address(raw_address, f"a checkpoint address of {label}")
+                check(hex32(account_data, CHECKPOINT_ROOT), f"a root stored at {address}, owned by {label}")
+                # **The publication slot and timestamp, added after a review (PR #57, round one, High).**
+                # Both are values the deployment produced and both were invisible to this script and
+                # unlistable in LIVE-VALUES.txt, which accepted only hex and base58. A fixture carried a
+                # real slot beside a fabricated root and a fabricated receipt digest and both halves of the
+                # gate exited 0. They are little-endian u64 and i64 at §2.4's offsets, compared as the
+                # decimal text the list holds.
+                check(str(le_u64(account_data, CHECKPOINT_SLOT)), f"a published slot stored at {address}, owned by {label}")
+                check(str(le_i64(account_data, CHECKPOINT_UNIX)), f"a published timestamp stored at {address}, owned by {label}")
+                digest = hex32(account_data, CHECKPOINT_RECEIPT)
+                if int(digest, 16) != 0:
+                    check(digest, f"a receipt digest stored at {address}, owned by {label}")
+            elif len(account_data) == LOG_CONFIG_LEN and schema_1(account_data, LOG_CONFIG_DISCRIMINATOR):
+                check_address(raw_address, f"the LogConfig address of {label}")
+                check(base58(account_data[LOG_CONFIG_AUTHORITY[0] : LOG_CONFIG_AUTHORITY[1]]),
+                      f"the checkpoint authority of {label}")
+            else:
+                # **Fail closed, unconditionally.** An earlier version checked the address and carried on,
+                # with a comment claiming it failed closed; it did not. If both spellings of the address
+                # happened to be listed, an account carrying unlisted values inside it exited 0 — a review
+                # built one with an unknown discriminator and another with schema 2 and watched both pass.
+                #
+                # Not reading offsets whose meaning has not been established is right, and it is exactly
+                # why this cannot report completeness: the script does not know what a layout it does not
+                # recognise contains, so it cannot say the list holds everything. Listing the address does
+                # not establish anything about the interior. A new account shape is a person's problem, and
+                # they find out here.
+                check_address(raw_address, f"an unrecognised account of {label}")
+                refusals.append(
+                    f"{address} is owned by {label} and this script cannot read it: "
+                    f"{len(account_data)} bytes, discriminator "
+                    f"{account_data[0:8].hex() if len(account_data) >= 8 else '(too short)'}, schema "
+                    f"{int.from_bytes(account_data[8:10], 'little') if len(account_data) >= 10 else '(too short)'}. "
+                    "Nothing inside it was read, so the list cannot be shown to hold its values. Teach this "
+                    "script the layout, or record why the account is out of scope."
+                )
+        return found
+
+    addresses: list[str] = []
+    for identifier, label in deployments():
+        addresses.extend(enumerate_deployment(identifier, label))
+
 
     # **Every signature in the transaction, not only the one that names it (H-29).** A transaction id
     # is a transaction's *first* signature. Every publication and attachment here is signed by two
@@ -435,10 +483,11 @@ def main() -> int:
         f"live-values: of the fields this script reads — addresses, roots, publication slots and "
         f"timestamps, receipt digests, the authority and every **transaction id** "
         f"`getSignaturesForAddress` returns **and every signature inside those transactions** — "
-        f"**the announced deployment** holds nothing {LIST.name} does not. Not read: bumps and epoch "
-        f"numbers, which are review-enforced (H-20). Not asked at all: the two superseded "
-        f"deployments, which still own 2 and 213 accounts on devnet and whose addresses this list "
-        f"does not hold (H-26)."
+        f"**every deployment named in {PROGRAM_FILE.name} and {SUPERSEDED_FILE.name}** holds nothing "
+        f"{LIST.name} does not. Not read: bumps and epoch numbers, which are review-enforced (H-20). "
+        f"This sentence read 'not asked at all: the two superseded deployments ... whose addresses "
+        f"this list does not hold' after the commit that added all 215 of those addresses, so it was "
+        f"false in two directions at once; they are now asked, and listing them was never the point."
     )
     return 0
 
