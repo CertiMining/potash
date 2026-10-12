@@ -208,7 +208,31 @@ def signatures_in(transaction_id: str) -> list[str]:
             "A signed transaction has at least one, so this is a malformed answer rather than a "
             "transaction with no signers."
         )
-    return [s for s in signatures if isinstance(s, str)]
+    # **A malformed member refuses the whole response (review of PR #121, M-03).** The line here was
+    # `[s for s in signatures if isinstance(s, str)]`, which dropped every member it could not read.
+    # Stubbed with `{"signatures": [123]}` it returned `[]`, and with `[transaction_id, 123]` it
+    # returned only the id — which the caller then excludes, observing no co-signature. That is the
+    # empty set the completeness check rewards, reached by not understanding the answer: the same
+    # defect the paragraph above was written against, one statement below it.
+    #
+    # A signature is 64 bytes in base58. Anything else in the array means this is not the response it
+    # claims to be, and nothing in it can be relied on — including the members that did parse.
+    for position, signature in enumerate(signatures):
+        if not isinstance(signature, str):
+            raise SystemExit(
+                f"live-values: signature {position} of transaction {transaction_id} is "
+                f"{type(signature).__name__}, not a string. The response is malformed, so no part of "
+                "it is read: a filtered list would be indistinguishable from a transaction with "
+                "fewer signers."
+            )
+        raw = base58_decode(signature)
+        if len(raw) != 64:
+            raise SystemExit(
+                f"live-values: signature {position} of transaction {transaction_id} decodes to "
+                f"{len(raw)} bytes, and a signature is 64. The response is malformed, so no part of "
+                "it is read."
+            )
+    return list(signatures)
 
 
 def signatures_for(address: str) -> list[str]:

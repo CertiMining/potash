@@ -6358,6 +6358,7 @@ dependencies = [
  "certimining-core",
  "certimining-log",
  "ed25519-dalek",
+ "proc-macro2",
  "serde_json",
  "sha2 0.10.9",
 ]

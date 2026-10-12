@@ -56,54 +56,15 @@ licence_headers() {
 # -D warnings` fails outright while `cargo test` only warns. What is invisible is anything under an
 # `allow`, because that attribute at the top of a file silences it forever.
 #
-# **The first version of this check could be defeated by the strongest suppression there is.** It
-# matched only `allow(dead_code` and `allow(unused`, so a review added `#![allow(warnings)]` to a
-# tracked file and both this check and `cargo clippy -- -D warnings` accepted it. It also recorded
-# only file names, so a second suppression inside an already-listed file was free, and it matched
-# the text anywhere on a line, so a comment mentioning one counted as one.
-#
-# So: any `allow(...)` attribute, at the start of a line, counted per file, against a recorded count.
-SUPPRESSIONS="crates/certimining-log/tests/common/mod.rs:1 xtask/src/spec.rs:1"
+# **Counted by a lexer, in xtask (review of PR #121, M-02).** This was a `grep`, repaired three
+# times. Rust admits whitespace *and comments* between an attribute's tokens and admits the
+# attribute spread over several lines, so `#![allow /* reviewer gap */ (warnings)]` compiled, passed
+# `cargo fmt --check`, passed every clippy invocation below, and left this check printing that
+# nothing had been added. Deciding what Rust means from one line of text was the defect, not any one
+# of the spellings. `cargo xtask check-suppressions` tokenises every tracked `.rs` file and holds the
+# recorded set in `xtask/src/suppressions.rs`.
 lint_suppressions() {
-  local wrong=0 f n expected found_files="" entry
-  # `#[allow(` or `#![allow(` with only whitespace before it, so prose about one is not one.
-  # Rust permits whitespace between every token of an attribute, so `#![allow (warnings)]` is the
-  # same attribute as `#![allow(warnings)]` and compiles identically. The first pattern here assumed
-  # none, and a review slipped `#![allow (warnings)]` past both this check and
-  # `cargo clippy -- -D warnings` (review of da87ce5, M-02). Each gap below is optional whitespace.
-  while IFS=: read -r f n; do
-    [ -n "$f" ] || continue
-    found_files="$found_files $f:$n"
-  done < <(git ls-files '*.rs' \
-    | xargs grep -cE '^[[:space:]]*#[[:space:]]*!?[[:space:]]*\[[[:space:]]*allow[[:space:]]*\(' 2>/dev/null \
-    | grep -v ':0$')
-  for entry in $found_files; do
-    f="${entry%%:*}"
-    n="${entry##*:}"
-    expected=""
-    for e in $SUPPRESSIONS; do [ "${e%%:*}" = "$f" ] && expected="${e##*:}"; done
-    if [ -z "$expected" ]; then
-      echo "lint suppression not recorded in scripts/ci.sh: $f carries $n" >&2
-      wrong=$((wrong + 1))
-    elif [ "$expected" != "$n" ]; then
-      echo "lint suppressions in $f: $n present, $expected recorded" >&2
-      wrong=$((wrong + 1))
-    fi
-  done
-  for e in $SUPPRESSIONS; do
-    case " $found_files " in
-      *" $e "*) ;;
-      *)
-        echo "recorded suppression no longer present as written, so the record is stale: $e" >&2
-        wrong=$((wrong + 1))
-        ;;
-    esac
-  done
-  if [ "$wrong" -ne 0 ]; then
-    echo "lint suppressions: $wrong disagreement(s) with the recorded set (H-03)" >&2
-    return 1
-  fi
-  echo "lint suppressions: $(printf '%s\n' $SUPPRESSIONS | grep -c .) recorded, counts match, none added"
+  cargo xtask check-suppressions
 }
 
 file_mode() {
@@ -273,6 +234,12 @@ checks() {
   check "test log, default" cargo test -p certimining-log
   check "test log, solana" cargo test -p certimining-log --no-default-features --features solana
   check "test log, all features" cargo test -p certimining-log --all-features
+  # **xtask's own tests, which nothing ran until now (found while repairing M-01).** The gates that
+  # decide whether the deployment record, the live-value rule and the spec references hold all live
+  # in xtask, and no group named it: a test added beside one of them would have been a test nobody
+  # runs, which is the same thing as no test. xtask is deliberately out of `default-members` (D-54),
+  # so it needs naming here.
+  check "test xtask" cargo test -p xtask
   # The client's tests that need no compiled program. `anchor_status` loads the .so and runs in
   # kat01-onchain instead, because `checks` installs no Agave toolchain and builds no artefact — CI
   # found that by failing where a local run had passed against a stale target directory.

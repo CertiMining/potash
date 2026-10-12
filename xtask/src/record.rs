@@ -65,11 +65,49 @@ fn number(cell: &str) -> Option<usize> {
 /// Matching on shape rather than on a heading means a table that moves in the document is still
 /// found, and a row added to the wrong table is caught by the checks below rather than silently
 /// parsed as the other kind.
+/// The epoch table's header, cell for cell, lowercased.
+const EPOCH_HEADER: [&str; 6] = [
+    "epoch",
+    "root",
+    "anchor a, slot",
+    "anchor b",
+    "receipt",
+    "status",
+];
+
+/// The receipt table's header, cell for cell, lowercased.
+const RECEIPT_HEADER: [&str; 5] = [
+    "epoch",
+    "receipt",
+    "bytes",
+    "sha256 of the file",
+    "digest attached on chain",
+];
+
 /// A table's own furniture: the header, and the `|---|---|` rule under it.
+///
+/// **Recognised by the whole header, not by its first cell (review of PR #121, M-01).** This used to
+/// return true for any row whose first cell was `epoch` under case folding, so changing the live row
+/// for 20736 from `20736` to `Epoch` turned that row into furniture. It left the table; the thirteen
+/// `dual` rows above it were still contiguous; `check-record` printed `13 epoch rows` where it had
+/// printed 14 and exited 0.
+///
+/// A row that calls itself the header and is believed is the same defect as a row that calls itself
+/// `epoch-20735` and is skipped — the one the malformed-row report below exists for — reached through
+/// the one line that still mapped an unreadable epoch onto "not a data row". Both headers are now
+/// matched entire, so a row can only be furniture by being the furniture. If a header is ever
+/// reworded, every row in that table is reported as malformed, which is loud and is the right
+/// direction: a table this cannot find is a table it cannot check.
 fn is_furniture(cells: &[String]) -> bool {
-    cells
-        .first()
-        .is_some_and(|f| f.eq_ignore_ascii_case("epoch"))
+    let header = |expected: &[&str]| {
+        cells.len() == expected.len()
+            && cells
+                .iter()
+                .zip(expected)
+                .all(|(c, e)| c.eq_ignore_ascii_case(e))
+    };
+    header(&EPOCH_HEADER)
+        || header(&RECEIPT_HEADER)
         || cells
             .iter()
             .all(|c| !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':'))
@@ -423,4 +461,79 @@ fn word_to_number(word: &str) -> Option<usize> {
         .iter()
         .position(|c| *c == w)
         .or_else(|| w.parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The epoch table as `docs/anchoring.md` writes it, with two rows.
+    const TABLE: &str = "\
+| Epoch | Root | Anchor A, slot | Anchor B | Receipt | Status |
+|---|---|---|---|---|---|
+| 20734 | `0x11…11` | 1 | block 1 | `anchors/epochs/20734.ots` | `dual` |
+| 20735 | `0x22…22` | 2 | *pending* | *not yet committed* | `single` |
+";
+
+    #[test]
+    fn the_control_parses_both_rows_and_reports_nothing() {
+        let (epochs, receipts, malformed) = parse(TABLE);
+        assert_eq!(epochs.len(), 2, "both data rows are rows");
+        assert!(receipts.is_empty(), "this table is not the receipt table");
+        assert!(malformed.is_empty(), "nothing in the control is malformed");
+    }
+
+    /// The mutation a review of `da87ce5` used: an epoch cell that is not a number.
+    #[test]
+    fn an_unreadable_epoch_is_reported_not_skipped() {
+        let (epochs, _, malformed) = parse(&TABLE.replace("| 20735 |", "| epoch-20735 |"));
+        assert_eq!(epochs.len(), 1);
+        assert_eq!(malformed.len(), 1, "the row is reported, not dropped");
+        assert!(malformed[0].contains("epoch-20735"), "{:?}", malformed);
+    }
+
+    /// The mutation a review of PR #121 used: a data row that spells its epoch `Epoch`.
+    ///
+    /// Before the header was matched entire this row became furniture and the count silently fell
+    /// from 14 to 13 against the real table, with `check-record` exiting 0.
+    #[test]
+    fn a_data_row_calling_itself_the_header_is_reported() {
+        let (epochs, _, malformed) = parse(&TABLE.replace("| 20735 |", "| Epoch |"));
+        assert_eq!(epochs.len(), 1, "the mutated row is not a row");
+        assert_eq!(malformed.len(), 1, "but it is reported rather than skipped");
+        assert!(malformed[0].contains("Epoch"), "{:?}", malformed);
+    }
+
+    /// A row of six cells whose first is `epoch` but which is not the header.
+    #[test]
+    fn only_the_whole_header_is_furniture() {
+        let real: Vec<String> = EPOCH_HEADER.iter().map(|c| c.to_string()).collect();
+        assert!(is_furniture(&real), "the header is furniture");
+        let mut impostor = real.clone();
+        impostor[3] = "Anchor Z".to_string();
+        assert!(
+            !is_furniture(&impostor),
+            "a row that is not the header is not furniture, whatever its first cell says"
+        );
+    }
+
+    /// The headers this module matches are the headers the document carries.
+    ///
+    /// A reworded header would make every row of that table malformed. That is loud rather than
+    /// silent, but it is still a break, and this is the test that fails first and says why.
+    #[test]
+    fn the_documents_headers_are_the_ones_matched() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the workspace root is xtask's parent");
+        let markdown = std::fs::read_to_string(root.join("docs/anchoring.md"))
+            .expect("docs/anchoring.md is in the repository");
+        for header in [&EPOCH_HEADER[..], &RECEIPT_HEADER[..]] {
+            let row = format!("| {} |", header.join(" | "));
+            assert!(
+                markdown.to_lowercase().contains(&row),
+                "docs/anchoring.md no longer carries the header this module matches: {row}"
+            );
+        }
+    }
 }
