@@ -23,6 +23,10 @@ ignore = [
 
 [licenses]
 version = 2
+# **No copyleft, and LGPL is not an exception to that (owner, 12 Oct 2026, H-16).** The list below is
+# the whole policy: a crate whose licence is not on it fails, and a reciprocal licence does not get a
+# per-crate exception the way CDLA-Permissive-2.0 and NCSA do below. The two exceptions are permissive
+# licences that `cargo deny` could not match automatically; neither widens this list.
 allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib", "CC0-1.0"]
 confidence-threshold = 0.9
 # This project's own crates declare no licence until E-15 decides it (D-13).

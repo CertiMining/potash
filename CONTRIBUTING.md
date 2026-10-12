@@ -262,6 +262,13 @@ Anchor B's receipts are created and upgraded by the **OpenTimestamps reference c
 `~/.local/share/potash/ots-venv` and invoked as a process rather than linked (D-115). It is the only
 implementation that both submits to calendars and upgrades once Bitcoin confirms.
 
+**An LGPL crate would not be allowed, and this is not a crate (owner, 12 Oct 2026, H-16).** D-89's
+list in `deny.toml` admits no reciprocal licence, and the two exceptions there are permissive
+licences `cargo deny` could not match rather than a precedent for widening it. This client is outside
+that gate because it is a separate process: nothing links it, nothing distributes it, and the
+repository ships none of its code. It is named here because being outside a gate is not the same as
+being covered by one.
+
 `cargo deny` reads `Cargo.lock` and `scripts/ts-gate.sh` reads `ts/package-lock.json`. **Neither sees
 this.** It is a third supply-chain surface, it is named here rather than left for a reader to notice,
 and what mitigates it is not a gate: every receipt it produces is **parsed** by the
