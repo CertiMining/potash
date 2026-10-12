@@ -285,7 +285,7 @@ fn an_epoch_inside_the_range_whose_account_was_refused_is_named_as_that() {
 /// consistent view of the chain cannot produce that: `publish_checkpoint` writes the checkpoint before
 /// it advances `last_epoch`. But the configuration and the account are separate reads with no shared
 /// response context, so what it proves is that the answers were not one snapshot — **not** that
-/// something other than this program wrote the configuration, which is what the error used to say.
+/// something other than this program wrote the configuration.
 #[test]
 fn an_absent_account_inside_the_published_range_is_a_read_that_was_not_one_snapshot() {
     let mut cluster = Cluster::default();
