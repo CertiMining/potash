@@ -18,6 +18,10 @@ serde_json = "=1.0.151"
 sha2 = "=0.10.9"
 # Signatures for the vectors that carry one, made with RFC 8032 §7.1's published key (D-55).
 ed25519-dalek = { version = "=2.2.0", default-features = false }
+# Rust's own lexer, to count lint suppressions by tokenising rather than by pattern (M-02). Already
+# in Cargo.lock at this version as a dependency of the proc-macro crates below `ed25519-dalek`, so
+# this adds a dependency edge and no new code to the tree.
+proc-macro2 = "=1.0.107"
 
 [lints.rust]
 unsafe_code = "forbid"

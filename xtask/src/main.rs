@@ -25,6 +25,7 @@ mod demo;
 mod live_values;
 mod record;
 mod spec;
+mod suppressions;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -90,6 +91,12 @@ fn main() {
         // check because that one reads values and this one reads the prose and tables around them.
         Some("check-record") => {
             record::check_record(&repo_root());
+        }
+        // Lint suppressions, counted by tokenising every tracked `.rs` file (M-02). This lived in
+        // `scripts/ci.sh` as a pattern over single lines, and Rust admits comments and newlines
+        // between an attribute's tokens, so the pattern was avoidable by spelling.
+        Some("check-suppressions") => {
+            suppressions::check_suppressions(&repo_root());
         }
         // E-14's demo fixtures (D-126). A separate command: the demo's scenes are not conformance
         // vectors, and regenerating one must not be able to rewrite the other.
