@@ -134,16 +134,14 @@ edit; a copy of the script elsewhere is not a workaround, because its first act 
 
 **Every scripted edit to `docs/TCU-02_CertiMining_Anchored_Log_v0.1.md` asserts that it matched.**
 A `str.replace` whose search string has gone stale changes nothing and reports nothing, so the file
-keeps its old text while the commit message describes the new one. That happened: two edits meant to
-move the version line matched nothing, the line sat at `0.1.15` through four commits, and the
-document carried §1.4's epoch clock, §2.4's `start_epoch`, INV-ANCH-02's start clause and V-N-26
-without saying so. The content was right every time; the claim was only ever in the commit messages.
+keeps its old text while the commit message describes the new one. That has happened: a version line
+sat at `0.1.15` through four commits while the commit messages described the move.
 
 **Assert the match, write, then read the file back.** Asserting before the write is necessary and not
-sufficient, which three incidents have now shown. Twice the assertion was there and the text still did
-not move; the third time a script made four substitutions, asserted on the fifth, raised — and
-discarded all four, because the single `write_text` came after them. A run that ends in an exception
-has written nothing, and an assertion that guards a write it never reaches guards nothing.
+sufficient — three incidents have shown it. Twice the assertion was there and the text still did not
+move; the third time a script made four substitutions, raised on the fifth, and discarded all four,
+because the single `write_text` came after them. An assertion guarding a write it never reaches
+guards nothing.
 
 So:
 
@@ -167,14 +165,11 @@ number linearly, and two of them both claimed `v0.1.18`. A branch's version line
 branch, unmerged" or "before this branch". One spec-only pull request then assigns the next number to
 everything merged since.
 
-**That pass has been run once, and the markers are a debt until it is.** `main` carried twelve of
-them — eleven in-text notes and the version line — for as long as it took anyone to read the document
-as a reader would, which is what E-16's claim sweep eventually did. On `main` each one says a part of
-the document is not in the repository, which is false there and misleading in the artifact a reader
-meets first. **v0.2.0** consolidated all of them: it is the number for everything merged since
-v0.1.14, and the branch-local numbers 0.1.15 to 0.1.19 were never released. So: a branch may carry
-markers, `main` may not, and the consolidating pull request is owed the moment a branch with markers
-merges — not at some later tidy-up.
+**A marker on `main` is false there**, because it says a part of the document is not in the
+repository. So: a branch may carry markers, `main` may not, and the consolidating pull request is
+owed the moment a branch with markers merges — not at some later tidy-up. **v0.2.0** was that
+consolidation, covering everything merged since v0.1.14; the branch-local numbers 0.1.15 to 0.1.19
+were never released.
 
 Amendments since then take the next number as they land rather than waiting to be consolidated again:
 **v0.2.1** adds V-P-13 to §4.2 and changes nothing else (H-04). A reader checking which text they
@@ -246,10 +241,10 @@ together.
 ## Filing to Post-deadline hardening
 
 A defect found before the submission deadline that is not going to be fixed before it goes to the
-**Post-deadline hardening** milestone, and it goes there as an issue titled `H-nn · …`, numbered in
-filing order. H-01 to H-17 exist. The number is part of the title rather than a label, so it appears
-wherever the issue is linked, and a decision or a comment that defers something says which H it
-deferred to — `docs/DECISIONS.md` and the unit records do that by linking the issue and naming it.
+**Post-deadline hardening** milestone, as an issue titled `H-nn · …`, numbered in filing order. The
+number is part of the title rather than a label, so it appears wherever the issue is linked, and a
+decision or comment that defers something names the H it deferred to. For the current range, list the
+milestone; the next number is one past the highest title.
 
 **What goes there, under the shipping posture:** a Medium or a Low from a review round, a defect whose
 fix would ripple past the unit that found it, and a question that should not be decided quickly
