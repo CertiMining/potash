@@ -85,109 +85,42 @@ stall, so nothing was loosened; what caught it was the rule above, replay before
 An independent review had written of the per-unit margin that it was "strong operational confirmation,
 not a proof against arbitrary machine load", and this is that caveat arriving within the hour.
 
-## Round one's findings, and what they say about this file's own claims
+## What the review rounds changed, and the rule they produced
 
-An independent review of E-12 found five, three of them in the targets and properties this file describes
-as working. Two are the same defect the section below is about, found again in places this file had not
-looked.
+Three independent rounds found the same defect in different places, and the rule is the one claim in
+this file worth reading twice:
 
-**F-05 treated a forbidden refusal as success (E12-01).** Its refusal branch accepted `MalformedPayload`
-for any input and only *required* it when the height was invalid. §4.5's obligation is positive — a valid
-height always produces a complete tree — so an engine that began refusing valid trees would not have
-failed it. The reviewer proved it: a defect refusing a valid, unique, one-leaf tree at `H = 8` completed
-25,000 iterations green while the ordinary positive test failed at once. The target now decides what the
-engine owes for every input — `Ok`, `0x05` for an invalid height or a duplicate identifier, `0x12` over
-capacity — and requires exactly that. Re-checked with the same defect: it now fails naming §4.5.
+> **A target or property that only inspects refusals has not tested the thing that must succeed.**
 
-**P-02 never reached an accepted transition (E12-02).** It compared two applications of an arbitrary
-record against an arbitrary snapshot. An arbitrary `prev_head` fails condition (a), so the `Ok` arm was
-dead and nondeterminism in the accepted path passed 10,000 cases — the reviewer demonstrated it with a
-rising nonce XORed into accepted heads. Each case now also applies the same record rewritten to satisfy
-every §1.3 condition from that snapshot, and fails if it is refused. Re-checked with the same defect: it
-fails on the first case.
+F-01 asserted §1.4's `last_epoch` / `start_epoch` relation on any buffer that parsed, which Borsh
+decoding does not establish; it is a round-trip assertion now. F-03 took four attempts before its
+accepted path was reachable at all — arbitrary signatures never verify and arbitrary URI bytes are
+never well-formed, so every accept-side assertion was dead — and now signs with RFC 8032 §7.1's
+published key and carries a **positive control**: a record satisfying every §1.3 condition must be
+accepted. F-05 (E12-01) accepted `MalformedPayload` for any input; it now decides what the engine
+owes for every input and requires exactly that. P-02 (E12-02) compared two applications of a record
+an arbitrary snapshot always refused; each case now also applies a record rewritten to satisfy every
+§1.3 condition, and fails if that is refused. A tautological length assertion in `read_tag` was
+removed rather than left looking like coverage.
 
-That is the third time this pattern has been found here, after F-01's refuted assertion and F-03's four
-attempts. The lesson this file already drew was right and was not applied widely enough: **a target or
-property that only inspects refusals has not tested the thing that must succeed.**
+Round one's other findings: §4.5's 10,000 P-02 cases lived in a comment and now run in
+`scripts/ci.sh checks` on every push (E12-04); the licence record named the wrong file population and
+`deny.toml` now carries the commands that reproduce its figures (E12-05). Round three found five more,
+four closed as H-21 to H-24 by running each reviewer's own mutant against the repaired target — a
+forced-zero root, a removed length refusal, a `verify` refusing every proof outside epoch 20723, a
+`previous_category` committed for every shape but one. All four failed after repair and had passed
+before. The fifth was in V-Z-04 and went out as its own pull request.
 
-**F-05 could not represent its own domain (E12-03).** §4.5 asks for real-leaf sets over `0..=C`. Each
-element costs 48 input bytes and libFuzzer's default `-max_len` is 4,096, so roughly 85 elements fitted and
-the old 300-element source cap was never the binding constraint — its comment claimed to sit "a little
-above the largest capacity this bound allows", which held only for `H = 8`. The input now carries a small
-arbitrary set plus a **derived** count, so any count costs two bytes. That made the target about ten times
-faster, because large sets no longer have to be decoded from input.
-
-It did not make the whole domain reachable, and the limit is recorded rather than glossed. The derived
-count is clamped at 4,096: left at the full `u16`, a unit could ask for 65,536 leaves at `H = 16`, and that
-build under a sanitizer **exceeded the 10-second per-unit timeout and aborted the run**. So the fuzzer
-reaches capacity for heights 4 through 12 and not for 13 through 16. Those boundaries are pinned
-deterministically instead, by `the_leaf_count_boundaries_hold_at_every_height_class` in
-`crates/certimining-log/tests/tree.rs`, which does 0, 1, `C-1`, `C` and `C+1` at every height class in
-about two seconds — 1.65 s here and 2.01 s for an independent reviewer, so not a guarantee. Content search is what the fuzzer is for; a boundary should not depend on a mutation
-happening to find it.
-
-**§4.5's 10,000 P-02 cases reached no committed job (E12-04).** `config()` runs 512 and the requirement
-lived in a comment telling a reader to set `PROPTEST_CASES` by hand. `scripts/ci.sh checks` now runs the
-10,000 on every push; it costs a few seconds.
-
-**The licence record named the wrong file population (E12-05).** See `deny.toml`, which now carries the
-commands that reproduce all three figures — 53 files in the crate, 53 carrying the SPDX header, 26
-compiled.
-
-## Where E-12's round-three findings went
-
-A third review round found five instances, none High. Four went to Post-deadline hardening on the owner's
-ruling of 3 Oct 2026 — below High goes to hardening and the unit closes. The pointer is here because the
-commit that first recorded it landed after PR #55's head was taken:
-
-- ~~**H-21** P-02's accepted lane derives URI form and claimed-key presence from the same parity bit,
-  so two of four valid combinations never occur and a partial commit in one of them passed 10,000
-  cases.~~ **Closed.** The two come from independent bits — the key from `category`'s parity, the URI
-  from `qp_key`'s first byte — so all four combinations occur.
-- ~~**H-22** F-01 reduces an accepted checkpoint to its epoch, so a forced-zero root passed a million
-  runs.~~ **Closed.** F-01 compares every field `decode_checkpoint` returns, in both lanes.
-- ~~**H-23** F-02 never requires raw input over 256 bytes to be refused.~~ **Closed.** The rule is
-  asserted against the input's own length, because the result of an over-long input is the thing that
-  should not exist.
-- ~~**H-24** F-04's genuine-proof control is one fixed epoch, so refusing every *other* genuine proof
-  survives.~~ **Closed.** A second genuine proof is built from the input each iteration, at height 4
-  to 6; the fixed control keeps height 8.
-
-Each was closed by running the reviewer's own mutant against the repaired target: a forced-zero root,
-a removed length refusal, a `verify` that refuses every proof outside epoch 20723, and a
-`previous_category` committed for every shape but `https://` with a claimed key. All four now fail,
-and all four passed before.
+**A limit this left behind.** F-05's input carries a small arbitrary set and a derived count, clamped
+at 4,096: left at the full `u16` a unit could ask for 65,536 leaves at `H = 16`, and that build under
+a sanitizer exceeded the 10-second per-unit timeout and aborted the run. **The fuzzer reaches capacity
+for heights 4 through 12 and not for 13 through 16.** Those boundaries are pinned deterministically
+instead — `the_leaf_count_boundaries_hold_at_every_height_class` in
+`crates/certimining-log/tests/tree.rs` does 0, 1, `C-1`, `C` and `C+1` at every height class.
 
 **F-04's cost went up and the table above has not been re-measured.** Building a second epoch per
-iteration took 200,000 runs from about 2 seconds to 121 on the development machine, so the nightly's
-figure for that row will move. The row is a measurement and is left as the last one taken rather than
-estimated forward; `scripts/ci.sh fuzz` records the next.
-
-The fifth was in V-Z-04, a §4.4 release blocker, and went out as its own pull request rather than waiting
-behind a unit.
-
-## Targets that could not reach what they tested
-
-Each of these passed, and each was worthless, which is the failure mode a fuzz target is most prone to:
-the harness refuses every input before the assertion under test executes, and a green run says nothing.
-
-**F-01's first assertion was refuted in seconds.** It asserted §1.4's `last_epoch` / `start_epoch`
-relation on any buffer that parsed. Borsh decoding does not establish that the program wrote the
-buffer, so arbitrary bytes satisfy the decoder and violate the invariant; it also overflowed at
-`u64::MAX`. Replaced with a round-trip assertion, which is a property of the codec rather than a claim
-about provenance.
-
-**F-03 took four attempts.** (1) An arbitrary `prev_head` fails §1.3's condition (a), so condition (b)
-was never consulted. (2) The chain sets its own counter, so "the sequence rose by one" held even with
-(b) relaxed — fixed by asserting `record.seq == chain.seq()`. (3) Arbitrary signatures never verify and
-arbitrary URI bytes are never well-formed, so the accepted path was unreachable and every accept-side
-assertion was dead. Fixed by signing with RFC 8032 §7.1's published key and a valid URI, and by adding
-a **positive control**: a record satisfying every §1.3 condition must be accepted. Without that
-control, a future change that refused everything would still pass.
-
-**A tautological length assertion was removed.** `read_tag`'s length check was enforced twice on the
-same path, so the assertion could not fail. It is gone, with the reason recorded rather than the
-assertion left in place looking like coverage.
+iteration took 200,000 runs from about 2 seconds to 121 on the development machine. The row is left as
+the last measurement taken rather than estimated forward; `scripts/ci.sh fuzz` records the next.
 
 ## The properties
 
@@ -232,51 +165,37 @@ What the Rust side does have, it covers: `read_tag` is checked at every prefix 0
 asymmetry follows from the two implementations facing opposite directions: the engine writes, the
 verifier reads. V-N-18 is a claim about reading.
 
-## V-Z-04 scored its own worst outcome as ideal
+## A correlation helper may not return zero for a constant series
 
-**There were two such helpers, not one.** `crates/certimining-log/tests/common/mod.rs` serves V-Z-04 and
-`crates/certimining-client/tests/correlation.rs` serves V-Z-01's devnet gate; both returned `0.0` on a
-constant series, and an earlier version of this section said V-Z-04 was the only §4.4 instance. V-Z-01's
-is fixed here too. Its two roles were separated at first — a constant *feature* refused, while a constant
-*landing delay* was reported as favourable rather than scored — and a later round showed that split was
-wrong. A collapsed slot reading produces exactly the series a genuinely flat delay would, and §4.4 asks
-for `|r| < 0.2`, which an undefined r does not meet. Both roles refuse now, as they always did in
-`certimining-log`.
-
-`pearson` in `crates/certimining-log/tests/common/mod.rs` returned `0.0` whenever either series was
-constant. For §4.4's V-Z-04 bounds, which require |r| below a threshold, that is the **best possible**
-answer — so the worst possible placement result passed the privacy gate.
-
-A review forced all 25,600 observed placements into slot zero. `v_z_04_position_carries_no_meaning`
-reported correlation 0 for submission order, issuer and time, and passed. Every submission landing in one
-slot is exactly what INV-TREE-03 forbids, and the instrument scored it as perfect non-correlation.
+`pearson` returned `0.0` whenever either series was constant. For §4.4's V-Z-04 bounds, which require
+|r| below a threshold, that is the **best possible** answer — so the worst possible placement result
+passed the privacy gate. A review forced all 25,600 observed placements into slot zero;
+`v_z_04_position_carries_no_meaning` reported correlation 0 for submission order, issuer and time, and
+passed. Every submission landing in one slot is exactly what INV-TREE-03 forbids.
 
 Zero variance means one of two things and both are failures. A constant **observation** is that
 catastrophic placement result. A constant **feature** is a malformed sample: a run that varied nothing
-cannot establish whether position follows it. Neither is a number this function may return, so it now
-refuses, naming which series was constant.
+cannot establish whether position follows it. Neither is a number this function may return, so it
+refuses and names which series was constant.
+
+There were two such helpers: `crates/certimining-log/tests/common/mod.rs` for V-Z-04 and
+`crates/certimining-client/tests/correlation.rs` for V-Z-01's devnet gate. Both refuse now, in both
+roles — a collapsed slot reading produces exactly the series a genuinely flat landing delay would, and
+§4.4 asks for `|r| < 0.2`, which an undefined r does not meet.
 
 ## What this class is, stated to the evidence
 
-An earlier version of this section called V-Z-04 "the eighth instance of one class" and said such a
-defect "cannot be caught by running it". A review narrowed both claims, and it was right to.
+**Eight named harnesses** are ones in which adversarial mutation exposed an invalid green path. Of
+those, **five have committed before-and-after evidence** — the repository holds the bad branch and its
+repair: F-05's refusal branch (`eb88730`, repaired in `8eb2eda`), F-02's and F-04's missing positive
+obligations, P-01's silent prefix and P-02's absent commit proof (all repaired in `2d546c2`). Two are
+author-recorded development history only, surviving in comments rather than in the history: F-01's
+refuted assertion and F-03's four attempts. V-Z-04 is the eighth.
 
-**Five predecessors have committed before-and-after evidence**, where the repository holds the bad branch
-and its repair: F-05's refusal branch (`eb88730`, repaired in `8eb2eda`), and F-02's and F-04's missing
-positive obligations, P-01's silent prefix and P-02's absent commit proof (all repaired in `2d546c2`).
-**Two are author-recorded development history only** — F-01's refuted assertion and F-03's four
-attempts arrived already repaired, and survive in comments rather than in the history. So the count of
-*named harnesses in which adversarial mutation exposed an invalid green path* is eight including V-Z-04;
-the count of independently verifiable defect instances is five.
-
-**And "cannot be caught by running it" was too strong.** F-01's own account in this file says the fuzzer
-refuted its first assertion in seconds — that one *was* caught by running it. P-02 had an unreachable
-accepted path before its later missing commit proof, and F-03 records several distinct reachability
-failures, so the instances are not uniform either.
-
-The bounded claim is the useful one: **ordinary green runs did not expose these paths, and adversarial
-mutation did.** Each was found by changing what the instrument watches and checking whether it noticed —
-not by running the suite again.
+The instances are not uniform. F-01's first assertion *was* caught by running it — the fuzzer refuted
+it in seconds. The bounded claim is the useful one: **ordinary green runs did not expose these paths,
+and adversarial mutation did.** Each was found by changing what the instrument watches and checking
+whether it noticed, not by running the suite again.
 
 ## What none of this covers
 
