@@ -1,56 +1,44 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The rule that no synthetic artifact carries a value from a live deployment (owner, 28 Sep 2026).
 //!
-//! **Why this exists.** E-14's demo fixture carried the announced log's real transaction signature and
-//! slot in its `anchor` block, beside an epoch root that was built for the demo and published nowhere
-//! — and the signature and the slot were not even from the same publication. The fixture asserted an
-//! anchoring that had never happened. Fabricated provenance is the worst class of defect this
-//! repository can hold, and it is the kind an author cannot see in their own work, which is what an
-//! independent round is for. A rule that lives only in a person's judgement is the same rule that
-//! failed.
+//! **Why this exists.** E-14's demo fixture carried the announced log's real transaction signature
+//! and slot beside a root built for the demo and published nowhere — and the two were not even from
+//! the same publication. It asserted an anchoring that never happened. Fabricated provenance is the
+//! worst defect this repository can hold and the kind an author cannot see in their own work, and a
+//! rule living only in judgement is the rule that failed.
 //!
 //! **What it checks.** Every file a generator is about to write is scanned for each value in
 //! `LIVE-VALUES.txt`, and generation fails on a match unless the exact pair is recorded in
 //! `LIVE-VALUES.exempt`. Matching is case-insensitive, so a base58 string that collides only under
 //! case folding would fail generation — a false positive, which is the safe direction, and loud.
 //!
-//! **What it covers, and what it does not.** The rule reaches 32-byte values, base58 identifiers and —
-//! since a review found a live publication slot beside a fabricated root — decimals of six digits or
-//! more, which is what admits a slot or a unix timestamp without firing on every small counter in the
-//! corpus. Block heights are still uncovered. Bumps and epoch day indices are excluded by shape rather
-//! than by principle: both are short enough that listing them would match unrelated text, so they are
-//! review-enforced, and H-20 removes the need for that carve-out.
+//! **What it covers.** 32-byte values, base58 identifiers, and decimals of six digits or more —
+//! enough for a slot or a timestamp without firing on every small counter. Block heights are
+//! uncovered. Bumps and epoch day indices are excluded by shape, not principle: too short to list
+//! without matching unrelated text, so review-enforced until H-20.
 //!
-//! **What neither half asks (H-26).** The rule is unqualified — no value from a live deployment, in
-//! any synthetic artifact — and these two checks cover the *announced* deployment. The superseded
-//! program ids `HS82CAXg…` and `jzJzgKWM…` are listed, but nothing derived from them is: a review
-//! found they still own 2 and 213 accounts on devnet, and none of those addresses is here. Placing
-//! one in a fixture passes both halves, because the static gate has no value to match and the chain
-//! reader never asks a superseded program what it owns. Supersession does not remove an account from
-//! devnet and does not make its provenance synthetic.
+//! **What neither half asked (H-26).** The rule is unqualified, and these checks covered only the
+//! *announced* deployment. The superseded ids were listed; nothing derived from them was, though
+//! they still own 2 and 213 devnet accounts. One in a fixture passed both halves: no value to match
+//! statically, and the chain reader never asked them anything.
 //!
-//! **Listing the addresses did not list the values (review of PR #121, H-01).** The repair above put
-//! all 215 addresses and their byte forms in the list and said the gap was closed. It was not. A
-//! review decoded every one of those accounts — 213 checkpoints and 2 LogConfigs, nothing
-//! unrecognised — and found 640 values inside them that no check had ever asked for: 213 roots, 213
-//! publication slots, 213 publication timestamps and one non-zero receipt digest. Inserting one of
-//! those roots into a fuzz target left this gate exiting 0 while it printed that the surface carried
-//! no value the list holds, which was true only because the list did not hold it. Asking about
-//! addresses and reporting on values is the same substitution the paragraph above describes, made by
-//! the repair for it.
+//! **Listing the addresses did not list the values (review of PR #121, H-01).** The repair above
+//! listed all 215 addresses and called the gap closed. A review decoded those accounts — 213
+//! checkpoints, 2 LogConfigs — and found 640 values inside them that nothing had asked for: 213
+//! roots, 213 slots, 213 timestamps, one receipt digest. One of those roots in a fuzz target left
+//! this gate exiting 0 and printing that the surface held no listed value, true only because the
+//! list did not hold it. Asking about addresses and reporting on values is the substitution the
+//! paragraph above describes, made by its own repair.
 //!
-//! All 640 are now listed, with the 434 transaction signatures of those two deployments, their
-//! ProgramData addresses and the slot each program was last deployed in. Two of the 640 travelled
-//! the other way: `0xabab…abab` and `0x3333…3333` are this repository's own placeholder constants,
-//! which `crates/certimining-client/tests/devnet.rs` published to the 24 September program. They are
-//! listed anyway, because the rule is unqualified and narrowing it is the owner's decision and not a
-//! tool's, and the 23 files that legitimately carry them are named in `LIVE-VALUES.exempt` by exact
-//! path.
+//! All 640 are listed now, with the two deployments' 434 signatures, their ProgramData addresses
+//! and deploy slots. Two travelled the other way: `0xabab…abab` and `0x3333…3333` are this
+//! repository's placeholder constants, which `tests/devnet.rs` published to the 24 September
+//! program. Listed anyway — narrowing the rule is the owner's call — with the 23 files that
+//! legitimately carry them named in `LIVE-VALUES.exempt` by exact path.
 //!
-//! `scripts/live-values-from-chain.py` now asks every deployment in `ANNOUNCED_PROGRAM_ID` and
-//! `SUPERSEDED_PROGRAM_IDS`, rather than listing the superseded ones by hand and reading neither.
-//! The enumerate-once argument was that a superseded program's accounts cannot grow, which is true
-//! and was never the problem: nothing had enumerated what they already contained.
+//! `scripts/live-values-from-chain.py` now asks every deployment named in `ANNOUNCED_PROGRAM_ID`
+//! and `SUPERSEDED_PROGRAM_IDS`. Enumerate-once rested on a superseded program's accounts not
+//! growing, which is true and was never the problem: nothing had enumerated what they held.
 //!
 //! An earlier version of this paragraph said slot numbers were deliberately uncovered, which the
 //! decimal support contradicts. H-34 recorded that paragraph as still stale; it had already been
@@ -72,13 +60,10 @@ struct LiveValue {
     what: String,
     /// Every spelling of this value a file could carry, lowercased.
     ///
-    /// **`0x` is a convention of the list, not part of the value (found while repairing H-01).**
-    /// The list writes a 32-byte value as `0x` and 64 nybbles, and the match required that prefix,
-    /// so the same bytes spelled bare went straight through: a real root from the superseded
-    /// 25 September deployment, pasted into a fuzz target without the prefix, left
-    /// `check-live-values` exiting 0 and printing that the surface carried no value this list holds.
-    /// Three committed files already carried a listed digest in that spelling and nothing had ever
-    /// seen them. The value is the bytes; the prefix is how a reader is shown them.
+    /// **`0x` is the list's convention, not part of the value (found while repairing H-01).** The
+    /// match required the prefix, so the same bytes spelled bare went straight through: a real root
+    /// from the 25 September deployment, pasted into a fuzz target without it, left the gate at
+    /// exit 0. Three committed files already carried a listed digest that way, unseen.
     needles: Vec<String>,
 }
 
@@ -205,16 +190,14 @@ fn a_superseded_root(root: &Path) -> String {
 
 /// Proves the gate refuses a live value in each directory of the surface, before trusting a pass.
 ///
-/// **Asked for by the review of PR #121 (H-01).** The gate had reported that 111 files carried no
-/// value this list holds while a real root from the superseded 25 September deployment sat in
-/// `fuzz/fuzz_targets/fuzz_apply.rs` — because the list did not hold it, so there was nothing to
-/// match, and "no match" and "nothing to match with" print the same sentence. The same shape had
-/// already been found once, in `fuzz/fuzz_targets` not being walked at all (H-25).
+/// **Asked for by the review of PR #121 (H-01).** The gate reported 111 clean files while a real
+/// superseded root sat in `fuzz/fuzz_targets/fuzz_apply.rs`: the list did not hold it, and "no
+/// match" and "nothing to match with" print the same sentence. H-25 was the same shape — that
+/// directory was not walked at all.
 ///
-/// A pass therefore means nothing on its own. This runs the detector against a file in every
-/// directory of the surface, with a value the list really holds and no exemption, and requires each
-/// to be refused; and against the same file with no live value in it, and requires silence. Both
-/// directions, because a detector that refuses everything is as useless as one that refuses nothing.
+/// So a pass means nothing alone. This refuses a listed value in every directory, and accepts the
+/// same file without one — both directions, since refusing everything is as useless as refusing
+/// nothing.
 fn prove_the_gate_detects(root: &Path) {
     let value = a_superseded_root(root);
     for dir in SYNTHETIC_SURFACE {

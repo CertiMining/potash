@@ -86,18 +86,13 @@ const RECEIPT_HEADER: [&str; 5] = [
 
 /// A table's own furniture: the header, and the `|---|---|` rule under it.
 ///
-/// **Recognised by the whole header, not by its first cell (review of PR #121, M-01).** This used to
-/// return true for any row whose first cell was `epoch` under case folding, so changing the live row
-/// for 20736 from `20736` to `Epoch` turned that row into furniture. It left the table; the thirteen
-/// `dual` rows above it were still contiguous; `check-record` printed `13 epoch rows` where it had
-/// printed 14 and exited 0.
+/// **Matched entire, not by the first cell (review of PR #121, M-01).** Spelling the live 20736 row
+/// `Epoch` used to make it furniture: it left the table, the rows above stayed contiguous, and
+/// `check-record` printed 13 rows instead of 14 and exited 0.
 ///
-/// A row that calls itself the header and is believed is the same defect as a row that calls itself
-/// `epoch-20735` and is skipped — the one the malformed-row report below exists for — reached through
-/// the one line that still mapped an unreadable epoch onto "not a data row". Both headers are now
-/// matched entire, so a row can only be furniture by being the furniture. If a header is ever
-/// reworded, every row in that table is reported as malformed, which is loud and is the right
-/// direction: a table this cannot find is a table it cannot check.
+/// A row believed to be the header is the same defect as one skipped for an unreadable epoch, which
+/// the malformed-row report below already covered. A reworded header now makes every row in its
+/// table malformed — loud, and the right direction: a table this cannot find is one it cannot check.
 fn is_furniture(cells: &[String]) -> bool {
     let header = |expected: &[&str]| {
         cells.len() == expected.len()

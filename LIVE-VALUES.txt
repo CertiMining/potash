@@ -715,19 +715,15 @@ ibXCvPF2CvvbpecGtjumRDBSZ6TgxHeRuiXfj2XRVEq  account owned by the program supers
 kBAnwhrQx2kdGAKiPskFhbw6mkGBKbLfyKgYVSsGSu5  account owned by the program superseded 25 September
 0x0b0f790459f6121274adc14495e42f6389c1806675f90ba2326be37b944bb5e8  account owned by the program superseded 25 September, as bytes
 
-# Values stored *inside* those accounts (review of PR #121, H-01). Listing the 215 addresses
-# did not list what they hold. A review decoded all 215 under the layouts this repository
-# uses — 213 checkpoints and 2 LogConfigs, nothing unrecognised — and found 640 values no
-# check had ever asked for: 213 roots, 213 publication slots, 213 publication timestamps and
-# one non-zero receipt digest. Inserting one of those roots into a fuzz target left
-# `check-live-values` exiting 0 while it printed that the surface carried no value this list
-# holds. Enumerating addresses is not enumerating values, and the claim was the louder defect.
+# Values stored *inside* those accounts (review of PR #121, H-01). Listing the 215 addresses did
+# not list what they hold: 213 roots, 213 publication slots, 213 publication timestamps and one
+# receipt digest, 640 values no check had asked for. One of those roots in a fuzz target left
+# `check-live-values` at exit 0, printing that the surface held nothing this list holds.
 #
-# Two of the 640 travelled the other way. The 24 September deployment's single checkpoint
-# holds `0xabab…abab` and `0x3333…3333`, which are this repository's own placeholder constants:
-# `crates/certimining-client/tests/devnet.rs` published them to a throwaway program. They are
-# listed anyway, because the rule is unqualified and narrowing it is not a tool's decision, and
-# the files that legitimately carry them are recorded in `LIVE-VALUES.exempt` by exact path.
+# Two of the 640 travelled the other way: `0xabab…abab` and `0x3333…3333` are this repository's
+# placeholder constants, which `tests/devnet.rs` published to a throwaway program. Listed anyway —
+# narrowing the rule is not a tool's decision — with the files that carry them in
+# `LIVE-VALUES.exempt` by exact path.
 0xabababababababababababababababababababababababababababababababab  root stored in the account 2twLmyNHCVmUDPLoKCAgeZbuQ9Eknu5xZZoK7ToaGuWv, owned by the program superseded 24 September
 503659693  published slot stored in the account 2twLmyNHCVmUDPLoKCAgeZbuQ9Eknu5xZZoK7ToaGuWv, owned by the program superseded 24 September
 1790284855  published timestamp stored in the account 2twLmyNHCVmUDPLoKCAgeZbuQ9Eknu5xZZoK7ToaGuWv, owned by the program superseded 24 September
@@ -1369,11 +1365,10 @@ kBAnwhrQx2kdGAKiPskFhbw6mkGBKbLfyKgYVSsGSu5  account owned by the program supers
 504093635  published slot stored in the account kBAnwhrQx2kdGAKiPskFhbw6mkGBKbLfyKgYVSsGSu5, owned by the program superseded 25 September
 1790356878  published timestamp stored in the account kBAnwhrQx2kdGAKiPskFhbw6mkGBKbLfyKgYVSsGSu5, owned by the program superseded 25 September
 
-# The ProgramData accounts, both spellings, and the slot each program was last deployed in
-# (found while repairing H-01). The reader called `check` where it meant `check_address` for the
-# ProgramData address, so only the base58 form was ever asked for, and no version of it had read
-# the deploy slot at all. Three of these eight belong to the announced deployment, which is where
-# the same omission was hiding in plain sight.
+# ProgramData accounts in both spellings, and each program's last deploy slot (found while
+# repairing H-01). The reader called `check` where it meant `check_address`, so only the base58
+# form was asked for, and no version read the deploy slot. Three of the eight are the announced
+# deployment's.
 0x85507d1c75cfbdeaea1fcc900e2c236b0c376e26c0b8e33e2773477a128850da  the announced deployment's ProgramData address, as bytes
 504783809  last deploy slot of the announced deployment
 HELvWepyztbX9ZkfqPyHxCpReG6dyjVMix4E27btwMF6  ProgramData address of the program superseded 24 September
@@ -1384,11 +1379,9 @@ FKoiBxtiotM3y6MU61kh511mPp2CeJBNsGbL2QcrDojc  ProgramData address of the program
 504032574  last deploy slot of the program superseded 25 September
 
 # Transaction signatures of the two superseded deployments (review of PR #121, H-01). The rule
-# reaches signatures — H-29 added the announced deployment's for exactly that reason, after a
-# review found 13 transactions holding 25 signatures with 12 compared by nothing — and the
-# superseded ones had never been asked for. 218 transactions, 434 signatures: each transaction's
-# id is its own first signature, and 216 co-signatures sat inside them. The payer and the
-# checkpoint authority sign every publication, so a transaction carries two.
+# reaches signatures — H-29 added the announced deployment's — and these had never been asked for.
+# 218 transactions, 434 signatures: a transaction's id is its own first signature, and the payer
+# and the checkpoint authority both sign, so 216 co-signatures sat inside them.
 2YRruaYF1nvfKLXk9wukhJZHPzhMbdK7Hff52XHpGbLxGCX2s29x7To7qpuh76AwRiJUB91KxhyPoJ6AyU7cPgGA  signature naming a transaction of the program superseded 24 September
 2ahDYhiNy9DXimm7TYjjQdZSqevWc1joWS9LgMMcEuwhEZfkQRys2GeJxTWXUMJarYkzupaeZxy4ZCVTb5iEGx7j  signature naming a transaction of the program superseded 24 September
 3oiu9gfMiWHwQeQniDFHRDMcdHDF3t2L4arvrfDWUUdWtnM9y83khKXBnoTXqk4myWV13kNxqB1f2U4tfek25124  signature naming a transaction of the program superseded 24 September
@@ -1824,9 +1817,8 @@ vaKwGMdw7XZgSu2CyxruEuqrBokqoxbhUwWmL82dUNPVWPPMvMijjG67157vNQ8zbwAewL77UKYTa9Xp
 wLVWFXmnti1D3VRtDMvcwMkWq5a68nyj4thwX2ipF46PivWk36p13ZwQCqd69GvgSLWBGJoaKLhgp5XErsA5KnT  co-signature inside a transaction of the program superseded 25 September
 wNVQ7HL7V89S24CsvhyBGX7t1CMpeg6h1x12imJhgVqH6hXmAgZwscUh8RE6iWRxTQJDMd3Cz3fzoTB2Pt5o7ym  co-signature inside a transaction of the program superseded 25 September
 
-# Both superseded program ids as bytes (found while repairing H-01). The H-26 repair listed both
-# spellings of all 215 account addresses and only the base58 spelling of the two program ids that
-# own them, because the reader asked for the announced id with `check_address` and the superseded
-# ones with nothing at all. Reading every deployment the same way is what surfaced it.
+# Both superseded program ids as bytes (found while repairing H-01). H-26 listed both spellings of
+# all 215 accounts and only base58 for the two program ids owning them. Reading every deployment
+# the same way surfaced it.
 0xf42a73002886b1a3f83608a9d76b8c97b06a804ac939d6633b8818c86bb5e6a2  program id, superseded 24 September, as bytes
 0x0b0331e412ddfdda87d89fb8f01b38870888ae0a392384f6afc0eda3997c5d10  program id, superseded 25 September, as bytes

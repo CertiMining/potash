@@ -1,34 +1,26 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lint suppressions, counted by a lexer rather than by a pattern (review of PR #121, M-02).
 //!
-//! **Why this exists.** `cargo clippy -- -D warnings` only fails on warnings that are reported, and
-//! `#![allow(warnings)]` in a tracked file reports none. The gate against that lived in
-//! `scripts/ci.sh` as a `grep`, and three rounds of review walked past it in three different
-//! spellings:
+//! **Why this exists.** `cargo clippy -- -D warnings` cannot fail on a warning that was never
+//! reported, and `#![allow(warnings)]` reports none. The gate against that was a `grep` in
+//! `scripts/ci.sh`, and three rounds of review walked past it:
 //!
-//! - the first pattern matched only `allow(dead_code` and `allow(unused`, so `#![allow(warnings)]`
-//!   was free;
-//! - the second matched the text anywhere on a line, so a comment mentioning a suppression counted
-//!   as one, and it recorded file names rather than counts, so a second suppression in a listed file
-//!   was free;
-//! - the third accepted whitespace between the attribute's tokens, because `#![allow (warnings)]`
-//!   had slipped past the second — and Rust also accepts *comments* between those tokens, so
-//!   `#![allow /* reviewer gap */ (warnings)]` slipped past the third. It compiled, `cargo fmt
-//!   --check` accepted it, every clippy invocation in the `checks` group passed, and the gate
-//!   printed `2 recorded, counts match, none added`.
+//! - the first matched only `allow(dead_code` and `allow(unused`;
+//! - the second matched anywhere on a line, counting prose as a suppression, and recorded file
+//!   names rather than counts, so a second one in a listed file was free;
+//! - the third allowed whitespace between the attribute's tokens. Rust also allows *comments*
+//!   there, so `#![allow /* reviewer gap */ (warnings)]` compiled, survived `cargo fmt --check`
+//!   and every clippy run, and left the gate printing `none added`.
 //!
-//! Each repair narrowed the gap by one spelling. The defect was never the spelling: it was deciding
-//! what Rust means by looking at one line of text. A lexer decides it instead. Comments and
-//! whitespace do not survive tokenisation, so neither is a spelling any more.
+//! Each repair closed one spelling. The defect was deciding what Rust means from one line of text.
+//! A lexer decides instead, and tokenisation drops comments and whitespace entirely.
 //!
-//! **What it counts.** Every attribute — `#[…]` or `#![…]` — whose brackets contain the identifier
-//! `allow` or `expect` at any depth. That reaches `#[allow(dead_code)]`, `#![allow(warnings)]`,
-//! `#[cfg_attr(test, allow(unused))]` and `#[expect(dead_code)]` alike, and it does not reach the
-//! word in a comment, in a string, or in a doc comment, because none of those is an identifier.
+//! **What it counts.** Any attribute whose brackets contain the identifier `allow` or `expect`, at
+//! any depth — so `#[cfg_attr(test, allow(unused))]` too, and not the word in a comment, string or
+//! doc comment, none of which is an identifier.
 //!
-//! **What it does not.** A lint relaxed in a manifest is a suppression this file would never see, so
-//! `[lints]` tables are checked here too, for any lint set to `allow`. `RUSTFLAGS` and
-//! `--cap-lints` are outside the repository and outside this check; CI sets neither.
+//! **What it does not.** A lint relaxed in a manifest, so `[lints]` tables are checked here as
+//! well. `RUSTFLAGS` and `--cap-lints` are outside the repository; CI sets neither.
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use std::path::Path;
@@ -240,11 +232,10 @@ mod tests {
         );
     }
 
-    /// Runs a tool over `source` on stdin, and says whether it accepted it and what it emitted.
+    /// Runs a tool over `source` on stdin; returns whether it accepted it and what it emitted.
     ///
-    /// A missing tool panics rather than skipping. A test that quietly does nothing when its
-    /// subject is absent reports the value its acceptance predicate rewards, which is the defect
-    /// this whole module was written against.
+    /// A missing tool panics rather than skipping: a test that does nothing when its subject is
+    /// absent reports what its acceptance predicate rewards, which is this module's own defect.
     fn fed_to(program: &str, args: &[&str], source: &str) -> (bool, String) {
         use std::io::Write as _;
         use std::process::{Command, Stdio};
@@ -272,15 +263,12 @@ mod tests {
 
     /// **The spelling is real Rust, proved rather than asserted (H-43, #131).**
     ///
-    /// The tests above show the counter sees `#![allow /* reviewer gap */ (warnings)]`. They do not
-    /// show that `rustc` compiles it and `rustfmt` accepts it, which is the other half of the claim
-    /// and the half that made the old grep dangerous: a spelling no tool accepts is not a bypass.
+    /// The tests above show the counter sees it. They do not show `rustc` compiles it or `rustfmt`
+    /// leaves it alone — the half that made the old grep dangerous, since a spelling no tool
+    /// accepts is not a bypass.
     ///
-    /// The review of PR #121 asked for a fixture whose spelling both tools accept and this gate
-    /// refuses. It is not a file, because a tracked `.rs` carrying a live suppression would have to
-    /// appear in `RECORDED`, where it is indistinguishable from a genuine one and a real suppression
-    /// could hide behind it. Both tools are fed the spelling on stdin instead, and nothing is
-    /// tracked.
+    /// Not a fixture file: a tracked `.rs` carrying a live suppression must appear in `RECORDED`,
+    /// where a real one could hide behind it. Fed on stdin instead, so nothing is tracked.
     #[test]
     fn the_spelling_that_defeated_the_grep_is_real_rust() {
         const SOURCE: &str = "#![allow /* reviewer gap */ (warnings)]\n";
