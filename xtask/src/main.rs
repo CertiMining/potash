@@ -1707,6 +1707,90 @@ fn trees(files: &mut BTreeMap<String, Value>) {
         ),
     );
 
+    // V-P-13: a §2.5 disclosure package (H-04, #32).
+    //
+    // Every digest inside a package was pinned by a committed vector; the *container* was not.
+    // `ts/test/packages.ts` assembles packages and checks them against the code that assembled
+    // them, so the two implementations could disagree about a package's shape unchallenged.
+    //
+    // Built by `demo::disclosure_json`, the same builder the demo fixtures use, so the vector and
+    // the fixtures cannot drift into two Rust opinions about the container.
+    let package_tenure = AssetId::<NativeKeccak>::canonicalize(TENURE_RAW).expect("canonical");
+    let package_commitment = AssetId::<NativeKeccak>::commitment(J, R, &package_tenure)
+        .expect("the commitment is defined");
+    let mut package_chain = Chain::start(&package_commitment, 1).expect("starts");
+    let package_record = signed_record(&package_chain, 1, 2, FIRST_EFFECTIVE_AT);
+    let package_prev_head = package_chain.head();
+    let package_genesis = package_chain.head();
+    let package_preimage = leaf_preimage_of(&package_chain, &package_record);
+    let package_applied = package_chain.apply(&package_record).expect("accepted");
+    let package_head = package_chain.head();
+    // Two leaves, so the proof's bottom sibling is real rather than padding — the case a verifier
+    // is likelier to get wrong.
+    let mut package_set = submission_set(1, 4_000);
+    package_set.push((vector_submission_id(4_100), package_applied.leaf));
+    let package_epoch = build_epoch(20_404, height, &package_set);
+    let package_proof = package_epoch
+        .proof(&package_set[1].0)
+        .expect("the epoch holds the record's leaf");
+    assert_eq!(
+        ProofVerifier::verify::<NativeKeccak>(
+            &package_applied.leaf,
+            &package_proof,
+            &package_epoch.root
+        ),
+        Ok(()),
+        "V-P-13: the proof inside the package must verify against the epoch it names"
+    );
+    let package = demo::disclosure_json(
+        &package_record,
+        &package_preimage,
+        package_prev_head,
+        package_head,
+        package_genesis,
+        &package_proof,
+    );
+    assert_eq!(
+        package.get("schema").and_then(Value::as_str),
+        Some("certimining/v1/disclosure"),
+        "V-P-13: §2.5 names the schema and the container must carry it"
+    );
+    files.insert(
+        "V-P-13.json".into(),
+        vector(
+            "V-P-13",
+            "§2.5",
+            "A §2.5 disclosure package as the generator emits it: the container itself, so both implementations agree about its shape and not only about the digests inside it.",
+            json!({
+                "epoch": package_epoch.epoch.to_string(),
+                "height": height.to_string(),
+                "capacity": spec::DEPLOYED_CAPACITY.to_string(),
+                "master_key": hex(&TEST_MASTER_KEY),
+                "asset_commitment": hex(&package_commitment),
+                "record": record_json(&package_record),
+                "real": package_set
+                    .iter()
+                    .map(|(id, leaf)| json!({ "submission_id": hex(id), "leaf": hex(leaf) }))
+                    .collect::<Vec<Value>>(),
+            }),
+            json!({
+                "package": package,
+                "leaf": hex(&package_applied.leaf),
+                "leaf_preimage": hex(&package_preimage),
+                "root": hex(&package_epoch.root),
+            }),
+            &[
+                MASTER_KEY_NOTE,
+                "The anchor block is placeholders and visibly so: this epoch was published \
+                 nowhere, so there is no transaction, slot or receipt to name. A vector may not \
+                 claim provenance it does not have — the defect E-14's fixture carried (D-140).",
+                "`preimage_borsh` holds the 161-byte leaf preimage, where §1.3 puts the asset \
+                 commitment at bytes 8 to 39. INV-DISC-01 places it there and nowhere else: the QP \
+                 signature is over those bytes and a verifier cannot check it without them.",
+            ],
+        ),
+    );
+
     // V-P-06b: the same leaf set at H = 4 and H = 12, where the proof length tracks H exactly.
     let twelve = submission_set(12, 2_000);
     let mut heights = Map::new();

@@ -1,8 +1,12 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.0 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.1 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
+
+*v0.2.1 adds V-P-13 to §4.2 and changes nothing else. A disclosure package's container was the one
+thing no committed vector pinned, so the two implementations checked their packages against the
+code that produced them (H-04).*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -637,6 +641,7 @@ Twenty-six days to the deadline. The engine is the submission; the ordering belo
 | V-P-09 | Record with zero `assessment_digest` and zero `change_identified_at` | Accepted; absence recorded (INV-STATE-05) |
 | V-P-10 | SPI satisfied at `promised_epoch + 2` | Valid; at +3, `0x14` |
 | V-P-12 | §2.4's derivation applied to `["cm_cfg"]` and `["cm_ckpt", epoch_le]` against the announced program id *(added in v0.2.0)* | The address and canonical bump this section publishes, every higher bump on the curve, and the order this section first printed reproducing the wrong answer it names and not the right one |
+| V-P-13 | A §2.5 disclosure package, emitted by the generator *(added in v0.2.1)* | The container as §2.5 defines it: schema, record, `preimage_borsh`, chain, QP signature and inclusion proof, with an anchor block of placeholders because the epoch was built for the vector and published nowhere |
 
 Digest values are produced by E-05 and committed with a manifest hash. None are authored by hand and none appear in this document.
 

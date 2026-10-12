@@ -50,3 +50,11 @@ vectors/V-P-11.json  0x333333333333333333333333333333333333333333333333333333333
 vectors/KAT-03.txt  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
 vectors/V-N-09.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
 vectors/V-N-18.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
+
+# V-P-13 carries `ASSESSMENT_DIGEST`, `[0x33; 32]` (H-04). It postdates the 24 September
+# publication, unlike the entries above, but the direction of travel is the same and is what
+# matters: this is a generator constant a harness sent to a throwaway program, not a value borrowed
+# from it.
+#
+# Every future record vector will need a line like this. H-45 (#137) records that cost.
+vectors/V-P-13.json  0x3333333333333333333333333333333333333333333333333333333333333333  the generator's own ASSESSMENT_DIGEST, which a devnet harness happened to publish to a superseded program

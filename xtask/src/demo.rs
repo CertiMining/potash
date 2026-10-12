@@ -299,7 +299,7 @@ pub fn gen_demo(dir: &Path) {
     }
 }
 
-fn disclosure_json(
+pub(crate) fn disclosure_json(
     r: &RecordLeafInput,
     preimage: &[u8],
     prev_head: Digest,
@@ -415,7 +415,7 @@ fn digest_of<P: Preimage>(p: &P) -> Digest {
 /// Written out rather than depended on, for the same reason §2.4's base58 is: it is a platform
 /// encoding that the specification does not define, and the bytes it encodes are checked against a
 /// digest on both sides, so a wrong encoder fails a test rather than producing a plausible fixture.
-fn base64(bytes: &[u8]) -> String {
+pub(crate) fn base64(bytes: &[u8]) -> String {
     const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
