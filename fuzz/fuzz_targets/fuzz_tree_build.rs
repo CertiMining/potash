@@ -6,22 +6,15 @@
 //! outside the valid set, which is the half that matters — a build that accepted height 200 would try to
 //! allocate 2^200 leaves.
 //!
-//! **Two defects a review found in the first version of this target (PR #55, E12-01 and E12-03), both of
-//! which made it quieter than it looked.**
+//! **§4.5's obligation is positive: a valid height always produces a tree (E12-01).** A target that
+//! only checks which code a refusal carries never tests that. The match below decides what the engine
+//! owes for *every* input and requires exactly that, `Ok` included — without it, an engine refusing a
+//! valid one-leaf tree at `H = 8` completes 25,000 iterations green.
 //!
-//! The refusal branch accepted `MalformedPayload` for *any* input and only required it when the height
-//! was invalid. A fresh engine defect that refused a valid, unique, one-leaf tree at `H = 8` therefore
-//! completed 25,000 iterations green while the ordinary positive test failed at once. §4.5's obligation
-//! is positive — a valid height *always* produces a tree — and a target that only checks which code a
-//! refusal carries never tests it. The match below now decides what the engine owes for every input and
-//! requires exactly that, including `Ok`.
-//!
-//! And the leaf set could not reach the domain §4.5 names. `0..=C` is 0 to 65,536 at `H = 16`, each
-//! element is 48 bytes before container overhead, and libFuzzer's default `-max_len` is 4,096 — so about
-//! 85 elements were representable and the old 300-element source cap was never the binding constraint.
-//! Its comment claimed to sit "a little above the largest capacity this bound allows", which was true
-//! only of `H = 8`. The set is now assembled from a small arbitrary part and a **derived** count, so any
-//! count up to capacity costs two input bytes while the leaves themselves stay fuzzed.
+//! **The leaf set is assembled from a derived count, so the domain is reachable (E12-03).** `0..=C` is
+//! 0 to 65,536 at `H = 16`, each element costs 48 input bytes, and libFuzzer's default `-max_len` is
+//! 4,096 — about 85 elements. A count up to capacity now costs two bytes while the leaves stay fuzzed.
+//! It is still clamped at 4,096; `docs/fuzzing.md` records which heights that leaves unreachable.
 
 #![no_main]
 
