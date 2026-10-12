@@ -301,8 +301,14 @@ deny() {
 # that cannot fail.
 #
 # `--release` is not optional: a debug build measures the optimiser's absence.
+#
+# **`--nocapture`, so a passing run records its figures (H-37, H-31).** `cargo test` captures stdout
+# and prints it only on failure, so every green run threw its own measurements away and the only
+# numbers anyone could quote came from the run that failed. That is why the band has never been
+# calibrated: there was no series to calibrate from. The figures now reach the job log on every run,
+# which is the data the band is set from before it becomes a failing gate again.
 bench_band() {
-  cargo test --release -p certimining-benches --test band
+  cargo test --release -p certimining-benches --test band -- --nocapture
 }
 
 # §4.4a's wall-clock figures, measured and reported with the machine named (D-132, D-136, D-137). **Not
