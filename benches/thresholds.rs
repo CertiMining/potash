@@ -48,7 +48,21 @@ const WARM_UP: usize = 5;
 /// unpreempted moments, and the worst reports the operating system's; the median is the figure that
 /// moves when the code moves, which is what a threshold is for. All three are printed, because a
 /// threshold reported without its spread is the single-sample problem D-132 rejected.
-fn measure<T>(mut f: impl FnMut() -> T) -> (Duration, Duration, Duration) {
+/// Best, median and worst of `SAMPLES` warm runs, and the **cold** run that preceded them (H-30).
+///
+/// The warm figures describe steady state. A verifier that walks a chain once, from cold, pays cache
+/// and branch-predictor costs none of them include — measured at roughly 30% when warm-up was first
+/// added, which is why warm-up is there and why the cold figure is reported beside it rather than
+/// instead of it. Neither gates anything: D-137 removed §4.4a's wall-clock absolutes.
+///
+/// The cold sample is the first call of all, taken before any warm-up. It is one sample, so it
+/// carries the variance of one sample, and it is labelled as such wherever it prints.
+fn measure<T>(mut f: impl FnMut() -> T) -> Measured {
+    let start = Instant::now();
+    let first = f();
+    let cold = start.elapsed();
+    drop(std::hint::black_box(first));
+
     for _ in 0..WARM_UP {
         drop(std::hint::black_box(f()));
     }
@@ -60,7 +74,20 @@ fn measure<T>(mut f: impl FnMut() -> T) -> (Duration, Duration, Duration) {
         drop(std::hint::black_box(out));
     }
     times.sort_unstable();
-    (times[0], times[SAMPLES / 2], times[SAMPLES - 1])
+    Measured {
+        cold,
+        best: times[0],
+        median: times[SAMPLES / 2],
+        worst: times[SAMPLES - 1],
+    }
+}
+
+/// One row's figures: three warm statistics and the single cold run.
+struct Measured {
+    cold: Duration,
+    best: Duration,
+    median: Duration,
+    worst: Duration,
 }
 
 /// What `ts/test/perf.test.ts:110-116` prints, in Rust and without a dependency: enough of the machine
@@ -223,25 +250,28 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
         walk::<HashOnly>(&unsigned),
         "the hash chain and the state machine disagree on the head, so the measure is not a chain walk"
     );
-    let (best, median, worst) = measure(|| hash_chain(&unsigned, from));
+    let m = measure(|| hash_chain(&unsigned, from));
     println!(
         "chain walk, {RECORDS} records, hash recomputation only: best {:.2} ms, median {:.2} ms, \
-         worst {:.2} ms (§4.4a: reported, no threshold)",
-        ms(best),
-        ms(median),
-        ms(worst)
+         worst {:.2} ms, cold {:.2} ms (§4.4a: reported, no threshold; cold is one un-warmed run)",
+        ms(m.best),
+        ms(m.median),
+        ms(m.worst),
+        ms(m.cold)
     );
 
     // §4.4a: an epoch root at 256 leaves. Reported, no threshold (D-137).
-    let (best, median, worst) = measure(|| {
+    let m = measure(|| {
         <BuiltEpoch as EpochTree>::build::<NativeKeccak>(EPOCH, HEIGHT, &MASTER, &full)
             .expect("builds")
     });
     println!(
-        "epoch root, 256 leaves: best {:.3} ms, median {:.3} ms, worst {:.3} ms (§4.4a: reported, no threshold)",
-        ms(best),
-        ms(median),
-        ms(worst)
+        "epoch root, 256 leaves: best {:.3} ms, median {:.3} ms, worst {:.3} ms, cold {:.3} ms \
+         (§4.4a: reported, no threshold; cold is one un-warmed run)",
+        ms(m.best),
+        ms(m.median),
+        ms(m.worst),
+        ms(m.cold)
     );
 
     // §4.4a: one inclusion proof verified. Reported, no threshold (D-137).
@@ -256,24 +286,27 @@ fn section_4_4a_wall_clock_figures_are_measured_and_reported() {
     let proof = built.proof(&id).expect("a proof");
     let root = built.root;
     ProofVerifier::verify::<NativeKeccak>(&leaf, &proof, &root).expect("the proof verifies");
-    let (best, median, worst) =
-        measure(|| ProofVerifier::verify::<NativeKeccak>(&leaf, &proof, &root));
+    let m = measure(|| ProofVerifier::verify::<NativeKeccak>(&leaf, &proof, &root));
     println!(
-        "inclusion proof verification: best {:.4} ms, median {:.4} ms, worst {:.4} ms (§4.4a: reported, no threshold)",
-        ms(best),
-        ms(median),
-        ms(worst)
+        "inclusion proof verification: best {:.4} ms, median {:.4} ms, worst {:.4} ms, \
+         cold {:.4} ms (§4.4a: reported, no threshold; cold is one un-warmed run)",
+        ms(m.best),
+        ms(m.median),
+        ms(m.worst),
+        ms(m.cold)
     );
 
     // §4.4a: measured and reported, **no threshold in v0.1**. Printed and not asserted, because the
     // specification says a threshold here is set in v0.2 from real data rather than guessed now — which
     // is the same discipline D-136 applied to the row above.
-    let (best, median, worst) = measure(|| walk::<DalekVerifier>(&signed));
+    let m = measure(|| walk::<DalekVerifier>(&signed));
     println!(
         "full verification including per-record Ed25519, {RECORDS} records: best {:.1} ms, \
-         median {:.1} ms, worst {:.1} ms (§4.4a: measured and reported, no threshold in v0.1)",
-        ms(best),
-        ms(median),
-        ms(worst)
+         median {:.1} ms, worst {:.1} ms, cold {:.1} ms (§4.4a: measured and reported, no \
+         threshold in v0.1; cold is one un-warmed run)",
+        ms(m.best),
+        ms(m.median),
+        ms(m.worst),
+        ms(m.cold)
     );
 }
