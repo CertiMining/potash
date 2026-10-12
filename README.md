@@ -178,6 +178,8 @@ taken by default.
 | `vectors/` | the committed test vectors both implementations check themselves against |
 | `benches/` | §4.4a's performance figures: Criterion distributions, the reported wall-clock measures, and the CI regression band ([`docs/performance.md`](docs/performance.md)) |
 | `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
+| `ts/` | the independent TypeScript verifier a counterparty runs, with its own gate ([`ts/README.md`](ts/README.md)) |
+| `demo/` | three browser scenes and a read-only status page that reads devnet ([`demo/README.md`](demo/README.md)) |
 | `docs/` | the specification, every decision, and per-unit notes |
 | `scripts/ci.sh` | the whole pipeline as one script, so a local run is what CI runs |
 
@@ -191,6 +193,18 @@ That is the push pipeline verbatim. The fuzz targets are not in it: they take te
 nightly instead, as `scripts/ci.sh fuzz` and `.github/workflows/fuzz.yml`. What each target establishes,
 and what three of them failed to establish on the first attempt, is in
 [`docs/fuzzing.md`](docs/fuzzing.md).
+
+To see it rather than test it:
+
+```bash
+scripts/demo.sh
+```
+
+That serves `http://localhost:8730` — three scenes that build epoch trees in the browser, and a
+status page at `/status.html` that reads Solana devnet through the TypeScript verifier this
+repository ships. The scenes are offline and synthetic on purpose; the status page is read-only,
+holds no key and is not an operator console. [`demo/README.md`](demo/README.md) says what each scene
+establishes and which failure the status page is built around.
 
 Toolchain versions are pinned and the script refuses to proceed on the wrong ones. The Solana
 programs build only through `scripts/build-sbf.sh`, which uses a project-private Rust installation so
