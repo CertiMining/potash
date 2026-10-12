@@ -240,6 +240,109 @@ mod tests {
         );
     }
 
+    /// Runs a tool over `source` on stdin, and says whether it accepted it and what it emitted.
+    ///
+    /// A missing tool panics rather than skipping. A test that quietly does nothing when its
+    /// subject is absent reports the value its acceptance predicate rewards, which is the defect
+    /// this whole module was written against.
+    fn fed_to(program: &str, args: &[&str], source: &str) -> (bool, String) {
+        use std::io::Write as _;
+        use std::process::{Command, Stdio};
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| {
+                panic!("{program} must be on PATH or this test establishes nothing: {e}")
+            });
+        child
+            .stdin
+            .take()
+            .expect("stdin was piped")
+            .write_all(source.as_bytes())
+            .expect("the source is small enough to write in one go");
+        let out = child.wait_with_output().expect("the tool exits");
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    }
+
+    /// **The spelling is real Rust, proved rather than asserted (H-43, #131).**
+    ///
+    /// The tests above show the counter sees `#![allow /* reviewer gap */ (warnings)]`. They do not
+    /// show that `rustc` compiles it and `rustfmt` accepts it, which is the other half of the claim
+    /// and the half that made the old grep dangerous: a spelling no tool accepts is not a bypass.
+    ///
+    /// The review of PR #121 asked for a fixture whose spelling both tools accept and this gate
+    /// refuses. It is not a file, because a tracked `.rs` carrying a live suppression would have to
+    /// appear in `RECORDED`, where it is indistinguishable from a genuine one and a real suppression
+    /// could hide behind it. Both tools are fed the spelling on stdin instead, and nothing is
+    /// tracked.
+    #[test]
+    fn the_spelling_that_defeated_the_grep_is_real_rust() {
+        const SOURCE: &str = "#![allow /* reviewer gap */ (warnings)]\n";
+
+        assert_eq!(count_in(SOURCE), 1, "this gate counts it");
+
+        let (formatted_ok, formatted) = fed_to(
+            "rustfmt",
+            &["--emit", "stdout", "--edition", "2021"],
+            SOURCE,
+        );
+        assert!(
+            formatted_ok,
+            "rustfmt rejected the spelling, so `cargo fmt --check` was never the gate it passed"
+        );
+        assert!(
+            formatted.contains("allow") && formatted.contains("reviewer gap"),
+            "rustfmt returned it unchanged, comment and all, so a file carrying it survives \
+             `cargo fmt --all --check`: {formatted:?}"
+        );
+
+        let metadata = std::env::temp_dir().join(format!(
+            "certimining-suppressions-{}-{:?}.rmeta",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let (compiled, _) = fed_to(
+            "rustc",
+            &[
+                "--edition",
+                "2021",
+                "--crate-type",
+                "lib",
+                "--emit",
+                "metadata",
+                "-o",
+                metadata.to_str().expect("a utf-8 temp path"),
+                "-",
+            ],
+            SOURCE,
+        );
+        let _ = std::fs::remove_file(&metadata);
+        assert!(
+            compiled,
+            "rustc rejected the spelling, so it was never a suppression anything could hide behind"
+        );
+    }
+
+    /// The control: a spelling neither tool accepts is not evidence of anything.
+    #[test]
+    fn the_probe_can_tell_rust_from_nonsense() {
+        let (ok, _) = fed_to(
+            "rustfmt",
+            &["--emit", "stdout", "--edition", "2021"],
+            "#![allow /* unterminated (warnings)]\n",
+        );
+        assert!(
+            !ok,
+            "rustfmt accepted an unterminated comment, so it accepts anything"
+        );
+    }
+
     #[test]
     fn a_relaxation_reached_through_cfg_attr_is_counted() {
         assert_eq!(count_in("#[cfg_attr(test, allow(unused))] fn f() {}"), 1);
