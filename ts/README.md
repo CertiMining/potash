@@ -271,138 +271,26 @@ tools/mutation-check.mjs the evidence that each test fails for the reason it nam
 ## The deployment this was run against
 
 `test/devnet.test.ts`, skipped by default, runs against the announced devnet deployment named in
-`src/solana/rpc.ts`, currently `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB`. Its `LogConfig` is at
-`CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7`, bump 250, which is the address §2.4's corrected
-program-address paragraph publishes, and `test/units.test.ts` pins it as a known-answer test rather
+`src/solana/rpc.ts`, `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB`. It confirms that the addresses
+this verifier derives are the accounts the cluster answers for, which is the only independent check
+on the derivation SD-17 records as unstated in the specification. Its `LogConfig` is at
+`CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7`, bump 250 — the address §2.4's corrected
+program-address paragraph publishes — and `test/units.test.ts` pins it as a known-answer test rather
 than leaving the derivation checked only by a network call.
 
-Two earlier deployments were retired and are recorded in `src/solana/rpc.ts` as
-`SUPERSEDED_PROGRAM_ID`s rather than deleted, because both remain readable by anyone: one whose log
-began at epoch 1 instead of a UTC day index and whose epoch 1 carries a receipt digest standing for no
-receipt in a write-once field, and one whose sequence ran 209 days ahead of the calendar after a
-compressed privacy run. Neither should be verified against. The second is the observation behind
-SD-18, which stands: nothing in the document forbids a sequence running ahead of the calendar or gives
-a client anything to detect it with.
+**Do not verify against a superseded log.** Two earlier deployments were retired and are recorded in
+`src/solana/rpc.ts` as `SUPERSEDED_PROGRAM_ID`s rather than deleted, because both remain readable by
+anyone; D-88 carries the full account.
 
-## Where each part comes from
+- The first was initialized before §1.4's epoch clock, so its log begins at epoch 1 rather than at a
+  day index, and its epoch 1 carries a receipt digest standing for no receipt in a write-once field.
+  It is the account SD-15 was written against.
+- The second ran its sequence 209 days **ahead** of the calendar after a compressed privacy run, so
+  `lagAgainst` returns a negative number for it. The verifier reports the distance and rules on
+  nothing.
 
-Almost all of this verifier is determined by the specification. Four things are not, and are in it
-because they are published conventions of the platform the log is anchored to. A counterparty
-checking this work should know which is which, because the second group is knowledge that did not
-come from `../docs/` or `../vectors/` and cannot be checked against them.
-
-**From the specification.** Every digest and preimage, with its tag, field order and width (§1.2,
-§1.3, §1.4, §1.6); the PRF construction and its three use codes; slot assignment, probing, padding
-and the complete tree (§1.4); canonical tenure (§1.3); the state machine, its four stages and the
-order of its six conditions (§1.3); which condition returns which code, and the code space itself
-(§2.1); the disclosure package's fields, the order the checks run in, and what each failure means
-(§2.5, INV-DISC-01, INV-DISC-02, INV-DISC-03); the promise policy and the rebuttal window (§1.6,
-D-72, D-74); heights, capacities and bounds (§1.8); the account layouts, offsets and lengths, and the
-discriminator, which §2.4 states as `SHA-256("account:" ‖ N)` and this code computes rather than
-copies (§2.4); **the program-derived address**, which §2.4 now states in full — the hash input
-`SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖ "ProgramDerivedAddress" )`, the largest bump from
-255 downwards whose result is off the Ed25519 curve, and the seed constraints it leaves to the
-platform by name (SD-17, resolved; the two addresses its correction note publishes are pinned as a
-known-answer test, including the erroneous order as a negative control); the epoch clock,
-`start_epoch`, the three placements of an absent checkpoint and lag (§1.4, INV-ANCH-02); and the
-Anchor error offset of 6000 (§2.1).
-
-**From published platform conventions, not from the sandbox.**
-
-1. **Base58 with the Bitcoin alphabet**, for turning those 32 bytes into the text an RPC call carries.
-   §2.4 gives no textual encoding for an address.
-2. **The JSON-RPC surface**: the `getAccountInfo` method, its `{encoding: "base64", commitment}`
-   parameter, the `result.value.data` and `result.value.owner` response shape, and the convention that
-   an account's owner is the program that may write it. The specification asks a verifier to fetch a
-   root from Solana and says nothing about the wire.
-3. **The devnet program id and RPC URL** in `src/solana/rpc.ts`. Neither appears in the document; both
-   are deployment configuration.
-
-**Published values that the document names without carrying.** Keccak-256's answers for the empty
-string and `"abc"`, and RFC 8032 §7.1's TEST 1 and TEST 2, which §4.1 requires as KAT-01 and KAT-02
-(SD-10). The Keccak-256 and Ed25519 implementations themselves are the two dependencies below, pinned
-and checked against those values before anything else runs.
-
-**One platform detail inside a specified algorithm.** §1.3 names Unicode NFKD and not a Unicode
-version, and the decomposition tables are the runtime's. Two conforming implementations on different
-Unicode versions can canonicalize a newly assigned character differently, which is recorded with the
-minor observations in SPEC-DEFECTS.md.
-
-## How to run it
-
-```
-npm ci                 # installs the two runtime dependencies and the two dev ones, from the lock file
-npm test               # KAT-01 and KAT-02 first, then everything else; no network
-npm run typecheck      # tsc --noEmit over src and test
-npm run build          # emits dist/: src only, no Node types, ES modules for a browser
-npm run test:net       # adds the devnet test, which npm test skips
-node tools/mutation-check.mjs   # breaks one thing at a time and checks the suite goes red
-```
-
-`npm test` runs `node --test test/kat.test.ts` first and stops if it fails, which is what §4.1 asks
-of KAT-01. The devnet test is skipped unless `CERTIMINING_DEVNET=1`, so it never runs in CI and
-never runs by default.
-
-There is no build step for the tests. Node runs the TypeScript sources directly, and the sources
-are written so that every type annotation is erasable (`erasableSyntaxOnly`), which is checked by
-`npm run typecheck`.
-
-### One code path, two runtimes
-
-`src/` uses no Node API. It builds under `tsconfig.build.json`, which sets `"types": []` and so
-removes Node's type declarations altogether, and the emitted `dist/` contains no `process`,
-`Buffer`, `require` or `__dirname`. Hex, base64 and base58 are written out rather than taken from a
-platform, so what the verifier refuses is the same in both runtimes. `fetch`, `TextEncoder`,
-`TextDecoder` and `performance` are the only platform APIs used, and both runtimes have all four.
-Node's `fs`, `path`, `crypto` and `os` appear in `test/` only.
-
-## Layout
-
-```
-src/bytes.ts             hex, strict base64, little-endian integers, UTF-8
-src/errors.ts            §2.1's codes, and the package-level failures that carry no code
-src/tags.ts              §1.2's domain tags
-src/hash.ts              Keccak-256, Ed25519 (RFC 8032), and SHA-256 walled off for §2.4
-src/preimage.ts          every §1.2/§1.3/§1.4/§1.6 writer, through one 256-byte sink (0x0C)
-src/canonical.ts         §1.3's canonical tenure
-src/chain.ts             §1.3's commitment, genesis, leaf, and the four-stage transition
-src/tree.ts              §1.4's PRF, slot assignment, padding, build, proof, pure verifier
-src/promise.ts           §1.6's SPI, its policy, and D-72's window
-src/disclosure.ts        §2.5's package and INV-DISC-02's verifier
-src/solana/base58.ts     addresses in and out
-src/solana/pda.ts        §2.4's program-derived addresses
-src/solana/accounts.ts   §2.4's two layouts, their computed discriminators, §1.4's epoch clock
-src/solana/rpc.ts        getAccountInfo over fetch, and the two fetches a verifier needs
-test/kat.test.ts         §4.1's KAT-01 and KAT-02; runs first
-test/vectors.test.ts     the manifest, the enumeration, and every committed vector
-test/handlers.ts         one handler per vector
-test/disclosure.test.ts  assembled §2.5 packages, right and wrong in each way INV-DISC-02 names
-test/packages.ts         how those packages are assembled
-test/units.test.ts       §2.4, §1.6's policy, canonicalization, the preimage ceiling, encodings
-test/perf.test.ts        §4.4a
-test/devnet.test.ts      the one test that touches a network; skipped by default
-tools/mutation-check.mjs the evidence that each test fails for the reason it names
-```
-
-## The deployment this was run against
-
-The devnet test reads the announced deployment, `By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB`, and
-confirms that the addresses this verifier derives are the accounts the cluster answers for — which is
-the only independent check on the derivation SD-17 records as unstated in the specification. Two
-earlier deployments were retired and are still readable; `src/solana/rpc.ts` names them with the
-reasons, and D-88 carries the full account. **Do not verify against a superseded log:** one has an
-epoch claiming an anchor it does not have, and the other has a sequence 209 days ahead of the
-calendar.
-
-`src/solana/rpc.ts` also keeps `SUPERSEDED_PROGRAM_ID`, the deployment announced first, whose log was
-initialized before §1.4's epoch clock and so begins at epoch 1 rather than at a day index. It is the
-account SD-15 was written against and is still readable by anyone, which is why it is recorded rather
-than deleted.
-
-One thing the current log shows that nothing in the document forbids or detects: `last_epoch` 20932
-against a current day index of 20723 puts its sequence 209 days **ahead** of the calendar, so
-`lagAgainst` returns a negative number. The verifier reports the distance and rules on nothing. See
-SD-18.
+That second one is the observation behind SD-18, which stands: nothing in the document forbids a
+sequence running ahead of the calendar, or gives a client anything to detect it with.
 
 ## Dependencies
 
