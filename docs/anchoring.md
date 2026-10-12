@@ -218,12 +218,15 @@ described rather than an argument that it will.
 | 20733 | `0xdc1aa505…f4b513` | 508282423 | Bitcoin block 970,294 | `anchors/epochs/20733.ots` | `dual` |
 | 20734 | `0x602451d1…699933` | 509018081 | Bitcoin block 970,582 | `anchors/epochs/20734.ots` | `dual` |
 | 20735 | `0x6aa9a23c…cb6afa` | 509018123 | Bitcoin block 970,572 | `anchors/epochs/20735.ots` | `dual` |
-| 20736 | `0x6bb7ac8d…3fd867` | 509670816 | *pending* | *not yet committed* | `single` |
+| 20736 | `0x6bb7ac8d…3fd867` | 509670816 | Bitcoin block 970,857 | `anchors/epochs/20736.ots` | `dual` |
+| 20737 | `0x08182e24…d0b812` | 510088056 | *pending* | *not yet committed* | `single` |
+| 20738 | `0x34540294…406f02` | 510088067 | *pending* | *not yet committed* | `single` |
 
-**Epoch 20736 is mid-cycle.** It was published and stamped on day 20736, and its receipt carries
-calendar attestations only until a Bitcoin block confirms it. 20734 and 20735 left that state on day
-20736, at blocks 970,582 and 970,572 — the later epoch confirmed in the earlier block, which is what
-INV-ANCH-04 means by budgeting the latency rather than bounding it.
+**Epochs 20737 and 20738 are mid-cycle.** Both were published and stamped on day 20738, and their
+receipts carry calendar attestations only until a Bitcoin block confirms them. 20736 left that state
+on day 20738, at block 970,857, after about a day and a half. Before it, 20734 and 20735 left it on
+day 20736, at blocks 970,582 and 970,572 — the later epoch confirmed in the earlier block, which is
+what INV-ANCH-04 means by budgeting the latency rather than bounding it.
 
 **Before them, every published epoch read `dual`.** 20732 and 20733 were published and
 stamped early on day 20733 and attached later the same day, both at block 970,294 — they were stamped
@@ -247,16 +250,24 @@ calendar's attestation at block 969,627, and naming one of two is the convention
 Neither height is checked against Bitcoin by anything in this repository, which is H-12
 ([#48](https://github.com/CertiMining/potash/issues/48)).
 
-**A day has been missed three times, and all three were paid the day after.** Nothing published on day
+**A day has been missed five times, and all five were paid the day after.** Nothing published on day
 20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing published on day
-20729 either; on day 20730 both 20729 and 20730 were published and stamped. Nothing published on day
-20732; on day 20733 both 20732 and 20733 were published and stamped, so `last_epoch` is the current UTC
-day index again.
+20729 either; on day 20730 both 20729 and 20730 were published and stamped. The same on day 20732, paid
+on 20733; on day 20734, paid on 20735; and on day 20737, paid on 20738, where 20737 and 20738 were
+published two seconds apart. So `last_epoch` is the current UTC day index again.
 
-**This paragraph has now gone stale twice, which is the argument for not writing the distance down.** It
-read "missed twice, and both times the log caught up" for two days after the third miss made it false,
-and the correction that replaced it — "the third is open" — was itself false within the hour, because the
-day was paid. Nothing edited either sentence; the sequence moved underneath them. So the distance from
+Each of those is read off the chain rather than remembered: `published_unix` divided by 86,400 is the
+day a publication actually landed on, and an epoch whose quotient exceeds its own number was paid late.
+By that reading epoch 20723 is late too, by a day, and it is not counted here — a log's first
+publishable epoch is its `start_epoch`, and day 20723 had already turned before the program existed.
+
+**This paragraph has now gone stale four times, which is the argument for not writing the distance
+down.** It read "missed twice, and both times the log caught up" for two days after the third miss made
+it false, and the correction that replaced it — "the third is open" — was itself false within the hour,
+because the day was paid. It then said "three times" through the fourth miss on day 20734 and the fifth
+on day 20737, which is three days and two misses, and nothing in this repository could have told anyone:
+`cargo xtask check-record` reads the README's cycle count against the epoch table and does not read this
+sentence at all, which is H-42 ([#127](https://github.com/CertiMining/potash/issues/127)). Nothing edited either sentence; the sequence moved underneath them. So the distance from
 `last_epoch` to the current day is not recorded here at all: `sequence_lag` reports it, against a clock,
 which is where §2.3 and INV-IFACE-01 put the clock.
 
@@ -330,11 +341,13 @@ document's word:
 | 20733 | `anchors/epochs/20733.ots` | 3,884 | `820f3f8b8f3a89c707e487ef9ccf74d2200a87a1994b4accfe7c57e227464d42` | `0xf9cc11346e1ee774353071c712aa470f314dc6ded91059856be5fd7932f4a2af` |
 | 20734 | `anchors/epochs/20734.ots` | 3,848 | `867bd6275a305ea6ebc4d67c976060a498b2c3f514b1b889f43ebc2d23001585` | `0xf0eb017e3c65128323ec8539e730244fdc556b387fcc6e605f164fd9d13d2c7b` |
 | 20735 | `anchors/epochs/20735.ots` | 3,848 | `fd8fd9304d230fdd5c60a562daae900a79e1f45ef3db4d8104ebbabc60454c26` | `0x1a56cfbc7d8a12eebc7ae74def60f58352173ed28f595f822eb74cbf54611408` |
+| 20736 | `anchors/epochs/20736.ots` | 3,882 | `fc0380ae289edc944418a71c53a630426fac68f4533b03bfb965427d7365ae7a` | `0x1075160dd4c6607fcd59bac0e754e90c0832b7d33bc0413707ea2d6e93ac24eb` |
 
-**The wait is not a constant and the table shows it.** Across five cycles the confirmations landed
+**The wait is not a constant and the table shows it.** Across fourteen cycles the confirmations landed
 anywhere from six blocks to a few hundred after publication, and two epochs stamped minutes apart
-shared a block. INV-ANCH-04 budgets that latency rather than bounding it, and five instances are five
-instances — not a measured distribution.
+shared a block. INV-ANCH-04 budgets that latency rather than bounding it, and fourteen instances are
+fourteen instances — not a measured distribution. This sentence said five for the nine cycles after the
+fifth, which is the same staleness the cadence paragraph above documents about itself.
 
 Epoch 20724 is the first publication whose epoch number and publication day are the same UTC day,
 which is what §1.4's rule and INV-ANCH-01's cadence produce together once a log is running. Epoch
