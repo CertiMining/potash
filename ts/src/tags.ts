@@ -1,4 +1,8 @@
 // §1.2 domain tags. Every preimage carries exactly one, first (INV-ENC-01).
+//
+// `CMv1CKPT` was retired in v0.2.2 (H-06) and its bytes are reserved against reuse, so it is absent
+// here deliberately. A verifier that accepted it would accept a tag the specification does not
+// define.
 import { utf8 } from "./bytes.ts";
 
 export const TAG_ASSET = utf8("CMv1ASST");
@@ -7,7 +11,6 @@ export const TAG_HEAD = utf8("CMv1HEAD");
 export const TAG_MTL0 = utf8("CMv1MTL0");
 export const TAG_MTN1 = utf8("CMv1MTN1");
 export const TAG_PAD = utf8("CMv1PADD");
-export const TAG_CKPT = utf8("CMv1CKPT");
 export const TAG_PRF = utf8("CMv1PRF0");
 export const TAG_SPI = utf8("CMv1SPI0");
 
@@ -18,7 +21,6 @@ export const TAGS_BY_NAME = {
   CMv1MTL0: TAG_MTL0,
   CMv1MTN1: TAG_MTN1,
   CMv1PADD: TAG_PAD,
-  CMv1CKPT: TAG_CKPT,
   CMv1PRF0: TAG_PRF,
   CMv1SPI0: TAG_SPI,
 } as const;

@@ -64,8 +64,9 @@ any input.
 - **Field values are not validated here.** A category outside 0 to 4 encodes without complaint; the
   state machine rejects it with `0x05` (V-N-07b, E-04). Flags never enter the leaf preimage
   (INV-STATE-06a), and neither does `payload_uri`.
-- **The checkpoint preimage does not exist.** `CMv1CKPT` is reserved, the spec gives it no fields,
-  and nothing reads one; it arrives with its consumer (D-30).
+- **There is no checkpoint preimage, and there will not be one under this tag.** `CMv1CKPT` was
+  retired in v0.2.2 (H-06): it was declared for a preimage that was never defined, and §1.2 now
+  reserves its bytes against any future construction.
 - **The PRF is not here.** Padding takes the PRF output as an input, so the epoch key never reaches
   this module (E-06).
 - **Nothing on this path formats a string**, which a test enforces by reading the module's source.

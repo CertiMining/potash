@@ -16,9 +16,10 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.1**, SHA-256 `b669854d872d696510adf6d16357f3329a5e14b5ae5a76a1cba84fc721d9e722`,
-839 lines. v0.2.1 adds V-P-13 to §4.2 and changes nothing else (H-04), so the findings below carry
-to it exactly as they carried to v0.2.0, which differed from the text that was read by
+committed today is **v0.2.2**, SHA-256 `9ebcf7648a50f6721da9c30e6bbf1a5792abc1f2f3eae5df1501133f8884929b`,
+850 lines. v0.2.1 added V-P-13 to §4.2 (H-04) and v0.2.2 retires `TAG_CKPT` and reserves its bytes
+(H-06), which is the subject of SD-11. The rest of the findings below carry unchanged to it, as
+they carried to v0.2.0, which differed from the text that was read by
 sixteen lines added and fifteen removed, every one of them the version line, the changelog line or an
 amendment marker losing the words "on this branch, unmerged". No technical content changed, which is
 checkable with `git diff` over the two revisions rather than taken on this sentence's word. What was compared, and what each comparison

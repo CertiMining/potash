@@ -9,17 +9,17 @@
 //! Every constant here carries the section it was copied from. When the specification changes, this
 //! file is edited by hand from the new text, never regenerated.
 
-/// §1.2's domain tags, byte for byte. `TAG_CKPT` is transcribed for completeness: no preimage uses
-/// it, because the checkpoint preimage is undefined (D-30). It is here so the table is the whole of
-/// §1.2 rather than a convenient part.
+/// §1.2's domain tags, byte for byte.
+///
+/// `CMv1CKPT` is **retired and not transcribed** (v0.2.2, H-06). It was declared for a checkpoint
+/// preimage that was never defined, and §1.2 now reserves those eight bytes against any future
+/// construction. A tag absent from this table is absent from the specification.
 pub const TAG_ASSET: &[u8; 8] = b"CMv1ASST";
 pub const TAG_LEAF: &[u8; 8] = b"CMv1LEAF";
 pub const TAG_HEAD: &[u8; 8] = b"CMv1HEAD";
 pub const TAG_MTL0: &[u8; 8] = b"CMv1MTL0";
 pub const TAG_MTN1: &[u8; 8] = b"CMv1MTN1";
 pub const TAG_PAD: &[u8; 8] = b"CMv1PADD";
-#[allow(dead_code)]
-pub const TAG_CKPT: &[u8; 8] = b"CMv1CKPT";
 pub const TAG_PRF: &[u8; 8] = b"CMv1PRF0";
 pub const TAG_SPI: &[u8; 8] = b"CMv1SPI0";
 
