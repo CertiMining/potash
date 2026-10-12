@@ -920,10 +920,9 @@ fn position_correlations(epochs: u64) -> [f64; 3] {
     // a correct placement — which is precisely what the review demonstrated, by overwriting the collected
     // slots with 25,599 zeros and one outlier and watching all three bounds pass.
     //
-    // The first attempt at this fix asserted only the per-epoch property and did **not** catch that
-    // mutation; running it is how that was established rather than assumed. A sample spanning at least
-    // one epoch of `REAL_PER_EPOCH` submissions, each in its own slot, owes at least that many distinct
-    // observed slots.
+    // A sample spanning at least one epoch of `REAL_PER_EPOCH` submissions, each in its own slot,
+    // owes at least that many distinct observed slots. Asserting only the per-epoch property does not
+    // catch the mutation above, which was established by running it.
     let distinct: std::collections::BTreeSet<u64> = slots.iter().map(|s| s.to_bits()).collect();
     assert!(
         distinct.len() >= REAL_PER_EPOCH,
