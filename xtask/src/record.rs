@@ -86,18 +86,13 @@ const RECEIPT_HEADER: [&str; 5] = [
 
 /// A table's own furniture: the header, and the `|---|---|` rule under it.
 ///
-/// **Recognised by the whole header, not by its first cell (review of PR #121, M-01).** This used to
-/// return true for any row whose first cell was `epoch` under case folding, so changing the live row
-/// for 20736 from `20736` to `Epoch` turned that row into furniture. It left the table; the thirteen
-/// `dual` rows above it were still contiguous; `check-record` printed `13 epoch rows` where it had
-/// printed 14 and exited 0.
+/// **Matched entire, not by the first cell (review of PR #121, M-01).** Spelling the live 20736 row
+/// `Epoch` used to make it furniture: it left the table, the rows above stayed contiguous, and
+/// `check-record` printed 13 rows instead of 14 and exited 0.
 ///
-/// A row that calls itself the header and is believed is the same defect as a row that calls itself
-/// `epoch-20735` and is skipped — the one the malformed-row report below exists for — reached through
-/// the one line that still mapped an unreadable epoch onto "not a data row". Both headers are now
-/// matched entire, so a row can only be furniture by being the furniture. If a header is ever
-/// reworded, every row in that table is reported as malformed, which is loud and is the right
-/// direction: a table this cannot find is a table it cannot check.
+/// A row believed to be the header is the same defect as one skipped for an unreadable epoch, which
+/// the malformed-row report below already covered. A reworded header now makes every row in its
+/// table malformed — loud, and the right direction: a table this cannot find is one it cannot check.
 fn is_furniture(cells: &[String]) -> bool {
     let header = |expected: &[&str]| {
         cells.len() == expected.len()
@@ -205,22 +200,15 @@ fn between<'a>(haystack: &'a str, after: &str, until: &str) -> Option<&'a str> {
 
 /// The days a publication was owed and did not come, derived from the chain's own timestamps.
 ///
-/// **Derived, not transcribed (H-42, #127).** Two counts in `docs/anchoring.md` were wrong on
-/// 12 October and nothing here could have said so: this function read the README's cycle count
-/// against the `dual` rows and no other prose at all. The cadence paragraph claimed three misses and
-/// named the first three, having been stale since day 20735 — a day, a miss, and then another of
-/// each. The README said four. Both were written by hand and neither was checked.
+/// **Derived, not transcribed (H-42, #127).** On 12 October `docs/anchoring.md` claimed three misses
+/// and the README four; the chain said five. Nothing here read either sentence.
 ///
-/// `LIVE-VALUES.txt` holds every epoch's `published_unix`, and
-/// `scripts/live-values-from-chain.py` fails closed unless that list holds every value the chain
-/// carries, so the timestamps here are reconciled against devnet by a different gate than this one.
-/// An epoch whose publication landed on a later UTC day than its own number was paid late, which is
-/// what both documents mean by a missed day.
+/// An epoch whose publication landed on a later UTC day than its own number was paid late.
+/// `LIVE-VALUES.txt` holds every `published_unix`, and the chain reader fails closed unless that
+/// list is complete, so these timestamps are reconciled against devnet by a different gate.
 ///
-/// The log's first epoch is excluded, as both documents say and for the reason they give: a log's
-/// first publishable epoch is its `start_epoch`, and that day had already turned before the program
-/// existed. Excluding it by position rather than by number means the carve-out does not need
-/// editing when the log is older.
+/// The log's first epoch is excluded, as both documents say: its day had already turned before the
+/// program existed. Excluded by position, so the carve-out needs no editing as the log grows.
 fn missed_days(root: &Path) -> Result<Vec<u64>, String> {
     let listing = std::fs::read_to_string(root.join("LIVE-VALUES.txt"))
         .map_err(|e| format!("LIVE-VALUES.txt: {e}"))?;
