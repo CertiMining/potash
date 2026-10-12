@@ -20,6 +20,22 @@ export const UNKNOWN = Symbol("not read yet");
  * returns the distance and a sentence that does not grade it, and the page prints the hand-run
  * caveat beside it rather than calling a late day a fault.
  */
+/** A 32-byte value shortened for a table cell, as `0x` then eight nybbles, an ellipsis, and six.
+ *
+ * **It strips a `0x` before it adds one (found by looking at the page).** This lived in `status.js`,
+ * which imports the DOM, so no test here could reach it. It prepended `0x` to a root that already
+ * carried one, so every row of the live epoch table read `0x0xdc349d…6d0791`, and seventeen demo
+ * tests passed over it because they test this module and the defect was in the one they cannot
+ * import. Moving the function here is the part worth keeping.
+ *
+ * The spelling of a value is not the value. The same mistake, in the same week, left the live-value
+ * gate blind to every root written without the prefix.
+ */
+export function short(hex) {
+  const bare = String(hex).replace(/^0x/i, "");
+  return `0x${bare.slice(0, 8)}…${bare.slice(-6)}`;
+}
+
 export function lagReport(lastEpoch, currentDayIndex) {
   const days = BigInt(currentDayIndex) - BigInt(lastEpoch);
   if (days < 0n) {

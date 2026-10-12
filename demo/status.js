@@ -9,7 +9,7 @@
 import { toHex } from "./build/verifier/bytes.js";
 import { fetchLogConfig, fetchCheckpoint, DEVNET_RPC_URL } from "./build/verifier/solana/rpc.js";
 import { anchorStatus, utcDayIndex } from "./build/verifier/solana/accounts.js";
-import { lagReport, epochRows, summarise, EXPLANATIONS } from "./status-model.js";
+import { lagReport, epochRows, summarise, short, EXPLANATIONS } from "./status-model.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -36,10 +36,6 @@ function failure(message) {
 function esc(value) {
   return String(value).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
-}
-
-function short(hex) {
-  return `0x${hex.slice(0, 8)}…${hex.slice(-6)}`;
 }
 
 async function read() {
