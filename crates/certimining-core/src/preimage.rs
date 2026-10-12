@@ -16,9 +16,11 @@ use crate::{Digest, Hasher, RegistryError, Result, TAG_ASSET};
 /// The sink's capacity (D-33). The largest preimage in schema 1 is the 161-byte leaf.
 pub const MAX_PREIMAGE_LEN: usize = 256;
 
-/// Domain tags (§1.2). `TAG_ASSET` is re-exported from the asset commitment it belongs to.
-/// `TAG_CKPT` is reserved and unused until something reads a checkpoint preimage (D-30), and
+/// Domain tags (§1.2). `TAG_ASSET` is re-exported from the asset commitment it belongs to, and
 /// `TAG_PRF` belongs to the epoch key and slot PRF of E-06.
+///
+/// `CMv1CKPT` was retired in v0.2.2 (H-06) and its bytes are reserved against reuse. It is not
+/// defined here, and a construction needing a tag takes new bytes rather than those.
 pub const TAG_LEAF: [u8; 8] = *b"CMv1LEAF";
 /// The tag over both head preimages, the genesis head and each step (§1.3).
 pub const TAG_HEAD: [u8; 8] = *b"CMv1HEAD";
@@ -30,8 +32,8 @@ pub const TAG_MTN1: [u8; 8] = *b"CMv1MTN1";
 pub const TAG_PAD: [u8; 8] = *b"CMv1PADD";
 /// The tag over a signed inclusion promise (§1.6).
 pub const TAG_SPI: [u8; 8] = *b"CMv1SPI0";
-/// The tag over anchor B's receipt digest (§2.4, D-113). New in v0.1.18, rather than spending
-/// `TAG_CKPT` on the first construction that needed a tag.
+/// The tag over anchor B's receipt digest (§2.4, D-113). New bytes, rather than spending the
+/// reserved `CMv1CKPT` on the first construction that needed a tag.
 pub const TAG_RCPT: [u8; 8] = *b"CMv1RCPT";
 
 /// A submission's identifier (§2.3, D-29).

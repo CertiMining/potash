@@ -29,11 +29,13 @@ use std::str::FromStr;
 /// The suppressions this repository is known to carry, by path and count.
 ///
 /// A count rather than a file name: a second suppression added to an already-listed file used to be
-/// free. Both of these are a crate-root or item `allow(dead_code)` over test support code.
-const RECORDED: [(&str, usize); 2] = [
-    ("crates/certimining-log/tests/common/mod.rs", 1),
-    ("xtask/src/spec.rs", 1),
-];
+/// free. The one entry is a crate-root `allow(dead_code)` over test support code.
+///
+/// `xtask/src/spec.rs` was the second entry until v0.2.2 retired `TAG_CKPT` (H-06). Its
+/// `#[allow(dead_code)]` existed only for that constant, and removing the constant removed the
+/// suppression — which this gate caught as a stale record, in the direction that matters least and
+/// is easiest to leave rotting.
+const RECORDED: [(&str, usize); 1] = [("crates/certimining-log/tests/common/mod.rs", 1)];
 
 /// Every tracked file matching a pathspec, as repository-relative paths.
 fn tracked(root: &Path, pathspec: &str) -> Vec<String> {

@@ -299,8 +299,10 @@ and account layout are Borsh fields with no tag; KAT-03 carries nine writers and
 **What forced the question.** Writing the tag table. D-80's rule about unreachable error codes
 applies by the same reasoning to an unreachable domain tag.
 
-**What this verifier does.** Declares the tag for completeness and builds no checkpoint preimage,
-because there is nothing to build from. Nothing in the verifier depends on it.
+**What this verifier does.** Nothing: §1.2 retired `TAG_CKPT` in v0.2.2 and reserved its bytes
+against reuse (H-06), so the tag is absent from `src/tags.ts` deliberately. Until then this verifier
+declared it for completeness and built no checkpoint preimage, because there was nothing to build
+from.
 
 ---
 

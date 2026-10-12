@@ -1,12 +1,15 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.1 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.2 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
 *v0.2.1 adds V-P-13 to §4.2 and changes nothing else. A disclosure package's container was the one
 thing no committed vector pinned, so the two implementations checked their packages against the
 code that produced them (H-04).*
+
+*v0.2.2 retires `TAG_CKPT` from §1.2 and reserves its bytes against reuse. It was declared for a
+preimage that was never defined and consumed by nothing (H-06).*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -61,11 +64,19 @@ This is worth stating precisely, because it is narrower than log equivocation an
 ```
 TAG_ASSET = b"CMv1ASST"   TAG_LEAF = b"CMv1LEAF"   TAG_HEAD = b"CMv1HEAD"
 TAG_MTL0  = b"CMv1MTL0"   TAG_MTN1 = b"CMv1MTN1"   TAG_PAD  = b"CMv1PADD"
-TAG_CKPT  = b"CMv1CKPT"   TAG_PRF  = b"CMv1PRF0"   TAG_SPI  = b"CMv1SPI0"
-TAG_RCPT  = b"CMv1RCPT"
+TAG_PRF   = b"CMv1PRF0"   TAG_SPI  = b"CMv1SPI0"   TAG_RCPT = b"CMv1RCPT"
 ```
 
-`TAG_RCPT` is anchor B's receipt digest (§2.4, D-113), added in v0.2.0. **`TAG_CKPT` is declared and consumed by nothing**, which E-11's independent implementation recorded as a defect by the same reasoning D-80 applies to unreachable error codes. It stays declared, and whether it gains a checkpoint preimage or is retired is filed for after the deadline; it was deliberately not spent on the receipt digest, because reusing a reserved tag for the first thing that needs one is how a tag stops meaning anything.
+**Retired, and never to be reused: `b"CMv1CKPT"` *(v0.2.2)*.** It was declared for a checkpoint
+preimage that was never defined, and was consumed by nothing — which E-11's independent
+implementation recorded as a defect by the same reasoning D-80 applies to unreachable error codes. A
+conforming implementation does not define it, and **these eight bytes are not available to any future
+construction**: a tag that once meant one thing and later means another is how domain separation
+stops separating. A construction that needs a tag takes new bytes.
+
+`TAG_RCPT` is anchor B's receipt digest (§2.4, D-113), added in v0.2.0. It was deliberately not
+spent on `CMv1CKPT`, because reusing a reserved tag for the first thing that needs one is the same
+mistake retiring it now avoids.
 
 **INV-ENC-01.** Every preimage carries exactly one domain tag, first.
 **INV-ENC-02.** Integers little-endian, fixed width, Borsh. Digests carried as raw `[u8;32]`.
