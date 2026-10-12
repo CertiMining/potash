@@ -427,6 +427,43 @@ const vP06: Handler = (v) => {
   }
 };
 
+const vP07: Handler = (v) => {
+  const masterKey = fromHex(v.inputs.master_key, 32);
+  const epoch = big(v.inputs.epoch);
+  const height = num(v.inputs.height);
+  const real = realSet(v);
+  assert.equal(real.length, 0, "a zero-record epoch has nothing filed in it");
+
+  // **The cross-implementation half of V-P-08 (H-08).** The Rust side has always tested the empty
+  // epoch; this side had no vector to agree about, so V-P-08's criterion reported green over the
+  // case constant-rate publication and count-hiding both rest on.
+  checkBuilt(v, v.expected, height, epoch, masterKey);
+
+  const built = buildEpoch(epoch, height, masterKey, real);
+  assert.equal(built.leaves.length, num(v.inputs.capacity), "C does not depend on how many filed");
+  assert.deepEqual(v.expected.assignment, [], "nothing filed, so nothing holds a slot");
+  assert.deepEqual(v.expected.proofs, [], "nothing to prove the inclusion of");
+
+  // Every slot is padding derived from the epoch key. This is what makes the footprint carry no
+  // count: there is no shorter tree for a quieter day.
+  const ke = epochKey(masterKey, epoch);
+  built.leaves.forEach((leaf, slot) => {
+    assertBytes(leaf, toHex(paddingLeaf(ke, slot)), `slot ${slot} should hold a padding leaf`);
+  });
+
+  // The indistinguishability claim on this side too, against a full epoch rather than an assertion
+  // about one. V-P-06 supplies the 255-record set, so no leaf set is invented here.
+  const fullVector = loadVector("V-P-06");
+  const full = buildEpoch(
+    big(fullVector.inputs.epoch),
+    num(fullVector.inputs.height),
+    fromHex(fullVector.inputs.master_key, 32),
+    realSet(fullVector),
+  );
+  assert.equal(built.leaves.length, full.leaves.length, "an empty epoch is as wide as a full one");
+  assert.notEqual(toHex(built.root), toHex(full.root), "the same width is never the same root");
+};
+
 const vP06b: Handler = (v) => {
   const masterKey = fromHex(v.inputs.master_key, 32);
   const epoch = big(v.inputs.epoch);
@@ -665,6 +702,7 @@ export const HANDLERS: Record<string, Handler> = {
   "V-P-05": vP05,
   "V-P-06": vP06,
   "V-P-06b": vP06b,
+  "V-P-07": vP07,
   "V-P-09": vP09,
   "V-P-10": vP10,
   "V-P-11": vP11,
