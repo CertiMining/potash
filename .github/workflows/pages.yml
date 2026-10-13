@@ -1,0 +1,65 @@
+# E-14's demo, published at https://certimining.github.io/potash/.
+#
+# It deploys exactly what `scripts/demo.sh --build-only` produces, which is the command a developer
+# runs locally without the flag. One build path, so the published page cannot drift from the page
+# someone gets by cloning the repository and running the documented command.
+#
+# Nothing built is committed. `demo/build/` is generated on the runner from `ts/package-lock.json`
+# and the TypeScript sources each time, so the page is built from the commit it is published for
+# rather than from an artifact nobody can reproduce.
+#
+# The build's own checks gate the deployment: `scripts/demo.sh` verifies every fixture against
+# `demo/fixtures/MANIFEST.sha256` and runs the demo's tests before this workflow uploads anything.
+#
+# Actions are pinned to full commit SHAs, as in ci.yml (D-12), and the build job holds
+# `contents: read` and nothing else: the job that runs `npm ci` never carries a write token.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancel one in flight: a cancelled deploy can leave the site
+# on a half-published state, which is worse than waiting.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The major line is pinned here; the build prints the exact versions it installed.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - run: scripts/demo.sh --build-only
+      # No `actions/configure-pages` here. Its purpose is to hand a site generator the base path
+      # and origin Pages will serve from, and this page needs neither: every reference in it is
+      # relative, so it works under /potash/ unchanged. Leaving it out also keeps this job at
+      # `contents: read` — that action reaches the Pages API, which would mean widening the
+      # permissions of the job that runs `npm ci`.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    # Scoped to this job alone: the build above runs with `contents: read` and nothing more.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

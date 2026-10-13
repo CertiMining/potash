@@ -12,6 +12,13 @@ cd "$(dirname "$0")/.."
 BUILD=demo/build
 PORT="${PORT:-8730}"
 
+# `--build-only` stops after the build and its checks, without serving. The Pages workflow deploys
+# what this script produces, so the published page and the page a developer runs locally come from
+# one build path rather than two that can drift. Everything below the flag still runs: a fixture
+# that does not match its manifest, or a failing demo test, fails the deployment.
+BUILD_ONLY=""
+[ "${1:-}" = "--build-only" ] && BUILD_ONLY=1
+
 command -v node >/dev/null || { echo "demo: node is required (v24 or later)" >&2; exit 1; }
 
 echo "----- the verifier's dependencies, from the committed lock file"
@@ -31,6 +38,12 @@ echo "----- the fixtures, against their manifest"
 
 echo "----- the demo's own tests"
 node --test "demo/test/*.test.mjs"
+
+if [ -n "$BUILD_ONLY" ]; then
+  echo
+  echo "demo: built into $BUILD and checked; not serving (--build-only)"
+  exit 0
+fi
 
 echo
 PORT="$PORT" node demo/serve.mjs
