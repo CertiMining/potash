@@ -409,8 +409,8 @@ proptest! {
     /// same answer, every time.
     ///
     /// Every other property in this file assumes it. §4.5 asks for 10,000 generated cases, and
-    /// `scripts/ci.sh checks` runs exactly that as `PROPTEST_CASES=10000` on every push — a review found
-    /// that the required count reached no committed job and that CI ran `config()`'s 512 (E12-04).
+    /// `scripts/ci.sh checks` runs exactly that as `PROPTEST_CASES=10000` on every push; `config()`'s
+    /// 512 is not enough to satisfy §4.5 (E12-04).
     ///
     /// **Two records per case, and the second one must be accepted (E12-02).** The first is arbitrary and
     /// establishes determinism over whatever answer it earns — almost always a refusal. The second is the
