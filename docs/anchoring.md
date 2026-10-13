@@ -18,7 +18,7 @@ are there so a reader can check one document without reconstructing the tree.
 
 | Manifest | Commit | Receipt | Status |
 |---|---|---|---|
-| `anchors/0001-0258f51.txt` | `0258f51`, the specification's first publication | `anchors/0001-0258f51.txt.ots` | `dual` — six Bitcoin attestations |
+| `anchors/0001-0258f51.txt` | `0258f51`, the specification's first publication | `anchors/0001-0258f51.txt.ots` | `dual` — three Bitcoin attestations |
 | `anchors/0002-62abe20.txt` | `62abe20`, the 11 October head | `anchors/0002-62abe20.txt.ots` | `dual` — three Bitcoin attestations |
 | `anchors/0003-13ee278.txt` | `13ee278`, the submission head | `anchors/0003-13ee278.txt.ots` | `dual` — one Bitcoin attestation |
 
