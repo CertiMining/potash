@@ -519,8 +519,8 @@ pub fn check_record(root: &Path) {
         }
     }
 
-    // 7. The count the README states in prose, against the rows. This is the one that was wrong: the
-    //    README said five while the table held nine, for two days.
+    // 7. The count the README states in prose, against the rows. A hand-kept count drifts: this one
+    //    read five while the table held nine, for two days.
     let dual = epoch_rows.iter().filter(|r| r.status == "dual").count();
     let claimed = readme
         .split("Anchor B has completed **")
