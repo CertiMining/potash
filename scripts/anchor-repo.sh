@@ -16,8 +16,15 @@
 # only the manifest and its receipt.
 #
 # The receipt it writes carries calendar attestations only. Bitcoin confirmation takes hours, exactly
-# as it does for an epoch (D-112), so run `ots upgrade` on the `.ots` before committing it and verify
-# it names a block. An unupgraded receipt proves a calendar saw the manifest, which is not the claim.
+# as it does for an epoch (D-112), so where there is time, run `ots upgrade` on the `.ots` before
+# committing it and verify it names a block: an unupgraded receipt proves a calendar saw the manifest,
+# which is not the claim.
+#
+# Where there is not time — 0002 against the 11 October head, 0003 against the submission head — the
+# pending receipt is committed and the row in `docs/anchoring.md` reads `single` until `ots upgrade`
+# replaces it. That is the same two-stage shape D-112 gives an epoch, and it is honest for the same
+# reason: the row names the state the receipt is actually in. What is forbidden is committing a
+# pending receipt under a row that claims Bitcoin.
 set -euo pipefail
 
 OTS="${OTS:-$HOME/.local/share/potash/ots-venv/bin/ots}"
@@ -67,4 +74,6 @@ echo "anchor-repo: wrote $manifest and $manifest.ots"
 echo "             The receipt carries calendar attestations only. Hours from now:"
 echo "               $OTS upgrade $manifest.ots"
 echo "               $OTS info $manifest.ots | grep -i bitcoin"
-echo "             Commit the upgraded receipt, not this one (INV-ANCH-03's reasoning: one shot)."
+echo "             Commit the upgraded receipt where there is time for it. Where there is not,"
+echo "             commit this one and leave the row in docs/anchoring.md reading 'single' until"
+echo "             the upgrade lands — never a pending receipt under a row claiming Bitcoin."

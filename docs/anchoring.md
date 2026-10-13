@@ -19,7 +19,21 @@ are there so a reader can check one document without reconstructing the tree.
 | Manifest | Commit | Receipt | Status |
 |---|---|---|---|
 | `anchors/0001-0258f51.txt` | `0258f51`, the specification's first publication | `anchors/0001-0258f51.txt.ots` | `dual` — six Bitcoin attestations |
-| `anchors/0002-62abe20.txt` | `62abe20`, the submission head | `anchors/0002-62abe20.txt.ots` | `dual` — three Bitcoin attestations |
+| `anchors/0002-62abe20.txt` | `62abe20`, the 11 October head | `anchors/0002-62abe20.txt.ots` | `dual` — three Bitcoin attestations |
+| `anchors/0003-13ee278.txt` | `13ee278`, the submission head | `anchors/0003-13ee278.txt.ots` | `single` — calendar attestations only, pending Bitcoin |
+
+**0003 reads `single`, and that is the state it was submitted in.** It was stamped at 23:59 EDT on
+12 October 2026, which is 03:59 UTC on the 13th, against `13ee278` — the head the submission names.
+Bitcoin confirmation takes hours and the deadline did not wait for it, so the receipt committed here
+carries the calendars' promises and nothing more, and the row names that rather than the state it
+will reach. `ots upgrade` replaces it with an attested receipt in an ordinary commit. The manifest
+digest it stamps, `258af6b2e5db854e6c01c9be7ac41a4e665515086739ff48b6269bb5c5cf2485`, does not change
+across that upgrade, so what arrives later is the same timestamp and not a second one.
+
+**The anchored commit is the parent of the commit carrying the anchor, and that is unavoidable.** A
+manifest cannot contain its own hash. `13ee278` is the clean head that was stamped; the commit adding
+`anchors/0003-13ee278.txt` and its receipt is a child of it and adds nothing else of substance. A
+reader checks out `13ee278` and recomputes `tree f98956ea8ef3e72ac7ae5de0c78efede617eb00d`.
 
 **0002 read `single` for a day, and the row said so rather than waiting until it looked finished.**
 It was stamped on 11 October 2026 with the calendars' promises and nothing more, and the row named

@@ -1,0 +1,8 @@
+CertiMining/potash - OpenTimestamps anchor manifest 0003
+repository https://github.com/CertiMining/potash
+commit 13ee2781698ad6ea76b38e4f37a9846dc3b40da7
+tree f98956ea8ef3e72ac7ae5de0c78efede617eb00d
+c3e7efbd91e864c95901924d9c725a2bd035e8af800cc7f9625687dbe6be52ff  docs/STANDARD-STEPS.md
+8b83556ffd6b080f4ff39ed97e5649ea98fee09f8e299d01a74ccccfeabdf86c  docs/TCU-02_CertiMining_Anchored_Log_v0.1.md
+010e899cf2b59ead7c8bf1f192c7db6e066159aeba1f03020bf7f85768462fae  docs/DECISIONS.md
+479571dfca43d95c4e33005a1379fe66502ca5eb8f1f64f292ae1cd36c699c8c  README.md
