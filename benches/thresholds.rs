@@ -11,8 +11,11 @@
 //! So the owner ruled (D-137) that the wall-clock absolutes leave §4.4a: a bound stated against a machine
 //! description that does not determine the figure is not a property of this system. What holds the line
 //! instead is what can: the compute-unit figures, which are deterministic and confirmed against the
-//! announced deployment's own transactions, asserted absolutely in CI; and `band.rs`, which holds one
-//! runner to its own previous numbers so a change in the *code* still shows up.
+//! announced deployment's own transactions, asserted absolutely in CI. `band.rs` compares one runner
+//! against its own previous numbers so a change in the *code* shows up, but it **reports that drift and
+//! does not fail on it** while the band is uncalibrated (H-37, H-31) — so the compute figures and the
+//! TypeScript bound are the performance assertions, and no wall-clock regression gate exists until
+//! calibration restores the band's.
 //!
 //! What this file does now is **measure and report, with the machine named**. It asserts no performance
 //! threshold, so no figure here can fail on a loaded laptop; its correctness controls still can, and do

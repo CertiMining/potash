@@ -90,7 +90,7 @@ signature in the set. No generated key and no real key belongs in this repositor
 | `vectors` | The manifest, and regeneration. |
 | `checks` | Formatting, clippy and the tests, in each of the four feature sets, for both engine crates, and the bare-metal `no_std` builds. |
 | `miri` | The engine crates under Miri. The statistical privacy tests and every tree above `H = 8` are ignored there and run in `checks` instead. Miri interprets a hash in about a tenth of a second, so a tree at `H = 12` costs minutes and one at `H = 16` costs hours, while the shorter trees execute the same code with a shorter loop. Miri is looking for undefined behaviour, not for arithmetic. |
-| `bench-band` | §4.4a's wall-clock measures on this runner against `benches/BASELINE.toml`, failing past the band (D-132). Not §4.4a's wall-clock absolutes, which no longer exist (D-137): `scripts/ci.sh thresholds` measures those figures and reports them with the machine named, and is `#[ignore]`d and run before submission. An absent baseline entry fails and prints what it measured. |
+| `bench-band` | §4.4a's wall-clock measures on this runner against `benches/BASELINE.toml`. It **records and reports drift past the band and does not fail on it** while the band is uncalibrated (H-37, H-31), so no wall-clock regression gate exists until calibration restores the assertion. Its structural controls do fail: an absent baseline entry, a non-finite band or baseline, a fixture of the wrong size, a timed no-op, a verifier accepting a corrupted leaf. Not §4.4a's wall-clock absolutes, which no longer exist (D-137): `scripts/ci.sh thresholds` measures those figures and reports them with the machine named, and is `#[ignore]`d and run before submission. |
 | `deny` | Advisories, licences, sources and bans, over **two** graphs: the workspace, and `fuzz/`, which is its own Cargo workspace and therefore invisible to a root `cargo deny check` (`cargo deny list \| grep -c libfuzzer` answers 0). Both use the same `deny.toml`, so tooling is not held to a looser policy than shipped code. |
 | `ts` | The independent TypeScript verifier of E-11: its supply-chain gate, its typecheck and build, and its run of every committed vector. `cargo deny` reads `Cargo.lock` and sees no npm package, so `scripts/ts-gate.sh` carries the same discipline for `ts/package-lock.json` — advisories at high or above, and a closed licence list in `ts/LICENCES.allow` (D-93). |
 
@@ -103,7 +103,8 @@ cross-checks the chain walk against the state machine, verifies a proof and pins
 of those failing fails the run. `thresholds` measures §4.4a's wall-clock figures and names the machine;
 `bench` reports the Criterion distributions behind them. §4.4a's wall-clock bounds were removed after two
 machines matching its own description measured 7 ms and 17.6–19.5 ms, so there is nothing left there to
-gate on. What gates is `bench-band`, which is in `all`, and the compute figures in `kat01-onchain`.
+gate on. `bench-band` is in `all` and reports its drift without failing on it either, which leaves the
+compute figures in `kat01-onchain` and the TypeScript bound in `ts` as the performance assertions.
 `docs/performance.md` says which mechanism covers each of §4.4a's rows.
 
 `fuzz` is not in `all` and has no row above, because it is not part of the push pipeline: §4.5's five
@@ -393,8 +394,9 @@ machines matching its own description measured 7 ms and 17.6–19.5 ms. Its corr
 loudly — the chain-walk cross-check, the proof verification, the pinned workload — but no figure it prints
 can. It measures and reports with the machine named, so its output has to be read rather than trusted to a
 green tick, which is exactly why it is on a checklist. The
-compute figures are the ones asserted absolutely, in CI, and `bench-band` holds the runner to its own
-previous numbers. `docs/performance.md` says
+compute figures are the ones asserted absolutely, in CI; `bench-band` reports the runner's drift from
+its own previous numbers and does not fail on it, so its output has to be read as well.
+`docs/performance.md` says
 which mechanism covers each of §4.4a's rows, and `scripts/ci.sh fuzz` is the third thing CI does not
 run on a push, for a different reason: it has its own nightly workflow.
 ## Anchoring the repository head

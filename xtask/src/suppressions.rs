@@ -10,17 +10,22 @@
 //!   names rather than counts, so a second one in a listed file was free;
 //! - the third allowed whitespace between the attribute's tokens. Rust also allows *comments*
 //!   there, so `#![allow /* reviewer gap */ (warnings)]` compiled, survived `cargo fmt --check`
-//!   and every clippy run, and left the gate printing `none added`.
+//!   and every clippy run, and left the gate printing `none added`;
+//! - the fourth tokenised, and then compared `Ident::to_string()` against `allow`, which renders a
+//!   raw identifier as `r#allow` — so `#![r#allow(warnings)]` passed the lexer-based gate too.
 //!
-//! Each repair closed one spelling. The defect was deciding what Rust means from one line of text.
-//! A lexer decides instead, and tokenisation drops comments and whitespace entirely.
+//! Each repair closed one spelling. Three decided what Rust means from a line of text; the fourth
+//! decided it from a token's *rendering*. A lexer decides instead, tokenisation drops comments and
+//! whitespace entirely, and the identifier is compared rather than how it prints.
 //!
 //! **What it counts.** Any attribute whose brackets contain the identifier `allow` or `expect`, at
-//! any depth — so `#[cfg_attr(test, allow(unused))]` too, and not the word in a comment, string or
-//! doc comment, none of which is an identifier.
+//! any depth and in either spelling — so `#[cfg_attr(test, r#allow(unused))]` too, and not the word
+//! in a comment, string or doc comment, none of which is an identifier.
 //!
 //! **What it does not.** A lint relaxed in a manifest, so `[lints]` tables are checked here as
-//! well. `RUSTFLAGS` and `--cap-lints` are outside the repository; CI sets neither.
+//! well. `RUSTFLAGS` and `--cap-lints` are outside the repository; CI sets neither. An attribute
+//! assembled during macro expansion is outside a lexer by construction: this reads the source as
+//! written.
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use std::path::Path;
@@ -61,7 +66,11 @@ fn tracked(root: &Path, pathspec: &str) -> Vec<String> {
 fn relaxes_a_lint(stream: TokenStream) -> bool {
     stream.into_iter().any(|tree| match tree {
         TokenTree::Ident(ident) => {
-            let name = ident.to_string();
+            // `r#allow` and `allow` are one attribute to `rustc`, and `to_string` renders the raw
+            // one with its prefix, so the raw spelling matched neither name (range audit
+            // f9c4859..a3c5821). Compare the identifier, not its rendering.
+            let rendered = ident.to_string();
+            let name = rendered.strip_prefix("r#").unwrap_or(&rendered);
             name == "allow" || name == "expect"
         }
         TokenTree::Group(group) => relaxes_a_lint(group.stream()),
@@ -343,6 +352,62 @@ mod tests {
         assert_eq!(count_in("#[expect(dead_code)] fn f() {}"), 1);
     }
 
+    /// **The raw spellings** (range audit f9c4859..a3c5821, High).
+    ///
+    /// `r#allow` and `allow` name one attribute to `rustc`, and `Ident::to_string` renders the raw
+    /// one with its prefix — so comparing the rendered name against `allow` missed it. A fourth
+    /// spelling walked past a gate built to end exactly this, because the comparison was still
+    /// against a token's *rendering* rather than the token.
+    #[test]
+    fn a_raw_identifier_relaxes_the_same_lint() {
+        assert_eq!(count_in("#![r#allow(warnings)] fn f() {}"), 1, "r#allow");
+        assert_eq!(count_in("#[r#expect(dead_code)] fn f() {}"), 1, "r#expect");
+        assert_eq!(
+            count_in("#[cfg_attr(test, r#allow(unused))] fn f() {}"),
+            1,
+            "raw, and reached through cfg_attr"
+        );
+        assert_eq!(
+            count_in("#![r#allow /* reviewer gap */ (warnings)] fn f() {}"),
+            1,
+            "raw and commented at once — the spellings compose, so closing them one at a time \
+             never ends"
+        );
+    }
+
+    /// The raw spellings are real Rust, on the same terms as the comment spelling above.
+    #[test]
+    fn the_raw_spellings_are_real_rust() {
+        for source in ["#![r#allow(warnings)]\n", "#![r#expect(warnings)]\n"] {
+            let metadata = std::env::temp_dir().join(format!(
+                "certimining-raw-{}-{:?}.rmeta",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let (compiled, _) = fed_to(
+                "rustc",
+                &[
+                    "--edition",
+                    "2021",
+                    "--crate-type",
+                    "lib",
+                    "--emit",
+                    "metadata",
+                    "-o",
+                    metadata.to_str().expect("a utf-8 temp path"),
+                    "-",
+                ],
+                source,
+            );
+            let _ = std::fs::remove_file(&metadata);
+            assert!(
+                compiled,
+                "rustc rejected {source:?}, so it was never a suppression anything could hide \
+                 behind"
+            );
+        }
+    }
+
     /// The word, where it is not an identifier in an attribute.
     #[test]
     fn prose_and_strings_are_not_suppressions() {
@@ -356,6 +421,11 @@ mod tests {
             count_in("#[doc = \"allow(warnings)\"] fn f() {}"),
             0,
             "a string literal is not an identifier"
+        );
+        assert_eq!(
+            count_in("#[doc = r#\"allow(warnings)\"#] fn f() {}"),
+            0,
+            "a raw string literal — the `r#` a raw identifier carries is not this one"
         );
         assert_eq!(count_in("let allow = 1;"), 0, "a binding named allow");
         assert_eq!(

@@ -295,10 +295,15 @@ deny() {
 
 # §4.4a's wall-clock half, the CI side of D-132's split. Compute units are deterministic and are
 # asserted absolutely by the `compute` test in kat01-onchain; wall-clock is not, so a shared runner is
-# held to its own previous figures instead. D-137 then removed §4.4a's wall-clock absolutes entirely, so
-# this is the only wall-clock gate left. benches/BASELINE.toml carries the per-runner figures and the
-# band; an absent entry fails and prints what it measured, because a baseline nobody measured is a gate
-# that cannot fail.
+# compared against its own previous figures instead. benches/BASELINE.toml carries those figures and the
+# band.
+#
+# **This group records and reports drift and does not fail on it** while the band is uncalibrated
+# (H-37, H-31), and D-137 had already removed §4.4a's wall-clock absolutes — so no wall-clock
+# regression gate exists in this repository until calibration restores the assertion. What still fails
+# here is structural: an absent baseline entry, a non-finite band or baseline, a fixture that is not the
+# size its label names, a timed no-op, a verifier accepting a corrupted leaf. An absent entry prints
+# what it measured, because a baseline nobody measured is a gate that cannot fail.
 #
 # `--release` is not optional: a debug build measures the optimiser's absence.
 #
