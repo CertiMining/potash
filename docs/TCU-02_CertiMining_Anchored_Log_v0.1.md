@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.2 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.3 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -10,6 +10,10 @@ code that produced them (H-04).*
 
 *v0.2.2 retires `TAG_CKPT` from §1.2 and reserves its bytes against reuse. It was declared for a
 preimage that was never defined and consumed by nothing (H-06).*
+
+*v0.2.3 corrects §4.4a's account of the CI regression band: it records and reports drift and does not
+fail on it, so no wall-clock regression gate exists until calibration restores the assertion
+(H-37, H-31).*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -720,7 +724,7 @@ Restored in v0.1.1 — these were carried in TCU-01 and lost when TCU-02 was wri
 
 So the description does not determine the figure, and a bound stated against it is not a property of this system. D-132 had already found the weaker form of this — that a shared CI runner cannot be held to an absolute wall-clock number — and this is the same fact one step further: wall-clock is a property of a machine, and the specification should not pretend otherwise. Raising the bound a second time would only have made it track the slowest machine anyone happened to try.
 
-**What remains, and why it is enough.** Compute units are deterministic: the same instruction against the same program costs the same CU anywhere, and the three figures this repository records — 13,735 for `initialize`, 8,810 for `publish_checkpoint`, 5,687 for `attach_anchor_receipt` — were confirmed against the announced deployment's own transactions, across a runtime version gap. Those are asserted absolutely in CI. The wall-clock measures are **reported** with the machine named, and CI holds its own runner to its own previous figures through a regression band, which catches a change in the code without pretending to bound the hardware. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
+**What remains, and why it is enough.** Compute units are deterministic: the same instruction against the same program costs the same CU anywhere, and the three figures this repository records — 13,735 for `initialize`, 8,810 for `publish_checkpoint`, 5,687 for `attach_anchor_receipt` — were confirmed against the announced deployment's own transactions, across a runtime version gap. Those are asserted absolutely in CI. The wall-clock measures are **reported** with the machine named, and CI's regression band compares its own runner against its own previous figures — it **records and reports that drift and does not fail on it** (v0.2.3). The band was never calibrated, so **no wall-clock regression gate exists in this repository** until timings from the runner set the band from measured spread and the assertion is restored. What stays enforcing is §1.8's CU limits, and the band's structural controls: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
 
 The split matters. Signature verification dominates at scale — the hash-chain figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
 

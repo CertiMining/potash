@@ -2,15 +2,22 @@
 //! The CI regression band over §4.4a's wall-clock measures (E-13, D-132): a committed baseline and a
 //! band. §4.4a states no wall-clock threshold since D-137; this compares a runner against itself.
 //!
-//! §4.4a no longer carries wall-clock absolutes at all (D-137), so this is the only wall-clock gate left.
-//! `thresholds.rs` measures and reports those figures with the machine named. This is the other
-//! half of D-132's split: a shared runner cannot be held to those numbers, so it is held to its own
-//! previous numbers instead. A measure that drifts above its baseline by more than `band_percent`
-//! fails the build.
+//! `thresholds.rs` measures and reports those figures with the machine named. This is the other half of
+//! D-132's split: a shared runner cannot be held to those numbers, so it is compared against its own
+//! previous numbers instead.
 //!
-//! **A baseline nobody measured would be a gate that cannot fail.** So an absent entry is a failure that
-//! prints what it measured, and the figure is committed from that run's output. Nothing here invents a
-//! number.
+//! **It records and reports that drift and does not fail on it (H-37, H-31).** A measure above its
+//! baseline plus `band_percent` is printed, not asserted, because the band is one sample's guess and a
+//! gate whose failures read as noise takes a real one down with them. Timings from at least twenty CI
+//! runs set the band from measured spread, the derivation is recorded, and the assertion is restored.
+//! Until then, and with D-137 having removed §4.4a's wall-clock absolutes, **no wall-clock regression
+//! gate exists in this repository**. §1.8's CU limits are unaffected and stay enforcing.
+//!
+//! **What this file does still fail on is structural**, and all of it below: an absent baseline entry, a
+//! non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a
+//! verifier accepting a corrupted leaf. **A baseline nobody measured would be a gate that cannot fail**,
+//! so an absent entry is a failure that prints what it measured, and the figure is committed from that
+//! run's output. Nothing here invents a number.
 
 use certimining_benches::{
     chain_of, genesis, hash_chain, real_leaves, walk, HashOnly, EPOCH, HEIGHT, MASTER, RECORDS,

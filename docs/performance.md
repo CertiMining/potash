@@ -8,7 +8,7 @@ turned out not to be reproducible.
 |---|---|---|---|
 | `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **8,810 CU**, recorded exactly; the same on chain |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly; the same on chain |
-| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`; `benches/band.rs` catches regression on the CI runner | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
+| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`, and by `benches/band.rs` on the CI runner, which fails on neither | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
 | Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
 | Inclusion proof verification | **none** (D-137) | the same two | 0.0023–0.0043 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
@@ -38,10 +38,11 @@ stated against it is not a property of this system, and the rows lost their thre
 tracking the slowest machine anyone tried (D-136, then D-137).
 
 What still asserts absolutely is what can: the compute figures, which are deterministic and confirmed
-against the announced deployment's own transactions. What catches a slowdown in the *code* is the
-band, holding one runner to its own previous numbers. The wall-clock measures are a record with the
-machine named — and a record has to be read, which is why `scripts/ci.sh thresholds` is on
-CONTRIBUTING's run-before-submission list rather than in CI.
+against the announced deployment's own transactions. The band compares one runner against its own
+previous numbers and **records and reports the drift without failing on it**, so **no wall-clock
+regression gate exists here** until calibration restores the assertion. Every wall-clock measure is
+therefore a record with the machine named — and a record has to be read, which is why both
+`scripts/ci.sh thresholds` and the band's own output are read rather than trusted to a green tick.
 
 ## Two kinds of number, and why they are gated differently (D-132)
 
@@ -79,16 +80,17 @@ machine, and D-137 then removed the absolute half outright, which leaves:
 An absent baseline entry **fails** and prints what it measured. A baseline nobody measured would be a
 gate that cannot fail, and this repository has filed that defect more than once.
 
-**Run anywhere but the runner, `bench-band` proves nothing.** The baseline is one machine's figures and
-the reference machine is about 1.8× faster, so locally the measures come in below the baseline and the
-comparison passes without meaning anything — it cannot fail on a machine faster than the one it is
-calibrated to. It sits in `all` because `all` mirrors the push pipeline verbatim; the run that matters is
-CI's. Nothing gates the reference machine: `scripts/ci.sh thresholds` records its figures (D-137).
+**Run anywhere but the runner, `bench-band`'s comparison means nothing**, and that is true twice over
+now. The baseline is one machine's figures and the reference machine is about 1.8× faster, so locally the
+measures come in below the baseline and the comparison would not fire even if it asserted; and since it
+reports rather than asserts, it does not fire anywhere. It sits in `all` because `all` mirrors the push
+pipeline verbatim; the run that matters is CI's, where its figures are the series the calibration needs.
+Nothing gates the reference machine either: `scripts/ci.sh thresholds` records its figures (D-137).
 
 The band itself is **50%, and that is a guess**. How much these measures vary between runs on a shared
 runner has not been observed, so the number is not derived from anything; it is wide because a band that
 flakes gets disabled and a disabled gate is worse than a loose one. It is set from observed spread once a
-few runs exist. Until then a failure there means "look", not "something regressed by at least half".
+few runs exist. Until then a measure above its limit is reported, not failed, and means "look".
 
 ## The reference machine
 
@@ -97,7 +99,7 @@ few runs exist. Until then a failure there means "look", not "something regresse
 ```sh
 scripts/ci.sh thresholds   # §4.4a's wall-clock figures, measured and reported
 scripts/ci.sh bench        # the Criterion distributions behind them
-scripts/ci.sh bench-band   # what CI runs: this machine against the committed baseline
+scripts/ci.sh bench-band   # what CI runs: this machine against the committed baseline, reported
 ```
 
 ## What "hash recomputation only" measures

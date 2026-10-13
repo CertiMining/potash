@@ -4,7 +4,7 @@
 # at all since D-137, and before that they belonged to the reference machine §4.4a names. A shared runner
 # is slower and noisier than that machine by an amount nobody controls, so asserting fixed numbers there
 # would either flake or be loose enough to mean nothing. What CI can do is notice that a measure moved: it
-# compares against the figures below and fails past a band.
+# compares against the figures below and **reports** what it finds past a band.
 #
 # Every value is `median_ms`, the median of the sampled runs, which is what `band.rs` compares.
 #
@@ -13,28 +13,31 @@
 # passing — a baseline nobody has measured would make a gate that cannot fail, which is the defect this
 # repository has filed more than once.
 #
-# `band_percent` is how far above its baseline a measure may drift before the build fails. It is a
-# regression detector, not a performance claim.
+# `band_percent` is how far above its baseline a measure may drift before `band.rs` reports it. It is a
+# regression detector, not a performance claim — and while the band is uncalibrated it **reports and does
+# not fail** (H-37, H-31), so no wall-clock regression gate exists until calibration restores the
+# assertion. The structural controls in `band.rs` keep failing, this file's own absent entry among them.
 #
 # **50 is a guess, and is recorded as one.** Nobody has yet observed how much these measures vary on
 # GitHub's shared runners from one run to the next, so the number is not derived from anything — it is
 # wide because a band that flakes gets disabled and a disabled gate is worse than a loose one. Once a few
-# runs exist, the spread is visible in their output and this number is set from it. Until then, a failure
-# here means "look", not "a regression of at least 50% has occurred".
+# runs exist, the spread is visible in their output and this number is set from it. Until then, a measure
+# above its limit is reported and means "look", not "a regression of at least 50% has occurred".
 band_percent = 50.0
 
-# **And it fails on a busy machine, which is H-31 (#72).** Running another test suite alongside it put
+# **And it fired on a busy machine, which is H-31 (#72).** Running another test suite alongside it put
 # this machine at 19.73 ms against a 19.27 ms limit, with all three measures marginal — unchanged code,
-# failing on load. Since D-137 removed §4.4a's wall-clock absolutes this band is the only wall-clock gate
-# left, so its calibration is no longer a secondary concern. Until H-31 lands, a failure here on a
-# developer machine means "check what else is running" before it means "the code regressed".
+# over the limit on load. That is why the comparison reports rather than fails, and why its calibration
+# is the work that restores it. A measure over its limit on a developer machine means "check what else is
+# running" before it means "the code regressed".
 #
-# **Run off the runner, this gate proves nothing, and that is worth stating.** These figures are one
-# machine's. The reference machine is about 1.8x faster, so `scripts/ci.sh bench-band` there measures
-# below the baseline and passes without the comparison meaning anything — it cannot fail on a machine
-# faster than the one it is calibrated to. It is in `all` because `all` mirrors the push pipeline
-# verbatim, and the run that matters is CI's. Nothing gates the reference machine: since D-137,
-# `scripts/ci.sh thresholds` measures §4.4a's figures there and reports them with the machine named.
+# **Run off the runner, this comparison proves nothing, and that is worth stating.** These figures are
+# one machine's. The reference machine is about 1.8x faster, so `scripts/ci.sh bench-band` there measures
+# below the baseline and the comparison means nothing — it would not fire on a machine faster than the
+# one it is calibrated to even if it asserted. It is in `all` because `all` mirrors the push pipeline
+# verbatim, and the run that matters is CI's, whose figures are the series the calibration needs. Nothing
+# gates the reference machine either: since D-137, `scripts/ci.sh thresholds` measures §4.4a's figures
+# there and reports them with the machine named.
 
 # Measured on ubuntu-24.04, GitHub's shared runner, by the bench-band job of CI run 37046282848
 # (commit c16b6a5) — the run whose failure printed them, which is the only way an entry gets here.
@@ -47,7 +50,8 @@ band_percent = 50.0
 # slower. That gap is the whole reason D-132 sent §4.4a's absolute figures to the reference machine and
 # gave CI a band instead — D-136's 10 ms chain-walk threshold would have failed outright here, on code
 # that met it. D-137 has since removed those absolutes, on the same evidence read across two machines
-# rather than two environments, which leaves this band as the only wall-clock gate.
+# rather than two environments; with this comparison reporting rather than failing, no wall-clock
+# regression gate is left.
 [measures]
 chain_walk_hash_chain_only = 12.8476
 epoch_root_256_leaves = 0.3685
