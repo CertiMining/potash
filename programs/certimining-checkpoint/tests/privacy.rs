@@ -59,9 +59,9 @@ fn permitted_account_offsets() -> Vec<usize> {
 
 struct Published {
     instruction_data: Vec<u8>,
-    /// The serialized transaction, in full. Codex round one, finding 4: this used to be its length
-    /// alone, which let any fixed-width byte outside the account carry a record count past a test
-    /// whose own name said "byte-exact".
+    /// The serialized transaction, in full, and not its length alone: a fixed-width byte outside
+    /// the account could otherwise carry a record count past a test whose own name says "byte-exact"
+    /// (Codex round one, finding 4).
     transaction: Vec<u8>,
     /// The bytes of the transaction §4.4's closed list permits to differ, located in this
     /// transaction rather than assumed at fixed offsets.
