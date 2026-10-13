@@ -12,22 +12,33 @@ turned out not to be reproducible.
 | Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
 | Inclusion proof verification | **none** (D-137) | the same two | 0.0023–0.0043 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
-| Full verification including per-record Ed25519 | **none in v0.1** | nothing asserts it; `benches/thresholds.rs` prints it | 465–486 ms on the development machine, 7 Oct 2026; 399 ms when the row was written, which does not reproduce — see below |
+| Full verification including per-record Ed25519 | **none in v0.1** | nothing asserts it; `benches/thresholds.rs` prints it | 399 ms when the row was written, 460–486 ms on 7 Oct 2026, 395–400 ms on 12 Oct — three days, one machine, unexplained; see below |
 
-## The Ed25519 row moved, and nothing here explains why
+## The Ed25519 row moved, and then moved back, and nothing here explains either
 
-The row was written at `bc85524` reading **399 ms**. Two runs on 7 Oct 2026, same machine, measured
-460.3–474.0 and 464.7–486.0 ms. They agree with each other; neither reproduces 399.
+Three days of measurement on **Apple M2, 8 cores, macOS 26.6.2**, the machine §4.4a names:
 
-It is not the hardware. `benches/thresholds.rs` measures four rows in one run, and on that day the
-other three landed inside their recorded ranges — only this one moved. It is not the workload: both
-figures are 10,000 records through `walk::<DalekVerifier>`. The plausible cause is E-13's fourth
-round moving every fixture's construction ahead of the first `measure`, which leaves the signed chain
-no longer hot in cache. That is **not demonstrated**: showing it would mean reordering the harness to
-watch the number move, undoing the fix that produced the honest figure.
+| Day | Commit | Medians | Spread |
+|---|---|---|---|
+| 2 Oct 2026, when the row was written | `bc85524` | **399 ms** | one figure recorded |
+| 7 Oct 2026 | `e21f46d` | two runs | 460.3–474.0 and 464.7–486.0 |
+| 12 Oct 2026 | `2c821f3` | **399.9, 395.1 ms** | 398.2–409.0 and 393.7–402.6 |
 
-So the new number is recorded, the old one kept beside it, and the gap stated rather than reconciled.
-§4.4a asserts nothing here (D-137), so nothing gates on either.
+The 12 October runs reproduce the original figure and do not reproduce 7 October's. Both were taken
+with the submission checklist's own command, minutes apart, on an otherwise idle machine, with the
+other three rows landing inside their recorded ranges in the same runs — 6.89 and 7.01 ms for the
+chain walk, 0.188 and 0.191 ms for the epoch root, 0.0021 and 0.0028 ms for the proof.
+
+**This falsifies the cause previously offered here.** That was E-13's fourth round moving every
+fixture's construction ahead of the first `measure`, leaving the signed chain no longer hot in cache.
+The harness has not changed since; had that been the cause the figure would have stayed high, and it
+did not. The explanation is withdrawn rather than replaced, because a second guess would be worth no
+more than the first.
+
+What is on the record is five runs across three days on one named machine, with one harness and one
+workload of 10,000 records through `walk::<DalekVerifier>`: three of them under 410 ms and two of them
+above 460. Nothing here explains the difference, which is why the heading says so.
+§4.4a asserts nothing on this row (D-137), so nothing gates on any of the four.
 
 ## The wall-clock bounds are gone (D-137)
 
