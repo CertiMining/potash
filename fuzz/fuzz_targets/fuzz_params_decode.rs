@@ -11,13 +11,11 @@
 //! 5. `decode_checkpoint`, the same for a checkpoint, including the epoch it was asked about, and
 //!    **every field it returns** rather than the epoch alone (H-22).
 //!
-//! **The last two were missing, and that was the serious half (PR #55, round two, E12-04.)** An earlier
-//! version of this file said the first three were the only decoders a counterparty's bytes reach, which
-//! was false: 2 and 3 are Borsh on a body, while 4 and 5 are the boundary where an RPC response becomes
-//! something the client believes — they check owner, length, discriminator, schema and the requested
-//! epoch. F-01 did not call them and the fuzz crate did not depend on `certimining-client` at all, so a
-//! defect that accepted an account owned by **another program** survived a million iterations while the
-//! client's own test failed. Fuzzing the serialization primitives is not fuzzing the trust boundary.
+//! **Decoders 4 and 5 are the trust boundary, and they are the reason this target exists (E12-04).**
+//! 2 and 3 are Borsh on a body; 4 and 5 are where an RPC response becomes something the client
+//! believes, checking owner, length, discriminator, schema and the requested epoch. Without them a
+//! defect accepting an account owned by **another program** survives a million iterations. Fuzzing
+//! the serialization primitives is not fuzzing the trust boundary.
 //!
 //! The last two are Anchor accounts, so a real client skips the eight-byte discriminator and hands
 //! the rest to Borsh; this drives both halves, with and without that skip, because a decoder that

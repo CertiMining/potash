@@ -53,10 +53,10 @@ fn a_valid_tenure(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 fuzz_target!(|data: &[u8]| {
-    // **The positive obligation (M-03).** Every assertion in this target used to sit downstream of a
-    // successful canonicalization, and `Err(CanonicalizationFailed) => return` meant a rules engine that
-    // refused *everything* passed 100,000 iterations. §1.3's rules accept the alphabet they define, and a
-    // target that cannot notice them refusing it is not a gate.
+    // **The positive obligation (M-03).** §1.3's rules accept the alphabet they define, and a target
+    // whose assertions all sit downstream of a successful canonicalization cannot notice an engine
+    // refusing it — `Err(CanonicalizationFailed) => return` lets one that refuses everything pass
+    // 100,000 iterations.
     for (raw, expected) in SPEC_EXAMPLES {
         let got = AssetId::<NativeKeccak>::canonicalize_bytes(raw.as_bytes()).unwrap_or_else(|e| {
             panic!("docs/canonicalization.md says {raw:?} canonicalizes to {expected:?}, and the rules returned {e:?}")
