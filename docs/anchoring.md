@@ -20,15 +20,21 @@ are there so a reader can check one document without reconstructing the tree.
 |---|---|---|---|
 | `anchors/0001-0258f51.txt` | `0258f51`, the specification's first publication | `anchors/0001-0258f51.txt.ots` | `dual` — six Bitcoin attestations |
 | `anchors/0002-62abe20.txt` | `62abe20`, the 11 October head | `anchors/0002-62abe20.txt.ots` | `dual` — three Bitcoin attestations |
-| `anchors/0003-13ee278.txt` | `13ee278`, the submission head | `anchors/0003-13ee278.txt.ots` | `single` — calendar attestations only, pending Bitcoin |
+| `anchors/0003-13ee278.txt` | `13ee278`, the submission head | `anchors/0003-13ee278.txt.ots` | `dual` — one Bitcoin attestation |
 
-**0003 reads `single`, and that is the state it was submitted in.** It was stamped at 23:59 EDT on
-12 October 2026, which is 03:59 UTC on the 13th, against `13ee278` — the head the submission names.
-Bitcoin confirmation takes hours and the deadline did not wait for it, so the receipt committed here
-carries the calendars' promises and nothing more, and the row names that rather than the state it
-will reach. `ots upgrade` replaces it with an attested receipt in an ordinary commit. The manifest
-digest it stamps, `258af6b2e5db854e6c01c9be7ac41a4e665515086739ff48b6269bb5c5cf2485`, does not change
-across that upgrade, so what arrives later is the same timestamp and not a second one.
+**0003 was submitted reading `single`, and the row said so at the time.** It was stamped at 23:59 EDT
+on 12 October 2026, which is 03:59 UTC on the 13th, against `13ee278` — the head the submission names.
+Bitcoin confirmation takes hours and the deadline did not wait for it, so what was committed carried
+the calendars' promises and nothing more, and the row named that rather than the state it would
+reach. `ots upgrade` found a Bitcoin attestation at **block 971,188** on 13 October and the upgraded
+receipt replaced the pending one in an ordinary commit. The upgraded receipt stamps the same manifest
+digest, `258af6b2e5db854e6c01c9be7ac41a4e665515086739ff48b6269bb5c5cf2485`, so it is the same
+timestamp and not a second one.
+
+**One attestation, not three, and the other two calendars are still pending.** `bob.btc.calendar.opentimestamps.org`
+delivered; `finney.calendar.eternitywall.com` and `btc.calendar.catallaxy.com` had not when this row
+was written, so the count here may grow and will not shrink. One attestation is what the receipt
+carries and so is what the row claims.
 
 **The anchored commit is the parent of the commit carrying the anchor, and that is unavoidable.** A
 manifest cannot contain its own hash. `13ee278` is the clean head that was stamped; the commit adding
