@@ -33,6 +33,7 @@ mod handoff;
 mod ots;
 mod publish;
 mod schedule;
+mod worker;
 
 pub use anchor::{status_of, AnchorRef, AnchorStatus};
 #[cfg(feature = "cluster")]
@@ -49,3 +50,4 @@ pub use publish::{
     classify, settle, should_retry, Outcome, Settlement, CHECKPOINT_ALREADY_WRITTEN,
 };
 pub use schedule::{build_start, publication_time, Schedule, EPOCH_SECONDS};
+pub use worker::{day_index, next_step, Observed, Refusal, Step};
