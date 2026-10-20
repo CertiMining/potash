@@ -25,6 +25,7 @@ mod demo;
 mod live_values;
 mod record;
 mod spec;
+mod spec_pin;
 mod suppressions;
 
 use std::collections::BTreeMap;
