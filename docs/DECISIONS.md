@@ -1962,3 +1962,38 @@ and D-139 does not pretend to.
 
 **Revisit if** the batcher and the worker are ever the same process by deliberate decision, at which
 point RES-03's custody assumption has to be restated rather than inherited.
+
+## D-140 · `CMops` is the operational tag namespace, and the handoff tag stays out of §1.2
+
+**Date:** 20 Oct 2026 · **Unit:** H-13 · **Class:** cost judgement · **Status:** settled at S0 (owner, 20 Oct 2026)
+
+**Decision (the owner's).** The batcher's handoff keeps the tag `CMopsHOF`, outside §1.2. `CMops` is
+recorded in `docs/anchoring.md` as the operational tag namespace: tags used only between this
+deployment's own processes, never seen by a counterparty, never part of §1.2, never implemented by the
+TypeScript verifier. `CMopsHOF` is listed there.
+
+**The question.** D-139's handoff is signed, so INV-ENC-01 requires it to carry a domain tag, and the
+batcher's key already signs §1.6's promises under `TAG_SPI`. The tag could have been a `CMv1` tag
+added to §1.2, taking the specification to v0.2.4, or something outside that namespace.
+
+**Why outside.** §1.2 is a contract an independent implementation is judged against — E-11's verifier
+implements that list, and every tag in it is something a second implementation must get right. A
+handoff is not that: no counterparty sees one, and E-11 would never implement it. Putting it in §1.2
+would enlarge what conformance means in order to describe a detail of how this deployment feeds its
+own worker.
+
+**What the alternative would have cost, and it is not nothing.** A `CMv1` tag in the codebase that
+§1.2 does not list is drift, and drift of exactly the kind H-46 is about: a document and a
+specification disagreeing with nobody noticing. The answer is not to avoid the tag but to name the
+boundary, which is what the namespace does. A reader who finds `CMopsHOF` in the source and not in
+§1.2 now finds the list that says why.
+
+**What the prefix promises.** Separation, and only separation. `CMops` differs from `CMv1` in its
+third byte, so no preimage under one namespace can collide with one under the other however its fields
+line up. That is checked rather than asserted:
+`kat03_a_handoff_cannot_be_read_as_a_promise` builds one of each and shows neither parses as the
+other, by tag and by length.
+
+**Revisit if** a construction under `CMops` ever crosses a trust boundary a counterparty checks, at
+which point it stops being operational and becomes a `CMv1` tag by amendment, with a version, the way
+`TAG_RCPT` did in v0.2.0.

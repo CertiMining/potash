@@ -161,6 +161,37 @@ can only be checked where the same inputs give the same bytes every time (D-85).
 of V-Z-01 runs on devnet over 200 consecutive epochs against an absolute correlation below 0.2, fixed
 before any epoch was published and recorded on issue #9.
 
+## `CMops`, the operational tag namespace
+
+§1.2 lists the protocol's domain tags, all of them beginning `CMv1`. They separate the preimages this
+system signs and hashes, and an independent implementation has to get every one of them right: E-11's
+TypeScript verifier implements that list, and a conforming implementation is judged against it.
+
+Some constructions are not that. The batcher's handoff to the anchor-B worker (D-139) is signed, so it
+needs a domain tag like anything else — the batcher's key also signs §1.6's promises, and one key over
+two message spaces without separation is how a signature for one becomes a signature for the other.
+But no counterparty ever sees a handoff, and E-11 would never implement it.
+
+So it takes a tag outside the protocol's namespace, and this section is the list of those (D-140):
+
+| Tag | Construction | Between |
+|---|---|---|
+| `CMopsHOF` | the batcher's handoff: epoch, height, root (D-139) | this deployment's batcher and its anchor-B worker |
+
+**What the `CMops` prefix means, and what it promises.** A tag here is used only between this
+deployment's own processes. It is never seen by a counterparty, never part of §1.2, and never
+implemented by the TypeScript verifier. The prefix differs from `CMv1` in its third byte, so no
+preimage under one namespace can collide with a preimage under the other however the fields line up —
+which is the whole requirement, and is checked rather than asserted: `kat03_a_handoff_cannot_be_read_as_a_promise`
+builds one of each and shows neither parses as the other.
+
+**Why the separation is worth a section rather than a comment.** A reader auditing this system against
+TCU-02 will find `CMopsHOF` in the source and not in §1.2. Without this list that reads as drift —
+exactly the defect H-46 is about, a document and a specification disagreeing with nobody noticing. It
+is instead a deliberate boundary: §1.2 is the contract, this is the deployment, and a construction may
+not quietly move from here into the contract. One that needs to becomes a `CMv1` tag by amendment,
+with a version, the way `TAG_RCPT` did in v0.2.0.
+
 ## What the chain does not carry
 
 No `c`, no tenure identifier, no jurisdiction or registry code, no category, no date belonging to a
