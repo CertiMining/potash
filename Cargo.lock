@@ -1012,6 +1012,7 @@ dependencies = [
  "certimining-checkpoint",
  "certimining-core",
  "certimining-log",
+ "ed25519-dalek",
  "litesvm",
  "opentimestamps",
  "serde_json",

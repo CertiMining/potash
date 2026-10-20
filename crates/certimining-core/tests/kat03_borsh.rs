@@ -11,8 +11,9 @@
 
 use borsh::to_vec;
 use certimining_core::{
-    AssetPreimage, Digest, GenesisHeadPreimage, LeafPreimage, NodePreimage, PaddingPreimage,
-    Preimage, PreimageBuf, PrfPreimage, RealLeafPreimage, SpiPreimage, StepHeadPreimage,
+    check_tag, read_tag, AssetPreimage, Digest, GenesisHeadPreimage, HandoffPreimage, LeafPreimage,
+    NodePreimage, PaddingPreimage, Preimage, PreimageBuf, PrfPreimage, RealLeafPreimage,
+    SpiPreimage, StepHeadPreimage,
 };
 
 const C: Digest = [0x11; 32];
@@ -156,6 +157,56 @@ fn kat03_the_spi_preimage_is_borsh_of_its_fields() {
         max_merge_delay: 2,
     };
     assert_eq!(bytes_of(&p), want);
+}
+
+/// The batcher's handoff to the anchor-B worker (D-139, H-13): tag, epoch, height, root.
+#[test]
+fn kat03_the_handoff_preimage_is_borsh_of_its_fields() {
+    let want = borsh_fields(&[
+        to_vec(b"CMopsHOF").unwrap(),
+        to_vec(&20_739u64).unwrap(),
+        to_vec(&8u8).unwrap(),
+        to_vec(&LEAF).unwrap(),
+    ]);
+    assert_eq!(want.len(), 49, "8 + 8 + 1 + 32 (D-139)");
+    let p = HandoffPreimage {
+        epoch: 20_739,
+        height: 8,
+        root: LEAF,
+    };
+    assert_eq!(bytes_of(&p), want);
+}
+
+/// **The handoff is signed by the same key as §1.6's promises, so its tag must not be theirs.**
+///
+/// D-139 has the batcher sign both. One key over two message spaces with no domain separation is how
+/// a signature for one becomes a signature for the other. These two preimages differ in their first
+/// byte onward and in length, so no handoff can be read as a promise however its fields line up.
+#[test]
+fn kat03_a_handoff_cannot_be_read_as_a_promise() {
+    let handoff = bytes_of(&HandoffPreimage {
+        epoch: 20_739,
+        height: 8,
+        root: LEAF,
+    });
+    let promise = bytes_of(&SpiPreimage {
+        leaf: LEAF,
+        submission_id: SUBMISSION,
+        accepted_epoch: 20_739,
+        promised_epoch: 20_741,
+        max_merge_delay: 2,
+    });
+
+    assert_eq!(read_tag(&handoff).unwrap(), *b"CMopsHOF");
+    assert_eq!(read_tag(&promise).unwrap(), *b"CMv1SPI0");
+    assert!(check_tag(&handoff, *b"CMv1SPI0").is_err());
+    assert!(check_tag(&promise, *b"CMopsHOF").is_err());
+    assert_ne!(handoff.len(), promise.len(), "49 against 73");
+    assert_ne!(
+        handoff[..8],
+        promise[..8],
+        "the namespaces differ, not just the tail: CMops is not CMv1"
+    );
 }
 
 /// D-34: Borsh frames a byte string with a `u32`; INV-ENC-04 uses a `u16`, and INV-ENC-04 governs.
