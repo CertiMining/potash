@@ -280,6 +280,39 @@ miri() {
 # gates "like everything else, or they do not ship", and until the fuzz manifest is checked explicitly
 # that commitment is untrue rather than met. Both graphs use the same deny.toml, so there is one policy
 # and not a looser one for tooling.
+# How recent the advisory data is, printed so a pass is read for what it is (H-51, #176).
+#
+# **This gate reads the world, not the tree.** Every other check here reads committed files and gives
+# the same answer tomorrow; this one answers from an advisory database that changes without the
+# repository changing. `cargo deny` reuses a cloned database under `$CARGO_HOME/advisory-dbs`, and on
+# 20 October a local run passed against a cache that had not yet seen two advisories CI reported
+# minutes later. The local `advisories ok` was true and meant nothing.
+#
+# So the age is reported rather than asserted. It does not fail the gate: a hard limit would turn a
+# network hiccup into a red build, and the thing worth fixing was never the cache, it was reading a
+# pass as broader than it is. The clone's newest commit is the data's own timestamp, which is what a
+# reader needs; a fetch time would say only when we last asked.
+advisory_db_age() {
+  local db when now age
+  db="$(find "${CARGO_HOME:-$HOME/.cargo}/advisory-dbs" -maxdepth 1 -type d -name 'advisory-db-*' 2>/dev/null | head -1)"
+  if [ -z "$db" ]; then
+    echo "deny: no advisory database is cached yet, so cargo deny will clone a fresh one"
+    return 0
+  fi
+  when="$(git -C "$db" log -1 --format=%ct 2>/dev/null || true)"
+  if [ -z "$when" ]; then
+    echo "deny: the advisory database at $db reports no commit date, so its age is unknown"
+    return 0
+  fi
+  now="$(date -u +%s)"
+  age=$(( (now - when) / 3600 ))
+  echo "deny: advisory data is ${age}h old ($(git -C "$db" log -1 --format=%cI 2>/dev/null))"
+  if [ "$age" -ge 24 ]; then
+    echo "deny: that is a day or more behind. A pass below says no advisory *in that data* matches,"
+    echo "deny: which is narrower than no advisory matching. Refresh with: rm -rf \"${CARGO_HOME:-\$HOME/.cargo}/advisory-dbs\""
+  fi
+}
+
 deny() {
   local version
   version="$(cargo deny --version)"
@@ -288,6 +321,7 @@ deny() {
     return 1
   fi
   GROUP_FAILED=""
+  advisory_db_age
   check "deny workspace" cargo deny check
   check "deny fuzz" cargo deny --manifest-path fuzz/Cargo.toml --config deny.toml check
   group_result deny
