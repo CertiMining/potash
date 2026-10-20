@@ -68,7 +68,10 @@ inside the Solana runtime and outside it, across every committed preimage.
   so that column is a snapshot. The cadence INV-ANCH-01 asks for has also already been missed five
   times — nothing published on day 20726, 20729, 20732, 20734 or 20737 — and each time the next day
   paid both the owed epoch and its own, which is what a cadence run by hand does
-  ([#49](https://github.com/CertiMining/potash/issues/49)). The distance from `last_epoch` to today
+  ([#49](https://github.com/CertiMining/potash/issues/49)). **The log has been paused since epoch
+  20738 on 12 October 2026**, recorded in [docs/anchoring.md](docs/anchoring.md): the cycle did not
+  run, nothing watches for a trailing gap, and resuming would mean publishing every intervening epoch
+  because the range is contiguous by construction. The distance from `last_epoch` to today
   is not written here, because a written distance ages into a false claim; `sequence_lag` reports it
   against a clock. `docs/anchoring.md` carries the roots, slots, blocks and receipt digests.
 - The fuzz and property harness exists (§4.5's five targets and four properties,
