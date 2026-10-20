@@ -36,6 +36,24 @@ pub const TAG_SPI: [u8; 8] = *b"CMv1SPI0";
 /// reserved `CMv1CKPT` on the first construction that needed a tag.
 pub const TAG_RCPT: [u8; 8] = *b"CMv1RCPT";
 
+/// The tag over the batcher's handoff to the anchor-B worker (D-139, H-13).
+///
+/// **Deliberately outside the `CMv1` namespace, and that is an open question.** §1.2 lists the
+/// protocol's tags, and a handoff is not a protocol construction: no counterparty ever sees one, and
+/// E-11's independent verifier would never implement it. Taking `CMv1` bytes for it would put a tag
+/// in the codebase that §1.2 does not list, which is the kind of drift this repository keeps finding.
+/// So these bytes say what they are — `CMops`, an operational construction of this deployment.
+///
+/// **Why it needs a tag at all.** The batcher's key signs §1.6's promises under [`TAG_SPI`], and
+/// D-139 has it sign handoffs too. One key over two message spaces with no domain separation is how
+/// a signature for one becomes a signature for the other, which is exactly what INV-ENC-01 exists to
+/// prevent. The prefix differing in its first five bytes means no handoff preimage can collide with
+/// any `CMv1` preimage however the fields line up.
+///
+/// If the owner rules that the handoff belongs in the contract, these bytes become a `CMv1` tag
+/// listed in §1.2 and the specification takes a version. That is a one-constant change here.
+pub const TAG_HOFF: [u8; 8] = *b"CMopsHOF";
+
 /// A submission's identifier (§2.3, D-29).
 pub type SubmissionId = [u8; 16];
 
@@ -327,6 +345,41 @@ impl Preimage for SpiPreimage {
             p.write(&self.accepted_epoch.to_le_bytes())?;
             p.write(&self.promised_epoch.to_le_bytes())?;
             p.write(&[self.max_merge_delay])
+        })
+    }
+}
+
+/// What the batcher hands the anchor-B worker: one epoch's root, and nothing else (D-139).
+///
+/// **The worker never builds an epoch and never holds `k_master`.** RES-03 rests count-hiding
+/// entirely on that key's custody, and D-117 makes the checkpoint authority the one key that runs
+/// unattended — because compromising it buys a wrong root, which is detectable, where compromising
+/// `k_master` buys the retrospective record count of every epoch ever published.
+///
+/// **Three fields, not a `BuiltEpoch`.** That type carries every slot's leaf digest and the
+/// assignment proof generation needs, none of which is published: §1.4 publishes a root. Handing the
+/// rest to the worker would widen what a compromised worker discloses from one already-public root to
+/// the full leaf set of every epoch it handled. The height is here so the worker can refuse a handoff
+/// built at a height its log is not configured for, rather than publishing a root it cannot place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HandoffPreimage {
+    /// The epoch the root is for, which is a UTC day index (§1.4).
+    pub epoch: u64,
+    /// The tree height the root was built at, which §1.8 bounds to `[4, 16]`.
+    pub height: u8,
+    /// The epoch root, as published.
+    pub root: Digest,
+}
+
+impl Preimage for HandoffPreimage {
+    const TAG: [u8; 8] = TAG_HOFF;
+
+    fn write_preimage(&self, out: &mut dyn PreimageSink) -> Result<()> {
+        staged(out, |p| {
+            p.write(&Self::TAG)?;
+            p.write(&self.epoch.to_le_bytes())?;
+            p.write(&[self.height])?;
+            p.write(&self.root)
         })
     }
 }
