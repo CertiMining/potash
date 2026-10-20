@@ -1920,3 +1920,45 @@ checkout that predates it: the daily cycle runs from `main`, and the working clo
 
 **Revisit if** the log ever carries a record set that is not public, at which point the key's custody
 starts protecting something and the disclosure below has to be withdrawn in the same commit.
+
+## D-139 · The anchor-B worker never builds an epoch and never holds `k_master`
+
+**Date:** 20 Oct 2026 · **Unit:** H-13 · **Class:** security necessity · **Status:** settled at S0 (owner, 20 Oct 2026)
+
+**Decision (the owner's).** The worker does not build epoch trees and does not read `k_master`. It
+publishes a root the batcher produced, read from a signed handoff, and refuses to run if it cannot read
+a valid one. The handoff carries the epoch, the height and the root, and nothing else from
+`BuiltEpoch`. The batcher signs it; the worker verifies that signature against the batcher's public key
+before publishing and refuses otherwise.
+
+**What the alternative was.** The worker builds the tree itself, which is what the by-hand harness does
+today: `crates/certimining-client/tests/publish_epoch.rs` reads `k_master` and calls `build`. Carried
+into a daemon, that makes a long-running unattended process the holder of the master key.
+
+**Why not that.** RES-03 rests count-hiding entirely on `k_master` custody — whoever holds it can
+distinguish padding from real leaves retrospectively, for every epoch the log has ever published. D-117
+is explicit that the checkpoint authority is *the one key that runs unattended*, and the reason it can
+be is that compromising it buys an attacker the ability to publish a wrong root, which is detectable
+and recoverable. Compromising `k_master` buys the retrospective count of every epoch, which is neither.
+Those are not the same risk and must not share a process.
+
+**Why the handoff carries three fields and not a `BuiltEpoch`.** `BuiltEpoch` carries every slot's leaf
+digest and the assignment proof generation needs. None of that is published: §1.4 publishes a root, and
+the leaf digests stay with the batcher. Handing them to the worker would widen what a compromised
+worker discloses from one root — already public — to the full leaf set of every epoch it has handled.
+The worker is given exactly what publishing needs. The height is included so it can refuse a handoff
+built at a height the log is not configured for, rather than publishing a root it cannot place.
+
+**Why the handoff is signed.** A worker that refuses to invent a root, but reads one from a file, has
+moved the question rather than answered it: anything that can write that file can choose what the log
+publishes. The signature binds the handoff to the batcher's key, so inducing a publication means
+holding that key rather than holding a path. The worker verifying it is the point — a handoff checked
+by whoever wrote it is not checked.
+
+**What this does not establish.** That the root is the one the batcher *should* have produced. The
+worker checks provenance, not correctness: a batcher that signs a wrong root is believed, exactly as a
+qualified person who signs a wrong record is believed (§1.3). Nothing in this architecture closes that,
+and D-139 does not pretend to.
+
+**Revisit if** the batcher and the worker are ever the same process by deliberate decision, at which
+point RES-03's custody assumption has to be restated rather than inherited.
