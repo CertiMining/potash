@@ -332,6 +332,9 @@ pub fn check_record(root: &Path) {
     let mut problems: Vec<String> = malformed;
     // The cadence claims in both documents, against the days the chain says were missed (H-42).
     check_cadence(root, &readme, &anchoring, &mut problems);
+    // The specification pin in ts/README.md, against the specification (H-48). Checked here because
+    // this is the gate that already asks whether the repository's prose matches its files.
+    crate::spec_pin::check_spec_pin(root, &mut problems);
 
     if epoch_rows.is_empty() || receipt_rows.is_empty() {
         // A parser that silently matches nothing reports a clean record for a document it never read,
@@ -546,8 +549,9 @@ pub fn check_record(root: &Path) {
     if problems.is_empty() {
         println!(
             "record: {} committed receipts, {} epoch rows ({dual} dual), every digest recomputed from \
-             the committed bytes; the README's count matches the table, and both documents' cadence \
-             claims match the publication timestamps",
+             the committed bytes; the README's count matches the table, both documents' cadence \
+             claims match the publication timestamps, and ts/README.md's specification pin matches \
+             the specification",
             committed.len(),
             epoch_rows.len()
         );
