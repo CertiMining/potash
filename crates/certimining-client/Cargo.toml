@@ -25,7 +25,15 @@ cluster = [
     "dep:solana-message",
     "dep:solana-transaction",
     "dep:solana-signer",
+    "dep:solana-keypair",
 ]
+
+[[bin]]
+# The anchor-B worker (H-13, D-139). Behind the same features as the module it drives, so the default
+# build and every test above it stay free of a network and of a key.
+name = "anchor-b-worker"
+path = "src/bin/anchor-b-worker.rs"
+required-features = ["cluster", "ots"]
 
 [dependencies]
 # The engine: digests, the tree and the promise types (D-84).
@@ -48,6 +56,10 @@ solana-instruction = { version = "=3.4.1", optional = true }
 solana-message = { version = "=4.4.1", optional = true }
 solana-transaction = { version = "=4.1.6", optional = true }
 solana-signer = { version = "=3.0.1", optional = true }
+# The worker holds the checkpoint authority and a payer, so it needs the concrete signer rather than
+# the trait. Already in the graph as a test dependency; the `cluster` feature promotes it, the way it
+# promotes the transaction crates above.
+solana-keypair = { version = "=3.1.2", optional = true }
 
 # Anchor B's receipts (D-115). This crate parses and verifies a receipt and cannot create one; the
 # reference client creates, and this checks what it produced before anything hashes it.
