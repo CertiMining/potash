@@ -399,6 +399,39 @@ its own previous numbers and does not fail on it, so its output has to be read a
 `docs/performance.md` says
 which mechanism covers each of §4.4a's rows, and `scripts/ci.sh fuzz` is the third thing CI does not
 run on a push, for a different reason: it has its own nightly workflow.
+## The OpenTimestamps client is pinned by its sources
+
+`ReferenceClient::check_version` asks `ots --version` and compares the bytes it prints. That check took
+four attempts, each looser than it looked, and the accepted one is still the same shape: **a client
+that prints the right bytes is not thereby the pinned client.** A wrapper can print them and then run
+something else.
+
+So `OTS-CLIENT.sha256` pins the client's own Python sources — every `.py` under `opentimestamps/` and
+`otsclient/` in the virtualenv, by SHA-256 — and `check_fingerprint` compares against it. The worker
+calls both at start.
+
+Three things are checked, and the third is the one a manifest alone would miss:
+
+1. Every path in the manifest hashes to its recorded digest.
+2. The `ots` entry point still imports `otsclient.ots`'s `main`, and its interpreter is inside the
+   virtualenv. Its bytes are **not** hashed: the shebang carries an absolute path and differs on every
+   machine, so it is checked for what it does instead.
+3. No `.py` file exists under those packages that the manifest does not list. Checked only forwards, a
+   manifest is satisfied by an install with an extra importable module in it.
+
+The file is `shasum -c` compatible, so it can be checked by hand from the virtualenv's
+`site-packages`, and regenerated the same way when the client is deliberately upgraded:
+
+```sh
+cd ~/.local/share/potash/ots-venv/lib/python3.*/site-packages
+find opentimestamps otsclient -name '*.py' -type f | sort \
+  | xargs shasum -a 256 > /path/to/potash/OTS-CLIENT.sha256
+```
+
+Regenerating it is a deliberate act with the same standing as re-measuring a committed figure: it
+says the client changed and that the change was intended. A regeneration in a commit that does not say
+which version it moved to is the same defect as a baseline nobody measured.
+
 ## Anchoring the repository head
 
 §3's E-16 requires the submitted commit to be timestamped on Bitcoin with its receipt committed.

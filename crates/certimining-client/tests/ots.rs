@@ -454,3 +454,181 @@ mod the_pinned_client {
         assert!(c.check_version().is_err(), "a missing client is not a pass");
     }
 }
+
+/// **The client is pinned by what its sources are, not by what it says it is** (H-17, issue #53).
+///
+/// The version check asks the tool to report on itself, and four versions of that check were wrong.
+/// The accepted byte-exact comparison is the same shape: a client printing `v0.7.2\n` is not thereby
+/// the pinned client, and a wrapper printing the right bytes and shelling out elsewhere passes it.
+///
+/// These build a virtualenv rather than needing the real one, so every refusal can be stated.
+#[cfg(feature = "ots")]
+mod pinned_by_hash {
+    use certimining_client::ReferenceClient;
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::path::{Path, PathBuf};
+
+    const SHIM: &str = "from otsclient.ots import main";
+
+    /// A virtualenv with the two packages, one source file each, and a working entry point.
+    fn venv(tag: &str) -> (PathBuf, ReferenceClient) {
+        let root = std::env::temp_dir().join(format!("cm-h17-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let site = root.join("lib/python3.9/site-packages");
+        for package in ["opentimestamps", "otsclient"] {
+            std::fs::create_dir_all(site.join(package)).expect("the package directory");
+            std::fs::write(
+                site.join(package).join("__init__.py"),
+                format!("# {package}\n"),
+            )
+            .expect("a source file");
+        }
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).expect("the bin directory");
+        let ots = bin.join("ots");
+        let mut f = std::fs::File::create(&ots).expect("the entry point");
+        writeln!(f, "#!{}/bin/python3", root.display()).expect("the shebang");
+        writeln!(f, "{SHIM}").expect("the import");
+        drop(f);
+        std::fs::set_permissions(&ots, std::fs::Permissions::from_mode(0o755)).expect("executable");
+        let client = ReferenceClient {
+            executable: ots,
+            receipts: root.join("receipts"),
+        };
+        (root, client)
+    }
+
+    /// The manifest this install actually produces, so a test states a change rather than a digest.
+    fn manifest_of(root: &Path) -> String {
+        use bitcoin_hashes::{sha256, Hash};
+        let site = root.join("lib/python3.9/site-packages");
+        let mut lines: Vec<String> = Vec::new();
+        for package in ["opentimestamps", "otsclient"] {
+            for entry in std::fs::read_dir(site.join(package)).expect("the package") {
+                let path = entry.expect("an entry").path();
+                if path.extension().is_some_and(|e| e == "py") {
+                    let bytes = std::fs::read(&path).expect("a source file");
+                    let relative = path.strip_prefix(&site).expect("inside site-packages");
+                    lines.push(format!(
+                        "{}  {}",
+                        sha256::Hash::hash(&bytes),
+                        relative.display()
+                    ));
+                }
+            }
+        }
+        lines.sort();
+        lines.join("\n")
+    }
+
+    #[test]
+    fn an_untouched_install_matches_its_manifest() {
+        let (root, client) = venv("clean");
+        let manifest = manifest_of(&root);
+        assert_eq!(client.fingerprint_against(&manifest), Ok(2));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_changed_source_file_is_refused() {
+        let (root, client) = venv("changed");
+        let manifest = manifest_of(&root);
+        let at = root.join("lib/python3.9/site-packages/otsclient/__init__.py");
+        std::fs::write(&at, "# something else\n").expect("rewriting the source");
+        let problem = client
+            .fingerprint_against(&manifest)
+            .expect_err("a changed source must be refused");
+        assert!(problem.contains("otsclient/__init__.py"), "{problem}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **The direction a manifest alone misses.** Checked only forwards, an install with an extra
+    /// importable module in it satisfies every line and is still not the pinned client.
+    #[test]
+    fn a_file_that_is_present_and_not_pinned_is_refused() {
+        let (root, client) = venv("extra");
+        let manifest = manifest_of(&root);
+        std::fs::write(
+            root.join("lib/python3.9/site-packages/otsclient/extra.py"),
+            "# added after the manifest was written\n",
+        )
+        .expect("the extra module");
+        let problem = client
+            .fingerprint_against(&manifest)
+            .expect_err("an unpinned file must be refused");
+        assert!(
+            problem.contains("otsclient/extra.py") && problem.contains("not pinned"),
+            "{problem}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The wrapper attack the version check cannot see: right bytes on stdout, different program.
+    #[test]
+    fn an_entry_point_that_does_not_run_the_pinned_sources_is_refused() {
+        let (root, client) = venv("wrapper");
+        let manifest = manifest_of(&root);
+        std::fs::write(
+            &client.executable,
+            format!("#!{}/bin/python3\nprint('v0.7.2')\n", root.display()),
+        )
+        .expect("the wrapper");
+        let problem = client
+            .fingerprint_against(&manifest)
+            .expect_err("a wrapper must be refused");
+        assert!(
+            problem.contains("does not import otsclient.ots"),
+            "{problem}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_entry_point_running_an_interpreter_outside_the_virtualenv_is_refused() {
+        let (root, client) = venv("interpreter");
+        let manifest = manifest_of(&root);
+        std::fs::write(&client.executable, format!("#!/usr/bin/python3\n{SHIM}\n"))
+            .expect("the foreign interpreter");
+        let problem = client
+            .fingerprint_against(&manifest)
+            .expect_err("an interpreter outside the venv must be refused");
+        assert!(problem.contains("not inside"), "{problem}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An empty manifest would otherwise pass on any install at all.
+    #[test]
+    fn an_empty_manifest_is_refused_rather_than_satisfied() {
+        let (root, client) = venv("empty");
+        assert!(client.fingerprint_against("").is_err());
+        assert!(client.fingerprint_against("\n  \n").is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// The committed manifest against the client actually installed on this machine (H-17).
+///
+/// `#[ignore]`d because CI has no virtualenv at that path, and a test that quietly passes when its
+/// subject is absent reports what its acceptance predicate rewards. Run it when the client is
+/// upgraded, alongside regenerating `OTS-CLIENT.sha256`:
+///
+/// ```text
+/// cargo test -p certimining-client --features ots --test ots -- --ignored the_installed_client
+/// ```
+#[cfg(feature = "ots")]
+#[test]
+#[ignore = "needs the pinned OpenTimestamps client installed"]
+fn the_installed_client_matches_the_committed_manifest() {
+    let home = std::env::var("HOME").expect("HOME");
+    let client = certimining_client::ReferenceClient {
+        executable: std::path::PathBuf::from(format!(
+            "{home}/.local/share/potash/ots-venv/bin/ots"
+        )),
+        receipts: std::env::temp_dir(),
+    };
+    match client.check_fingerprint() {
+        Ok(n) => assert_eq!(n, 37, "OTS-CLIENT.sha256 pins 37 sources"),
+        Err(e) => panic!("the installed client does not match OTS-CLIENT.sha256:\n{e}"),
+    }
+}
