@@ -150,7 +150,9 @@ impl ReferenceClient {
         self.receipts.join(format!("{epoch}.root"))
     }
 
-    fn receipt_path(&self, epoch: u64) -> std::path::PathBuf {
+    /// Where this epoch's receipt lives. Public because the worker asks whether one exists yet
+    /// (H-13): an epoch with a receipt that the chain still calls single is one waiting to attach.
+    pub fn receipt_path(&self, epoch: u64) -> std::path::PathBuf {
         self.receipts.join(format!("{epoch}.root.ots"))
     }
 
