@@ -10,9 +10,14 @@ on:
 permissions:
   contents: read
 
+# A new push to a branch makes the previous run irrelevant, so cancelling it saves runner minutes.
+# `main` is the exception: every merge shares the ref `refs/heads/main`, so cancelling there kills the
+# run for the commit before it and leaves that commit a cancelled X forever (H-50, #171). Three
+# consecutive commits on main read `cancelled` on 13 October, and the only full-pipeline run `3134579`
+# would ever have had was one of them.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   kat01-offchain:
