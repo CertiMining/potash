@@ -277,7 +277,22 @@ Neither height is checked against Bitcoin by anything in this repository, which 
 20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing published on day
 20729 either; on day 20730 both 20729 and 20730 were published and stamped. The same on day 20732, paid
 on 20733; on day 20734, paid on 20735; and on day 20737, paid on 20738, where 20737 and 20738 were
-published two seconds apart. So `last_epoch` is the current UTC day index again.
+published two seconds apart.
+
+**The log has been paused since epoch 20738, and this records it rather than leaving a gap to be
+noticed.** Nothing has been published since 12 October 2026. That was not a decision at the time: the
+by-hand cycle did not run, and the fact went unseen for a week because nothing watches for it.
+`cargo xtask check-record` derives missed days from the gaps *between* recorded publications, so a gap
+with nothing after it is invisible to it — the blind spot is stated here rather than left for a reader
+to find.
+
+**Resuming is not a matter of publishing today.** `publish_checkpoint` accepts only `last_epoch + 1`,
+so the range is contiguous by construction (INV-ANCH-02, D-106) and the log cannot skip forward: every
+epoch from 20739 to the day of resumption would have to be published first. Writing a week or more of
+day-indexed epochs after the fact would make the log assert a history it did not have, which is the
+opposite of what it is for. The owner ruled on 20 October 2026 that the pause is recorded instead, and
+that resuming is a decision to be taken on its own terms. No distance from `last_epoch` to today is
+written here, for the reason the next paragraph gives.
 
 Each of those is read off the chain rather than remembered: `published_unix` divided by 86,400 is the
 day a publication actually landed on, and an epoch whose quotient exceeds its own number was paid late.
