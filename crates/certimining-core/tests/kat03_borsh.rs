@@ -17,8 +17,12 @@ use certimining_core::{
 };
 
 const C: Digest = [0x11; 32];
-const PAYLOAD: Digest = [0x22; 32];
-const ASSESSMENT: Digest = [0x33; 32];
+// These two mirror the vector generator's own placeholders, because `committed_fixtures` below
+// compares what this file writes against what the generator committed. They moved in H-45 (#137):
+// `[0x33; 32]` was also a value a superseded deployment holds, so every artifact carrying it needed
+// a live-value exemption. The bytes now spell what they are.
+const PAYLOAD: Digest = *b"certimining vector payload 00001";
+const ASSESSMENT: Digest = *b"certimining vector memo    00001";
 const QP: [u8; 32] = [0x44; 32];
 const LEAF: Digest = [0x55; 32];
 const PREV: Digest = [0x66; 32];
@@ -313,8 +317,8 @@ mod committed_fixtures {
         let leaf = LeafPreimage {
             asset_commitment: commitment,
             seq: 7,
-            payload_digest: [0x22; 32],
-            assessment_digest: [0x33; 32],
+            payload_digest: PAYLOAD,
+            assessment_digest: ASSESSMENT,
             qp_key: RFC8032_PUBLIC_KEY,
             category: 2,
             effective_at: 1_700_000_000,

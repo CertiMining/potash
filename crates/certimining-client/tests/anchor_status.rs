@@ -184,7 +184,7 @@ fn pending_then_single_then_dual() {
         "nothing is published yet"
     );
 
-    log.publish(START, [0xab; 32]);
+    log.publish(START, *b"certimining fixture root   00001");
     assert_eq!(
         log.status(START),
         AnchorStatus::Single,
@@ -204,7 +204,7 @@ fn an_epoch_whose_worker_never_ran_stays_single_however_long_it_waits() {
     // The failure issue #10 calls silent degradation: an epoch that will never receive a receipt
     // must not drift to dual because time passed or because a worker believes it submitted one.
     let mut log = Log::new();
-    log.publish(START, [0xab; 32]);
+    log.publish(START, *b"certimining fixture root   00001");
     log.publish(START + 1, [0xcd; 32]);
     log.attach(START + 1, [0x44; 32]);
 
@@ -222,7 +222,7 @@ fn status_reads_the_account_and_not_the_workers_opinion() {
     // `status` takes no worker handle and cannot be told what to believe: it decodes the checkpoint
     // account. An epoch with a zero receipt digest is single whatever any other process thinks.
     let mut log = Log::new();
-    log.publish(START, [0xab; 32]);
+    log.publish(START, *b"certimining fixture root   00001");
     let fetched = root_for_epoch(&log.runtime, &certimining_checkpoint::ID, START)
         .expect("the runtime answered");
     match fetched {

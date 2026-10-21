@@ -5,8 +5,8 @@
     "error": null,
     "flag_bit_0": "RESERVE_WITHOUT_PRIOR_RESOURCE",
     "flags": "1",
-    "head": "0x5944e47a008308e5d1f0a2acbe320b06b462b35d7265a6f6f9b0e0996af7ad68",
-    "leaf": "0xfc507647bbc426a9b08375afd6ae5646daced91cb7fa73bf39300c044e096adb",
+    "head": "0x3dc0df08cc95d977c067de15b1877160c93a372ec852f4ef80451ef6957908e8",
+    "leaf": "0xdd594164b22c93da769f950bbff490a61cb2110d3ed882f460d1f17a9f69a4e4",
     "source": "TCU-02 §4.3 and INV-STATE-06, checked against the engine at generation time"
   },
   "id": "V-N-07",
@@ -16,18 +16,18 @@
       "seq": "0"
     },
     "record": {
-      "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "assessment_digest": "0x63657274696d696e696e6720766563746f72206d656d6f202020203030303031",
       "category": "4",
       "change_identified_at": "1699999900",
       "effective_at": "1700000000",
       "expected_qp_key": null,
       "ext_commitment": null,
-      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_digest": "0x63657274696d696e696e6720766563746f72207061796c6f6164203030303031",
       "payload_uri": "ipfs://bafyexamplepayload",
       "prev_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
       "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "seq": "1",
-      "signature": "0x816897f5d73a10b30439a1c67894ba19a31fbac5160a551663a2c18680030091285b4718bf0b29bd95d4ea5107ac3a79f83d9ea9c820d138a94ceaba27746504"
+      "signature": "0x4a351db215ccb5bdcabcc515b0e84f8b9adba4fe73e86f2fb1cc289cc0fbb7942e7f6ef2b949c93cc49bc81d6d604fd402f9213ff5807d69b841b9e929b8e002"
     }
   },
   "notes": [

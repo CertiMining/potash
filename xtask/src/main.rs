@@ -61,8 +61,28 @@ const TEST_KEY_NOTE: &str =
 const J: &[u8; 4] = b"CABC";
 const R: &[u8; 8] = b"MTO00001";
 const TENURE_RAW: &str = "bc-tenure 1043-a";
-const PAYLOAD_DIGEST: Digest = [0x22; 32];
-const ASSESSMENT_DIGEST: Digest = [0x33; 32];
+/// The vector generator's placeholder digests (H-45, issue #137).
+///
+/// **They spell what they are, and that is the point.** They were `[0x22; 32]` and `[0x33; 32]`.
+/// `[0x33; 32]` is a value a throwaway devnet program holds, published *from* this repository on
+/// 24 September — the direction of travel is repository to chain, the opposite of the one the
+/// live-value rule guards. The rule is unqualified, so it fired anyway, and every record vector
+/// needed an exemption line: 24 of the 54 exemptions existed for two constants of this kind.
+///
+/// Changing the values removes the exemptions instead of narrowing the rule, which keeps the gate
+/// free of judgement. Bytes that spell their own purpose cannot be mistaken for a real value by a
+/// later reader, which is the reasoning D-138 applied to a key.
+///
+/// `check_placeholders_are_not_live` fails if either is ever listed, so a repeat of this is a red
+/// build rather than a growing exemption list.
+const PAYLOAD_DIGEST: Digest = *b"certimining vector payload 00001";
+const ASSESSMENT_DIGEST: Digest = *b"certimining vector memo    00001";
+/// The head a refusal vector commits against so the chain rejects it (H-45).
+///
+/// It was `[0xAB; 32]`, a value the superseded 24 September deployment holds because a harness in
+/// this repository published it. Named rather than written three times, so the next change to it is
+/// one line and `check_placeholders_are_not_live` can be handed the constant itself.
+const WRONG_PREV_HEAD: Digest = *b"certimining vector wrong head 01";
 const PAYLOAD_URI: &str = "ipfs://bafyexamplepayload";
 const FIRST_EFFECTIVE_AT: i64 = 1_700_000_000;
 
@@ -86,6 +106,18 @@ fn main() {
         // The synthetic surface, scanned in the working tree rather than only at generation. A page
         // constant is not something a generator sees.
         Some("check-live-values") => {
+            // The placeholders first: a value that is both a generator constant and a live value
+            // makes every artifact using it need an exemption, which is H-45 (#137). The constants
+            // are handed over by name, so a rename cannot drop one out of the check's view.
+            live_values::check_placeholders_are_not_live(
+                &repo_root(),
+                &[
+                    ("PAYLOAD_DIGEST", PAYLOAD_DIGEST),
+                    ("ASSESSMENT_DIGEST", ASSESSMENT_DIGEST),
+                    ("the fixture root", *b"certimining fixture root   00001"),
+                    ("WRONG_PREV_HEAD", WRONG_PREV_HEAD),
+                ],
+            );
             live_values::check_synthetic_surface(&repo_root());
         }
         // The deployment record against the files it describes (H-36). Separate from the live-values
@@ -850,7 +882,7 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
         refusal(
             "V-N-01",
             "wrong prev_head",
-            &|r| r.prev_head = [0xAB; 32],
+            &|r| r.prev_head = WRONG_PREV_HEAD,
             None,
             0x03,
             "HeadMismatch",
@@ -920,7 +952,7 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
             "V-N-23",
             "wrong head and a broken URI",
             &|r| {
-                r.prev_head = [0xAB; 32];
+                r.prev_head = WRONG_PREV_HEAD;
                 r.payload_uri = uri("ftp://example.com/payload");
             },
             None,
@@ -936,7 +968,7 @@ fn negatives(files: &mut BTreeMap<String, Value>) {
             "V-N-24",
             "an extension and a wrong head",
             &|r| {
-                r.prev_head = [0xAB; 32];
+                r.prev_head = WRONG_PREV_HEAD;
                 r.ext_commitment = Some([0x99; 32]);
             },
             None,

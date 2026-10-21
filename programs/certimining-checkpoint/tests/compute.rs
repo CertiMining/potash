@@ -129,7 +129,7 @@ fn both_instructions_stay_inside_the_limits_1_8_gives() {
         ),
         data: certimining_checkpoint::instruction::PublishCheckpoint {
             epoch: START,
-            root: [0xab; 32],
+            root: *b"certimining fixture root   00001",
         }
         .data(),
     };

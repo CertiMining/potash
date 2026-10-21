@@ -1,8 +1,8 @@
 {
   "description": "A §2.5 disclosure package as the generator emits it: the container itself, so both implementations agree about its shape and not only about the digests inside it.",
   "expected": {
-    "leaf": "0xa241b01adec22d718a6e1c6f792bfe5d128838f2d1d405065e9cb550d263798e",
-    "leaf_preimage": "0x434d76314c454146b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd010000000000000022222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0200f15365000000009cf0536500000000",
+    "leaf": "0x35e5da5695934e15424e9432cbb788420675af3c4d7c6604c2badafea3e4e2a1",
+    "leaf_preimage": "0x434d76314c454146b98ec7078b78f238301c0fbe1089665cf5fc7e44434352a5c93791e2d15ab5dd010000000000000063657274696d696e696e6720766563746f72207061796c6f616420303030303163657274696d696e696e6720766563746f72206d656d6f202020203030303031d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0200f15365000000009cf0536500000000",
     "package": {
       "anchor": {
         "ots_receipt_digest": "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -11,7 +11,7 @@
       },
       "chain": {
         "genesis": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
-        "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+        "head": "0x24c0d05d557b622df91fb4b28a6aabfc760cdd4aa48a88f57a3aa781e2f6ab07",
         "prev_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c"
       },
       "inclusion": {
@@ -29,22 +29,22 @@
         ],
         "slot_index": 26
       },
-      "preimage_borsh": "Q012MUxFQUa5jscHi3jyODAcD74QiWZc9fx+RENDUqXJN5Hi0Vq13QEAAAAAAAAAIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaAgDxU2UAAAAAnPBTZQAAAAA=",
-      "qp_signature": "0xd6fb79cf32677e366f81805ae75d95d12d3fb3d3453b16bc50c81976ad6cc4ead67c9fe2cdb2bfa27f0ada9c36c5174381189a491d8e699071037f915e2e040e",
+      "preimage_borsh": "Q012MUxFQUa5jscHi3jyODAcD74QiWZc9fx+RENDUqXJN5Hi0Vq13QEAAAAAAAAAY2VydGltaW5pbmcgdmVjdG9yIHBheWxvYWQgMDAwMDFjZXJ0aW1pbmluZyB2ZWN0b3IgbWVtbyAgICAwMDAwMddamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaAgDxU2UAAAAAnPBTZQAAAAA=",
+      "qp_signature": "0x0602779be28381dd5ef588680a799fe35cdf23f6dd08002a8d4573b96473f81fa3aacd118035a37a70d371d0adb1e2e23e4b76939b8850a9ef508b73a4659c05",
       "record": {
-        "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "assessment_digest": "0x63657274696d696e696e6720766563746f72206d656d6f202020203030303031",
         "category": 2,
         "change_identified_at": "1699999900",
         "effective_at": "1700000000",
         "flags": 0,
-        "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "payload_digest": "0x63657274696d696e696e6720766563746f72207061796c6f6164203030303031",
         "payload_uri": "ipfs://bafyexamplepayload",
         "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
         "seq": "1"
       },
       "schema": "certimining/v1/disclosure"
     },
-    "root": "0xdf53385e23544e0891aa1e2b3ac0b81b2c33882a87e7e39ade75524de5813dbd"
+    "root": "0x524caa362b886fb27a06a48efc3deab23c3b8dbb431269355fc2270c368181b0"
   },
   "id": "V-P-13",
   "inputs": {
@@ -59,23 +59,23 @@
         "submission_id": "0xa00f0000000000000000000000000000"
       },
       {
-        "leaf": "0xa241b01adec22d718a6e1c6f792bfe5d128838f2d1d405065e9cb550d263798e",
+        "leaf": "0x35e5da5695934e15424e9432cbb788420675af3c4d7c6604c2badafea3e4e2a1",
         "submission_id": "0x04100000000000000000000000000000"
       }
     ],
     "record": {
-      "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "assessment_digest": "0x63657274696d696e696e6720766563746f72206d656d6f202020203030303031",
       "category": "2",
       "change_identified_at": "1699999900",
       "effective_at": "1700000000",
       "expected_qp_key": null,
       "ext_commitment": null,
-      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_digest": "0x63657274696d696e696e6720766563746f72207061796c6f6164203030303031",
       "payload_uri": "ipfs://bafyexamplepayload",
       "prev_head": "0xf80403f2aef86bad9181fed9d0c92c314ea0199950caa000351c4fb6192b511c",
       "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "seq": "1",
-      "signature": "0xd6fb79cf32677e366f81805ae75d95d12d3fb3d3453b16bc50c81976ad6cc4ead67c9fe2cdb2bfa27f0ada9c36c5174381189a491d8e699071037f915e2e040e"
+      "signature": "0x0602779be28381dd5ef588680a799fe35cdf23f6dd08002a8d4573b96473f81fa3aacd118035a37a70d371d0adb1e2e23e4b76939b8850a9ef508b73a4659c05"
     }
   },
   "notes": [

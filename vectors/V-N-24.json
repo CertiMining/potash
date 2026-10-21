@@ -8,23 +8,23 @@
   "id": "V-N-24",
   "inputs": {
     "chain": {
-      "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+      "head": "0x24c0d05d557b622df91fb4b28a6aabfc760cdd4aa48a88f57a3aa781e2f6ab07",
       "last_effective_at": "1700000000",
       "seq": "1"
     },
     "record": {
-      "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "assessment_digest": "0x63657274696d696e696e6720766563746f72206d656d6f202020203030303031",
       "category": "2",
       "change_identified_at": "1699999910",
       "effective_at": "1700000010",
       "expected_qp_key": null,
       "ext_commitment": "0x9999999999999999999999999999999999999999999999999999999999999999",
-      "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "payload_digest": "0x63657274696d696e696e6720766563746f72207061796c6f6164203030303031",
       "payload_uri": "ipfs://bafyexamplepayload",
-      "prev_head": "0xabababababababababababababababababababababababababababababababab",
+      "prev_head": "0x63657274696d696e696e6720766563746f722077726f6e672068656164203031",
       "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
       "seq": "2",
-      "signature": "0x99a501ba44bb95bd74969b060b9a492542752fdbec558832c3a2d5089824b350940a4e09da7319dce8066f13e2fa35d5ce536e40d13f5942b128c5d3e084c801"
+      "signature": "0x4ec9a42277af7c85f9ca196ff0f060092c3a168e643c7d059dda8c0a63b708cf90432076de91f396b7f7c89d37998b00505626c9769b0d45722dbc53e75a320d"
     }
   },
   "notes": [
