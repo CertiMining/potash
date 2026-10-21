@@ -9,7 +9,7 @@ use anchor_lang::{AnchorSerialize, Discriminator};
 use certimining_checkpoint::{CheckpointAccount, LogConfig};
 use certimining_client::{
     checkpoint_address, config_address, decode_checkpoint, root_for_epoch, sequence_lag, Fetched,
-    Refused, RootSource, Unreachable,
+    Observation, Refused, RootSource, Unreachable,
 };
 use std::collections::HashMap;
 
@@ -19,11 +19,18 @@ const PROGRAM: Pubkey = certimining_checkpoint::ID;
 #[derive(Default)]
 struct Cluster {
     accounts: HashMap<Pubkey, (Pubkey, Vec<u8>)>,
+    /// The slot a given address is answered at, where a test needs the reads to disagree (H-07).
+    slots: HashMap<Pubkey, u64>,
+    /// The slot every other address is answered at. `None` is a source with no notion of one.
+    default_slot: Option<u64>,
 }
 
 impl RootSource for Cluster {
-    fn account(&self, address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable> {
-        Ok(self.accounts.get(address).cloned())
+    fn account_at(&self, address: &Pubkey) -> Result<Observation, Unreachable> {
+        Ok(Observation {
+            slot: self.slots.get(address).copied().or(self.default_slot),
+            account: self.accounts.get(address).cloned(),
+        })
     }
 }
 
@@ -31,7 +38,7 @@ impl RootSource for Cluster {
 struct Offline;
 
 impl RootSource for Offline {
-    fn account(&self, _address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable> {
+    fn account_at(&self, _address: &Pubkey) -> Result<Observation, Unreachable> {
         Err(Unreachable("the endpoint refused the connection".into()))
     }
 }
@@ -444,6 +451,101 @@ mod config_decoder {
         assert_eq!(
             decode_config(&PROGRAM, &PROGRAM, &other).err(),
             Some(Refused::UnsupportedSchema)
+        );
+    }
+}
+
+/// **H-07's read boundary**, and the test the reviewer specified for it (issue #39).
+///
+/// `sequence_lag` reads the configuration and then each checkpoint through separate calls. Several
+/// reads that each succeeded are not one view: a stale replica, a load-balanced backend or a
+/// different confirmed fork can answer one request from before another. Until this, nothing tied
+/// them together, so an account answered from before the configuration's own view was indistinguishable
+/// from an account that is not there.
+mod one_view_of_the_chain {
+    use super::*;
+
+    /// The specified case: the configuration observed at slot S, a checkpoint answered from before S.
+    #[test]
+    fn a_checkpoint_answered_from_before_the_configurations_view_is_a_view_problem() {
+        let mut cluster = Cluster {
+            default_slot: Some(500),
+            ..Default::default()
+        };
+        cluster.configure(100, 102);
+        cluster.publish(100, [1u8; 32]);
+        cluster.publish(101, [2u8; 32]);
+        cluster.publish(102, [3u8; 32]);
+        // This one comes back from a replica that is behind the one the configuration came from.
+        cluster.slots.insert(checkpoint_address(&PROGRAM, 101), 499);
+
+        let refused = sequence_lag(&cluster, &PROGRAM, 100, 102);
+        assert!(
+            refused.is_err(),
+            "an account from an earlier view is not evidence about the log"
+        );
+        let message = format!("{:?}", refused.expect_err("checked just above"));
+        assert!(
+            message.contains("not one view") && message.contains("499") && message.contains("500"),
+            "the error names both slots and the reads rather than the log: {message}"
+        );
+    }
+
+    /// The control. Without it the test above would pass on a client that refused everything.
+    #[test]
+    fn the_same_reads_at_or_after_the_configurations_view_are_answered_normally() {
+        for at in [500u64, 501] {
+            let mut cluster = Cluster {
+                default_slot: Some(500),
+                ..Default::default()
+            };
+            cluster.configure(100, 102);
+            cluster.publish(100, [1u8; 32]);
+            cluster.publish(101, [2u8; 32]);
+            cluster.publish(102, [3u8; 32]);
+            cluster.slots.insert(checkpoint_address(&PROGRAM, 101), at);
+
+            let lag = sequence_lag(&cluster, &PROGRAM, 100, 102)
+                .expect("reads at or after the configuration's view are one view");
+            assert!(lag.is_empty(), "every epoch resolved at slot {at}");
+        }
+    }
+
+    /// A source with no notion of a slot is not thereby inconsistent, and must not be refused.
+    ///
+    /// Every other test in this file uses one, so this is also the statement that they still mean
+    /// what they meant.
+    #[test]
+    fn a_source_that_cannot_say_which_slot_it_answered_at_is_not_refused() {
+        let mut cluster = Cluster::default();
+        assert_eq!(
+            cluster.default_slot, None,
+            "the default source has no slots"
+        );
+        cluster.configure(100, 101);
+        cluster.publish(100, [1u8; 32]);
+        cluster.publish(101, [2u8; 32]);
+        let lag =
+            sequence_lag(&cluster, &PROGRAM, 100, 101).expect("no slots is not a disagreement");
+        assert!(lag.is_empty());
+    }
+
+    /// Only one side knowing its slot is not a disagreement either: there is nothing to compare.
+    #[test]
+    fn one_side_without_a_slot_is_not_a_disagreement() {
+        let mut cluster = Cluster {
+            default_slot: Some(500),
+            ..Default::default()
+        };
+        cluster.configure(100, 101);
+        cluster.publish(100, [1u8; 32]);
+        cluster.publish(101, [2u8; 32]);
+        // The configuration answers with no slot; the checkpoints answer with one.
+        cluster.slots.remove(&config_address(&PROGRAM));
+        let lag = sequence_lag(&cluster, &PROGRAM, 100, 101);
+        assert!(
+            lag.is_ok(),
+            "a comparison needs both sides; one of them missing is not evidence"
         );
     }
 }

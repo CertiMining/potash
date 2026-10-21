@@ -35,17 +35,22 @@ struct Runtime {
 }
 
 impl RootSource for Runtime {
-    fn account(
+    fn account_at(
         &self,
         address: &anchor_lang::prelude::Pubkey,
-    ) -> Result<Option<(anchor_lang::prelude::Pubkey, Vec<u8>)>, Unreachable> {
+    ) -> Result<certimining_client::Observation, Unreachable> {
         let key = solana_pubkey::Pubkey::from(address.to_bytes());
-        Ok(self.svm.get_account(&key).map(|a| {
-            (
-                anchor_lang::prelude::Pubkey::from(a.owner.to_bytes()),
-                a.data,
-            )
-        }))
+        // litesvm answers every read from one state, so every read here is one view by construction.
+        let observation = certimining_client::Observation {
+            slot: None,
+            account: self.svm.get_account(&key).map(|a| {
+                (
+                    anchor_lang::prelude::Pubkey::from(a.owner.to_bytes()),
+                    a.data,
+                )
+            }),
+        };
+        Ok(observation)
     }
 }
 

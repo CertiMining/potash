@@ -40,7 +40,7 @@ pub use anchor::{status_of, AnchorRef, AnchorStatus};
 pub use cluster::PublishFailed;
 pub use fetch::{
     checkpoint_address, config_address, decode_checkpoint, decode_config, root_for_epoch,
-    sequence_lag, Fetched, Lag, PublishedCheckpoint, Refused, RootSource, Unreachable,
+    sequence_lag, Fetched, Lag, Observation, PublishedCheckpoint, Refused, RootSource, Unreachable,
 };
 pub use handoff::{Handoff, HandoffRefused, HANDOFF_LEN};
 pub use ots::{receipt_digest, refuse_a_readable_key, AnchorB, PendingReceipt, ReceiptRefused};
