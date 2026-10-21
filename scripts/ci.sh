@@ -157,6 +157,10 @@ vectors() {
   # H-36: the deployment record against the files it describes. Offline, like everything in
   # this group; what compares against the chain is scripts/live-values-from-chain.py.
   cargo xtask check-record || return 1
+  # Documents that cite an invariant, against the specification's text for it (H-46, #143). Here
+  # rather than beside claim-check, because this reads the same documents check-record does and asks
+  # a question of the same shape: does the repository still agree with itself.
+  cargo xtask check-citations || return 1
 }
 
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).
