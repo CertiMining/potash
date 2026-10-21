@@ -70,7 +70,10 @@ jobs:
       - run: scripts/ci.sh install-rust
       - run: scripts/ci.sh checks
 
-  miri:
+  # Two jobs, one per crate. Miri interprets, so this was the slowest thing in the pipeline by a wide
+  # margin — 40 to 55 minutes against under five for everything else — and the two crates are separate
+  # `cargo` invocations that share nothing. Splitting them halves the wait and changes no coverage.
+  miri-core:
     needs: [kat01-offchain, kat01-onchain]
     runs-on: ubuntu-24.04
     steps:
@@ -79,7 +82,18 @@ jobs:
           persist-credentials: false
       - run: scripts/ci.sh install-rust
       - run: scripts/ci.sh install-miri
-      - run: scripts/ci.sh miri
+      - run: scripts/ci.sh miri-core
+
+  miri-log:
+    needs: [kat01-offchain, kat01-onchain]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci.sh install-rust
+      - run: scripts/ci.sh install-miri
+      - run: scripts/ci.sh miri-log
 
   deny:
     needs: [kat01-offchain, kat01-onchain]

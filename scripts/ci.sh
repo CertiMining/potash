@@ -272,6 +272,33 @@ miri() {
   group_result miri
 }
 
+# The same two crates as separate groups, so CI can run them on two runners at once.
+#
+# **Why they were split.** Miri interprets, so the group is the slowest thing in the pipeline by a
+# wide margin: 40 to 55 minutes against under five for everything else, which made every pull request
+# wait about fifty minutes on one job. The two crates are separate `cargo` invocations that share
+# nothing, and running them sequentially bought nothing.
+#
+# `miri` above still runs both, because `scripts/ci.sh all` on a laptop is one machine and the point
+# of `all` is that it mirrors the pipeline rather than the runner count.
+#
+# This halves the wait and changes no coverage. What it does not fix is the shape of the cost:
+# `tests/tree.rs` alone is about 2,000 seconds of it, because an `H = 8` tree is roughly 511 Keccak
+# invocations per build and Miri interprets each in about a tenth of a second.
+miri_core() {
+  cargo "+$MIRI_TOOLCHAIN" miri --version || return 1
+  GROUP_FAILED=""
+  check "miri core" cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-core --all-features
+  group_result miri-core
+}
+
+miri_log() {
+  cargo "+$MIRI_TOOLCHAIN" miri --version || return 1
+  GROUP_FAILED=""
+  check "miri log" cargo "+$MIRI_TOOLCHAIN" miri test -p certimining-log --all-features
+  group_result miri-log
+}
+
 # Advisories, licences and sources (D-13, D-18). The version is read from the installed tool.
 #
 # **Two graphs, because the workspace is not the whole repository.** `fuzz/` is its own Cargo workspace
@@ -461,6 +488,8 @@ run() {
     miri) miri ;;
     deny) deny ;;
     fuzz) fuzz ;;
+    miri-core) miri_core ;;
+    miri-log) miri_log ;;
     bench-band) bench_band ;;
     thresholds) thresholds ;;
     bench) bench ;;
