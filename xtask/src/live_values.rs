@@ -12,10 +12,20 @@
 //! `LIVE-VALUES.exempt`. Matching is case-insensitive, so a base58 string that collides only under
 //! case folding would fail generation — a false positive, which is the safe direction, and loud.
 //!
-//! **What it covers.** 32-byte values, base58 identifiers, and decimals of six digits or more —
-//! enough for a slot or a timestamp without firing on every small counter. Block heights are
-//! uncovered. Bumps and epoch day indices are excluded by shape, not principle: too short to list
-//! without matching unrelated text, so review-enforced until H-20.
+//! **What it covers.** 32-byte values, base58 identifiers, and decimals of five digits or more.
+//! Block heights are uncovered.
+//!
+//! **Decimals match on digit boundaries since H-20** (issue #60). They were substrings, so a listed
+//! slot `504985662` also matched the unrelated `15049856620` and a six-digit floor was needed to keep
+//! the gate from firing on counters and lengths. The long shapes keep substring matching on purpose:
+//! a 64-character digest does not collide by accident, and boundaries there would lose the case the
+//! gate most needs, a listed root pasted inside a longer hex blob.
+//!
+//! The floor is now about entropy rather than matching. Bumps stay out because one of 256
+//! possibilities carries no provenance — finding `255` in a file is evidence of nothing — and not
+//! because `255` is short. Epoch day indices became listable with the floor at five; whether to list
+//! them is a legitimacy question the exemption list answers, since a synthetic artifact may be
+//! legitimately about a real epoch.
 //!
 //! **What neither half asked (H-26).** The rule is unqualified, and these checks covered only the
 //! *announced* deployment. The superseded ids were listed; nothing derived from them was, though
@@ -58,6 +68,18 @@ struct LiveValue {
     value: String,
     lower: String,
     what: String,
+    /// Whether a match has to fall on digit boundaries (H-20, issue #60).
+    ///
+    /// **Substring matching makes a low-entropy value unlistable.** A listed slot `504985662` is
+    /// also a substring of the unrelated `15049856620`, so listing it would fire on text that has
+    /// nothing to do with the deployment. That is why the list carried a six-digit floor and why
+    /// epoch day indices were review-enforced rather than gate-enforced.
+    ///
+    /// Only decimals need it. A 64-character hex digest or a base58 signature does not collide by
+    /// accident, and requiring boundaries there would *lose* matches: a listed root pasted inside a
+    /// longer hex blob is exactly the case the gate must still catch. So the long, high-entropy
+    /// shapes keep substring matching and the short ones gain boundaries.
+    on_digit_boundaries: bool,
     /// Every spelling of this value a file could carry, lowercased.
     ///
     /// **`0x` is the list's convention, not part of the value (found while repairing H-01).** The
@@ -65,6 +87,37 @@ struct LiveValue {
     /// from the 25 September deployment, pasted into a fuzz target without it, left the gate at
     /// exit 0. Three committed files already carried a listed digest that way, unseen.
     needles: Vec<String>,
+}
+
+/// Whether `needle` occurs in `haystack` with no digit immediately either side.
+///
+/// The boundary is digits and not alphanumerics on purpose. `504985662` must not match inside
+/// `15049856620`, which is the false positive that made short values unlistable; it must still match
+/// in `"slot": 504985662,` and in `slot504985662` if anything ever writes that, because a looser
+/// boundary buys nothing here and loses matches.
+fn contains_on_digit_boundaries(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let bytes = haystack.as_bytes();
+    let mut from = 0usize;
+    while let Some(rest) = haystack.get(from..) {
+        let Some(hit) = rest.find(needle) else {
+            return false;
+        };
+        let at = from.saturating_add(hit);
+        let end = at.saturating_add(needle.len());
+        let before_is_digit = at
+            .checked_sub(1)
+            .and_then(|i| bytes.get(i))
+            .is_some_and(u8::is_ascii_digit);
+        let after_is_digit = bytes.get(end).is_some_and(u8::is_ascii_digit);
+        if !before_is_digit && !after_is_digit {
+            return true;
+        }
+        from = at.saturating_add(1);
+    }
+    false
 }
 
 fn repo_file(root: &Path, name: &str) -> String {
@@ -91,6 +144,12 @@ fn live_values(root: &Path) -> Vec<LiveValue> {
             value: value.trim().to_string(),
             lower,
             what: what.trim().to_string(),
+            // Decimals need boundaries; the long, high-entropy shapes must keep substring matching
+            // so a value pasted inside a longer string is still caught (H-20).
+            on_digit_boundaries: matches!(
+                declared_shape(what.trim()),
+                Shape::Slot | Shape::UnixTimestamp
+            ),
             needles,
         });
     }
@@ -153,7 +212,14 @@ fn offences(root: &Path, files: &[(String, String)]) -> Vec<String> {
     for (name, text) in files {
         let lower = text.to_lowercase();
         for v in &values {
-            if !v.needles.iter().any(|n| lower.contains(n)) {
+            let carried = |n: &String| {
+                if v.on_digit_boundaries {
+                    contains_on_digit_boundaries(&lower, n)
+                } else {
+                    lower.contains(n)
+                }
+            };
+            if !v.needles.iter().any(carried) {
                 continue;
             }
             // **The exact path, and nothing else (H-25 review, H3).** A basename was accepted too,
@@ -401,17 +467,27 @@ pub fn check_list_shape(root: &Path) {
                 );
             }
         }
-        // The six-digit floor stays, and it is about matching rather than about shape: a short
-        // number is everywhere in a fixture, so listing one would make the gate match text that has
-        // nothing to do with the deployment. `check_recorded_short_values` governs the exceptions.
+        // **The floor is five digits since H-20, and it is now about entropy rather than matching.**
+        //
+        // It was six because the matcher used substrings: a listed `504985662` also matched the
+        // unrelated `15049856620`, so a short value could not be listed without firing on text that
+        // has nothing to do with the deployment. Decimals now match on digit boundaries, and that
+        // false positive is gone, which is what lets epoch day indices be listed and gate-enforced
+        // rather than review-enforced.
+        //
+        // What boundaries cannot fix is a value that carries no provenance. A checkpoint bump is one
+        // of 256 possibilities; `255` appearing in a fixture is evidence of nothing, and listing it
+        // would fire on every unrelated `255` in the corpus — the demo page says "255 records" about
+        // a tree it built itself. So bumps stay out, by what they are rather than by their length,
+        // and `check_recorded_short_values` governs any exception a reviewer records.
         if matches!(shape, Shape::Slot | Shape::UnixTimestamp) {
             // The floor is on the magnitude, not the string: a sign is not a digit, and `-100000`
             // is as specific a thing to search a corpus for as `100000` (H-28).
             let digits = v.value.strip_prefix('-').unwrap_or(&v.value);
             assert!(
-                digits.len() >= 6,
-                "LIVE-VALUES.txt: {:?} has under six digits, which would make the gate match counters \
-                 and lengths throughout the corpus",
+                digits.len() >= 5,
+                "LIVE-VALUES.txt: {:?} has under five digits, which is too few possibilities to \
+                 carry provenance: finding it in a file is evidence of nothing",
                 v.value
             );
         }
@@ -547,5 +623,108 @@ fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
         // it; anything else is exempted by path. Both spellings are offered so an exemption written
         // for a generated file keeps working when the tree is scanned.
         out.push((relative, text));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **The false positive that made short values unlistable** (H-20, issue #60).
+    #[test]
+    fn a_listed_decimal_does_not_match_inside_a_longer_number() {
+        assert!(
+            !contains_on_digit_boundaries("15049856620", "504985662"),
+            "a slot inside an unrelated longer decimal is not that slot, and treating it as one is \
+             why the list carried a six-digit floor"
+        );
+        assert!(!contains_on_digit_boundaries("1504985662", "504985662"));
+        assert!(!contains_on_digit_boundaries("5049856620", "504985662"));
+    }
+
+    /// The control. Without it the test above would pass on a matcher that never matches.
+    #[test]
+    fn a_listed_decimal_matches_where_it_is_a_number_on_its_own() {
+        for carrier in [
+            "504985662",
+            "\"slot\": 504985662,",
+            "slot=504985662",
+            "published at 504985662.",
+            "[504985662]",
+            "504985662 and more text",
+        ] {
+            assert!(
+                contains_on_digit_boundaries(carrier, "504985662"),
+                "{carrier:?} carries the slot and was not matched"
+            );
+        }
+    }
+
+    /// It has to keep looking after a rejected hit, or one bad occurrence hides a real one.
+    #[test]
+    fn a_rejected_occurrence_does_not_stop_the_search() {
+        assert!(
+            contains_on_digit_boundaries("15049856620 then 504985662", "504985662"),
+            "the first occurrence is inside a longer number and the second is not"
+        );
+    }
+
+    /// Epoch day indices are five digits, which is what the floor now admits.
+    #[test]
+    fn a_five_digit_epoch_is_matched_on_its_own_and_not_inside_a_longer_number() {
+        assert!(contains_on_digit_boundaries(
+            "epoch 20739 published",
+            "20739"
+        ));
+        assert!(!contains_on_digit_boundaries("207391", "20739"));
+        assert!(!contains_on_digit_boundaries("120739", "20739"));
+    }
+
+    /// **The long shapes keep substring matching, and that is deliberate.**
+    ///
+    /// A 64-character digest does not collide by accident, and requiring boundaries would lose the
+    /// case the gate most needs: a listed root pasted inside a longer hex blob. The list decides per
+    /// value, from its declared shape.
+    #[test]
+    fn only_decimal_shapes_take_boundaries() {
+        for what in ["published slot, epoch 20723", "publication timestamp"] {
+            assert!(
+                matches!(declared_shape(what), Shape::Slot | Shape::UnixTimestamp),
+                "{what:?} should be a decimal shape"
+            );
+        }
+        for what in [
+            "published root, epoch 20723",
+            "checkpoint address, epoch 20723",
+            "co-signature inside a transaction",
+            "program id, superseded 24 September, as bytes",
+        ] {
+            assert!(
+                !matches!(declared_shape(what), Shape::Slot | Shape::UnixTimestamp),
+                "{what:?} must keep substring matching, or a value inside a longer string escapes"
+            );
+        }
+    }
+
+    /// **The carve-out's own example, fixed.** `LIVE-VALUES.txt` records that a matcher looking for
+    /// the bump `255` as a substring finds the curve's name in `Ed25519`. The trailing `1` is a digit,
+    /// so boundaries reject it.
+    #[test]
+    fn the_bump_255_is_not_found_inside_ed25519() {
+        assert!(!contains_on_digit_boundaries("Ed25519", "255"));
+        assert!(!contains_on_digit_boundaries("ed25519 signature", "255"));
+        assert!(
+            contains_on_digit_boundaries("bump 255", "255"),
+            "the control: a bump written as a number is still found, which is why 255 stays \
+             unlistable on entropy rather than on matching"
+        );
+    }
+
+    #[test]
+    fn an_empty_needle_matches_nothing() {
+        assert!(
+            !contains_on_digit_boundaries("anything at all", ""),
+            "an empty needle is in every string, which would make the gate fire on everything"
+        );
     }
 }
