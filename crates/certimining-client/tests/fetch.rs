@@ -123,13 +123,13 @@ fn an_epochs_address_is_derived_and_not_searched_for() {
 #[test]
 fn a_published_root_comes_back_with_what_the_program_wrote() {
     let mut cluster = Cluster::default();
-    cluster.publish(7, [0xab; 32]);
+    cluster.publish(7, *b"certimining fixture root   00001");
     let found = root_for_epoch(&cluster, &PROGRAM, 7).expect("the cluster answered");
     let Fetched::Placed(checkpoint) = found else {
         panic!("a published root should be placed, and this was {found:?}")
     };
     assert_eq!(checkpoint.epoch, 7);
-    assert_eq!(checkpoint.root, [0xab; 32]);
+    assert_eq!(checkpoint.root, *b"certimining fixture root   00001");
     assert_eq!(checkpoint.receipt_digest, [0u8; 32]);
 }
 

@@ -64,7 +64,7 @@ export function signedPackageAt(
   const fields = {
     seq,
     payloadDigest: fromHex("0x2222222222222222222222222222222222222222222222222222222222222222", 32),
-    assessmentDigest: fromHex("0x3333333333333333333333333333333333333333333333333333333333333333", 32),
+    assessmentDigest: fromHex("0x63657274696d696e696e6720766563746f72206d656d6f202020203030303031", 32),
     qpKey: QP_KEY,
     category: options.category ?? 2,
     effectiveAt: 1700000000n,

@@ -377,11 +377,11 @@ fn a_published_checkpoint_carries_what_the_epoch_fixes_and_nothing_else() {
     log.initialize(DEPLOYED_HEIGHT).expect("initializes");
     let authority = log.authority.insecure_clone();
     log.publish(START + 6, [0x11; 32], &authority).err();
-    log.publish(START, [0xab; 32], &authority)
+    log.publish(START, *b"certimining fixture root   00001", &authority)
         .expect("the log's first epoch");
     let checkpoint = log.checkpoint_account(START);
     assert_eq!(checkpoint.epoch, START);
-    assert_eq!(checkpoint.root, [0xab; 32]);
+    assert_eq!(checkpoint.root, *b"certimining fixture root   00001");
     assert_eq!(checkpoint.schema_version, 1);
     assert_eq!(
         checkpoint.receipt_digest, [0u8; 32],

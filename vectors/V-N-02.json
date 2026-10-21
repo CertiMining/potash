@@ -10,18 +10,18 @@
           "source": "TCU-02 §4.3, checked against the engine at generation time"
         },
         "record": {
-          "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+          "assessment_digest": "0x63657274696d696e696e6720766563746f72206d656d6f202020203030303031",
           "category": "2",
           "change_identified_at": "1699999910",
           "effective_at": "1700000010",
           "expected_qp_key": null,
           "ext_commitment": null,
-          "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+          "payload_digest": "0x63657274696d696e696e6720766563746f72207061796c6f6164203030303031",
           "payload_uri": "ipfs://bafyexamplepayload",
-          "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+          "prev_head": "0x24c0d05d557b622df91fb4b28a6aabfc760cdd4aa48a88f57a3aa781e2f6ab07",
           "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
           "seq": "4",
-          "signature": "0xb194754bba382393979e3865bb0db8f4241ad1fbefb83fdeec7624db8dcb58d91d4134a728c02f603a548a9693fb91233b1daf64b14eb90430ac43fa2bcd5601"
+          "signature": "0x6c23f945d8c5f7370a1f1aec9c64b0728cdc157b12b9655e5c21ba484bfd5c2d6e197a26df8ac09c17d9b59d17d74328ef682dfa351b0878b0d659d8bd107b04"
         }
       },
       {
@@ -32,18 +32,18 @@
           "source": "TCU-02 §4.3, checked against the engine at generation time"
         },
         "record": {
-          "assessment_digest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+          "assessment_digest": "0x63657274696d696e696e6720766563746f72206d656d6f202020203030303031",
           "category": "2",
           "change_identified_at": "1699999910",
           "effective_at": "1700000010",
           "expected_qp_key": null,
           "ext_commitment": null,
-          "payload_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
+          "payload_digest": "0x63657274696d696e696e6720766563746f72207061796c6f6164203030303031",
           "payload_uri": "ipfs://bafyexamplepayload",
-          "prev_head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+          "prev_head": "0x24c0d05d557b622df91fb4b28a6aabfc760cdd4aa48a88f57a3aa781e2f6ab07",
           "qp_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
           "seq": "1",
-          "signature": "0x97de920f79246f9243789c37e247e4fdc6d35f5517591558716714c608ff18b83e8eed5250e9fe0887dd0cb57684ae14bef402d4d32d01088869aff11f4bdf0b"
+          "signature": "0xceeb8a5864f7a7f447b4e27889168d351c03876ed16976a6d8633cd095161168c6ab55d4014d716921ca41fbc3ff50f570d55b99bd1d2b3d25b114f0562c9709"
         }
       }
     ]
@@ -51,7 +51,7 @@
   "id": "V-N-02",
   "inputs": {
     "chain": {
-      "head": "0x4f3ae504bab67e77cc4236e405cc4df1a83089a7b5c256561d79cb2a38325a87",
+      "head": "0x24c0d05d557b622df91fb4b28a6aabfc760cdd4aa48a88f57a3aa781e2f6ab07",
       "last_effective_at": "1700000000",
       "seq": "1"
     }

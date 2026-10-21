@@ -192,7 +192,7 @@ fn the_devnet_column_matches_the_litesvm_column() {
         ),
         data: certimining_checkpoint::instruction::PublishCheckpoint {
             epoch,
-            root: [0xab; 32],
+            root: *b"certimining fixture root   00001",
         }
         .data(),
     };
@@ -228,7 +228,7 @@ fn the_devnet_column_matches_the_litesvm_column() {
         .expect("the cluster answered");
     match fetched {
         Fetched::Placed(found) => {
-            assert_eq!(found.root, [0xab; 32]);
+            assert_eq!(found.root, *b"certimining fixture root   00001");
             assert_eq!(found.epoch, epoch);
             println!("root_for_epoch: placed, slot {}", found.published_slot);
         }

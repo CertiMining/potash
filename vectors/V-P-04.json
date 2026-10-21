@@ -2,12 +2,12 @@
   "description": "Recomputing records three to five from the head at sequence two reaches the same head as the whole chain.",
   "expected": {
     "asserted": "INV-STATE-02: the head recomputed from sequence two equals the head of the whole chain",
-    "head_after_five": "0x366931bed69a8252f9439eb5df024ad83e1828e754946242e431fd6b94a18187"
+    "head_after_five": "0x2723564e9182b1a88c880e0b4d1665b5cc6dfdae9d7374ebd8c821af454d69cc"
   },
   "id": "V-P-04",
   "inputs": {
     "resumed_from": {
-      "head": "0x95b861fa8fdc49e33fe5feb7b808e70da338e2b50b8f63b905f3e2962efb427f",
+      "head": "0x997573822fec3d1c2a7a54fc1b8eef5c81c67d235c367a63626f8da20b11b0e3",
       "last_effective_at": "1700000001",
       "previous_category": "1",
       "saw_resource": true,

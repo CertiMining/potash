@@ -626,6 +626,52 @@ fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
     }
 }
 
+/// Fails if a value the generators use as a placeholder is one a deployment holds (H-45, issue #137).
+///
+/// **The failure this prevents has already happened once.** `[0x33; 32]` was the vector generator's
+/// assessment digest and is also a value a throwaway devnet program holds, published *from* this
+/// repository on 24 September. The direction of travel is repository to chain, the opposite of the one
+/// the live-value rule guards — but the rule is unqualified, so it fired, and every record vector
+/// needed an exemption line. Twenty-four of fifty-four exemptions existed for two constants of that
+/// kind.
+///
+/// H-45 changed the values rather than narrowing the rule, which keeps the gate free of judgement.
+/// This is what stops the same thing recurring silently: if a placeholder ever appears in
+/// `LIVE-VALUES.txt`, the build goes red and names it, instead of an exemption being added.
+///
+/// The placeholders are passed in rather than read from a file, so the caller's own constants are
+/// what is checked and a renamed constant cannot slip out of the check's view.
+pub fn check_placeholders_are_not_live(root: &Path, placeholders: &[(&str, [u8; 32])]) {
+    assert!(
+        !placeholders.is_empty(),
+        "no placeholders were handed to the check, which would pass on any list at all"
+    );
+    let values = live_values(root);
+    let mut clashes = Vec::new();
+    for (name, bytes) in placeholders {
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        for v in &values {
+            if v.lower == format!("0x{hex}") || v.lower == hex {
+                clashes.push(format!(
+                    "  {name} is 0x{hex}, which LIVE-VALUES.txt holds as {}",
+                    v.what
+                ));
+            }
+        }
+    }
+    assert!(
+        clashes.is_empty(),
+        "a generator placeholder is a value a deployment holds:\n{}\n\nChange the placeholder \
+         rather than exempting the files that carry it. A placeholder that is also a live value makes \
+         every artifact using it need an exemption, which is H-45.",
+        clashes.join("\n")
+    );
+    println!(
+        "live-values: {} generator placeholder(s), none of them a value any deployment holds",
+        placeholders.len()
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

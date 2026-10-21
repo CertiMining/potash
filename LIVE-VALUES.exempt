@@ -24,29 +24,6 @@ ts/test/units.test.ts  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address
 # listed, so a *new* artifact reaching for either still fails generation — and the files that
 # legitimately hold them are named here by exact path. Narrowing the rule to exclude values the
 # repository authored is the owner's call, not a tool's.
-ts/test/packages.ts  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/KAT-03.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-01.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-01.json  0xabababababababababababababababababababababababababababababababab  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-02.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-03.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-04.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-05.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-06.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-07.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-07b.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-08.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-20.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-23.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-23.json  0xabababababababababababababababababababababababababababababababab  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-24.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-24.json  0xabababababababababababababababababababababababababababababababab  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-N-25.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-P-03.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/V-P-11.json  0x3333333333333333333333333333333333333333333333333333333333333333  the repository's own placeholder constant, carried here before it was ever published to the superseded 24 September deployment
-vectors/KAT-03.txt  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
-vectors/V-N-09.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
-vectors/V-N-18.json  0x3333333333333333333333333333333333333333333333333333333333333333  the same placeholder constant, spelled without the `0x` the list writes it with
 
 # V-P-13 carries `ASSESSMENT_DIGEST`, `[0x33; 32]` (H-04). It postdates the 24 September
 # publication, unlike the entries above, but the direction of travel is the same and is what
@@ -54,4 +31,3 @@ vectors/V-N-18.json  0x333333333333333333333333333333333333333333333333333333333
 # from it.
 #
 # Every future record vector will need a line like this. H-45 (#137) records that cost.
-vectors/V-P-13.json  0x3333333333333333333333333333333333333333333333333333333333333333  the generator's own ASSESSMENT_DIGEST, which a devnet harness happened to publish to a superseded program
