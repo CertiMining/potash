@@ -177,6 +177,150 @@ impl ReferenceClient {
     /// The version number alone, for messages.
     pub const PINNED_VERSION: &'static str = "0.7.2";
 
+    /// The committed fingerprint of the client's own Python sources, baked in at compile time.
+    ///
+    /// `include_str!` rather than a path read at runtime: a digest the process reads from disk can be
+    /// replaced by whatever replaced the client.
+    pub const FINGERPRINT: &'static str = include_str!("../../../OTS-CLIENT.sha256");
+
+    /// Refuses a client whose sources are not the ones this repository pinned (H-17, issue #53).
+    ///
+    /// **Why this exists beside [`check_version`](Self::check_version).** That asks the tool to
+    /// report on itself, and any self-report can be framed: four versions of it were wrong, each
+    /// looser than it looked, and the accepted byte-exact comparison is still the same shape. A client
+    /// that prints `v0.7.2\n` is not thereby the pinned client, and a wrapper that prints the right
+    /// bytes and then shells out elsewhere passes it.
+    ///
+    /// This reads the files instead. Three things are checked, and the third is the one a manifest
+    /// alone would miss:
+    ///
+    /// 1. Every path in the manifest hashes to its recorded digest.
+    /// 2. The entry point still imports `otsclient.ots`'s `main`, and its interpreter is inside this
+    ///    virtualenv — the wrapper attack the version check cannot see. Its bytes are not hashed,
+    ///    because the shebang carries an absolute path and would differ on every machine.
+    /// 3. **No `.py` file exists under those packages that the manifest does not list.** A manifest
+    ///    checked only forwards is satisfied by an install with an extra module in it.
+    pub fn check_fingerprint(&self) -> Result<usize, String> {
+        self.fingerprint_against(Self::FINGERPRINT)
+    }
+
+    /// The comparison itself, against a manifest the caller supplies.
+    ///
+    /// Separated from [`check_fingerprint`](Self::check_fingerprint) so the tests can state an
+    /// install and a manifest and drive every refusal, rather than needing the pinned client to be
+    /// present and then being unable to make it wrong.
+    pub fn fingerprint_against(&self, manifest: &str) -> Result<usize, String> {
+        use bitcoin_hashes::{sha256, Hash};
+
+        let venv = self
+            .executable
+            .parent()
+            .and_then(|bin| bin.parent())
+            .ok_or_else(|| format!("{}: no virtualenv above it", self.executable.display()))?;
+        let lib = venv.join("lib");
+        let mut site = None;
+        for entry in std::fs::read_dir(&lib).map_err(|e| format!("{}: {e}", lib.display()))? {
+            let path = entry.map_err(|e| format!("{}: {e}", lib.display()))?.path();
+            let candidate = path.join("site-packages");
+            if candidate.is_dir() {
+                site = Some(candidate);
+                break;
+            }
+        }
+        let site =
+            site.ok_or_else(|| format!("{}: no python*/site-packages beneath it", lib.display()))?;
+
+        let mut listed: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        for line in manifest.lines().filter(|l| !l.trim().is_empty()) {
+            let (digest, path) = line
+                .split_once("  ")
+                .ok_or_else(|| format!("OTS-CLIENT.sha256: malformed line {line:?}"))?;
+            listed.insert(path.to_string(), digest.to_string());
+        }
+        if listed.is_empty() {
+            return Err(
+                "OTS-CLIENT.sha256 lists no files, so this check would pass on any install"
+                    .to_string(),
+            );
+        }
+
+        let mut wrong = Vec::new();
+        for (path, want) in &listed {
+            let at = site.join(path);
+            let bytes = match std::fs::read(&at) {
+                Ok(b) => b,
+                Err(e) => {
+                    wrong.push(format!("{path}: {e}"));
+                    continue;
+                }
+            };
+            let got = format!("{}", sha256::Hash::hash(&bytes));
+            if &got != want {
+                wrong.push(format!("{path}: pinned {want}, found {got}"));
+            }
+        }
+
+        // The direction a manifest alone misses: a file that is there and is not listed.
+        for package in ["opentimestamps", "otsclient"] {
+            let mut stack = vec![site.join(package)];
+            while let Some(dir) = stack.pop() {
+                let entries = match std::fs::read_dir(&dir) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        wrong.push(format!("{}: {e}", dir.display()));
+                        continue;
+                    }
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if path.file_name().is_some_and(|n| n != "__pycache__") {
+                            stack.push(path);
+                        }
+                        continue;
+                    }
+                    if path.extension().is_some_and(|e| e == "py") {
+                        let relative = path
+                            .strip_prefix(&site)
+                            .map(|r| r.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        if !listed.contains_key(&relative) {
+                            wrong.push(format!("{relative}: present and not pinned"));
+                        }
+                    }
+                }
+            }
+        }
+
+        // The entry point, checked for what it does rather than for its bytes.
+        let shim = std::fs::read_to_string(&self.executable)
+            .map_err(|e| format!("{}: {e}", self.executable.display()))?;
+        if !shim.contains("from otsclient.ots import main") {
+            wrong.push(format!(
+                "{}: does not import otsclient.ots's main, so the pinned sources may not be what runs",
+                self.executable.display()
+            ));
+        }
+        let interpreter = shim.lines().next().unwrap_or_default();
+        if !interpreter.starts_with("#!") || !interpreter.contains(&*venv.to_string_lossy()) {
+            wrong.push(format!(
+                "{}: its interpreter is {interpreter:?}, which is not inside {}",
+                self.executable.display(),
+                venv.display()
+            ));
+        }
+
+        if wrong.is_empty() {
+            Ok(listed.len())
+        } else {
+            Err(format!(
+                "the OpenTimestamps client does not match OTS-CLIENT.sha256:\n  {}",
+                wrong.join("\n  ")
+            ))
+        }
+    }
+
     /// Refuses an executable that is not the pinned version, before it is asked to do anything.
     ///
     /// `ots --version` prints `v0.7.2`. A fake reporting `v9.9.9` previously completed a submission,

@@ -221,10 +221,13 @@ fn run() -> Result<(), String> {
     // The pin exists to be asked. Four versions of this check were wrong before the current one, each
     // looser than it looked, and a fake reporting v9.9.9 once completed a submission.
     let version = anchor_b.check_version()?;
+    // And what it *is*, not only what it says (H-17). A self-report can be framed; a wrapper that
+    // prints the right bytes and shells out elsewhere passes the line above and fails this one.
+    let pinned = anchor_b.check_fingerprint()?;
 
     let cluster = Cluster::new(config.rpc.clone(), certimining_checkpoint::ID);
     println!("anchor-b-worker: program  {}", cluster.program_id());
-    println!("anchor-b-worker: ots      {version}");
+    println!("anchor-b-worker: ots      {version}, {pinned} sources matching OTS-CLIENT.sha256");
     println!("anchor-b-worker: handoffs {}", config.handoffs.display());
     println!("anchor-b-worker: receipts {}", config.receipts.display());
     println!(
