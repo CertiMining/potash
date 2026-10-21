@@ -270,7 +270,7 @@ impl Cluster {
 }
 
 impl RootSource for Cluster {
-    fn account(&self, address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable> {
+    fn account_at(&self, address: &Pubkey) -> Result<crate::Observation, Unreachable> {
         // The two failures are kept apart here rather than merged: an account that is not there is an
         // absence the caller may treat as a gap, and an RPC that will not answer is neither.
         let key = solana_pubkey::Pubkey::from(address.to_bytes());
@@ -278,9 +278,14 @@ impl RootSource for Cluster {
             .rpc
             .get_account_with_commitment(&key, self.rpc.commitment())
         {
-            Ok(response) => Ok(response
-                .value
-                .map(|account| (Pubkey::from(account.owner.to_bytes()), account.data))),
+            // **The response's own slot, which this discarded until H-07.** It is what lets a caller
+            // making several reads tell one view of the chain from several.
+            Ok(response) => Ok(crate::Observation {
+                slot: Some(response.context.slot),
+                account: response
+                    .value
+                    .map(|account| (Pubkey::from(account.owner.to_bytes()), account.data)),
+            }),
             Err(e) => Err(Unreachable(e.to_string())),
         }
     }

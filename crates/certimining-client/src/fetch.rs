@@ -71,10 +71,38 @@ pub enum Fetched {
 }
 
 /// Where raw accounts come from. A cluster implements this; a test implements it with a map.
+/// An account as a source answered it, and the view that answer came from (H-07, issue #39).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Observation {
+    /// The slot the source answered at, where it has a notion of one.
+    ///
+    /// `None` is a source with no chain behind it — an offline map, a fixture — and not a source
+    /// hiding its view. A source that could say and does not cannot have its reads bound together.
+    pub slot: Option<u64>,
+    /// The account and its owner, or `None` when the source holds nothing there.
+    pub account: Option<(Pubkey, Vec<u8>)>,
+}
+
 pub trait RootSource {
-    /// The account at `address` with its owner, `Ok(None)` when the cluster holds nothing there, and
-    /// an error when the cluster could not be asked.
-    fn account(&self, address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable>;
+    /// The account at `address` with its owner, **and the slot the source observed it at**.
+    ///
+    /// `Ok((_, None))` when the cluster holds nothing there, and an error when it could not be asked.
+    ///
+    /// **The slot is the read boundary** (H-07, issue #39). Several reads that each succeeded are not
+    /// one view of the chain: a stale replica, a load-balanced backend or a different confirmed fork
+    /// can answer one request from before another. A caller comparing several accounts needs to know
+    /// whether they came from one view, and only the source can say.
+    ///
+    /// `None` means the source has no notion of a slot — an offline map, a fixture — and such a source
+    /// is used where there is no chain to be inconsistent about. A source that *could* say and does
+    /// not is a source whose reads cannot be bound, and the caller treats that as unreachable rather
+    /// than as evidence about the log.
+    fn account_at(&self, address: &Pubkey) -> Result<Observation, Unreachable>;
+
+    /// The account alone, for a caller reading once with no boundary to keep.
+    fn account(&self, address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable> {
+        self.account_at(address).map(|seen| seen.account)
+    }
 }
 
 /// `["cm_ckpt", epoch_le]` against the program id: the address of an epoch's checkpoint, derived
@@ -159,14 +187,30 @@ pub fn root_for_epoch<S: RootSource>(
     program_id: &Pubkey,
     epoch: u64,
 ) -> Result<Fetched, Unreachable> {
+    root_for_epoch_at(source, program_id, epoch).map(|(_, fetched)| fetched)
+}
+
+/// The same read, with the slot the source observed it at (H-07).
+///
+/// A caller comparing several accounts needs the boundary; one reading a single root does not, and
+/// [`root_for_epoch`] is that caller.
+pub fn root_for_epoch_at<S: RootSource>(
+    source: &S,
+    program_id: &Pubkey,
+    epoch: u64,
+) -> Result<(Option<u64>, Fetched), Unreachable> {
     let address = checkpoint_address(program_id, epoch);
-    match source.account(&address)? {
-        None => Ok(Fetched::Absent),
-        Some((owner, data)) => Ok(match decode_checkpoint(&owner, program_id, &data, epoch) {
-            Ok(checkpoint) => Fetched::Placed(checkpoint),
-            Err(refused) => Fetched::Refused(refused),
-        }),
-    }
+    let seen = source.account_at(&address)?;
+    Ok((
+        seen.slot,
+        match seen.account {
+            None => Fetched::Absent,
+            Some((owner, data)) => match decode_checkpoint(&owner, program_id, &data, epoch) {
+                Ok(checkpoint) => Fetched::Placed(checkpoint),
+                Err(refused) => Fetched::Refused(refused),
+            },
+        },
+    ))
 }
 
 /// How far the published sequence lags the epochs a caller asked about, and any epoch whose account
@@ -185,7 +229,8 @@ pub fn sequence_lag<S: RootSource>(
     first: u64,
     last: u64,
 ) -> Result<Lag, Unreachable> {
-    let raw = source.account(&config_address(program_id))?;
+    let seen = source.account_at(&config_address(program_id))?;
+    let (observed_at, raw) = (seen.slot, seen.account);
     let config = match raw {
         Some((owner, data)) => decode_config(program_id, &owner, &data).map_err(|reason| {
             Unreachable(format!("the log's configuration was refused: {reason:?}"))
@@ -217,7 +262,23 @@ pub fn sequence_lag<S: RootSource>(
         }
         // Inside the published range. The account must be there, and the only thing left to decide is
         // whether it is one this client accepts.
-        match root_for_epoch(source, program_id, epoch)? {
+        //
+        // **Bound to the configuration's view first** (H-07). The configuration said this epoch is
+        // published; an account read from *before* that observation is not evidence that it is not.
+        // A source that cannot say which slot it answered at is not bound, which is why both sides
+        // have to be `Some` for the comparison to mean anything.
+        let (at, fetched) = root_for_epoch_at(source, program_id, epoch)?;
+        if let (Some(config_slot), Some(account_slot)) = (observed_at, at) {
+            if account_slot < config_slot {
+                return Err(Unreachable(format!(
+                    "the configuration was observed at slot {config_slot} and epoch {epoch}'s \
+                     account at slot {account_slot}, which is earlier. These reads are not one view \
+                     of the chain, so nothing here is evidence about the log: ask again against one \
+                     view."
+                )));
+            }
+        }
+        match fetched {
             Fetched::Placed(_) => {}
             Fetched::Refused(reason) => lag.refused.push((epoch, reason)),
             Fetched::Absent => {
