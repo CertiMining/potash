@@ -129,6 +129,42 @@ decision to take under deadline. The preimage path's per-call overhead is unexam
 weaken INV-ENC-01's staged tag writing: a caller being unable to omit a tag is worth more than the
 milliseconds.
 
+## What the preimage path costs: nothing measurable (H-19)
+
+Every digest builds its preimage into a `PreimageBuf` through `staged` writes that enforce INV-ENC-01's
+tag placement, then hashes the result. That is why no caller can omit a tag (D-36, D-64). Whether it
+also cost anything per call was unmeasured, and §4.4a's chain walk is two of these per record.
+
+Measured with Criterion on **Apple M2, 8 cores, macOS 26.6.2**, `benches/preimage.rs`:
+
+| | through the preimage path | the same bytes, already contiguous |
+|---|---|---|
+| leaf, 161 bytes | 444.07 – **448.04** – 452.15 ns | 447.72 – **454.27** – 462.17 ns |
+| head, 72 bytes | 228.71 – **230.34** – 232.38 ns | 227.12 – **230.01** – 233.44 ns |
+
+**The intervals overlap at both sizes, so the construction is free at this resolution.** The path's
+midpoint is lower than hashing a ready-made buffer at 161 bytes, which is noise and not a saving. What
+the figures say is that staging, the bounds checks and the copy are not where the time goes: the hash
+is. INV-ENC-01's guarantee costs nothing, which is the answer the question wanted.
+
+**The slice interface does cost something, and the engine does not pay it.** `Hasher::hashv` takes
+`&[&[u8]]`. The same 161 bytes as one slice measure 445.29 – **455.08** – 468.25 ns and as two slices
+469.67 – **475.52** – 482.34 ns. Those intervals do not overlap: two slices is about 20 ns dearer,
+roughly 4%. Every caller in the engine passes one slice, so this is a property of the interface rather
+than a cost anything here bears.
+
+**It reproduces §4.4a's chain walk, which is the useful check on all of it.** One record is one
+161-byte leaf and one 72-byte head: 448 + 230 ≈ 678 ns. Ten thousand records is **6.8 ms** against the
+7.1 ms §4.4a records for the walk, leaving about 0.3 ms for everything that is not hashing — which is
+the same conclusion `apply` reached from the other direction, where judging every §1.3 condition on top
+of the same two hashes cost 0.2 ms.
+
+**The first attempt at this measurement was abandoned, and that is worth recording.** A hand-rolled
+timing loop reported the full path as *faster* than hashing alone three times, by 162, 372 and 381 ns.
+No figure was published from it. The difference being looked for is a fraction of 350 ns, which is
+below what a loop around `Instant::now()` resolves on a machine with a scheduler. Criterion samples and
+reports an interval, so it can say two things are indistinguishable instead of inventing a difference.
+
 ## Warm-up is part of the instrument, not a detail
 
 `thresholds.rs` and `band.rs` discard five runs before sampling. Without that they read **30% high** —

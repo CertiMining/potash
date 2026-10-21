@@ -44,6 +44,14 @@ name = "chain"
 path = "chain.rs"
 harness = false
 
+# What the preimage path costs per call against hashing the same bytes (H-19, #58). A Criterion
+# bench rather than a timing loop, because the difference sought is a fraction of 350 ns and the
+# first attempt at this reported the full path as faster than hashing alone.
+[[bench]]
+name = "preimage"
+path = "preimage.rs"
+harness = false
+
 [[bench]]
 name = "epoch"
 path = "epoch.rs"
