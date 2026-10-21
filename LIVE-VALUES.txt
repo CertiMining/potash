@@ -33,8 +33,15 @@
 #
 #   * **Bumps.** A PDA bump is 0-255. The announced deployment holds 250, 253 and 255, and 255 is also
 #     the natural bump for any synthetic account because canonical search starts at 255 and counts down.
+#     H-20 made the matcher token-aware, which removed the matching objection — `255` is no longer
+#     found inside `Ed25519` — but not this one. One of 256 possibilities carries no provenance:
+#     finding 255 in a file is evidence of nothing, and listing it would fire on every unrelated 255
+#     in the corpus. Bumps stay review-enforced by what they are, not by their length.
 #   * **Epoch day indices.** Five digits, and a synthetic artifact may legitimately be *about* a real
-#     epoch — the demo is about 20723.
+#     epoch — the demo is about 20723. H-20 lowered the floor to five digits and made the matcher
+#     token-aware, so the matching objection is gone and these are listable. What remains is the
+#     legitimacy question, which is what the exemption list is for; listing them and exempting the
+#     uses below is a separate change.
 #
 # Listing either would make the matcher fire on unrelated text, because it matches a value as a
 # case-insensitive substring of a whole file, and the exemptions that silenced the false positives are
