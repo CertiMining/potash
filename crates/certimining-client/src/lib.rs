@@ -26,6 +26,8 @@
 )]
 
 mod anchor;
+#[cfg(feature = "ots")]
+pub mod bitcoin;
 #[cfg(feature = "cluster")]
 pub mod cluster;
 mod fetch;
