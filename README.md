@@ -39,7 +39,7 @@ that description, which is why D-137 removed its bound.
 
 | | Threshold | Measured | By |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | 8,810 CU | LiteSVM, and the same on chain |
+| `publish_checkpoint` compute | ≤ 15,000 CU | 9,066 CU | LiteSVM; the chain shows 8,810, which is the program before v0.2.4 ([why](docs/performance.md)) |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
 | Chain walk, 10,000 records, hash recomputation only | none (D-137) | 7–19.5 ms, machine-dependent | Rust |
 | Epoch root build, 256 leaves | none (D-137) | 0.20–0.38 ms | Rust |

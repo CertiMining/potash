@@ -86,6 +86,17 @@ fn publish_epoch(
         &[CheckpointAccount::SEED, &epoch.to_le_bytes()],
         &program_id,
     );
+    // **Every epoch publishes on its own day** (H-11, V-N-27). `publish_checkpoint` refuses an epoch
+    // ahead of the chain's own day index, and these harnesses used to publish a run of epochs against
+    // one pinned clock — the compressed run that put a deployment 209 days ahead of the calendar and
+    // cost it a program id (D-88). The program accepted it until that check existed. Moving the clock
+    // with the epoch is what a real log does, and it leaves what these tests measure untouched:
+    // `published_unix` was already a function of the clock, and the clock is now a function of the
+    // epoch for every filer alike.
+    let mut clock: anchor_lang::prelude::Clock = svm.get_sysvar();
+    clock.unix_timestamp = (epoch * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+    svm.set_sysvar(&clock);
+
     let data = certimining_checkpoint::instruction::PublishCheckpoint { epoch, root }.data();
     let metas = certimining_checkpoint::accounts::Publish {
         config: anchor_lang::prelude::Pubkey::from(config.to_bytes()),

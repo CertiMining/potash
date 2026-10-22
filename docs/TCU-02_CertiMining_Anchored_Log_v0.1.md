@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.3 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.4 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -14,6 +14,10 @@ preimage that was never defined and consumed by nothing (H-06).*
 *v0.2.3 corrects §4.4a's account of the CI regression band: it records and reports drift and does not
 fail on it, so no wall-clock regression gate exists until calibration restores the assertion
 (H-37, H-31).*
+
+*v0.2.4 bounds §2.4's `publish_checkpoint` to the calendar: an epoch ahead of the chain's own day
+index is refused with `0x0D`, and V-N-27 is the vector for it. This closes the hole that put two
+devnet deployments ahead of the calendar and cost each a program id (H-11, D-88).*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -518,6 +522,12 @@ pub mod certimining_checkpoint {
 
 **`publish_checkpoint` checks in this order** (D-80): the checkpoint account already exists is `0x0E`, and only then `epoch ≠ last_epoch + 1` is `0x0D`. Both conditions can hold at once — republishing epoch `e` is also an epoch that is not `last + 1` — so the order is stated here rather than left to an implementation, and the account is created explicitly so existence can be seen before it is refused.
 
+**The epoch must be the chain's day, or the day before it *(v0.2.4)*.** After the monotonicity check, `publish_checkpoint` refuses an `epoch` greater than `floor(clock.unix_timestamp / 86400)` with `0x0D`. The publication for day *d* is submitted at its scheduled time inside day *d* and may land in day *d + 1* if the network is slow, so an epoch equal to the clock's day or one behind it is accepted and anything ahead of it is not. A log that has fallen behind catches up one epoch per transaction, and a log cannot run ahead at all.
+
+This bounds the sequence to the calendar in the one direction that matters. A batcher that stops publishing is visible as lag (INV-ANCH-02), which a client surfaces; a batcher that publishes too fast was invisible, and is now refused by the program rather than by a convention. §1.4 makes an epoch a UTC day index and `initialize` is held to the chain's clock exactly (D-109, V-N-26); this instruction was held to nothing, so a caller could advance the sequence as fast as it could sign. That happened twice on devnet, once reaching `last_epoch` 20932 against a calendar index of 20723, and because the sequence is monotone it could not be walked back: the remedy both times was a new program id (D-88).
+
+**What it costs.** One comparison on a `Clock::get()` the instruction already made for `published_unix`, measured at 256 CU. The behavioural cost is the point: a compressed run against a real log becomes impossible, so any future privacy measurement needs a throwaway program id.
+
 **`attach_anchor_receipt` is the authority's alone**, `kind` accepts exactly one value, `1` for OpenTimestamps, with anything else `0x05`, and a second attach is `0x15` (D-81). The field is write-once, so an open writer could block the real receipt for ever with one garbage digest. An all-zero digest is `0x05`: zero is the sentinel that means *not yet attached*, so writing it would leave the field looking unwritten and let a second attachment through (D-105).
 
 **What `receipt_digest` is (D-113).** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)`, where `receipt` is the bytes of the **upgraded** OTS receipt — the one carrying a Bitcoin attestation — `len` is a `u16` as INV-ENC-04 requires of every variable-length field, and the tag is first as INV-ENC-01 requires of every preimage. Before v0.2.0 the document named the field, fixed its width and said the program never parses it, and never said what function produced the 32 bytes, so two conforming implementations could disagree about every receipt. The program still parses nothing: it stores what it is given, and the digest is the counterparty's means of checking that the receipt they were handed is the one the epoch committed to (INV-ANCH-04).
@@ -692,6 +702,7 @@ Digest values are produced by E-05 and committed with a manifest hash. None are 
 | V-N-24 | A record carrying `ext_commitment`, with a wrong `prev_head` | `0x0F`; the schema gate precedes (a) |
 | V-N-25 | A signature made by a key other than the `qp_key` the record claims, with no expected key supplied | `0x07` |
 | V-N-26 | `initialize` given a `start_epoch` that is not the UTC day index the on-chain clock reports — too low, too high, zero, or `u64::MAX` | `0x05` |
+| V-N-27 | `publish_checkpoint` given an epoch ahead of the chain's own day index | `0x0D` |
 
 ### 4.4 Privacy acceptance tests — these are the ones that matter
 
@@ -724,7 +735,7 @@ Restored in v0.1.1 — these were carried in TCU-01 and lost when TCU-02 was wri
 
 So the description does not determine the figure, and a bound stated against it is not a property of this system. D-132 had already found the weaker form of this — that a shared CI runner cannot be held to an absolute wall-clock number — and this is the same fact one step further: wall-clock is a property of a machine, and the specification should not pretend otherwise. Raising the bound a second time would only have made it track the slowest machine anyone happened to try.
 
-**What remains, and why it is enough.** Compute units are deterministic: the same instruction against the same program costs the same CU anywhere, and the three figures this repository records — 13,735 for `initialize`, 8,810 for `publish_checkpoint`, 5,687 for `attach_anchor_receipt` — were confirmed against the announced deployment's own transactions, across a runtime version gap. Those are asserted absolutely in CI. The wall-clock measures are **reported** with the machine named, and CI's regression band compares its own runner against its own previous figures — it **records and reports that drift and does not fail on it** (v0.2.3). The band was never calibrated, so **no wall-clock regression gate exists in this repository** until timings from the runner set the band from measured spread and the assertion is restored. What stays enforcing is §1.8's CU limits, and the band's structural controls: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
+**What remains, and why it is enough.** Compute units are deterministic: the same instruction against the same program costs the same CU anywhere, and the three figures this repository records — 13,735 for `initialize`, 9,066 for `publish_checkpoint`, 5,687 for `attach_anchor_receipt` — are asserted exactly. Two of them were confirmed against the announced deployment's own transactions across a runtime version gap. `publish_checkpoint` no longer is: it cost 8,810 when that was checked, and v0.2.4's calendar bound added 256 CU. **The announced deployment has not been redeployed, so its transactions still show 8,810** — the chain is running the program as it was before that check, which is the ordinary state of a deployment predating a change. Those are asserted absolutely in CI. The wall-clock measures are **reported** with the machine named, and CI's regression band compares its own runner against its own previous figures — it **records and reports that drift and does not fail on it** (v0.2.3). The band was never calibrated, so **no wall-clock regression gate exists in this repository** until timings from the runner set the band from measured spread and the assertion is restored. What stays enforcing is §1.8's CU limits, and the band's structural controls: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
 
 The split matters. Signature verification dominates at scale — the hash-chain figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
 

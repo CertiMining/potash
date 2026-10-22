@@ -241,6 +241,78 @@ fn v_n_22_a_height_outside_the_range_is_0x05() {
     }
 }
 
+/// **V-N-27: an epoch ahead of the chain's own day index is `0x0D`** (H-11, issue #45).
+///
+/// §1.4 makes an epoch a UTC day index, and this instruction used to be held to nothing: it accepted
+/// `last_epoch + 1` and never asked what day it was. A caller could advance the sequence as fast as
+/// it could sign, and because the sequence is monotone it could not be walked back. The second
+/// announced deployment reached `last_epoch` 20932 against a calendar index of 20723 — 209 days
+/// ahead — and the remedy both times was a new program id (D-88).
+///
+/// **This publication used to succeed.** Monotonicity is satisfied: `START + 1` is exactly
+/// `last_epoch + 1`. Only the calendar refuses it.
+#[test]
+fn v_n_27_an_epoch_ahead_of_the_chains_day_is_0x0d() {
+    let mut log = Log::new();
+    log.initialize(DEPLOYED_HEIGHT).expect("initializes");
+    let authority = log.authority.insecure_clone();
+    log.publish(START, [0x11; 32], &authority)
+        .expect("the clock's own day publishes");
+
+    assert_eq!(
+        log.publish(START + 1, [0x22; 32], &authority),
+        Err(EPOCH_OUT_OF_ORDER),
+        "the next epoch in sequence is tomorrow by the chain's clock, and tomorrow has not happened"
+    );
+}
+
+/// The control. Without it the test above would pass on a program that refused every second
+/// publication for any reason at all.
+///
+/// The same transaction, after the chain's day has moved on, is accepted.
+#[test]
+fn v_n_27_the_same_epoch_publishes_once_the_chains_day_reaches_it() {
+    let mut log = Log::new();
+    log.initialize(DEPLOYED_HEIGHT).expect("initializes");
+    let authority = log.authority.insecure_clone();
+    log.publish(START, [0x11; 32], &authority).expect("day one");
+
+    let mut clock: anchor_lang::prelude::Clock = log.svm.get_sysvar();
+    clock.unix_timestamp = ((START + 1) * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+    log.svm.set_sysvar(&clock);
+
+    log.publish(START + 1, [0x22; 32], &authority)
+        .expect("the calendar has reached this epoch, so it publishes");
+}
+
+/// A log behind the calendar catches up, one epoch per transaction.
+///
+/// The bound is one-directional on purpose: a batcher that stops publishing is visible as lag, which
+/// a client surfaces; a batcher that published too fast was invisible until this.
+#[test]
+fn v_n_27_a_log_behind_the_calendar_still_catches_up() {
+    let mut log = Log::new();
+    log.initialize(DEPLOYED_HEIGHT).expect("initializes");
+    let authority = log.authority.insecure_clone();
+
+    // Three days pass with nothing published.
+    let mut clock: anchor_lang::prelude::Clock = log.svm.get_sysvar();
+    clock.unix_timestamp = ((START + 3) * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+    log.svm.set_sysvar(&clock);
+
+    for (n, root) in [
+        (0u64, [0x11; 32]),
+        (1, [0x22; 32]),
+        (2, [0x33; 32]),
+        (3, [0x44; 32]),
+    ] {
+        log.publish(START + n, root, &authority)
+            .unwrap_or_else(|e| {
+                panic!("epoch {} is at or behind the chain's day: {e:?}", START + n)
+            });
+    }
+}
+
 #[test]
 fn v_n_10_an_epoch_that_is_not_the_next_one_is_0x0d() {
     let mut log = Log::new();
@@ -426,6 +498,14 @@ fn a_funded_checkpoint_address_does_not_stop_the_log() {
     assert_eq!(written.epoch, START);
 
     // And the log keeps going, which is what the attack was trying to prevent.
+    //
+    // The clock moves first because the next epoch is the next day (H-11, V-N-27). This test used
+    // to publish two epochs on one pinned day, which the program accepted until the calendar bound
+    // was added; its subject is the funding attack and not the clock, so it advances the clock the
+    // way a day passing would.
+    let mut clock: anchor_lang::prelude::Clock = log.svm.get_sysvar();
+    clock.unix_timestamp = ((START + 1) * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+    log.svm.set_sysvar(&clock);
     log.publish(START + 1, [0x22; 32], &authority)
         .expect("the next epoch still publishes");
 }

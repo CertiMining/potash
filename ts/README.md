@@ -16,10 +16,11 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.3**, SHA-256 `8b83556ffd6b080f4ff39ed97e5649ea98fee09f8e299d01a74ccccfeabdf86c`,
-854 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
+committed today is **v0.2.4**, SHA-256 `1508dcd28379d5636b07f1c0e3069a83c2c9635776c385978afaa17686f48aa8`,
+865 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
 (H-06), which is the subject of SD-11, and v0.2.3 corrects §4.4a's account of the CI regression band
-(H-37, H-31) and touches nothing this verifier implements. The rest of the findings below carry unchanged to it, as
+(H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). Neither touches
+anything this verifier implements: both are about the program and the figures around it. The rest of the findings below carry unchanged to it, as
 they carried to v0.2.0, which differed from the text that was read by
 sixteen lines added and fifteen removed, every one of them the version line, the changelog line or an
 amendment marker losing the words "on this branch, unmerged". No technical content changed, which is

@@ -132,6 +132,13 @@ impl Log {
     }
 
     fn publish(&mut self, epoch: u64, root: [u8; 32]) {
+        // Every epoch publishes on its own day (H-11, V-N-27). `publish_checkpoint` refuses an epoch
+        // ahead of the chain's own day index, and this harness published a run of them against one
+        // clock — the compressed run the program accepted until that check existed.
+        let mut clock: anchor_lang::prelude::Clock = self.runtime.svm.get_sysvar();
+        clock.unix_timestamp = (epoch * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+        self.runtime.svm.set_sysvar(&clock);
+
         let authority = anchor_lang::prelude::Pubkey::from(self.authority.pubkey().to_bytes());
         let payer = anchor_lang::prelude::Pubkey::from(self.payer.pubkey().to_bytes());
         self.send(
