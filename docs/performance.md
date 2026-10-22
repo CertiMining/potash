@@ -48,12 +48,16 @@ walk, all on hardware matching §4.4a's own description — 7 ms idle and 13.8 m
 stated against it is not a property of this system, and the rows lost their thresholds rather than
 tracking the slowest machine anyone tried (D-136, then D-137).
 
-What still asserts absolutely is what can: the compute figures, which are deterministic and confirmed
-against the announced deployment's own transactions. The band compares one runner against its own
-previous numbers and **records and reports the drift without failing on it**, so **no wall-clock
-regression gate exists here** until calibration restores the assertion. Every wall-clock measure is
-therefore a record with the machine named — and a record has to be read, which is why both
-`scripts/ci.sh thresholds` and the band's own output are read rather than trusted to a green tick.
+What still asserts absolutely is what can: the compute figures, which are deterministic. The band
+compares one runner against its own previous numbers and **fails on drift past 15%** — restored on
+22 October 2026 from a series of 30 CI runs, in which no measure exceeded its baseline by more than
+2.4% (H-47). So a wall-clock regression gate exists here, on the runner and only on the runner: the
+band is derived from the runner's spread and is tight for nothing else.
+
+`scripts/ci.sh thresholds` still reports §4.4a's figures with the machine named rather than asserting
+them, and that record still has to be read. So does the band's own output, for a reason the gate cannot
+cover: a run on a faster runner class cannot fail the comparison at all, and 8 of those 30 runs were
+on one. The harness prints when it is, so a green tick is read for what it is.
 
 ## Two kinds of number, and why they are gated differently (D-132)
 

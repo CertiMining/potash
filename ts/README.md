@@ -16,11 +16,15 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.5**, SHA-256 `e5d2bf1e11fd3f6a15b7f14ba1453a68bbc5aed88932c26b71d56ebae94dfd4a`,
-879 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
+committed today is **v0.2.6**, SHA-256 `db9e74036b908b45e8f417fd6f78ea996bddda589765844455f3e06e7fc93ce5`,
+892 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
 (H-06), which is the subject of SD-11, v0.2.3 corrects §4.4a's account of the CI regression band
 (H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). None of those four
 touches anything this verifier implements: they are about the program and the figures around it.
+
+**v0.2.6 corrects §4.4a's account of what CI asserts** — the regression band fails on drift again
+(H-47) and `publish_checkpoint`'s compute cost is a table rather than a figure (H-52). Neither touches
+this verifier: both are about the program and the figures around it.
 
 **v0.2.5 does.** It lets §2.5 carry an unsigned chain segment and adds INV-DISC-04, which this
 verifier implements: it recomputes every head in the segment and reports position as established only

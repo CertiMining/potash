@@ -6,12 +6,19 @@
 //! D-132's split: a shared runner cannot be held to those numbers, so it is compared against its own
 //! previous numbers instead.
 //!
-//! **It records and reports that drift and does not fail on it (H-37, H-31).** A measure above its
-//! baseline plus `band_percent` is printed, not asserted, because the band is one sample's guess and a
-//! gate whose failures read as noise takes a real one down with them. Timings from at least twenty CI
-//! runs set the band from measured spread, the derivation is recorded, and the assertion is restored.
-//! Until then, and with D-137 having removed §4.4a's wall-clock absolutes, **no wall-clock regression
-//! gate exists in this repository**. §1.8's CU limits are unaffected and stay enforcing.
+//! **It fails on drift past the band again (H-47, issue #162).** It did not between 12 October and 22
+//! October: the band was 50% and `BASELINE.toml` said outright that the number was a guess, it flaked
+//! on a pull request containing no Rust at all, and the owner made it report-only and named the way
+//! back — twenty CI runs, the band set from the measured spread, the derivation recorded, the
+//! assertion restored. Thirty runs were collected on 22 October and `BASELINE.toml` carries what they
+//! show. **So a wall-clock regression gate exists in this repository again**, at 15% rather than 50%.
+//!
+//! **A pass on a fast runner means nothing, and this says so.** GitHub's fleet is mixed: 8 of those 30
+//! runs came in at 0.59 to 0.64 times the baseline, where no code change could have pushed a measure
+//! over the limit. A run reporting "every measure is inside its limit" from a machine 1.6 times faster
+//! than the one the baseline was taken on has not exercised the gate, and a report that did not
+//! distinguish the two would be this repository's oldest defect: an instrument reading its own
+//! acceptance predicate back.
 //!
 //! **What this file does still fail on is structural**, and all of it below: an absent baseline entry, a
 //! non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a
@@ -268,29 +275,54 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
         missing.len(),
         missing.join("\n")
     );
-    // **Report-only until the band is calibrated (owner, 12 Oct 2026, H-37 and H-31).** This failed a
-    // pull request containing no Rust at all, by 0.9% of the limit, while the same run passed on `main`
-    // minutes earlier. The band is 50% and `BASELINE.toml` says outright that the number is a guess:
-    // it was chosen wide because a band that flakes gets disabled, and it flaked anyway.
+    // **Whether this run could have failed at all (H-47, issue #162).** GitHub's runner fleet is
+    // mixed, and the baseline came from its slowest class. A run on a faster one measures well below
+    // the baseline, so nothing it does can push a measure over the limit: "every measure is inside its
+    // limit" is then a true sentence about a gate that was not exercised. 8 of the 30 calibration runs
+    // were like that, at 0.59 to 0.64 times the baseline.
     //
-    // A gate nobody trusts is worse than no gate, because its failures are read as noise and a real
-    // one goes with them. So the drift is printed and the run does not fail on it. **This is not a
-    // decision that the band does not matter** — it is a decision not to assert a bound derived from
-    // one sample. Timings from at least twenty CI runs set the band from measured spread, the
-    // derivation is recorded, and this becomes a failing gate again.
-    //
-    // Everything else here still fails: a missing baseline row, a non-finite band or baseline, a
-    // fixture that is not the size its label claims, a no-op closure, and a proof verifier that
-    // accepts a corrupted leaf. What is suspended is the comparison against an uncalibrated number,
-    // not the instrument's own controls.
-    if over.is_empty() {
-        println!("band: every measure is inside its limit");
-    } else {
+    // The floor is 0.8 because the classes observed sit at about 1.00, 0.88 and 0.61 times the
+    // baseline, so 0.8 separates the slow pair from the fast one. It is a disclosure and not a gate:
+    // a fast runner is not a failure, and a run that cannot fail saying so is the difference between a
+    // pass and a pass that means something.
+    const FASTER_CLASS_FLOOR: f64 = 0.8;
+    let faster: Vec<String> = measured
+        .iter()
+        .filter_map(|(name, now)| {
+            let (_, was) = committed.iter().find(|(k, _)| k == name)?;
+            (now < &(was * FASTER_CLASS_FLOOR))
+                .then(|| format!("{name}: {now:.4} ms against a baseline of {was:.4} ms"))
+        })
+        .collect();
+    if !faster.is_empty() {
         println!(
-            "band: {} measure(s) above the limit, reported and not asserted while the band is \
-             uncalibrated (H-37, H-31):\n{}",
-            over.len(),
-            over.join("\n")
+            "band: {} measure(s) came in below {:.0}% of baseline, so this runner is a faster class \
+             than the one the baseline was taken on and the comparison below could not have failed \
+             for them whatever the code did:\n{}",
+            faster.len(),
+            FASTER_CLASS_FLOOR * 100.0,
+            faster.join("\n")
         );
     }
+
+    // **The assertion, restored (H-47, issue #162).** It was report-only from 12 October, after a 50%
+    // band derived from one sample flaked on a pull request containing no Rust at all. The owner named
+    // the way back and this is the far end of it: thirty runs collected, the band set to 15% from the
+    // spread they show, the derivation in `BASELINE.toml` beside the number.
+    //
+    // What the band does not cover is a runner class *slower* than the baseline's, which none of the
+    // thirty was. If one appears, this fails and the answer is to re-measure the baseline on it rather
+    // than to widen the band — and the failure names the measure and both figures, which is what tells
+    // the difference between that and a regression.
+    assert!(
+        over.is_empty(),
+        "band: {} measure(s) above the limit. The band is {band}% and is derived from 30 CI runs, in \
+         which no measure exceeded its baseline by more than 2.4% — so this is either a regression or \
+         a runner class slower than the one the baseline was taken on, and the figures below say \
+         which: a regression moves one measure, a slower machine moves all of them \
+         together.\n{}",
+        over.len(),
+        over.join("\n")
+    );
+    println!("band: every measure is inside its limit, which is asserted and not merely reported");
 }
