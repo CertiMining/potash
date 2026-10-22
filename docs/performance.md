@@ -6,9 +6,9 @@ turned out not to be reproducible.
 
 | §4.4a row | Threshold | Asserted by | Measured |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **9,066 CU**, recorded exactly; the chain shows 8,810 — see below |
+| `publish_checkpoint` compute | ≤ 15,000 CU, **exceeded by two of five recorded rows** | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **9,071 to 25,575 CU by epoch**, five rows recorded exactly; the chain shows 8,810 — see below |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly; the same on chain |
-| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`, and by `benches/band.rs` on the CI runner, which fails on neither | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
+| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`; `benches/band.rs` **fails** past a 15% band on the CI runner (H-47) | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
 | Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
 | Inclusion proof verification | **none** (D-137) | the same two | 0.0023–0.0043 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
@@ -51,7 +51,8 @@ tracking the slowest machine anyone tried (D-136, then D-137).
 What still asserts absolutely is what can: the compute figures, which are deterministic. The band
 compares one runner against its own previous numbers and **fails on drift past 15%** — restored on
 22 October 2026 from a series of 30 CI runs, in which no measure exceeded its baseline by more than
-2.4% (H-47). So a wall-clock regression gate exists here, on the runner and only on the runner: the
+2.4% (H-47). Its first run after restoration passed on the middle of three runner classes, at 0.87 to
+0.90 of baseline, so the comparison had room to fail and did not. So a wall-clock regression gate exists here, on the runner and only on the runner: the
 band is derived from the runner's spread and is tight for nothing else.
 
 `scripts/ci.sh thresholds` still reports §4.4a's figures with the machine named rather than asserting
@@ -65,20 +66,51 @@ on one. The harness prints when it is, so a green tick is read for what it is.
 any machine, so §1.8's limits are asserted absolutely in CI and have been since E-08.
 
 §4.4a requires the figures "recorded per commit". They are committed in `compute.rs` and asserted
-**exactly** — `initialize` 13,735 CU, `publish_checkpoint` 9,066, `attach_anchor_receipt` 5,687 — so a
-change to the program changes a line in the diff. Three consecutive runs gave byte-identical figures,
-which is what makes equality right rather than a tolerance. A runtime bump may legitimately move them:
-`litesvm` is pinned at `=0.16.0` against Agave 4.2.2, and if that pin moves the figures are re-measured
-and re-committed naming the version that moved them. Not widened into a bound — §1.8's bounds are
-separate assertions in the same test, and a figure inside its bound can still drift a long way unseen.
+**exactly** — `initialize` 13,735 CU and `attach_anchor_receipt` 5,687, at every epoch — so a change to
+the program changes a line in the diff. A runtime bump may legitimately move them: `litesvm` is pinned
+at `=0.16.0` against Agave 4.2.2, and if that pin moves the figures are re-measured and re-committed
+naming the version that moved them. Not widened into a bound — §1.8's bounds are separate assertions
+in the same test, and a figure inside its bound can still drift a long way unseen.
 
-**`publish_checkpoint` costs 9,066 and the chain shows 8,810, and both are right** (H-11, v0.2.4).
-The deployed program predates the calendar bound: an epoch ahead of the chain's own day index is now
-refused, which costs one comparison on a `Clock::get()` the instruction already made — 256 CU. The
-announced deployment has not been redeployed, so its transactions go on showing 8,810. The two
-numbers are about two programs. Nothing on chain is wrong; the chain is running an older one, which
-is the ordinary state of a deployment that predates a change, and the figure recorded here is the
-one a reader can reproduce from this source.
+**`publish_checkpoint` is a table and not a figure, and this document said 9,066 in four places**
+(H-52, [#193](https://github.com/CertiMining/potash/issues/193)). Its cost is
+
+    publish_checkpoint = 8,810 + 1,500 × (255 − bump)
+
+where `bump` is the canonical bump of the epoch's checkpoint PDA: `#[account(init, seeds = …, bump)]`
+makes Anchor search downward from 255, each rejected candidate costs one `create_program_address`
+syscall, and **the epoch is one of the seeds**. So a single recorded number was a property of whichever
+day the harness happened to pin. `main` went red proving it: one pull request recorded 9,066 measured
+at one epoch and another moved the pinned clock to a different one, each green on its own branch.
+
+CI now records five rows and asserts all of them, each with its epoch and that epoch's bump:
+
+| epoch | bump | rejected candidates | `publish_checkpoint` |
+|---|---|---|---|
+| 40001 | 255 | 0 | 9,071 |
+| 40002 | 253 | 2 | 12,071 |
+| 40000 | 252 | 3 | 13,569 |
+| 40010 | 250 | 5 | **16,573** |
+| 40203 | 244 | 11 | **25,575** |
+
+`initialize` and `attach_anchor_receipt` hold the same figure at every one of those epochs, which is
+what establishes that the dependence belongs to `publish_checkpoint` alone: `initialize`'s only seed is
+a constant, and `attach_anchor_receipt` reads the bump the account stores rather than searching.
+
+**§1.8's bound is exceeded, and the test asserts that it is.** Five rejected candidates cross 15,000,
+which is about one epoch in 32, and **four of the 212 epochs the program superseded on 25 September
+actually published were over it** — by 1,500 to 6,000 CU on the program as it stood then. They
+succeeded because nothing in this repository requests a compute budget, so the runtime's own 200,000 CU
+limit absorbed them. A test that recorded those rows quietly would leave "Hard limits" reading as
+though it held. Whether 15,000 is the right number, and whether the program should store its bump
+rather than search for it, are the two questions #193 holds.
+
+**The chain shows 8,810 and that is also right** (H-11, v0.2.4). The deployed program predates the
+calendar bound: an epoch ahead of the chain's own day index is now refused, which costs one comparison
+on a `Clock::get()` the instruction already made — 256 CU — and epoch 20728, whose transaction was
+read, has bump 255. The announced deployment has not been redeployed, so its transactions go on
+showing 8,810. Nothing on chain is wrong; the chain is running an older program, which is the ordinary
+state of a deployment that predates a change.
 
 **Wall-clock is not.** A shared runner is slower and noisier than a laptop by an amount nobody controls,
 so asserting fixed figures there would either flake or be loose enough to mean nothing. D-132 split it by
