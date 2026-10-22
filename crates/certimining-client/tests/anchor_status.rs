@@ -190,6 +190,7 @@ impl Log {
                     &certimining_checkpoint::ID,
                     epoch,
                 ),
+                end: certimining_checkpoint::NothingFollows,
             }
             .data(),
             true,

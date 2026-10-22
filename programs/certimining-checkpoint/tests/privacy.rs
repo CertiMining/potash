@@ -112,6 +112,7 @@ fn publish_epoch(
         epoch,
         root,
         checkpoint_bump,
+        end: certimining_checkpoint::NothingFollows,
     }
     .data();
     let metas = certimining_checkpoint::accounts::Publish {

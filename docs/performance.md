@@ -76,15 +76,20 @@ in the same test, and a figure inside its bound can still drift a long way unsee
 instruction data — 48 bytes to 49 — so Anchor makes one `create_program_address` call where it used to
 search from 255 downward. The five rows CI records read:
 
-| epoch | bump | before v0.2.7 | after |
-|---|---|---|---|
-| 40001 | 255 | 9,071 | 9,093 |
-| 40002 | 253 | 12,071 | 9,093 |
-| 40000 | 252 | 13,569 | 9,091 |
-| 40010 | 250 | **16,573** | 9,095 |
-| 40203 | 244 | **25,575** | 9,097 |
+| epoch | bump | before v0.2.7 | v0.2.7 | v0.2.9 |
+|---|---|---|---|---|
+| 40001 | 255 | 9,071 | 9,093 | 9,096 |
+| 40002 | 253 | 12,071 | 9,093 | 9,096 |
+| 40000 | 252 | 13,569 | 9,091 | 9,094 |
+| 40010 | 250 | **16,573** | 9,095 | 9,098 |
+| 40203 | 244 | **25,575** | 9,097 | 9,100 |
 
-A spread of 16,504 CU became one of 6; the 22 CU every row gained is the extra instruction-data byte.
+A spread of 16,504 CU became one of 6; the 22 CU every row gained at v0.2.7 is the extra
+instruction-data octet.
+
+**The v0.2.9 column is 3 CU dearer on every row**, and the uniformity is the point: refusing a wrong
+length costs one probe of the deserialiser's reader, not work that scales with anything. The 6 CU
+spread did not move, so it is still the epoch-dependent residual below rather than a second effect.
 No row exceeds §1.8's bound now, and `compute.rs` asserts the bound on **every** row rather than only
 on the epoch it pins — the assertion that required exactly two rows over the bound is what failed when
 the search came out, which is how it earned its place.

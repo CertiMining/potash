@@ -30,6 +30,54 @@ pub const SCHEMA_VERSION: u16 = 1;
 /// The one anchor-B kind §1.5 has (D-81).
 pub const ANCHOR_KIND_OPENTIMESTAMPS: u8 = 1;
 
+/// A zero-octet argument that refuses instruction data continuing past the fields before it.
+///
+/// **Why a type and not a length check.** Anchor deserialises an instruction's arguments in order and
+/// stops: a payload one byte short fails on the field that runs out, and a payload with a byte to
+/// spare is accepted with that byte neither read nor refused. The handler never sees the raw data, so
+/// it cannot measure the length itself. This type is placed last, serialises to nothing — so §1.8's
+/// 49 octets are unchanged — and its deserialiser asks the one question the handler cannot: is there
+/// anything left?
+///
+/// **What it cost to not have it.** The announced deployment knows 48 octets, a publisher at v0.2.8
+/// sends 49, and the extra byte was accepted and discarded: the publish succeeded, the computed bump
+/// was thrown away, the program searched for it as it always had, and nothing recorded any of it. A
+/// break that fails loudly in one direction and silently in the other is the second direction's
+/// problem, and this closes it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NothingFollows;
+
+impl anchor_lang::AnchorSerialize for NothingFollows {
+    fn serialize<W: std::io::Write>(&self, _writer: &mut W) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl anchor_lang::AnchorDeserialize for NothingFollows {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut probe = [0u8; 1];
+        match reader.read(&mut probe) {
+            // Nothing left, which is the only accepted state.
+            Ok(0) => Ok(Self),
+            Ok(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "publish_checkpoint: the instruction data continues past the fields \u{a7}1.8 names",
+            )),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// The IDL needs every type in an instruction's signature to answer for itself.
+///
+/// Every method of `IdlBuild` has a default, and `create_type` defaults to `None` — the type is
+/// simply not emitted. That is the honest answer for an argument that occupies no octets. **No IDL is
+/// generated anywhere in this repository**, by CI or by any script, so what this impl buys is that
+/// `--all-features` compiles; it is not a claim that a generated IDL would describe this argument
+/// well. The feature is declared, so the code behind it has to build.
+#[cfg(feature = "idl-build")]
+impl anchor_lang::IdlBuild for NothingFollows {}
+
 #[program]
 pub mod certimining_checkpoint {
     use super::*;
@@ -111,7 +159,13 @@ pub mod certimining_checkpoint {
         epoch: u64,
         root: [u8; 32],
         checkpoint_bump: u8,
+        // Last, and read for its absence rather than its value: it refuses a payload longer than
+        // §1.8's 49 octets, which Anchor would otherwise accept and ignore. Serialises to nothing.
+        end: crate::NothingFollows,
     ) -> Result<()> {
+        // Its work was done by the deserialiser before this body ran. Named `end` rather than `_end`
+        // so a caller building the instruction writes a field with a name, and discarded here.
+        let crate::NothingFollows = end;
         require!(
             ctx.accounts.config.schema_version == SCHEMA_VERSION,
             CheckpointError::UnsupportedSchemaVersion

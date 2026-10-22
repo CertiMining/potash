@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.8 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.9 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -45,6 +45,14 @@ covers octets that include `submission_id`, and putting those inside a disclosur
 moved a privacy claim §1.6 makes. What the receipt does not fix — it bounds existence from above
 only, and the epoch it establishes is a calendar epoch where `observed_epoch` is a sequence one — is
 stated in §1.6. H-02.*
+
+*v0.2.9 makes `publish_checkpoint` refuse instruction data that is not exactly the 49 octets §1.8
+names. One octet short was already refused; one octet long was accepted with that octet neither read
+nor refused, which let a publisher and a program disagree in silence — the program on chain knows 48,
+so it would have taken the 49 a current publisher sends, discarded the bump and searched for it as
+before. The refusal is a final argument that serialises to nothing, so 49 is unchanged, and it costs
+3 CU at every epoch: the five recorded rows move from 9,091–9,097 to 9,094–9,100 against §1.8's
+15,000. H-52, ruled 22 October 2026.*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -573,15 +581,22 @@ and by everyone. And only the checkpoint authority can cause it, because this in
 that signature: it is the authority damaging its own log in public, not an attack a third party can
 mount.
 
-**49 describes the publisher, not a bound the program enforces.** The program reads the fields it
-knows and does not look at what follows: instruction data one byte short is refused — Anchor's
-`InstructionDidNotDeserialize` — and a trailing byte is accepted and ignored. The two directions are
-not symmetric, and the one that succeeds is the one the deployment is in. **The announced deployment
-has not been redeployed**, so it runs a program that knows 48 bytes; a publisher at this version would
-send it 49, and the extra byte would be discarded while that program searched for the bump as it
-always did. The publish would succeed and nothing would say the bump had been thrown away. Resuming
-the log against that program is therefore a decision and not a non-event, and
-`programs/certimining-checkpoint/tests/checkpoint.rs` holds both halves as a test.
+**49 is the length the program enforces, in both directions** *(v0.2.9)*. Instruction data one octet
+short is refused, as it always was — Anchor's `InstructionDidNotDeserialize` — and instruction data
+one octet long is refused too, which it was not before. Anchor deserialises arguments in order and
+stops, so a trailing octet used to be accepted with nothing reading it and nothing refusing it, and
+the handler never sees the raw data and so cannot measure the length itself. The refusal is therefore
+a final argument that serialises to nothing and whose deserialiser asks the one question the handler
+cannot reach: is anything left? 49 is unchanged by it, and it costs 3 CU at every epoch.
+
+**Why it was worth 3 CU.** The two directions were not symmetric, and the one that succeeded was the
+one the deployment was in. A program that knows 48 octets accepts the 49 a publisher at this version
+sends, discards the bump, searches for it as it always did, and records none of it: the publish
+succeeds and nothing says the computed bump was thrown away. That is why the upgrade precedes
+resuming the log rather than accompanying it, and why
+`programs/certimining-checkpoint/tests/checkpoint.rs` asserts all three lengths — 48 refused, 50
+refused, and 49 published. The third is there because a check that refused everything would satisfy
+the first two.
 
 **Why the bump moved here at all.** `#[account(init, seeds = …, bump)]` searches, each rejected
 candidate costs one `create_program_address` syscall, and the epoch is one of the seeds — so the cost

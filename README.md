@@ -39,7 +39,7 @@ that description, which is why D-137 removed its bound.
 
 | | Threshold | Measured | By |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | 9,091 to 9,097 CU | LiteSVM; the chain shows 8,810, which is the program before v0.2.4 and v0.2.7 ([why](docs/performance.md)) |
+| `publish_checkpoint` compute | ≤ 15,000 CU | 9,094 to 9,100 CU | LiteSVM; the chain shows 8,810, which is the program before v0.2.4 and v0.2.7 ([why](docs/performance.md)) |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
 | Chain walk, 10,000 records, hash recomputation only | none (D-137) | 7–19.5 ms, machine-dependent | Rust |
 | Epoch root build, 256 leaves | none (D-137) | 0.20–0.38 ms | Rust |
@@ -61,7 +61,7 @@ searched downward from 255 for the checkpoint PDA's canonical bump, each rejecte
 200,000 CU limit absorbed them.
 
 Since v0.2.7 the bump travels in the instruction data — 48 bytes to 49 — and the program makes one
-call. The five epochs CI records spanned 9,071 to 25,575 CU and now span **9,091 to 9,097**, which is
+call. The five epochs CI records spanned 9,071 to 25,575 CU and now span **9,094 to 9,100**, which is
 a spread of 6 where it was 16,504. The table stays five rows because five rows agreeing at five
 different bumps is what shows the dependence is gone.
 

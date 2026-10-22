@@ -16,11 +16,17 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.8**, SHA-256 `fc34ba78253b3f868dea0ea770a69bfc120fbf6160700b5966bcf4ba8e730dac`,
-945 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
+committed today is **v0.2.9**, SHA-256 `cf3572b1323036009b0d2fc42dce3842b51bebe9c85c98fa2ed06dc00ddbfbc3`,
+960 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
 (H-06), which is the subject of SD-11, v0.2.3 corrects §4.4a's account of the CI regression band
 (H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). None of those four
 touches anything this verifier implements: they are about the program and the figures around it.
+
+**v0.2.9 makes `publish_checkpoint` refuse instruction data that is not exactly 49 octets** — one
+octet long was accepted and ignored before it, which let the program on chain take a 49-octet publish
+and discard the bump in silence. It does not touch this verifier: this verifier reads checkpoints and
+disclosure packages and builds no publish instruction, so the length the program accepts is not a
+thing it asserts. §2.4's address derivation, which it does implement, is unchanged.
 
 **v0.2.8 closes the transfer half of RES-10** — a promise now travels with a timestamp over its own
 161-octet encoding, and §1.6 judges a transferred promise against the UTC day index of the block that
