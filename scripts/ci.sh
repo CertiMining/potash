@@ -367,12 +367,18 @@ deny() {
 # compared against its own previous figures instead. benches/BASELINE.toml carries those figures and the
 # band.
 #
-# **This group records and reports drift and does not fail on it** while the band is uncalibrated
-# (H-37, H-31), and D-137 had already removed §4.4a's wall-clock absolutes — so no wall-clock
-# regression gate exists in this repository until calibration restores the assertion. What still fails
-# here is structural: an absent baseline entry, a non-finite band or baseline, a fixture that is not the
-# size its label names, a timed no-op, a verifier accepting a corrupted leaf. An absent entry prints
-# what it measured, because a baseline nobody measured is a gate that cannot fail.
+# **This group fails on drift past the band again (H-47).** It was report-only from 12 October, when a
+# 50% band derived from one sample flaked on a pull request containing no Rust at all. Thirty CI runs
+# were collected on 22 October, the band is 15% and `benches/BASELINE.toml` carries the derivation
+# beside the number — so a wall-clock regression gate exists in this repository again, which is the one
+# §4.4a describes. What also fails here is structural: an absent baseline entry, a non-finite band or
+# baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a
+# corrupted leaf. An absent entry prints what it measured, because a baseline nobody measured is a gate
+# that cannot fail.
+#
+# **A run on a faster runner class says so**, because it cannot fail the comparison whatever the code
+# does: 8 of those 30 runs came in at 0.59 to 0.64 of the baseline, where a pass is a true sentence
+# about a gate nothing exercised.
 #
 # `--release` is not optional: a debug build measures the optimiser's absence.
 #

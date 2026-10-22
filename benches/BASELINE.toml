@@ -13,23 +13,55 @@
 # passing — a baseline nobody has measured would make a gate that cannot fail, which is the defect this
 # repository has filed more than once.
 #
-# `band_percent` is how far above its baseline a measure may drift before `band.rs` reports it. It is a
-# regression detector, not a performance claim — and while the band is uncalibrated it **reports and does
-# not fail** (H-37, H-31), so no wall-clock regression gate exists until calibration restores the
-# assertion. The structural controls in `band.rs` keep failing, this file's own absent entry among them.
+# `band_percent` is how far above its baseline a measure may drift before `band.rs` **fails**. It is a
+# regression detector, not a performance claim.
 #
-# **50 is a guess, and is recorded as one.** Nobody has yet observed how much these measures vary on
-# GitHub's shared runners from one run to the next, so the number is not derived from anything — it is
-# wide because a band that flakes gets disabled and a disabled gate is worse than a loose one. Once a few
-# runs exist, the spread is visible in their output and this number is set from it. Until then, a measure
-# above its limit is reported and means "look", not "a regression of at least 50% has occurred".
-band_percent = 50.0
+# **15, derived from 30 CI runs on 22 October 2026 (H-47, issue #162).** It was 50 and that 50 was
+# recorded as a guess: nobody had observed how much these measures vary on GitHub's shared runners, so
+# the number came from nothing, and it flaked on a pull request containing no Rust at all. The owner made
+# the comparison report-only on 12 October and named the way back — at least twenty runs, the band set
+# from the measured spread, the derivation recorded, the assertion restored. Here is the derivation.
+#
+# **The series.** Every `bench-band` job log from the 30 most recent runs that reached one, over 30
+# distinct commits between 20 October 23:48 and 22 October 13:59 UTC. Three measures each, 90 samples.
+#
+# **What they show, as a ratio to the baselines below.**
+#
+#     measure                      min     median   max     worst above baseline
+#     chain_walk_hash_chain_only   0.591    0.997   1.005   +0.5%
+#     epoch_root_256_leaves        0.588    0.990   1.004   +0.4%
+#     inclusion_proof_verify       0.610    1.000   1.024   +2.4%
+#
+# **No measure has ever exceeded its baseline by more than 2.4%**, and that worst case is
+# `inclusion_proof_verify`, which runs in 4 µs where a single quantisation step is about that much. The
+# two measures above 0.3 ms never exceed +0.5%. The 50% band was twenty times wider than the widest
+# excursion the runners actually produce.
+#
+# **The fleet is mixed, and that is why the minima are 0.59.** Three classes appear, at about 1.00, 0.88
+# and 0.61 times the baseline — 22 samples in the slow pair and 8 in the fast one — interleaved in time
+# rather than ordered, so this is a mixed fleet and not an upgrade. The baseline below came from the
+# slowest class, which is why every run sits at or below it and the measured excursion is so small.
+#
+# **15 is six times the widest excursion observed and thirty times the widest on a measure that is not
+# quantisation-limited.** It fails a regression of 15% or more while leaving room no run has used.
+#
+# **What it does not cover, said rather than discovered.** A runner class *slower* than the baseline's.
+# None of the thirty was. If one appears this fails, and the answer is to re-measure the baseline on it
+# rather than to widen the band: a regression moves one measure and a slower machine moves all three
+# together, which is what tells them apart. And a run on a *faster* class cannot fail at all, so
+# `band.rs` now says when it is on one — 8 of 30 runs reported a pass that the gate had no part in.
+band_percent = 15.0
 
 # **And it fired on a busy machine, which is H-31 (#72).** Running another test suite alongside it put
 # this machine at 19.73 ms against a 19.27 ms limit, with all three measures marginal — unchanged code,
-# over the limit on load. That is why the comparison reports rather than fails, and why its calibration
-# is the work that restores it. A measure over its limit on a developer machine means "check what else is
-# running" before it means "the code regressed".
+# over the limit on load. A measure over its limit on a developer machine means "check what else is
+# running" before it means "the code regressed", and at a 15% band it will mean that more often: the
+# limit here is now 14.77 ms rather than 19.27, and a loaded machine passes 19.73 under neither.
+#
+# **That is a cost of calibrating, and it is paid off the runner rather than on it.** The band is
+# derived from the runner's spread, so it is tight for the runner and tight for nobody else. On a
+# developer machine the comparison was already meaningless in both directions — see the paragraph
+# below — and is now meaningless more loudly. CI's run is the one that gates.
 #
 # **Run off the runner, this comparison proves nothing, and that is worth stating.** These figures are
 # one machine's. The reference machine is about 1.8x faster, so `scripts/ci.sh bench-band` there measures
@@ -42,9 +74,10 @@ band_percent = 50.0
 # Measured on ubuntu-24.04, GitHub's shared runner, by the bench-band job of CI run 37046282848
 # (commit c16b6a5) — the run whose failure printed them, which is the only way an entry gets here.
 #
-# **One run, and that is worth knowing.** A baseline from a single sample carries that sample's noise.
-# It is the honest starting point rather than a better one invented, and it is re-measured if the band
-# turns out to flake.
+# **One run, and the 30-run series since says it was a representative one.** A baseline from a single
+# sample carries that sample's noise; these figures turn out to sit at the top of the slow class, within
+# 0.5% of its median across 22 later samples from that class. That is luck rather than method, and it is
+# what makes the 15% band safe: the baseline is the slowest thing the fleet produces.
 #
 # For scale: the reference machine does the chain walk in 7.1 ms and this runner in 12.8 ms, about 1.8x
 # slower. That gap is the whole reason D-132 sent §4.4a's absolute figures to the reference machine and
