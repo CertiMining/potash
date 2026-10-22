@@ -251,7 +251,27 @@ upgrade the program.
 | Checkpoint authority | `7sXh9zUcJP16RKw6ndBHAzYqT9fNNgZR79rwiG1imtNB` |
 | `tree_height` | 8, written once at `initialize` |
 | `start_epoch` | 20723, the UTC day index at `initialize` (D-109) |
-| Deployed in slot | 504783809 · 164,752 bytes · sha256 `fa8b5f305abf4e7fd73df1207772eae73a49413dfbc94c95d1fc7a17c3785bb5` from `ade6a18` |
+| Deployed in slot | 514046538 · 166,896 bytes · sha256 `7b76364830809b507d445a683080916a37852d529c0992c5a999f65092739649` from `12b8b42` — the in-place upgrade of 22 October 2026 |
+| *Superseded* | *504783809 · 164,752 bytes · sha256 `fa8b5f305abf4e7fd73df1207772eae73a49413dfbc94c95d1fc7a17c3785bb5` from `ade6a18` — the first deployment of this address, replaced by the upgrade above and kept rather than overwritten* |
+
+**The announced deployment was upgraded in place on 22 October 2026**, which is the first time this
+address has been upgraded rather than replaced. The program now refuses instruction data that is not
+exactly the 49 octets §1.8 names; before it, one octet too many was accepted with the octet neither
+read nor refused, so a publisher at v0.2.8 would have had its computed bump discarded in silence
+(H-52). The upgrade ran from `12b8b42` through `scripts/upgrade-devnet.sh`, which builds the artefact
+from the tree it has just checked rather than trusting `target/`.
+
+**The ProgramData account had to be enlarged first, and that is irreversible.** It had been allocated
+to fit the program it was first deployed with — 164,797 bytes, a 45-byte header and 164,752 of
+program, with no headroom — and the new artefact is 166,896. `bpf_loader_upgradeable` refuses an
+extend smaller than 10,240 bytes, so the request was the floor rather than the 2,144-byte shortfall:
+the account is now 175,037 bytes and its rent rose from 0.837819 to 0.8898382 SOL. The surplus is
+headroom the next upgrade does not have to buy.
+
+**The deployed bytes were read back rather than taken from the loader's success message.** After an
+extend, `solana program show` reports `Data Length` as the account's capacity — 174,992 here — because
+the loader keeps no record of how much of that the program occupies. So the account was dumped: its
+first 166,896 bytes equal the artefact exactly, the digest above, and the remaining 8,096 are zeros.
 
 **Two superseded deployments.** `HS82CAXgVykfVniBzPp9eArDfVLmFYcik3evyAx7iVZB`, announced 24 September, is superseded. Its epoch 1 carries a receipt digest standing for no OpenTimestamps receipt, written into a field that is write-once, so it claims an anchor it does not have and always will; and its log begins at epoch 1 rather than at a UTC day index, which the rule in §1.4 now forbids. Neither is repairable in place.
 
