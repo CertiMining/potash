@@ -1025,6 +1025,13 @@ mod cross_epoch {
 
     /// A padding leaf is bound to its epoch, so no slot has a value an adversary could precompute.
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "64 epochs of 256 leaves: 16,384 leaf preimages and 64 tree builds, which took the \
+                  Miri job past its six-hour limit. The construction it exercises is the one \
+                  `tree.rs` runs under Miri at a size Miri finishes, and the two-epoch test alongside \
+                  is not ignored, so the cross-epoch path is still checked for undefined behaviour."
+    )]
     fn no_padding_leaf_repeats_across_epochs() {
         let capacity = 1usize << HEIGHT;
         let mut seen: HashMap<Digest, u64> = HashMap::new();
@@ -1127,6 +1134,13 @@ mod cross_epoch {
     /// If the construction leaked across epochs this is where it would show, and it is the view
     /// V-Z-02 has never taken.
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "64 epochs of 256 leaves: 16,384 leaf preimages and 64 tree builds, which took the \
+                  Miri job past its six-hour limit. The construction it exercises is the one \
+                  `tree.rs` runs under Miri at a size Miri finishes, and the two-epoch test alongside \
+                  is not ignored, so the cross-epoch path is still checked for undefined behaviour."
+    )]
     fn a_classifier_given_one_slot_across_many_epochs_does_no_better_than_chance() {
         let capacity = 1usize << HEIGHT;
         let mut successes = 0usize;
