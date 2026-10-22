@@ -6,7 +6,7 @@ turned out not to be reproducible.
 
 | §4.4a row | Threshold | Asserted by | Measured |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **8,810 CU**, recorded exactly; the same on chain |
+| `publish_checkpoint` compute | ≤ 15,000 CU | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **9,066 CU**, recorded exactly; the chain shows 8,810 — see below |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly; the same on chain |
 | Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`, and by `benches/band.rs` on the CI runner, which fails on neither | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
 | Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
@@ -61,12 +61,20 @@ therefore a record with the machine named — and a record has to be read, which
 any machine, so §1.8's limits are asserted absolutely in CI and have been since E-08.
 
 §4.4a requires the figures "recorded per commit". They are committed in `compute.rs` and asserted
-**exactly** — `initialize` 13,735 CU, `publish_checkpoint` 8,810, `attach_anchor_receipt` 5,687 — so a
+**exactly** — `initialize` 13,735 CU, `publish_checkpoint` 9,066, `attach_anchor_receipt` 5,687 — so a
 change to the program changes a line in the diff. Three consecutive runs gave byte-identical figures,
 which is what makes equality right rather than a tolerance. A runtime bump may legitimately move them:
 `litesvm` is pinned at `=0.16.0` against Agave 4.2.2, and if that pin moves the figures are re-measured
 and re-committed naming the version that moved them. Not widened into a bound — §1.8's bounds are
 separate assertions in the same test, and a figure inside its bound can still drift a long way unseen.
+
+**`publish_checkpoint` costs 9,066 and the chain shows 8,810, and both are right** (H-11, v0.2.4).
+The deployed program predates the calendar bound: an epoch ahead of the chain's own day index is now
+refused, which costs one comparison on a `Clock::get()` the instruction already made — 256 CU. The
+announced deployment has not been redeployed, so its transactions go on showing 8,810. The two
+numbers are about two programs. Nothing on chain is wrong; the chain is running an older one, which
+is the ordinary state of a deployment that predates a change, and the figure recorded here is the
+one a reader can reproduce from this source.
 
 **Wall-clock is not.** A shared runner is slower and noisier than a laptop by an amount nobody controls,
 so asserting fixed figures there would either flake or be loose enough to mean nothing. D-132 split it by

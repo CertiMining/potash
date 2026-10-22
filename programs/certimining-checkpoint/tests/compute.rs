@@ -48,16 +48,24 @@ const ATTACH_LIMIT: u64 = 12_000;
 /// (D-16, D-87), and if that pin moves these numbers are re-measured and re-committed **with the
 /// version that moved them named in the commit**. That is the point. A silent change is the failure.
 ///
-/// **These are also what the deployed program actually costs.** The two figures were checked against
-/// the announced deployment's own transactions: `computeUnitsConsumed` is 8,810 for epoch 20728's
-/// publication and 5,687 for epoch 20727's attachment, matching this harness exactly. Devnet was
-/// running a later Agave than the pin at the time — it reported `4.4.0-beta.0` against the pinned
-/// 4.2.2 — so the agreement is across runtime versions rather than within one, which is more than
-/// determinism alone promises. It also settles a figure the README published: 10,310 CU for
-/// `publish_checkpoint`, which matches neither this harness nor the chain, on a program whose source
-/// has not changed since that line was written.
+/// **`attach_anchor_receipt` is also what the deployed program costs; `publish_checkpoint` no longer
+/// is, and that is H-11.** Both figures were checked against the announced deployment's own
+/// transactions: `computeUnitsConsumed` was 8,810 for epoch 20728's publication and 5,687 for epoch
+/// 20727's attachment, matching this harness exactly at the time. Devnet was running a later Agave
+/// than the pin — it reported `4.4.0-beta.0` against the pinned 4.2.2 — so the agreement was across
+/// runtime versions rather than within one, which is more than determinism alone promises.
+///
+/// `publish_checkpoint` now costs **9,066**, because H-11 added the check that an epoch is not ahead
+/// of the chain's own day. **The announced deployment has not been redeployed**, so its transactions
+/// still show 8,810 and will go on doing so: that deployment runs the program as it was before this
+/// check existed. The two numbers are both right about different programs, and the difference is
+/// 256 CU of division and comparison. Nothing here is wrong on chain; the chain is simply running
+/// an older program, which is the ordinary state of a deployment that predates a change.
+///
+/// It also settles a figure the README once published: 10,310 CU for `publish_checkpoint`, which
+/// matched neither this harness nor the chain.
 const INITIALIZE_CU: u64 = 13_735;
-const PUBLISH_CU: u64 = 8_810;
+const PUBLISH_CU: u64 = 9_066;
 const ATTACH_CU: u64 = 5_687;
 
 fn metas(accounts: Vec<anchor_lang::prelude::AccountMeta>) -> Vec<solana_instruction::AccountMeta> {

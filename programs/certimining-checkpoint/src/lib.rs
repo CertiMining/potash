@@ -113,6 +113,33 @@ pub mod certimining_checkpoint {
             .ok_or(CheckpointError::EpochOutOfOrder)?;
         require!(epoch == next, CheckpointError::EpochOutOfOrder);
 
+        // **The epoch must be the chain's day, or the day before it** (H-11, issue #45).
+        //
+        // §1.4 makes an epoch a UTC day index. `initialize` is held to the chain's clock exactly
+        // (D-109, V-N-26); this instruction was held to nothing. It accepted `last_epoch + 1` and
+        // never asked what day it was, so a caller could advance the sequence as fast as it could
+        // sign: 200 epochs in 200 minutes is a valid transaction sequence that leaves the log 200
+        // days ahead of the calendar, and because the sequence is monotone it cannot be walked back.
+        //
+        // That happened twice on devnet. The second announced deployment reached `last_epoch` 20932
+        // against a calendar index of 20723 — 209 days ahead — and the remedy both times was a new
+        // program id (D-88).
+        //
+        // The day before is accepted because a publication scheduled inside day *d* may land in
+        // day *d + 1* when the network is slow. So a log behind the calendar catches up one epoch
+        // per transaction, and a log cannot run ahead at all.
+        //
+        // This bounds the sequence to the calendar in the one direction that was unguarded. A
+        // batcher that stops publishing is visible as lag, which a client surfaces; a batcher that
+        // publishes too fast was invisible.
+        let clock = Clock::get()?;
+        let chain_day = clock
+            .unix_timestamp
+            .checked_div(86_400)
+            .ok_or(CheckpointError::EpochOutOfOrder)?;
+        let chain_day = u64::try_from(chain_day).map_err(|_| CheckpointError::EpochOutOfOrder)?;
+        require!(epoch <= chain_day, CheckpointError::EpochOutOfOrder);
+
         // The account `init` would have created, created here so existence could be read first, and
         // created the way `init` does it rather than the way that is shorter to write. The system
         // program's `create_account` refuses any address already holding lamports, so an address a
@@ -180,7 +207,7 @@ pub mod certimining_checkpoint {
             )?;
         }
 
-        let clock = Clock::get()?;
+        // The same reading the day check above took, so the instruction makes one `Clock::get()`.
         let written = CheckpointAccount {
             schema_version: SCHEMA_VERSION,
             epoch,
