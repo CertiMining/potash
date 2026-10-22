@@ -27,11 +27,16 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEMO = join(HERE, "..");
 
-const config = { startEpoch: 20723n, lastEpoch: 20725n };
+// **Synthetic day indices (H-20, #60).** These were real: day indices the announced deployment
+// and the one superseded on 25 September both published. Nothing in this file is about either of
+// them — it exercises the status model's arithmetic, and what the assertions check is the
+// differences between these numbers rather than the dates. The old values are not named here,
+// because naming them would put them back in the file.
+const config = { startEpoch: 40000n, lastEpoch: 40002n };
 const ok = (status) => ({ status, root: "ab".repeat(32), publishedSlot: 500000000n });
 
 test("the distance is reported, and nothing grades it", () => {
-  const behind = lagReport(20731n, 20733n);
+  const behind = lagReport(40008n, 40010n);
   assert.equal(behind.days, 2n);
   assert.equal(behind.state, "behind");
   // The ruling belongs to whoever holds the clock (§1.4), so the sentence must not deliver one.
@@ -40,12 +45,12 @@ test("the distance is reported, and nothing grades it", () => {
   }
   assert.ok(behind.sentence.includes("by hand"), "a hand-run cycle's lateness must be attributed to a person");
 
-  assert.equal(lagReport(20733n, 20733n).state, "level");
-  assert.equal(lagReport(20733n, 20733n).days, 0n);
+  assert.equal(lagReport(40010n, 40010n).state, "level");
+  assert.equal(lagReport(40010n, 40010n).days, 0n);
 });
 
 test("an epoch ahead of the calendar is called out rather than shown as level", () => {
-  const ahead = lagReport(20934n, 20733n);
+  const ahead = lagReport(40211n, 40010n);
   assert.equal(ahead.state, "ahead");
   assert.equal(ahead.days, -201n);
   // D-88: a compressed run put an earlier deployment 209 days ahead and cost it. If this ever
@@ -55,16 +60,16 @@ test("an epoch ahead of the calendar is called out rather than shown as level", 
 
 test("every published epoch gets a row, in order", () => {
   const rows = epochRows(config, new Map([
-    [20723n, ok("dual")], [20724n, ok("dual")], [20725n, ok("single")],
+    [40000n, ok("dual")], [40001n, ok("dual")], [40002n, ok("single")],
   ]));
-  assert.deepEqual(rows.map((r) => r.epoch), [20723n, 20724n, 20725n]);
+  assert.deepEqual(rows.map((r) => r.epoch), [40000n, 40001n, 40002n]);
   assert.deepEqual(rows.map((r) => r.state), ["dual", "dual", "single"]);
   assert.deepEqual(summarise(rows), { total: 3, dual: 2, single: 1, unanswered: 0 });
 });
 
 test("an epoch whose account did not arrive is unanswered, never absent and never healthy", () => {
   const rows = epochRows(config, new Map([
-    [20723n, ok("dual")], [20724n, new Error("timeout")], [20725n, ok("single")],
+    [40000n, ok("dual")], [40001n, new Error("timeout")], [40002n, ok("single")],
   ]));
   assert.equal(rows.length, 3, "a row is owed for every epoch in the published range");
   assert.equal(rows[1].state, "unanswered");
@@ -143,7 +148,7 @@ test("the page says dual is the receipt's own claim, and says devnet", () => {
 // `0x0xdc349d…6d0791` while all seventeen of these tests passed. The fix moved the function into the
 // module these tests can reach, which is the part worth keeping.
 test("a root is shortened to one 0x, whichever spelling it arrives in", () => {
-  // Synthetic, and deliberately so: the first draft of this test used epoch 20723's real published
+  // Synthetic, and deliberately so: the first draft of this test used a real published epoch
   // root, and `cargo xtask check-live-values` refused the file — by the bare spelling, which it
   // could not see until the repair for the review of PR #121 taught it that `0x` is a convention of
   // the list rather than part of the value.

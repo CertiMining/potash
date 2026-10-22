@@ -60,7 +60,7 @@
 //! characters as a program id and `18446744073709551616` as a slot, and both passed the whole static
 //! gate. The description now decides which check runs.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 /// One value that exists on chain.
@@ -68,7 +68,7 @@ struct LiveValue {
     value: String,
     lower: String,
     what: String,
-    /// Whether a match has to fall on digit boundaries (H-20, issue #60).
+    /// Whether a match has to stand alone as a number rather than sit inside one (H-20, #60).
     ///
     /// **Substring matching makes a low-entropy value unlistable.** A listed slot `504985662` is
     /// also a substring of the unrelated `15049856620`, so listing it would fire on text that has
@@ -79,7 +79,7 @@ struct LiveValue {
     /// accident, and requiring boundaries there would *lose* matches: a listed root pasted inside a
     /// longer hex blob is exactly the case the gate must still catch. So the long, high-entropy
     /// shapes keep substring matching and the short ones gain boundaries.
-    on_digit_boundaries: bool,
+    on_number_boundaries: bool,
     /// Every spelling of this value a file could carry, lowercased.
     ///
     /// **`0x` is the list's convention, not part of the value (found while repairing H-01).** The
@@ -89,35 +89,87 @@ struct LiveValue {
     needles: Vec<String>,
 }
 
-/// Whether `needle` occurs in `haystack` with no digit immediately either side.
+/// Removes the digit separator a number may carry, so `20_723` reads as the number it is.
 ///
-/// The boundary is digits and not alphanumerics on purpose. `504985662` must not match inside
-/// `15049856620`, which is the false positive that made short values unlistable; it must still match
-/// in `"slot": 504985662,` and in `slot504985662` if anything ever writes that, because a looser
-/// boundary buys nothing here and loses matches.
-fn contains_on_digit_boundaries(haystack: &str, needle: &str) -> bool {
+/// **This was a live escape, found while listing the epochs (H-20).** Rust, JavaScript and Python all
+/// allow `_` between digits, and the gate did not: `crates/certimining-client/tests/program_addresses.rs`
+/// derives the announced deployment's checkpoint address for `20_723`, and a search for `20723` went
+/// straight past it. One of the twenty-seven uses of a live epoch index in the synthetic surface was
+/// spelled that way and was invisible — the same shape of hole as the `0x` prefix that once let a real
+/// root through when it was pasted bare.
+///
+/// Only a separator **between two digits** is removed, which is what makes this safe: `20_723` is the
+/// number 20723 in each of those languages, while `slot_20723` keeps its underscore because a letter
+/// sits on one side of it.
+fn strip_digit_separators(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    for (i, c) in text.char_indices() {
+        if c == '_' {
+            let before = i.checked_sub(1).and_then(|j| bytes.get(j));
+            let after = bytes.get(i.saturating_add(1));
+            if before.is_some_and(u8::is_ascii_digit) && after.is_some_and(u8::is_ascii_digit) {
+                continue;
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// How many times `needle` occurs in `haystack` standing alone as a number.
+///
+/// **The boundary is a hexadecimal digit, not a decimal one, and that is what makes epochs
+/// listable.** Rejecting only decimal neighbours still leaves a five-digit number matching inside a
+/// hex blob: `a20751b` is not the epoch 20751, and nothing in the file holding it is about that epoch.
+/// Measured over the synthetic surface, the decimal rule produced **twenty-six** such false positives
+/// across five committed files, twenty-one of them in the Keccak known-answer vectors — which is
+/// exactly the collision the owner's 3 October ruling predicted when it left these values
+/// review-enforced.
+///
+/// Hex digits either side are rejected and other letters are not, so `504985662` still matches in
+/// `slot504985662` and in `"slot": 504985662,`, which is what a looser boundary is for. It must not
+/// match inside `15049856620`, and a decimal digit is a hex digit, so that case is covered twice over.
+fn occurrences_as_a_number(haystack: &str, needle: &str) -> usize {
     if needle.is_empty() {
-        return false;
+        return 0;
     }
     let bytes = haystack.as_bytes();
+    let hex = |b: &u8| b.is_ascii_digit() || (b'a'..=b'f').contains(b);
+    let mut found = 0usize;
     let mut from = 0usize;
     while let Some(rest) = haystack.get(from..) {
         let Some(hit) = rest.find(needle) else {
-            return false;
+            break;
         };
         let at = from.saturating_add(hit);
         let end = at.saturating_add(needle.len());
-        let before_is_digit = at
-            .checked_sub(1)
-            .and_then(|i| bytes.get(i))
-            .is_some_and(u8::is_ascii_digit);
-        let after_is_digit = bytes.get(end).is_some_and(u8::is_ascii_digit);
-        if !before_is_digit && !after_is_digit {
-            return true;
+        let before = at.checked_sub(1).and_then(|i| bytes.get(i));
+        if before.is_some_and(hex) || bytes.get(end).is_some_and(hex) {
+            from = at.saturating_add(1);
+            continue;
         }
-        from = at.saturating_add(1);
+        found = found.saturating_add(1);
+        from = end;
     }
-    false
+    found
+}
+
+/// How many times a file carries this value, by the rule its declared shape sets.
+///
+/// **The bare spelling is the one counted, and counting any other would double.** For a hex entry the
+/// list's `0x` is a convention rather than part of the value, so `needles` holds both spellings and
+/// every occurrence of either contains the bare form exactly once. Counting that form counts both
+/// spellings without counting either twice.
+fn occurrences(v: &LiveValue, lower: &str, without_separators: &str) -> usize {
+    let Some(needle) = v.needles.last() else {
+        return 0;
+    };
+    if v.on_number_boundaries {
+        occurrences_as_a_number(without_separators, needle)
+    } else {
+        lower.matches(needle.as_str()).count()
+    }
 }
 
 fn repo_file(root: &Path, name: &str) -> String {
@@ -146,9 +198,9 @@ fn live_values(root: &Path) -> Vec<LiveValue> {
             what: what.trim().to_string(),
             // Decimals need boundaries; the long, high-entropy shapes must keep substring matching
             // so a value pasted inside a longer string is still caught (H-20).
-            on_digit_boundaries: matches!(
+            on_number_boundaries: matches!(
                 declared_shape(what.trim()),
-                Shape::Slot | Shape::UnixTimestamp
+                Shape::Slot | Shape::UnixTimestamp | Shape::Epoch
             ),
             needles,
         });
@@ -157,15 +209,23 @@ fn live_values(root: &Path) -> Vec<LiveValue> {
     out
 }
 
-/// `(file, value)` pairs that are allowed, because the artifact's subject *is* the deployment.
-fn exemptions(root: &Path) -> BTreeSet<(String, String)> {
-    let mut out = BTreeSet::new();
+/// `(file, value)` to the number of occurrences allowed, because the artifact's subject *is* the
+/// deployment.
+///
+/// **The count is the per-occurrence half of H-20 (issue #60).** An exemption used to be a pair, so
+/// one entry blanketed every occurrence in the file and a second use could appear beneath it in
+/// silence. `LIVE-VALUES.txt` carried a hand-written block of counts beside the gate for the values
+/// the list could not hold, checked by `check_recorded_short_values`; now that epoch day indices are
+/// listed, the count belongs in the gate, and an entry says how many times the artifact may name the
+/// value rather than that it may.
+fn exemptions(root: &Path) -> BTreeMap<(String, String), usize> {
+    let mut out = BTreeMap::new();
     for line in repo_file(root, "LIVE-VALUES.exempt").lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let mut parts = line.splitn(3, "  ");
+        let mut parts = line.splitn(4, "  ");
         let file = parts
             .next()
             .unwrap_or_else(|| panic!("LIVE-VALUES.exempt: no file on {line:?}"))
@@ -174,11 +234,25 @@ fn exemptions(root: &Path) -> BTreeSet<(String, String)> {
             .next()
             .unwrap_or_else(|| panic!("LIVE-VALUES.exempt: no value on {line:?}"))
             .trim();
+        let count = parts
+            .next()
+            .unwrap_or_else(|| {
+                panic!("LIVE-VALUES.exempt: no occurrence count on {line:?}; the format is file, value, count, reason")
+            })
+            .trim();
+        let count: usize = count.parse().unwrap_or_else(|_| {
+            panic!("LIVE-VALUES.exempt: {count:?} is not an occurrence count on {line:?}")
+        });
+        assert!(
+            count > 0,
+            "LIVE-VALUES.exempt: {line:?} exempts nothing; a line that permits no occurrence should \
+             be deleted, and the gate says so rather than passing it"
+        );
         assert!(
             parts.next().is_some(),
             "LIVE-VALUES.exempt: no reason on {line:?}; an exemption without one is a hole"
         );
-        out.insert((file.to_string(), value.to_lowercase()));
+        out.insert((file.to_string(), value.to_lowercase()), count);
     }
     out
 }
@@ -211,15 +285,10 @@ fn offences(root: &Path, files: &[(String, String)]) -> Vec<String> {
 
     for (name, text) in files {
         let lower = text.to_lowercase();
+        let without_separators = strip_digit_separators(&lower);
         for v in &values {
-            let carried = |n: &String| {
-                if v.on_digit_boundaries {
-                    contains_on_digit_boundaries(&lower, n)
-                } else {
-                    lower.contains(n)
-                }
-            };
-            if !v.needles.iter().any(carried) {
+            let carried = occurrences(v, &lower, &without_separators);
+            if carried == 0 {
                 continue;
             }
             // **The exact path, and nothing else (H-25 review, H3).** A basename was accepted too,
@@ -228,10 +297,20 @@ fn offences(root: &Path, files: &[(String, String)]) -> Vec<String> {
             // that value in every other `allowed.json` anywhere in the surface — a review passed two
             // different files through one entry. Both callers now key by the artifact's destination
             // in the repository, so one spelling is enough and it is the specific one.
-            if allowed.contains(&(name.clone(), v.lower.clone())) {
-                continue;
+            match allowed.get(&(name.clone(), v.lower.clone())) {
+                Some(&permitted) if permitted == carried => continue,
+                // **A recorded count that no longer describes the file is the failure this adds.**
+                // The artifact may legitimately name the value, and it now names it a different
+                // number of times, which is a use nobody recorded. Re-count it deliberately.
+                Some(&permitted) => found.push(format!(
+                    "  {name} carries {} ({}) {carried} time(s) and LIVE-VALUES.exempt permits {permitted}",
+                    v.value, v.what
+                )),
+                None => found.push(format!(
+                    "  {name} carries {} ({}) {carried} time(s)",
+                    v.value, v.what
+                )),
             }
-            found.push(format!("  {name} carries {} ({})", v.value, v.what));
         }
     }
 
@@ -292,16 +371,22 @@ fn prove_the_gate_detects(root: &Path) {
 /// The short live values the rule permits, each checked against the file that is supposed to hold it
 /// (H-27).
 ///
-/// Bumps and epoch day indices cannot be matched — five digits and 0-255 collide with unrelated text
-/// everywhere, and `255` inside `Ed25519` is the example the list itself gives — so the owner made them
-/// review-enforced on 4 Oct 2026: a short live value may appear only where the artifact's subject is
-/// the announced deployment, and only if the use is recorded in `LIVE-VALUES.txt` by file, value and
-/// occurrence.
+/// The owner made these review-enforced on 4 Oct 2026: a short live value may appear only where the
+/// artifact's subject is the announced deployment, and only if the use is recorded in
+/// `LIVE-VALUES.txt` by file, value and occurrence.
+///
+/// **What is left here after H-20 is the values no list can hold**, and it is a smaller set than it
+/// was. Epoch day indices have gone: 212 of them are listed and the gate counts their occurrences, so
+/// the record for them moved into `LIVE-VALUES.exempt` where it is enforced rather than read. What
+/// remains is a PDA bump, which is one of 256 possibilities, and the single checkpoint the 24
+/// September deployment holds at epoch `1`. Finding either in a file is evidence of nothing, and
+/// listing one would refuse the whole corpus.
 ///
 /// **A checklist nobody verifies goes stale the first time somebody edits one of those files.** The
-/// record claims `demo/app.js` holds `20723` once. If a second use appears, the count is wrong and the
-/// reviewer reading it is misled in the safe-looking direction. So the counts are checked here: not
-/// that the value is permitted, which is a judgement, but that the record describes the tree.
+/// record claims `vectors/V-P-12.json` holds `255` three times. If a fourth use appears, the count is
+/// wrong and the reviewer reading it is misled in the safe-looking direction. So the counts are
+/// checked here: not that the value is permitted, which is a judgement, but that the record describes
+/// the tree.
 fn check_recorded_short_values(root: &Path) {
     let listing = repo_file(root, "LIVE-VALUES.txt");
     let mut checked = 0usize;
@@ -380,10 +465,18 @@ enum Shape {
     Slot,
     /// A unix timestamp, which §2.4 stores as an `i64`.
     UnixTimestamp,
+    /// An epoch day index: §1.4's `floor(unix / 86_400)`, and five digits on every deployment there
+    /// has been (H-20).
+    Epoch,
 }
 
 fn declared_shape(what: &str) -> Shape {
-    if what.contains("as bytes") || what.contains("digest") || what.contains("root") {
+    // **First, because every other description names an epoch as well.** "published root, epoch
+    // 20723" describes a root; only an entry whose subject is the index itself says "epoch day
+    // index", and reading this later would classify every one of them as something else.
+    if what.contains("epoch day index") {
+        Shape::Epoch
+    } else if what.contains("as bytes") || what.contains("digest") || what.contains("root") {
         Shape::Hex32
     } else if what.contains("signature") {
         Shape::Base58Signature
@@ -451,6 +544,13 @@ pub fn check_list_shape(root: &Path) {
                     wrong("that is a slot, which is a `u64` written without a leading zero")
                 );
             }
+            Shape::Epoch => {
+                assert!(
+                    v.value.parse::<u64>().is_ok() && !v.value.starts_with('0'),
+                    "{}",
+                    wrong("that is an epoch day index, which §1.4 makes a `u64` written without a leading zero")
+                );
+            }
             Shape::UnixTimestamp => {
                 // **Signed, because the field is (H-28).** §2.4 stores `published_unix` as an `i64`
                 // and `scripts/live-values-from-chain.py` reads it signed, so a negative time is
@@ -471,16 +571,22 @@ pub fn check_list_shape(root: &Path) {
         //
         // It was six because the matcher used substrings: a listed `504985662` also matched the
         // unrelated `15049856620`, so a short value could not be listed without firing on text that
-        // has nothing to do with the deployment. Decimals now match on digit boundaries, and that
-        // false positive is gone, which is what lets epoch day indices be listed and gate-enforced
-        // rather than review-enforced.
+        // has nothing to do with the deployment. Decimals now match on number boundaries, and that
+        // false positive is gone, which is what lets the 212 epoch day indices be listed and
+        // gate-enforced rather than review-enforced.
+        //
+        // **One live epoch is still under the floor and still cannot be listed.** The program
+        // superseded on 24 September holds a single checkpoint, at epoch `1`. A one-digit number is
+        // in every file in the corpus, so listing it would refuse everything; it stays
+        // review-enforced for the same reason a bump does, which is what it is rather than how it is
+        // matched.
         //
         // What boundaries cannot fix is a value that carries no provenance. A checkpoint bump is one
         // of 256 possibilities; `255` appearing in a fixture is evidence of nothing, and listing it
         // would fire on every unrelated `255` in the corpus — the demo page says "255 records" about
         // a tree it built itself. So bumps stay out, by what they are rather than by their length,
         // and `check_recorded_short_values` governs any exception a reviewer records.
-        if matches!(shape, Shape::Slot | Shape::UnixTimestamp) {
+        if matches!(shape, Shape::Slot | Shape::UnixTimestamp | Shape::Epoch) {
             // The floor is on the magnitude, not the string: a sign is not a digit, and `-100000`
             // is as specific a thing to search a corpus for as `100000` (H-28).
             let digits = v.value.strip_prefix('-').unwrap_or(&v.value);
@@ -494,7 +600,7 @@ pub fn check_list_shape(root: &Path) {
     }
     // Every exemption must name a value the list actually holds, or it is silently dead.
     let known: BTreeSet<String> = live_values(root).into_iter().map(|v| v.lower).collect();
-    for (file, value) in exemptions(root) {
+    for ((file, value), _permitted) in exemptions(root) {
         assert!(
             known.contains(&value),
             "LIVE-VALUES.exempt: {file} exempts {value:?}, which LIVE-VALUES.txt does not list"
@@ -563,11 +669,15 @@ pub fn check_synthetic_surface(root: &Path) {
         );
     }
     refuse_live_values(root, &files);
+    let allowed = exemptions(root);
     println!(
-        "live-values: {} files in the synthetic surface carry no value this list holds — the \
-         announced deployment, and the two superseded ones, their accounts and what those accounts \
-         store",
-        files.len()
+        "live-values: {} files in the synthetic surface hold no value of the announced deployment, \
+         or of the two superseded ones, or of their accounts, or stored inside those accounts — \
+         beyond {} recorded occurrence(s) across {} (file, value) pair(s) whose subject is a \
+         deployment, each counted against the file",
+        files.len(),
+        allowed.values().sum::<usize>(),
+        allowed.len()
     );
 }
 
@@ -676,16 +786,21 @@ pub fn check_placeholders_are_not_live(root: &Path, placeholders: &[(&str, [u8; 
 mod tests {
     use super::*;
 
+    /// The matcher counts; these tests ask whether it found anything, which is the same question.
+    fn carries_as_a_number(haystack: &str, needle: &str) -> bool {
+        occurrences_as_a_number(&strip_digit_separators(haystack), needle) > 0
+    }
+
     /// **The false positive that made short values unlistable** (H-20, issue #60).
     #[test]
     fn a_listed_decimal_does_not_match_inside_a_longer_number() {
         assert!(
-            !contains_on_digit_boundaries("15049856620", "504985662"),
+            !carries_as_a_number("15049856620", "504985662"),
             "a slot inside an unrelated longer decimal is not that slot, and treating it as one is \
              why the list carried a six-digit floor"
         );
-        assert!(!contains_on_digit_boundaries("1504985662", "504985662"));
-        assert!(!contains_on_digit_boundaries("5049856620", "504985662"));
+        assert!(!carries_as_a_number("1504985662", "504985662"));
+        assert!(!carries_as_a_number("5049856620", "504985662"));
     }
 
     /// The control. Without it the test above would pass on a matcher that never matches.
@@ -700,7 +815,7 @@ mod tests {
             "504985662 and more text",
         ] {
             assert!(
-                contains_on_digit_boundaries(carrier, "504985662"),
+                carries_as_a_number(carrier, "504985662"),
                 "{carrier:?} carries the slot and was not matched"
             );
         }
@@ -710,7 +825,7 @@ mod tests {
     #[test]
     fn a_rejected_occurrence_does_not_stop_the_search() {
         assert!(
-            contains_on_digit_boundaries("15049856620 then 504985662", "504985662"),
+            carries_as_a_number("15049856620 then 504985662", "504985662"),
             "the first occurrence is inside a longer number and the second is not"
         );
     }
@@ -718,12 +833,9 @@ mod tests {
     /// Epoch day indices are five digits, which is what the floor now admits.
     #[test]
     fn a_five_digit_epoch_is_matched_on_its_own_and_not_inside_a_longer_number() {
-        assert!(contains_on_digit_boundaries(
-            "epoch 20739 published",
-            "20739"
-        ));
-        assert!(!contains_on_digit_boundaries("207391", "20739"));
-        assert!(!contains_on_digit_boundaries("120739", "20739"));
+        assert!(carries_as_a_number("epoch 20739 published", "20739"));
+        assert!(!carries_as_a_number("207391", "20739"));
+        assert!(!carries_as_a_number("120739", "20739"));
     }
 
     /// **The long shapes keep substring matching, and that is deliberate.**
@@ -757,19 +869,91 @@ mod tests {
     /// so boundaries reject it.
     #[test]
     fn the_bump_255_is_not_found_inside_ed25519() {
-        assert!(!contains_on_digit_boundaries("Ed25519", "255"));
-        assert!(!contains_on_digit_boundaries("ed25519 signature", "255"));
+        assert!(!carries_as_a_number("Ed25519", "255"));
+        assert!(!carries_as_a_number("ed25519 signature", "255"));
         assert!(
-            contains_on_digit_boundaries("bump 255", "255"),
+            carries_as_a_number("bump 255", "255"),
             "the control: a bump written as a number is still found, which is why 255 stays \
              unlistable on entropy rather than on matching"
+        );
+    }
+
+    /// **The twenty-six false positives, in one assertion** (H-20, issue #60).
+    ///
+    /// This is why the boundary is a hexadecimal digit rather than a decimal one. A five-digit epoch
+    /// index inside a digest is not that epoch, and the decimal rule found twenty-one of them in the
+    /// Keccak known-answer vectors alone.
+    #[test]
+    fn a_five_digit_epoch_inside_a_hex_blob_is_not_that_epoch() {
+        assert!(
+            !carries_as_a_number("a3f20751bc9d", "20751"),
+            "hex digits either side, so this is a digest and not the epoch 20751"
+        );
+        assert!(!carries_as_a_number(
+            "0x6bb7ac8d9543a9b175ebed0af2d643315745104cfc1b96e29097416da83fd867",
+            "43315"
+        ));
+        assert!(
+            carries_as_a_number("epoch 20751, published", "20751"),
+            "the control: a letter that is not a hex digit, or none at all, still matches"
+        );
+        assert!(
+            carries_as_a_number("slot20723", "20723"),
+            "`s` is not a hex digit, so the looser cases a boundary is for still match"
+        );
+    }
+
+    /// **The spelling that let ten uses through** (H-20, issue #60).
+    #[test]
+    fn a_digit_separator_does_not_hide_a_number() {
+        assert!(
+            carries_as_a_number("checkpoint_address(&program_id, 20_723)", "20723"),
+            "`20_723` is the number 20723 in Rust, and ten of the fifteen synthetic uses of a live \
+             epoch were spelled this way"
+        );
+        assert_eq!(
+            strip_digit_separators("slot_20723 and 20_723"),
+            "slot_20723 and 20723",
+            "only a separator between two digits goes; an identifier keeps its underscore"
+        );
+    }
+
+    /// The gate counts occurrences now, because an exemption permits a number of them (H-20).
+    #[test]
+    fn occurrences_are_counted_and_not_merely_detected() {
+        assert_eq!(
+            occurrences_as_a_number("20723 then 20723 then 120723", "20723"),
+            2,
+            "two standalone uses and one inside a longer number"
+        );
+    }
+
+    /// **A hex value is counted once per occurrence, not once per spelling.**
+    ///
+    /// `needles` holds `0x…` and the bare form, and every occurrence of the prefixed spelling
+    /// contains the bare one, so counting both would report two uses where a file has one — and the
+    /// exemption permitting one would fail.
+    #[test]
+    fn a_hex_value_in_both_spellings_is_counted_once_each() {
+        let v = LiveValue {
+            value: format!("0x{}", "ab".repeat(32)),
+            lower: format!("0x{}", "ab".repeat(32)),
+            what: "published root, epoch 20723".to_string(),
+            on_number_boundaries: false,
+            needles: vec![format!("0x{}", "ab".repeat(32)), "ab".repeat(32)],
+        };
+        let text = format!("{} and 0x{}", "ab".repeat(32), "ab".repeat(32));
+        assert_eq!(
+            occurrences(&v, &text, &text),
+            2,
+            "one bare and one prefixed is two occurrences, not three"
         );
     }
 
     #[test]
     fn an_empty_needle_matches_nothing() {
         assert!(
-            !contains_on_digit_boundaries("anything at all", ""),
+            !carries_as_a_number("anything at all", ""),
             "an empty needle is in every string, which would make the gate fire on everything"
         );
     }

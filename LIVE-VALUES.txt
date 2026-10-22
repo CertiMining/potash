@@ -27,26 +27,36 @@
 # anything missing here. **Run it after every publish cycle**: each adds a signature, a checkpoint
 # address and a root.
 #
-# **What this gate cannot enforce, ruled by the owner 3 Oct 2026.** The rule above is unqualified and
-# stays so, but two classes of live value cannot be held by it and are **review-enforced rather than
-# gate-enforced**:
+# **What this gate cannot enforce, ruled by the owner 3 Oct 2026 and narrowed by H-20 on 21 October.**
+# The rule above is unqualified and stays so. Two classes of live value could not be held by it and
+# were **review-enforced rather than gate-enforced**; one of them now is held, and the carve-out is
+# what is left:
 #
-#   * **Bumps.** A PDA bump is 0-255. The announced deployment holds 250, 253 and 255, and 255 is also
-#     the natural bump for any synthetic account because canonical search starts at 255 and counts down.
-#     H-20 made the matcher token-aware, which removed the matching objection — `255` is no longer
-#     found inside `Ed25519` — but not this one. One of 256 possibilities carries no provenance:
-#     finding 255 in a file is evidence of nothing, and listing it would fire on every unrelated 255
-#     in the corpus. Bumps stay review-enforced by what they are, not by their length.
-#   * **Epoch day indices.** Five digits, and a synthetic artifact may legitimately be *about* a real
-#     epoch — the demo is about 20723. H-20 lowered the floor to five digits and made the matcher
-#     token-aware, so the matching objection is gone and these are listable. What remains is the
-#     legitimacy question, which is what the exemption list is for; listing them and exempting the
-#     uses below is a separate change.
+#   * **Bumps, still review-enforced.** A PDA bump is 0-255. The announced deployment holds 250, 253
+#     and 255, and 255 is also the natural bump for any synthetic account because canonical search
+#     starts at 255 and counts down. H-20 removed the matching objection — `255` is no longer found
+#     inside `Ed25519` — but not this one. One of 256 possibilities carries no provenance: finding 255
+#     in a file is evidence of nothing, and listing it would fire on every unrelated 255 in the corpus.
+#     Bumps stay review-enforced by what they are, not by their length.
+#   * **The epoch index `1`, still review-enforced, for the same reason.** The program superseded on 24
+#     September holds one checkpoint, and its epoch is 1. A one-digit number is in nearly every file
+#     here.
+#   * **Epoch day indices of five digits — now listed, now gate-enforced (H-20, #60).** All 212 of them
+#     are in their own section below, and the gate counts their occurrences rather than asking whether
+#     they appear at all. Two changes to the matcher made that safe. Boundaries are hexadecimal digits
+#     rather than decimal ones, because the decimal rule left a five-digit number matching inside a hex
+#     blob and produced 26 false positives across five committed files, 21 of them in the Keccak
+#     known-answer vectors. And a digit separator is removed before matching, because
+#     `program_addresses.rs` spells the announced deployment's first epoch `20_723` and a search for
+#     `20723` went straight past it.
 #
-# Listing either would make the matcher fire on unrelated text, because it matches a value as a
-# case-insensitive substring of a whole file, and the exemptions that silenced the false positives are
-# recorded per file **and value** rather than per occurrence — so one exemption blankets every
-# occurrence in that file. That is why `check_list_shape` requires six digits or more.
+# **What listing them cost, measured rather than estimated.** 27 uses of a live epoch index sat in the
+# synthetic surface. 12 are artifacts whose subject is the announced deployment and are exempted by
+# file, value and occurrence in `LIVE-VALUES.exempt`. The other 15 were synthetic artifacts reaching
+# for a real number for no reason — four pinned test clocks, a Borsh known-answer vector, a fuzz
+# target, a status fixture and a devnet example command — and those values were changed, which is what
+# the owner ruled for H-45 when the same question came up about a generator placeholder: change the
+# value, do not narrow the rule.
 #
 # **The rule for these two classes, as the owner settled it on 4 Oct 2026 (PR #57, round four, M-03):**
 #
@@ -76,22 +86,15 @@
 # are, by construction. The gate rejected the first attempt to put them there, which is the right
 # answer: an exemption from a check that never fires is not an exemption.
 #
+# **It is shorter than it was, because H-20 moved the epochs out of it.** Six of its nine rows recorded
+# uses of `20723`, and those uses are now exemptions in `LIVE-VALUES.exempt` with the same occurrence
+# counts, enforced by the gate instead of read by a person. What is left is what no list can hold.
+#
 # The occurrence column is the raw number of times the value appears in that file, comments included,
 # because `cargo xtask check-live-values` compares it against the tree and a qualified number cannot be
-# checked. It caught this list's own first error: this entry said 4, counting uses and not the comment.
+# checked. It caught this list's own first error: an entry said 4, counting uses and not the comment.
 #
 #   file                           value  occurrences  why
-#   demo/app.js                    20723  1            Scene 1 rebuilds the announced log's first
-#                                                      epoch, which is the scene's subject
-#   demo/fixtures/root.json        20723  1            the committed root fixture for that scene
-#   demo/fixtures/disclosure.json  20723  1            the package the scene verifies, same epoch
-#   demo/fixtures/tampered.json    20723  1            the altered copy of that package
-#   demo/test/footprint.test.mjs   20723  5            the scene's own account and two instructions,
-#                                                      plus the comment explaining why the slot that
-#                                                      used to sit beside them is gone
-#   vectors/V-P-12.json            20723  2            §2.4's derivation is checked against this
-#                                                      deployment's epoch-20723 checkpoint, which is
-#                                                      the vector's whole subject
 #   vectors/V-P-12.json            250    1            the LogConfig bump the deployment holds, which
 #                                                      the derivation must reproduce
 #   vectors/V-P-12.json            255    3            the checkpoint bump, one-seed and two-seed —
@@ -104,9 +107,10 @@
 # read rather than matched, and what H-20 has to solve before they can be listed.
 #
 # This is a stated boundary on enforcement, not on the rule. H-20
-# ([#60](https://github.com/CertiMining/potash/issues/60)) makes the matcher token-aware so these values
-# can be listed safely, and when it lands this carve-out is withdrawn. H-27 and H-28 are the two
-# consequences that depend on it.
+# ([#60](https://github.com/CertiMining/potash/issues/60)) made the matcher token-aware, which withdrew
+# the epoch half of this carve-out: those values are listed below and the gate counts them. The bump
+# half stands, and will, because what stops a bump being listed is that one of 256 possibilities is not
+# evidence of anything — a property of the value, which no matcher can change.
 
 By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  program id, announced deployment
 0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee  program id, announced deployment, as bytes
@@ -166,14 +170,242 @@ vCsTSj6W4batbkqKa6dRCH1X3H2mE7LXMLLdyjNe3qp  checkpoint address, epoch 20738
 0x08182e244d220f28a38e459323a330bcf0a4b7f27eb8b4edf9adcdf8a3d0b812  published root, epoch 20737
 0x34540294bcbd3f96e185a91f446a285e8cb81ff3608a72ca615daf642c406f02  published root, epoch 20738
 
+# **The epoch day index of every checkpoint, listed since H-20 (#60).** 212 values, 20721 to 20932:
+# the announced deployment published 20723 to 20738 and the program superseded on 25 September
+# published the whole run. They were absent before, on the argument that "a UTC day index is a date
+# rather than something the deployment produced". That argument does not survive looking at it. The
+# index records the day the batcher published, which is the one thing a fixture borrowing it is
+# borrowing; the demo may name 20723 because the demo is *about* epoch 20723, and that is a statement
+# about the artifact's subject, which is what `LIVE-VALUES.exempt` is for and not something to assume
+# of every file at once.
+#
+# Read from the chain and not from memory: `getProgramAccounts` for each deployment, the epoch decoded
+# at §2.4's offset, on 21 October 2026. `scripts/live-values-from-chain.py` reads the same field on
+# every run, so this section is reconciled rather than remembered.
+#
+# **One epoch is missing from this section and cannot be here.** The program superseded on 24 September
+# holds a single checkpoint at epoch 1, which is under the five-digit floor and stays review-enforced,
+# for the reason the carve-out above gives for a bump.
+20721  epoch day index, published by the program superseded 25 September
+20722  epoch day index, published by the program superseded 25 September
+20723  epoch day index, published on the announced deployment and by the program superseded 25 September
+20724  epoch day index, published on the announced deployment and by the program superseded 25 September
+20725  epoch day index, published on the announced deployment and by the program superseded 25 September
+20726  epoch day index, published on the announced deployment and by the program superseded 25 September
+20727  epoch day index, published on the announced deployment and by the program superseded 25 September
+20728  epoch day index, published on the announced deployment and by the program superseded 25 September
+20729  epoch day index, published on the announced deployment and by the program superseded 25 September
+20730  epoch day index, published on the announced deployment and by the program superseded 25 September
+20731  epoch day index, published on the announced deployment and by the program superseded 25 September
+20732  epoch day index, published on the announced deployment and by the program superseded 25 September
+20733  epoch day index, published on the announced deployment and by the program superseded 25 September
+20734  epoch day index, published on the announced deployment and by the program superseded 25 September
+20735  epoch day index, published on the announced deployment and by the program superseded 25 September
+20736  epoch day index, published on the announced deployment and by the program superseded 25 September
+20737  epoch day index, published on the announced deployment and by the program superseded 25 September
+20738  epoch day index, published on the announced deployment and by the program superseded 25 September
+20739  epoch day index, published by the program superseded 25 September
+20740  epoch day index, published by the program superseded 25 September
+20741  epoch day index, published by the program superseded 25 September
+20742  epoch day index, published by the program superseded 25 September
+20743  epoch day index, published by the program superseded 25 September
+20744  epoch day index, published by the program superseded 25 September
+20745  epoch day index, published by the program superseded 25 September
+20746  epoch day index, published by the program superseded 25 September
+20747  epoch day index, published by the program superseded 25 September
+20748  epoch day index, published by the program superseded 25 September
+20749  epoch day index, published by the program superseded 25 September
+20750  epoch day index, published by the program superseded 25 September
+20751  epoch day index, published by the program superseded 25 September
+20752  epoch day index, published by the program superseded 25 September
+20753  epoch day index, published by the program superseded 25 September
+20754  epoch day index, published by the program superseded 25 September
+20755  epoch day index, published by the program superseded 25 September
+20756  epoch day index, published by the program superseded 25 September
+20757  epoch day index, published by the program superseded 25 September
+20758  epoch day index, published by the program superseded 25 September
+20759  epoch day index, published by the program superseded 25 September
+20760  epoch day index, published by the program superseded 25 September
+20761  epoch day index, published by the program superseded 25 September
+20762  epoch day index, published by the program superseded 25 September
+20763  epoch day index, published by the program superseded 25 September
+20764  epoch day index, published by the program superseded 25 September
+20765  epoch day index, published by the program superseded 25 September
+20766  epoch day index, published by the program superseded 25 September
+20767  epoch day index, published by the program superseded 25 September
+20768  epoch day index, published by the program superseded 25 September
+20769  epoch day index, published by the program superseded 25 September
+20770  epoch day index, published by the program superseded 25 September
+20771  epoch day index, published by the program superseded 25 September
+20772  epoch day index, published by the program superseded 25 September
+20773  epoch day index, published by the program superseded 25 September
+20774  epoch day index, published by the program superseded 25 September
+20775  epoch day index, published by the program superseded 25 September
+20776  epoch day index, published by the program superseded 25 September
+20777  epoch day index, published by the program superseded 25 September
+20778  epoch day index, published by the program superseded 25 September
+20779  epoch day index, published by the program superseded 25 September
+20780  epoch day index, published by the program superseded 25 September
+20781  epoch day index, published by the program superseded 25 September
+20782  epoch day index, published by the program superseded 25 September
+20783  epoch day index, published by the program superseded 25 September
+20784  epoch day index, published by the program superseded 25 September
+20785  epoch day index, published by the program superseded 25 September
+20786  epoch day index, published by the program superseded 25 September
+20787  epoch day index, published by the program superseded 25 September
+20788  epoch day index, published by the program superseded 25 September
+20789  epoch day index, published by the program superseded 25 September
+20790  epoch day index, published by the program superseded 25 September
+20791  epoch day index, published by the program superseded 25 September
+20792  epoch day index, published by the program superseded 25 September
+20793  epoch day index, published by the program superseded 25 September
+20794  epoch day index, published by the program superseded 25 September
+20795  epoch day index, published by the program superseded 25 September
+20796  epoch day index, published by the program superseded 25 September
+20797  epoch day index, published by the program superseded 25 September
+20798  epoch day index, published by the program superseded 25 September
+20799  epoch day index, published by the program superseded 25 September
+20800  epoch day index, published by the program superseded 25 September
+20801  epoch day index, published by the program superseded 25 September
+20802  epoch day index, published by the program superseded 25 September
+20803  epoch day index, published by the program superseded 25 September
+20804  epoch day index, published by the program superseded 25 September
+20805  epoch day index, published by the program superseded 25 September
+20806  epoch day index, published by the program superseded 25 September
+20807  epoch day index, published by the program superseded 25 September
+20808  epoch day index, published by the program superseded 25 September
+20809  epoch day index, published by the program superseded 25 September
+20810  epoch day index, published by the program superseded 25 September
+20811  epoch day index, published by the program superseded 25 September
+20812  epoch day index, published by the program superseded 25 September
+20813  epoch day index, published by the program superseded 25 September
+20814  epoch day index, published by the program superseded 25 September
+20815  epoch day index, published by the program superseded 25 September
+20816  epoch day index, published by the program superseded 25 September
+20817  epoch day index, published by the program superseded 25 September
+20818  epoch day index, published by the program superseded 25 September
+20819  epoch day index, published by the program superseded 25 September
+20820  epoch day index, published by the program superseded 25 September
+20821  epoch day index, published by the program superseded 25 September
+20822  epoch day index, published by the program superseded 25 September
+20823  epoch day index, published by the program superseded 25 September
+20824  epoch day index, published by the program superseded 25 September
+20825  epoch day index, published by the program superseded 25 September
+20826  epoch day index, published by the program superseded 25 September
+20827  epoch day index, published by the program superseded 25 September
+20828  epoch day index, published by the program superseded 25 September
+20829  epoch day index, published by the program superseded 25 September
+20830  epoch day index, published by the program superseded 25 September
+20831  epoch day index, published by the program superseded 25 September
+20832  epoch day index, published by the program superseded 25 September
+20833  epoch day index, published by the program superseded 25 September
+20834  epoch day index, published by the program superseded 25 September
+20835  epoch day index, published by the program superseded 25 September
+20836  epoch day index, published by the program superseded 25 September
+20837  epoch day index, published by the program superseded 25 September
+20838  epoch day index, published by the program superseded 25 September
+20839  epoch day index, published by the program superseded 25 September
+20840  epoch day index, published by the program superseded 25 September
+20841  epoch day index, published by the program superseded 25 September
+20842  epoch day index, published by the program superseded 25 September
+20843  epoch day index, published by the program superseded 25 September
+20844  epoch day index, published by the program superseded 25 September
+20845  epoch day index, published by the program superseded 25 September
+20846  epoch day index, published by the program superseded 25 September
+20847  epoch day index, published by the program superseded 25 September
+20848  epoch day index, published by the program superseded 25 September
+20849  epoch day index, published by the program superseded 25 September
+20850  epoch day index, published by the program superseded 25 September
+20851  epoch day index, published by the program superseded 25 September
+20852  epoch day index, published by the program superseded 25 September
+20853  epoch day index, published by the program superseded 25 September
+20854  epoch day index, published by the program superseded 25 September
+20855  epoch day index, published by the program superseded 25 September
+20856  epoch day index, published by the program superseded 25 September
+20857  epoch day index, published by the program superseded 25 September
+20858  epoch day index, published by the program superseded 25 September
+20859  epoch day index, published by the program superseded 25 September
+20860  epoch day index, published by the program superseded 25 September
+20861  epoch day index, published by the program superseded 25 September
+20862  epoch day index, published by the program superseded 25 September
+20863  epoch day index, published by the program superseded 25 September
+20864  epoch day index, published by the program superseded 25 September
+20865  epoch day index, published by the program superseded 25 September
+20866  epoch day index, published by the program superseded 25 September
+20867  epoch day index, published by the program superseded 25 September
+20868  epoch day index, published by the program superseded 25 September
+20869  epoch day index, published by the program superseded 25 September
+20870  epoch day index, published by the program superseded 25 September
+20871  epoch day index, published by the program superseded 25 September
+20872  epoch day index, published by the program superseded 25 September
+20873  epoch day index, published by the program superseded 25 September
+20874  epoch day index, published by the program superseded 25 September
+20875  epoch day index, published by the program superseded 25 September
+20876  epoch day index, published by the program superseded 25 September
+20877  epoch day index, published by the program superseded 25 September
+20878  epoch day index, published by the program superseded 25 September
+20879  epoch day index, published by the program superseded 25 September
+20880  epoch day index, published by the program superseded 25 September
+20881  epoch day index, published by the program superseded 25 September
+20882  epoch day index, published by the program superseded 25 September
+20883  epoch day index, published by the program superseded 25 September
+20884  epoch day index, published by the program superseded 25 September
+20885  epoch day index, published by the program superseded 25 September
+20886  epoch day index, published by the program superseded 25 September
+20887  epoch day index, published by the program superseded 25 September
+20888  epoch day index, published by the program superseded 25 September
+20889  epoch day index, published by the program superseded 25 September
+20890  epoch day index, published by the program superseded 25 September
+20891  epoch day index, published by the program superseded 25 September
+20892  epoch day index, published by the program superseded 25 September
+20893  epoch day index, published by the program superseded 25 September
+20894  epoch day index, published by the program superseded 25 September
+20895  epoch day index, published by the program superseded 25 September
+20896  epoch day index, published by the program superseded 25 September
+20897  epoch day index, published by the program superseded 25 September
+20898  epoch day index, published by the program superseded 25 September
+20899  epoch day index, published by the program superseded 25 September
+20900  epoch day index, published by the program superseded 25 September
+20901  epoch day index, published by the program superseded 25 September
+20902  epoch day index, published by the program superseded 25 September
+20903  epoch day index, published by the program superseded 25 September
+20904  epoch day index, published by the program superseded 25 September
+20905  epoch day index, published by the program superseded 25 September
+20906  epoch day index, published by the program superseded 25 September
+20907  epoch day index, published by the program superseded 25 September
+20908  epoch day index, published by the program superseded 25 September
+20909  epoch day index, published by the program superseded 25 September
+20910  epoch day index, published by the program superseded 25 September
+20911  epoch day index, published by the program superseded 25 September
+20912  epoch day index, published by the program superseded 25 September
+20913  epoch day index, published by the program superseded 25 September
+20914  epoch day index, published by the program superseded 25 September
+20915  epoch day index, published by the program superseded 25 September
+20916  epoch day index, published by the program superseded 25 September
+20917  epoch day index, published by the program superseded 25 September
+20918  epoch day index, published by the program superseded 25 September
+20919  epoch day index, published by the program superseded 25 September
+20920  epoch day index, published by the program superseded 25 September
+20921  epoch day index, published by the program superseded 25 September
+20922  epoch day index, published by the program superseded 25 September
+20923  epoch day index, published by the program superseded 25 September
+20924  epoch day index, published by the program superseded 25 September
+20925  epoch day index, published by the program superseded 25 September
+20926  epoch day index, published by the program superseded 25 September
+20927  epoch day index, published by the program superseded 25 September
+20928  epoch day index, published by the program superseded 25 September
+20929  epoch day index, published by the program superseded 25 September
+20930  epoch day index, published by the program superseded 25 September
+20931  epoch day index, published by the program superseded 25 September
+20932  epoch day index, published by the program superseded 25 September
+
 # The publication slot and timestamp of every epoch, which a review found were never listed at all
 # (PR #57, round one, High). Two of a checkpoint's fields are decimal and this file accepted only
 # hex and base58, so a slot could not be listed even deliberately — and demo/test/footprint.test.mjs
 # carried epoch 20723's real slot beside a fabricated root and a fabricated receipt digest while both
 # halves of the gate exited 0. That pairing is the defect this file exists for.
 #
-# Epoch numbers are deliberately absent: a UTC day index is a date rather than something the
-# deployment produced, and the demo is legitimately about epoch 20723.
+# Epoch day indices are above, in their own section, listed since H-20.
 504985662  published slot, epoch 20723
 504997440  published slot, epoch 20724
 505533854  published slot, epoch 20725
@@ -288,9 +520,11 @@ QmggTMPZ2FUhWapRe732E5yxsrHXdokT4KTJprPUnkvMWZUEcZpAviNqm7ZEfNQH6jjgk2rVPeWKrQpk
 # Accounts owned by the two superseded deployments (H-26). Supersession does not remove an
 # account from devnet and does not make its provenance synthetic: a fixture carrying one of
 # these addresses would assert a relationship with a deployment that really existed. The
-# static gate refuses them here. `scripts/live-values-from-chain.py` still asks only the
-# announced deployment and says so, so these are listed rather than reconciled against chain
-# on every run — enumerated once from `getProgramAccounts` on 11 October 2026.
+# static gate refuses them here. Enumerated from `getProgramAccounts` on 11 October 2026; the
+# sentence here used to say `scripts/live-values-from-chain.py` "still asks only the announced
+# deployment", which the review of PR #121 had already fixed — it reads every program named in
+# SUPERSEDED_PROGRAM_IDS on every run, so these are reconciled against the chain and not only
+# remembered.
 2twLmyNHCVmUDPLoKCAgeZbuQ9Eknu5xZZoK7ToaGuWv  account owned by the program superseded 24 September
 0x1c29c06f954140f34f53f04186fb6329254dca22d814503e9933bf260f855bbf  account owned by the program superseded 24 September, as bytes
 DEoAdvXnMNYxuboN1MXUJRUynbixzF42DCBPUV6wvafw  account owned by the program superseded 24 September

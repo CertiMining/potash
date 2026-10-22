@@ -183,7 +183,7 @@ test("§1.4: an absent checkpoint is placed against the log's own life, and lag 
   assert.equal(lagAgainst(config, 20360n), 0n, "a sequence that has caught up");
   assert.equal(lagAgainst(config, 20365n), 5n, "five days behind");
   assert.equal(lagAgainst(config, 20359n), -1n, "a sequence cannot be ahead of the calendar, and the sign says so");
-  assert.equal(lagAgainst(decodeLogConfig(logConfigBytes({ startEpoch: 0n, lastEpoch: 1n })), 20722n), 20721n);
+  assert.equal(lagAgainst(decodeLogConfig(logConfigBytes({ startEpoch: 0n, lastEpoch: 1n })), 40722n), 40721n);
 });
 
 test("fetching a root speaks JSON-RPC and refuses an account that is not the one asked for", async () => {

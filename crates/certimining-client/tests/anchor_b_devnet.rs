@@ -10,7 +10,7 @@
 //! authority. Neither runs in CI.
 //!
 //! ```text
-//! CERTIMINING_RPC=… CERTIMINING_EPOCH=20932 \
+//! CERTIMINING_RPC=… CERTIMINING_EPOCH=<the epoch to attach> \
 //!   cargo test -p certimining-client --features cluster,ots --test anchor_b_devnet -- --ignored
 //! ```
 #![cfg(all(feature = "cluster", feature = "ots"))]
