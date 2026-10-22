@@ -22,13 +22,14 @@
 //! upward with no gaps. `CERTIMINING_CHECKPOINT_HEIGHT` and `CERTIMINING_CHECKPOINT_HASH` override the
 //! committed genesis checkpoint; the hash is given the way an explorer displays it, and this reverses
 //! it, because a hash pasted from a browser in the order a header stores it is the mistake worth
-//! designing out rather than documenting. The difficulty floor is not configurable.
+//! designing out rather than documenting. `CERTIMINING_CHECKPOINT_BITS` is that period's compact
+//! target, which every header must declare exactly; all three are set together or none is.
 //!
-//! **What a success here does not yet mean (H-53, #195).** Nothing checks that a header's declared
-//! difficulty is the one Bitcoin's rules require at that height, only that it is no easier than the
-//! floor. A chain fabricated from the checkpoint by mining at that floor would be accepted, which
-//! costs far less than Bitcoin's own history. So this refuses every forgery that does not involve
-//! mining, and not one that does.
+//! **What a success here means, and where it stops (H-53, #195).** Every header declares the target
+//! in force and meets it, so producing one costs what a real block at that difficulty cost. The chain
+//! must lie inside the checkpoint's retarget period — the target moves every 2016 blocks and nothing
+//! here computes where to — so a longer range is refused rather than accepted on whatever difficulty
+//! the headers happen to claim.
 #![forbid(unsafe_code)]
 #![deny(
     clippy::unwrap_used,
@@ -37,7 +38,7 @@
     clippy::arithmetic_side_effects
 )]
 
-use certimining_client::bitcoin::{confirm, Checkpoint, Header, GENESIS, POW_LIMIT};
+use certimining_client::bitcoin::{confirm, target_from_bits, Checkpoint, Header, GENESIS};
 use certimining_client::verify_receipt;
 use std::process::ExitCode;
 
@@ -79,25 +80,35 @@ fn hash_from_displayed(text: &str) -> Result<[u8; 32], String> {
 fn checkpoint() -> Result<Checkpoint, String> {
     let height = std::env::var("CERTIMINING_CHECKPOINT_HEIGHT").ok();
     let hash = std::env::var("CERTIMINING_CHECKPOINT_HASH").ok();
-    match (height, hash) {
-        (None, None) => Ok(GENESIS),
-        (Some(height), Some(hash)) => Ok(Checkpoint {
-            height: height
-                .trim()
-                .parse()
-                .map_err(|e| format!("CERTIMINING_CHECKPOINT_HEIGHT={height}: {e}"))?,
-            hash: hash_from_displayed(&hash)?,
-            // **Not configurable, deliberately.** The floor on difficulty is Bitcoin's own, and an
-            // operator who could lower it from the environment could accept a chain mined for
-            // nothing. It is a field on `Checkpoint` so tests can reach it, not so a run can.
-            easiest_target: POW_LIMIT,
-        }),
-        // **Half a checkpoint is worse than none.** A height with the genesis hash, or the reverse,
-        // is a checkpoint that describes no block, and the chain would be refused for a reason that
-        // reads like a problem with the headers.
+    let bits = std::env::var("CERTIMINING_CHECKPOINT_BITS").ok();
+    match (height, hash, bits) {
+        (None, None, None) => Ok(GENESIS),
+        (Some(height), Some(hash), Some(bits)) => {
+            let raw = bits.trim().trim_start_matches("0x");
+            let parsed = u32::from_str_radix(raw, 16)
+                .map_err(|e| format!("CERTIMINING_CHECKPOINT_BITS={bits}: {e}"))?;
+            Ok(Checkpoint {
+                height: height
+                    .trim()
+                    .parse()
+                    .map_err(|e| format!("CERTIMINING_CHECKPOINT_HEIGHT={height}: {e}"))?,
+                hash: hash_from_displayed(&hash)?,
+                // **The target in force, not a floor (H-53, #195).** Every header in the chain must
+                // declare exactly this. An operator supplying an easier one would accept a chain
+                // mined for less than the real one cost, which is why it belongs to the checkpoint:
+                // the whole checkpoint is the trusted input, and one query to a node checks all of it.
+                target: target_from_bits(parsed).ok_or_else(|| {
+                    format!("{parsed:#010x} is not a target any header can carry")
+                })?,
+            })
+        }
+        // **A partial checkpoint is worse than none.** A height with the wrong hash, or the right
+        // hash with another period's difficulty, describes no block, and the chain would be refused
+        // for a reason that reads like a problem with the headers.
         _ => Err(
-            "CERTIMINING_CHECKPOINT_HEIGHT and CERTIMINING_CHECKPOINT_HASH are set together, \
-                  or neither is and the committed genesis checkpoint is used"
+            "CERTIMINING_CHECKPOINT_HEIGHT, CERTIMINING_CHECKPOINT_HASH and \
+             CERTIMINING_CHECKPOINT_BITS are set together, or none is and the committed genesis \
+             checkpoint is used"
                 .to_string(),
         ),
     }

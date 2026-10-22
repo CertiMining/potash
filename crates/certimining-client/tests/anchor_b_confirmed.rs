@@ -22,7 +22,7 @@
 //! rest on the work alone.
 #![cfg(feature = "ots")]
 
-use certimining_client::bitcoin::{confirm, Checkpoint, Header, HeaderRefused, POW_LIMIT};
+use certimining_client::bitcoin::{confirm, target_from_bits, Checkpoint, Header, HeaderRefused};
 use certimining_client::verify_receipt;
 
 /// One anchor: the stamped file, its receipt, and the chain that answers for it.
@@ -35,6 +35,12 @@ struct Anchor {
     /// The block one below the first header, as an explorer displays its hash.
     checkpoint_height: u32,
     checkpoint_hash: &'static str,
+    /// The compact target in force in the checkpoint's retarget period, as a header spells it.
+    ///
+    /// **Every header in the window must declare exactly this (H-53, #195).** It is committed beside
+    /// the checkpoint's height and hash because it is part of the same trusted input: a reader checks
+    /// all three against any node with one query, and everything after them is believed for its work.
+    checkpoint_bits: u32,
     /// The height the receipt names, which this test confirms rather than accepts.
     height: u32,
     /// That block's merkle root, as an explorer displays it.
@@ -49,6 +55,7 @@ const ANCHORS: [Anchor; 3] = [
         headers: include_bytes!("data/mainnet-headers-967485-967489.bin"),
         checkpoint_height: 967_484,
         checkpoint_hash: "00000000000000000000d89a58cbb4687852251e9753f847d06c1c417b2e80ed",
+        checkpoint_bits: 0x1702_355e,
         height: 967_489,
         merkle_root: "c683aa304a7cdfae5583717197ca43b85303a2ab585b02933cd6e20b4475b7ef",
     },
@@ -59,6 +66,7 @@ const ANCHORS: [Anchor; 3] = [
         headers: include_bytes!("data/mainnet-headers-971043-971047.bin"),
         checkpoint_height: 971_042,
         checkpoint_hash: "0000000000000000000109d7cd146fc01e07641ad63fc80428ae80df5ed6a46b",
+        checkpoint_bits: 0x1702_1ef0,
         height: 971_047,
         merkle_root: "33918556ce05fd459bbee9a5d80dc4e6affb6cdf24b6e4eb0d3be39305cf1d64",
     },
@@ -69,6 +77,7 @@ const ANCHORS: [Anchor; 3] = [
         headers: include_bytes!("data/mainnet-headers-971179-971188.bin"),
         checkpoint_height: 971_178,
         checkpoint_hash: "00000000000000000000d64c47fb082a1a974e06279a62881b116994f992bd8f",
+        checkpoint_bits: 0x1702_1ef0,
         height: 971_188,
         merkle_root: "f9f976cc012a0358a3d68ca0870e0492f83a034c5887daeb026711ef724cc098",
     },
@@ -136,7 +145,10 @@ fn checkpoint_of(anchor: &Anchor) -> Checkpoint {
     Checkpoint {
         height: anchor.checkpoint_height,
         hash: from_displayed(anchor.checkpoint_hash),
-        easiest_target: POW_LIMIT,
+        target: match target_from_bits(anchor.checkpoint_bits) {
+            Some(target) => target,
+            None => panic!("the committed bits do not decode to a target"),
+        },
     }
 }
 
@@ -223,6 +235,8 @@ struct EpochAnchor {
     headers: &'static [u8],
     checkpoint_height: u32,
     checkpoint_hash: &'static str,
+    /// The compact target in force in the checkpoint's retarget period (H-53, #195).
+    checkpoint_bits: u32,
     /// The Bitcoin height the receipt names, which this test confirms rather than accepts.
     height: u32,
 }
@@ -238,6 +252,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-968914-968917.bin"),
         checkpoint_height: 968913,
         checkpoint_hash: "0000000000000000000020c010c4fbf57615dacaceac0da5941ded710f9bcbb0",
+        checkpoint_bits: 0x1702_1ec5,
         height: 968917,
     },
     EpochAnchor {
@@ -245,6 +260,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-968920-968923.bin"),
         checkpoint_height: 968919,
         checkpoint_hash: "00000000000000000001db6aca70ede91b51b6d351eceff6d1517199bea85b36",
+        checkpoint_bits: 0x1702_1ec5,
         height: 968923,
     },
     EpochAnchor {
@@ -252,6 +268,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-969170-969173.bin"),
         checkpoint_height: 969169,
         checkpoint_hash: "000000000000000000001913077c626d1e143fbd41054f700245dc15ba5f6153",
+        checkpoint_bits: 0x1702_1ec5,
         height: 969173,
     },
     EpochAnchor {
@@ -259,6 +276,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-969471-969474.bin"),
         checkpoint_height: 969470,
         checkpoint_hash: "000000000000000000015f8ae7f77d172dc90a46bac7b69f24db317ce6ee7ab6",
+        checkpoint_bits: 0x1702_1ec5,
         height: 969474,
     },
     EpochAnchor {
@@ -266,6 +284,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-969471-969474.bin"),
         checkpoint_height: 969470,
         checkpoint_hash: "000000000000000000015f8ae7f77d172dc90a46bac7b69f24db317ce6ee7ab6",
+        checkpoint_bits: 0x1702_1ec5,
         height: 969474,
     },
     EpochAnchor {
@@ -273,6 +292,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-969629-969632.bin"),
         checkpoint_height: 969628,
         checkpoint_hash: "000000000000000000015e6ca9cc235bffa7a52aa5689c77e14232bfd889bf28",
+        checkpoint_bits: 0x1702_1ec5,
         height: 969632,
     },
     EpochAnchor {
@@ -280,6 +300,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-969806-969809.bin"),
         checkpoint_height: 969805,
         checkpoint_hash: "00000000000000000001bbc2841099e501d370266206aac3f30ac64976f59117",
+        checkpoint_bits: 0x1702_1ef0,
         height: 969809,
     },
     EpochAnchor {
@@ -287,6 +308,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-969866-969869.bin"),
         checkpoint_height: 969865,
         checkpoint_hash: "00000000000000000000faadee7fca154253ae78aec00f51101d40ac615bedbc",
+        checkpoint_bits: 0x1702_1ef0,
         height: 969869,
     },
     EpochAnchor {
@@ -294,6 +316,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-969965-969968.bin"),
         checkpoint_height: 969964,
         checkpoint_hash: "000000000000000000004f94bcc7e1cd2d5c23b11f63533244b67e5fe58294a6",
+        checkpoint_bits: 0x1702_1ef0,
         height: 969968,
     },
     EpochAnchor {
@@ -301,6 +324,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-970291-970294.bin"),
         checkpoint_height: 970290,
         checkpoint_hash: "0000000000000000000193abbc886e0c016074cd1075a9b97a5dd8491d4a7b59",
+        checkpoint_bits: 0x1702_1ef0,
         height: 970294,
     },
     EpochAnchor {
@@ -308,6 +332,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-970291-970294.bin"),
         checkpoint_height: 970290,
         checkpoint_hash: "0000000000000000000193abbc886e0c016074cd1075a9b97a5dd8491d4a7b59",
+        checkpoint_bits: 0x1702_1ef0,
         height: 970294,
     },
     EpochAnchor {
@@ -315,6 +340,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-970579-970582.bin"),
         checkpoint_height: 970578,
         checkpoint_hash: "000000000000000000018595d41b4c02d96d24dc1939b9d857a01fa750ffd28b",
+        checkpoint_bits: 0x1702_1ef0,
         height: 970582,
     },
     EpochAnchor {
@@ -322,6 +348,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-970569-970572.bin"),
         checkpoint_height: 970568,
         checkpoint_hash: "00000000000000000001d62038106eb14d0843d95b5f19a878cb3a144eec8c27",
+        checkpoint_bits: 0x1702_1ef0,
         height: 970572,
     },
     EpochAnchor {
@@ -329,6 +356,7 @@ const EPOCH_ANCHORS: [EpochAnchor; 14] = [
         headers: include_bytes!("data/mainnet-headers-970854-970857.bin"),
         checkpoint_height: 970853,
         checkpoint_hash: "000000000000000000012e5db3d4ec26d50091ecab13eb7abd6359eb39728dea",
+        checkpoint_bits: 0x1702_1ef0,
         height: 970857,
     },
 ];
@@ -389,7 +417,10 @@ fn every_attached_epoch_receipt_is_confirmed_by_the_block_it_names() {
         let checkpoint = Checkpoint {
             height: anchor.checkpoint_height,
             hash: from_displayed(anchor.checkpoint_hash),
-            easiest_target: POW_LIMIT,
+            target: match target_from_bits(anchor.checkpoint_bits) {
+                Some(target) => target,
+                None => panic!("the committed bits do not decode to a target"),
+            },
         };
         match confirm(claim, checkpoint, &headers_of(anchor.headers)) {
             Ok(confirmed) => assert_eq!(confirmed.height, anchor.height),
@@ -420,7 +451,10 @@ fn every_epoch_chain_with_one_bit_of_work_undone_refuses_its_receipt() {
         let checkpoint = Checkpoint {
             height: anchor.checkpoint_height,
             hash: from_displayed(anchor.checkpoint_hash),
-            easiest_target: POW_LIMIT,
+            target: match target_from_bits(anchor.checkpoint_bits) {
+                Some(target) => target,
+                None => panic!("the committed bits do not decode to a target"),
+            },
         };
         match confirm(claim, checkpoint, &headers) {
             Err(HeaderRefused::InsufficientWork { at, .. }) => {
