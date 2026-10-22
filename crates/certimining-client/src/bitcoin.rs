@@ -18,10 +18,15 @@
 //! sent: it does not matter, because nothing here believes a header for being delivered. That is the
 //! property that makes this verification against Bitcoin rather than against a party.
 //!
-//! **What this module does not do yet**, stated so the gap is not mistaken for coverage: it verifies
-//! a header chain and reads a block's merkle root. Replaying an OpenTimestamps receipt's operations
-//! to the digest that root must equal is the other half of H-12, and `verify_receipt` still returns
-//! the height the receipt claims rather than one this has confirmed.
+//! **Both halves are here now.** `verify_chain` establishes that a chain of real work runs back to a
+//! committed checkpoint; `confirm` compares the digest a receipt's operations reach with the merkle
+//! root of the block at the height the receipt names, and returns a `Confirmed` that nothing else can
+//! build. A `BitcoinClaim` is what a receipt says; a `Confirmed` is what a block shows.
+//!
+//! **What is still not established, so the gap is not mistaken for coverage.** No committed receipt
+//! has been confirmed, because confirming one needs headers and this repository commits none beyond
+//! the genesis checkpoint. Every anchor row in `docs/anchoring.md` saying nothing checks the heights
+//! is still true of the receipts on disk. What has changed is that there is now something to run.
 
 use bitcoin_hashes::{sha256d, Hash};
 
@@ -47,8 +52,22 @@ pub enum HeaderRefused {
     InsufficientWork { at: u32, hash: String },
     /// The `bits` field encodes a target no header can meet, or none at all.
     MalformedTarget { at: u32, bits: u32 },
+    /// The header declares a target easier than the checkpoint allows.
+    ///
+    /// A header states its own difficulty, so a chain of trivially-mined headers passes every other
+    /// test here. This is the floor under that.
+    TargetEasierThanAllowed { at: u32, bits: u32 },
     /// No header was supplied for the height asked about.
     HeightNotCovered { wanted: u32, covered: u32 },
+    /// The block at that height does not commit the digest the receipt's operations reach.
+    ///
+    /// **This is the refusal the whole module exists to be able to make.** A receipt naming a block
+    /// it never reached parses, carries a Bitcoin attestation, and fails here.
+    DigestNotInTheBlock {
+        at: u32,
+        attested: String,
+        merkle_root: String,
+    },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -140,6 +159,17 @@ pub fn target_from_bits(bits: u32) -> Option<[u8; 32]> {
     Some(out)
 }
 
+/// The easiest target Bitcoin's consensus rules permit, which is `0x1d00ffff` expanded.
+///
+/// **A header states its own difficulty, so without this nothing bounds how easy it may be.** A
+/// chain whose headers each declare a target of `0x1f00ffff` is a chain of "real work" by
+/// `verify_chain`'s own test and costs almost nothing to produce. The test below ties this constant
+/// to `target_from_bits(0x1d00ffff)` rather than leaving 32 transcribed bytes to be trusted.
+pub const POW_LIMIT: [u8; 32] = [
+    0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
 /// Whether a little-endian hash is numerically at or below a big-endian target.
 fn less_than_or_equal_reversed(hash_le: &[u8; 32], target_be: &[u8; 32]) -> bool {
     for i in 0..32 {
@@ -166,6 +196,12 @@ pub struct Checkpoint {
     pub height: u32,
     /// The header's hash in internal byte order, as `prev_hash` carries it.
     pub hash: [u8; 32],
+    /// The easiest target any header in the chain may declare, big-endian.
+    ///
+    /// `POW_LIMIT` for Bitcoin. It belongs to the checkpoint because the checkpoint is where trust
+    /// sits in this module: a reader who accepts the committed checkpoint is accepting what it says
+    /// about difficulty along with the block it names.
+    pub easiest_target: [u8; 32],
 }
 
 /// Verifies that `headers` is one chain of real work beginning at `checkpoint`'s successor.
@@ -173,10 +209,23 @@ pub struct Checkpoint {
 /// Returns the headers' hashes, so a caller can name a block without recomputing them. Every header
 /// must name the previous one and meet its own target; the first must name the checkpoint.
 ///
-/// **What it does not establish.** That this is the chain with the most work — only that it is *a*
-/// chain of valid work from the checkpoint. Two competing chains both pass; choosing between them
-/// needs the work summed across each, which matters at a reorganisation and not for a block buried
-/// under months of it. A receipt's attestation is hours old at the earliest and usually older.
+/// **What it does not establish, and the first version of this paragraph understated it.** That
+/// paragraph said the missing piece was choosing between competing chains, "which matters at a
+/// reorganisation and not for a block buried under months of it". That is the wrong frame. A header
+/// declares its own difficulty, and nothing here checks that the difficulty is the one Bitcoin's
+/// consensus rules require at that height — only that it is no easier than the checkpoint's floor and
+/// that the hash meets it. So the gap is not a choice between two real chains. It is that **a chain
+/// can be fabricated from the committed checkpoint by mining at the minimum difficulty**, and
+/// reaching a recent height that way costs a fraction of what Bitcoin's own history cost: around
+/// `2^32` hashes per header against today's `2^79`.
+///
+/// Enforcing the retarget schedule — every 2016 blocks, the target moves by the period's timespan,
+/// clamped to a factor of four — is what closes that, because then reaching a height demands the work
+/// the real chain demanded. It needs the checkpoint to carry the target in force and the period's
+/// first timestamp, and it needs a difficulty parameter to be testable at all, so it is filed as H-53
+/// (#195) rather than asserted here. Until it lands, this module refuses a receipt whose digest the
+/// named block does not commit, which is every forgery that does not involve mining, and not one that
+/// does.
 pub fn verify_chain(
     checkpoint: Checkpoint,
     headers: &[Header],
@@ -207,6 +256,13 @@ pub fn verify_chain(
             at: height,
             bits: header.bits(),
         })?;
+        // Both are big-endian, so lexicographic order on the bytes is numeric order.
+        if target > checkpoint.easiest_target {
+            return Err(HeaderRefused::TargetEasierThanAllowed {
+                at: height,
+                bits: header.bits(),
+            });
+        }
         let hash = header.block_hash();
         if !less_than_or_equal_reversed(&hash, &target) {
             return Err(HeaderRefused::InsufficientWork {
@@ -250,9 +306,91 @@ pub fn merkle_root_at(
         })
 }
 
+/// Bitcoin's genesis block: the one checkpoint this repository can commit without vouching for
+/// anything.
+///
+/// A checkpoint is the single input a reader has to take on trust, so *which* one is committed is a
+/// question about what this repository is willing to assert. Genesis needs no assertion — its hash is
+/// a published fact older than any party to this — and the test below derives it from the header's own
+/// 80 bytes rather than trusting the constant beneath it.
+///
+/// **What using it costs, stated here rather than discovered by someone waiting.** Confirming a
+/// receipt attested at a recent height against this checkpoint means supplying every header from
+/// block 1 to that height: around 900,000 of them for a 2026 block, about 72 MB at 80 bytes each. The
+/// verification is linear and runs in seconds; the bytes still have to come from somewhere. A nearer
+/// checkpoint turns that into a few thousand headers, and committing one is a decision about what
+/// this repository vouches for.
+pub const GENESIS: Checkpoint = Checkpoint {
+    height: 0,
+    easiest_target: POW_LIMIT,
+    // Internal byte order. Reversed for display this is
+    // 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f.
+    hash: [
+        0x6f, 0xe2, 0x8c, 0x0a, 0xb6, 0xf1, 0xb3, 0x72, 0xc1, 0xa6, 0xa2, 0x46, 0xae, 0x63, 0xf7,
+        0x4f, 0x93, 0x1e, 0x83, 0x65, 0xe1, 0x5a, 0x08, 0x9c, 0x68, 0xd6, 0x19, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ],
+};
+
+/// A block this code has seen commit a receipt's digest — which a `BitcoinClaim` is not.
+///
+/// **Only `confirm` builds one.** `confirm` needs a chain of real work running back to a committed
+/// checkpoint, so holding a `Confirmed` is holding the fact rather than the receipt's assertion about
+/// it. That is the entire purpose of the type: the two are not interchangeable, and the compiler will
+/// not let a caller treat one as the other, which is the mistake `docs/anchoring.md` has been warning
+/// readers about in prose since the first anchor row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Confirmed {
+    /// The height, now a checked fact rather than a claim.
+    pub height: u32,
+    /// The block's merkle root, equal to the digest the receipt's operations reach.
+    pub merkle_root: [u8; 32],
+}
+
+/// Confirms a receipt's Bitcoin attestation against a chain of headers.
+///
+/// `headers` runs from `checkpoint`'s successor upward and must cover `claim.height`. Where the bytes
+/// came from does not matter: a node, an explorer, a file a colleague sent. Each header must meet the
+/// target its own `bits` encode and name its predecessor, so a server that invents one has to do the
+/// work, which is the property that makes this verification against Bitcoin rather than against
+/// whoever answered.
+///
+/// **What it does not establish**, beyond what `verify_chain` already disclaims about competing
+/// chains: that the receipt's *operations* are the ones the calendar performed. It establishes that
+/// executing them from this epoch's root reaches a digest that this block commits, which is what an
+/// OpenTimestamps attestation asserts and all it asserts.
+pub fn confirm(
+    claim: crate::BitcoinClaim,
+    checkpoint: Checkpoint,
+    headers: &[Header],
+) -> Result<Confirmed, HeaderRefused> {
+    let merkle_root = merkle_root_at(checkpoint, headers, claim.height)?;
+    if merkle_root != claim.attested_digest {
+        return Err(HeaderRefused::DigestNotInTheBlock {
+            at: claim.height,
+            attested: hex(&claim.attested_digest),
+            merkle_root: hex(&merkle_root),
+        });
+    }
+    Ok(Confirmed {
+        height: claim.height,
+        merkle_root,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bitcoin's genesis header, the one expected value in this file that nobody here chose.
+    const GENESIS_HEADER: [u8; 80] = [
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3b, 0xa3, 0xed, 0xfd, 0x7a, 0x7b, 0x12, 0xb2, 0x7a,
+        0xc7, 0x2c, 0x3e, 0x67, 0x76, 0x8f, 0x61, 0x7f, 0xc8, 0x1b, 0xc3, 0x88, 0x8a, 0x51, 0x32,
+        0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a, 0x29, 0xab, 0x5f, 0x49, 0xff, 0xff, 0x00,
+        0x1d, 0x1d, 0xac, 0x2b, 0x7c,
+    ];
 
     /// Builds a header that names `prev`, carries `root`, and is mined until it meets `bits`.
     ///
@@ -285,6 +423,22 @@ mod tests {
     /// random header does not pass by accident.
     const EASY: u32 = 0x1f00_ffff;
 
+    /// A checkpoint whose floor admits `EASY`, because no test can mine at Bitcoin's own difficulty.
+    ///
+    /// **This is why the floor lives on the checkpoint.** A constant would make every test here
+    /// either impossible or a test of something else; a field makes the floor part of the trusted
+    /// input, which is what it is.
+    fn easy_checkpoint() -> Checkpoint {
+        Checkpoint {
+            height: 100,
+            hash: [0x42; 32],
+            easiest_target: match target_from_bits(EASY) {
+                Some(t) => t,
+                None => panic!("the test's own difficulty does not decode"),
+            },
+        }
+    }
+
     fn chain(len: usize, from: [u8; 32]) -> Vec<Header> {
         let mut out = Vec::new();
         let mut prev = from;
@@ -302,10 +456,7 @@ mod tests {
 
     #[test]
     fn a_chain_of_real_work_from_the_checkpoint_verifies() {
-        let checkpoint = Checkpoint {
-            height: 100,
-            hash: [0x42; 32],
-        };
+        let checkpoint = easy_checkpoint();
         let headers = chain(4, checkpoint.hash);
         match verify_chain(checkpoint, &headers) {
             Ok(hashes) => assert_eq!(hashes.len(), 4),
@@ -317,10 +468,7 @@ mod tests {
     /// however correctly it is formed and whoever served it.
     #[test]
     fn a_header_that_has_not_done_the_work_is_refused() {
-        let checkpoint = Checkpoint {
-            height: 100,
-            hash: [0x42; 32],
-        };
+        let checkpoint = easy_checkpoint();
         let mut headers = chain(2, checkpoint.hash);
         // Change the nonce of the first header: it still names the checkpoint and is still 80 bytes.
         let Some(first) = headers.get_mut(0) else {
@@ -337,10 +485,7 @@ mod tests {
 
     #[test]
     fn a_chain_that_does_not_begin_at_the_checkpoint_is_refused() {
-        let checkpoint = Checkpoint {
-            height: 100,
-            hash: [0x42; 32],
-        };
+        let checkpoint = easy_checkpoint();
         let headers = chain(2, [0x99; 32]);
         match verify_chain(checkpoint, &headers) {
             Err(HeaderRefused::NotFromTheCheckpoint { .. }) => {}
@@ -350,10 +495,7 @@ mod tests {
 
     #[test]
     fn a_chain_with_a_hole_in_it_is_refused() {
-        let checkpoint = Checkpoint {
-            height: 100,
-            hash: [0x42; 32],
-        };
+        let checkpoint = easy_checkpoint();
         let mut headers = chain(3, checkpoint.hash);
         headers.remove(1);
         match verify_chain(checkpoint, &headers) {
@@ -364,10 +506,7 @@ mod tests {
 
     #[test]
     fn a_blocks_merkle_root_is_read_at_its_own_height() {
-        let checkpoint = Checkpoint {
-            height: 100,
-            hash: [0x42; 32],
-        };
+        let checkpoint = easy_checkpoint();
         let headers = chain(3, checkpoint.hash);
         for (offset, header) in headers.iter().enumerate() {
             let height = 101u32.saturating_add(u32::try_from(offset).unwrap_or(0));
@@ -394,15 +533,7 @@ mod tests {
     /// against. Its hash and its target are published facts, not values this repository chose.
     #[test]
     fn the_genesis_header_hashes_and_meets_its_target() {
-        let raw: [u8; 80] = [
-            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3b, 0xa3, 0xed, 0xfd, 0x7a, 0x7b,
-            0x12, 0xb2, 0x7a, 0xc7, 0x2c, 0x3e, 0x67, 0x76, 0x8f, 0x61, 0x7f, 0xc8, 0x1b, 0xc3,
-            0x88, 0x8a, 0x51, 0x32, 0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a, 0x29, 0xab,
-            0x5f, 0x49, 0xff, 0xff, 0x00, 0x1d, 0x1d, 0xac, 0x2b, 0x7c,
-        ];
-        let header = Header(raw);
+        let header = Header(GENESIS_HEADER);
         // Displayed reversed, this is 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f.
         let mut displayed = header.block_hash();
         displayed.reverse();
@@ -414,6 +545,130 @@ mod tests {
         );
         assert_eq!(header.meets_its_target(), Ok(true));
         assert_eq!(header.bits(), 0x1d00_ffff);
+    }
+
+    /// **The committed checkpoint is checked against the header, not trusted.**
+    ///
+    /// A constant transcribed by hand is a second opinion about a published fact, and this is the one
+    /// value in the module a reader cannot check by doing the work. So it is derived here from the 80
+    /// bytes above, which the test alongside ties to the published hash.
+    #[test]
+    fn the_committed_genesis_checkpoint_is_the_genesis_header() {
+        assert_eq!(GENESIS.height, 0);
+        assert_eq!(
+            GENESIS.hash,
+            Header(GENESIS_HEADER).block_hash(),
+            "the committed checkpoint is not the genesis header's own hash"
+        );
+    }
+
+    /// A claim for a digest the block at that height really commits.
+    fn claim_for(height: u32, digest: [u8; 32]) -> crate::BitcoinClaim {
+        crate::BitcoinClaim {
+            height,
+            attested_digest: digest,
+        }
+    }
+
+    #[test]
+    fn a_digest_the_named_block_commits_is_confirmed() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        // Four blocks; the third carries the digest the receipt's operations reach.
+        let mut headers = Vec::new();
+        let mut prev = checkpoint.hash;
+        for i in 0..4 {
+            let root = if i == 2 { attested } else { [i; 32] };
+            let header = mined(prev, root, EASY);
+            prev = header.block_hash();
+            headers.push(header);
+        }
+        match confirm(claim_for(103, attested), checkpoint, &headers) {
+            Ok(confirmed) => {
+                assert_eq!(confirmed.height, 103);
+                assert_eq!(confirmed.merkle_root, attested);
+            }
+            Err(e) => panic!("the block at 103 commits this digest: {e:?}"),
+        }
+    }
+
+    /// **The refusal H-12 was filed for.** A receipt naming a block it never reached.
+    #[test]
+    fn a_digest_the_named_block_does_not_commit_is_refused() {
+        let checkpoint = easy_checkpoint();
+        let headers = chain(4, checkpoint.hash);
+        match confirm(claim_for(103, [0x99; 32]), checkpoint, &headers) {
+            Err(HeaderRefused::DigestNotInTheBlock { at, .. }) => assert_eq!(at, 103),
+            other => panic!("a block that commits something else must be refused: {other:?}"),
+        }
+    }
+
+    /// **A confirmation rests on the work, not on the block.**
+    ///
+    /// The block at 103 carries exactly the right digest, and the chain reaching it has a header that
+    /// has not been mined. That must refuse: otherwise anybody could hand over a fabricated chain
+    /// whose last block commits whatever they liked, which is the whole attack this module answers.
+    #[test]
+    fn a_block_committing_the_digest_on_a_chain_without_the_work_is_refused() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let mut headers = Vec::new();
+        let mut prev = checkpoint.hash;
+        for i in 0..4 {
+            let root = if i == 2 { attested } else { [i; 32] };
+            let header = mined(prev, root, EASY);
+            prev = header.block_hash();
+            headers.push(header);
+        }
+        // Undo the first header's work. Every later header still names its predecessor's hash, so
+        // this is a chain in every respect except the one that matters.
+        let Some(first) = headers.get_mut(0) else {
+            panic!("the chain has four headers")
+        };
+        if let Some(slot) = first.0.get_mut(76..80) {
+            slot.copy_from_slice(&0u32.to_le_bytes());
+        }
+        match confirm(claim_for(103, attested), checkpoint, &headers) {
+            Err(HeaderRefused::InsufficientWork { at, .. }) => assert_eq!(at, 101),
+            other => panic!("a chain missing its work must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_height_no_header_covers_is_refused_rather_than_confirmed() {
+        let checkpoint = easy_checkpoint();
+        let headers = chain(2, checkpoint.hash);
+        match confirm(claim_for(900_000, [0x99; 32]), checkpoint, &headers) {
+            Err(HeaderRefused::HeightNotCovered { wanted, covered }) => {
+                assert_eq!((wanted, covered), (900_000, 102));
+            }
+            other => panic!("a height outside the chain is not confirmed: {other:?}"),
+        }
+    }
+
+    /// **The floor, and the constant tied to the encoding rather than transcribed.**
+    #[test]
+    fn a_target_easier_than_the_checkpoint_allows_is_refused() {
+        assert_eq!(
+            target_from_bits(0x1d00_ffff),
+            Some(POW_LIMIT),
+            "POW_LIMIT must be what Bitcoin's own maximum-difficulty encoding expands to"
+        );
+        // A real checkpoint's floor against a chain mined at the difficulty these tests use.
+        let strict = Checkpoint {
+            easiest_target: POW_LIMIT,
+            ..easy_checkpoint()
+        };
+        let headers = chain(2, strict.hash);
+        match verify_chain(strict, &headers) {
+            Err(HeaderRefused::TargetEasierThanAllowed { at, bits }) => {
+                assert_eq!((at, bits), (101, EASY));
+            }
+            other => panic!(
+                "a chain mined at 2^240 is not Bitcoin, and accepting it is what makes a fabricated \
+                 chain cheap: {other:?}"
+            ),
+        }
     }
 
     #[test]

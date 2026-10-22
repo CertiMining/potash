@@ -35,6 +35,13 @@ name = "anchor-b-worker"
 path = "src/bin/anchor-b-worker.rs"
 required-features = ["cluster", "ots"]
 
+[[bin]]
+# Confirming a receipt against Bitcoin (H-12). No cluster: it reads a receipt, the bytes it stamped
+# and a file of headers, so it needs no network and no key at all.
+name = "confirm-anchor-b"
+path = "src/bin/confirm-anchor-b.rs"
+required-features = ["ots"]
+
 [dependencies]
 # The engine: digests, the tree and the promise types (D-84).
 certimining-core = { path = "../certimining-core", features = ["native"] }
