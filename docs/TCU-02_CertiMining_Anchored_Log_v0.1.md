@@ -558,6 +558,16 @@ and by everyone. And only the checkpoint authority can cause it, because this in
 that signature: it is the authority damaging its own log in public, not an attack a third party can
 mount.
 
+**49 describes the publisher, not a bound the program enforces.** The program reads the fields it
+knows and does not look at what follows: instruction data one byte short is refused — Anchor's
+`InstructionDidNotDeserialize` — and a trailing byte is accepted and ignored. The two directions are
+not symmetric, and the one that succeeds is the one the deployment is in. **The announced deployment
+has not been redeployed**, so it runs a program that knows 48 bytes; a publisher at this version would
+send it 49, and the extra byte would be discarded while that program searched for the bump as it
+always did. The publish would succeed and nothing would say the bump had been thrown away. Resuming
+the log against that program is therefore a decision and not a non-event, and
+`programs/certimining-checkpoint/tests/checkpoint.rs` holds both halves as a test.
+
 **Why the bump moved here at all.** `#[account(init, seeds = …, bump)]` searches, each rejected
 candidate costs one `create_program_address` syscall, and the epoch is one of the seeds — so the cost
 was `8,810 + 1,500 × (255 − bump)` and crossed the bound in this table for roughly one epoch in 32.
