@@ -996,3 +996,211 @@ fn v_z_04_position_carries_no_meaning_over_ten_thousand_epochs() {
         "V-Z-04 at {EPOCHS_VZ04_FULL} epochs: order {order:.5}, issuer {issuer:.5}, time {time:.5}"
     );
 }
+
+/// **V-Z-02 across epochs, which it has never looked at** (H-01, issue #26).
+///
+/// D-66 fixed V-Z-02's classifier before the tree existed, and it judges every epoch alone. The
+/// issue asks for cross-epoch structure, and names the padding construction: `PRF(k_e, 0x03 ‖ slot)`.
+///
+/// **The family it names is not constant, and saying so is the point.** `k_e = PRF(k_master,
+/// 0x01 ‖ e_le)` differs per epoch, so slot `s`'s padding differs per epoch too, and an adversary
+/// cannot precompute a table of padding leaves for a slot. The first test below is what establishes
+/// that rather than assuming it.
+///
+/// **What does differ across epochs is which side depends on the epoch at all.** A real leaf is
+/// `Keccak(TAG_MTL0 ‖ leafₙ)` — the epoch is nowhere in it. A padding leaf is keyed by `k_e` and so
+/// is bound to its epoch. That asymmetry is a distinguisher, and it is the one this file had not
+/// stated: a digest appearing in two epochs' leaf sets is real, with certainty and no statistics.
+///
+/// It needs a leaf to be submitted twice, which the batcher does not do, so it is a property of the
+/// construction rather than a live exposure. RES-03 and RES-09 already bound what count-hiding
+/// claims; this adds the one thing an observer holding *two* epochs can conclude that an observer
+/// holding one cannot.
+mod cross_epoch {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// How many epochs the cross-epoch statistics run over. Fixed here the way D-66 fixes V-Z-02's.
+    const EPOCHS: u64 = 64;
+
+    /// A padding leaf is bound to its epoch, so no slot has a value an adversary could precompute.
+    #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "64 epochs of 256 leaves: 16,384 leaf preimages and 64 tree builds, which took the \
+                  Miri job past its six-hour limit. The construction it exercises is the one \
+                  `tree.rs` runs under Miri at a size Miri finishes, and the two-epoch test alongside \
+                  is not ignored, so the cross-epoch path is still checked for undefined behaviour."
+    )]
+    fn no_padding_leaf_repeats_across_epochs() {
+        let capacity = 1usize << HEIGHT;
+        let mut seen: HashMap<Digest, u64> = HashMap::new();
+        let mut padding_leaves = 0usize;
+
+        for number in 0..EPOCHS {
+            // One real submission, so almost every slot is padding and the sample is mostly padding.
+            let built = epoch::<NativeKeccak>(number, HEIGHT, 1);
+            let real: std::collections::BTreeSet<u16> = real_slots(&built).into_iter().collect();
+            for (slot, leaf) in built.leaves.iter().enumerate() {
+                let Ok(slot) = u16::try_from(slot) else {
+                    panic!("a slot index beyond u16 at height {HEIGHT}")
+                };
+                if real.contains(&slot) {
+                    continue;
+                }
+                padding_leaves += 1;
+                if let Some(earlier) = seen.insert(*leaf, number) {
+                    panic!(
+                        "a padding leaf is the same in epoch {earlier} and epoch {number}. \
+                         `k_e = PRF(k_master, 0x01 ‖ e_le)` is supposed to make every epoch's \
+                         padding its own, and a repeat means an adversary can build a table of \
+                         padding values once and recognise them in every later epoch."
+                    );
+                }
+            }
+        }
+
+        assert_eq!(
+            padding_leaves,
+            (capacity - 1) * EPOCHS as usize,
+            "the sample is every padding leaf of {EPOCHS} epochs, so a shrunken sample is a weaker \
+             test rather than a passing one"
+        );
+    }
+
+    /// **The asymmetry, stated as the test that would catch it going away.**
+    ///
+    /// A real leaf carries no epoch; a padding leaf is keyed by one. So the same submission built
+    /// into two different epochs produces the identical digest, and its slot is the only thing that
+    /// moves. An observer holding both epochs' leaf sets finds it by intersection, with no key and no
+    /// statistics.
+    #[test]
+    fn a_real_leaf_is_the_same_digest_in_every_epoch_and_padding_never_is() {
+        let one = BuiltEpoch::build::<NativeKeccak>(
+            7,
+            HEIGHT,
+            &TEST_MASTER_KEY,
+            &[(scattered_id(1), leaf_digest(1))],
+        )
+        .expect("within capacity");
+        let two = BuiltEpoch::build::<NativeKeccak>(
+            8,
+            HEIGHT,
+            &TEST_MASTER_KEY,
+            &[(scattered_id(1), leaf_digest(1))],
+        )
+        .expect("within capacity");
+
+        let slot_one = real_slots(&one);
+        let slot_two = real_slots(&two);
+        let (Some(&a), Some(&b)) = (slot_one.first(), slot_two.first()) else {
+            panic!("each epoch holds one real submission");
+        };
+        let (Some(leaf_a), Some(leaf_b)) = (
+            one.leaves.get(usize::from(a)),
+            two.leaves.get(usize::from(b)),
+        ) else {
+            panic!("the assignment names a slot inside the tree");
+        };
+        assert_eq!(
+            leaf_a, leaf_b,
+            "the same submission in two epochs must hash identically: §1.4's real leaf is \
+             Keccak(TAG_MTL0 ‖ leafₙ) and carries no epoch"
+        );
+        assert_ne!(a, b, "its slot is keyed by k_e, so that is what moves");
+
+        // And the padding does not survive the move: intersecting the two leaf sets finds the real
+        // leaf and nothing else. This is the distinguisher, run rather than described.
+        let first: std::collections::BTreeSet<Digest> = one.leaves.iter().copied().collect();
+        let shared: Vec<Digest> = two
+            .leaves
+            .iter()
+            .copied()
+            .filter(|d| first.contains(d))
+            .collect();
+        assert_eq!(
+            shared,
+            vec![*leaf_a],
+            "exactly one digest is in both epochs and it is the real leaf. An observer holding two \
+             epochs that share a submission identifies it with no key and no statistics, which is \
+             what one epoch alone does not permit."
+        );
+    }
+
+    /// The statistical half: a classifier given one slot across many epochs rather than one epoch.
+    ///
+    /// Each trial takes a slot, collects its leaf from every epoch, and asks whether the features
+    /// separate the epochs where that slot held a real leaf from the ones where it held padding.
+    /// If the construction leaked across epochs this is where it would show, and it is the view
+    /// V-Z-02 has never taken.
+    #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "64 epochs of 256 leaves: 16,384 leaf preimages and 64 tree builds, which took the \
+                  Miri job past its six-hour limit. The construction it exercises is the one \
+                  `tree.rs` runs under Miri at a size Miri finishes, and the two-epoch test alongside \
+                  is not ignored, so the cross-epoch path is still checked for undefined behaviour."
+    )]
+    fn a_classifier_given_one_slot_across_many_epochs_does_no_better_than_chance() {
+        let capacity = 1usize << HEIGHT;
+        let mut successes = 0usize;
+        let mut trials = 0usize;
+
+        // A slot's leaf from each epoch, with ground truth the classifier never sees.
+        let mut by_slot: Vec<Vec<(Digest, bool)>> = vec![Vec::new(); capacity];
+        for number in 0..EPOCHS {
+            let built = epoch::<NativeKeccak>(number, HEIGHT, capacity / 2);
+            let real: std::collections::BTreeSet<u16> = real_slots(&built).into_iter().collect();
+            for (slot, leaf) in built.leaves.iter().enumerate() {
+                let Ok(index) = u16::try_from(slot) else {
+                    panic!("a slot index beyond u16")
+                };
+                if let Some(column) = by_slot.get_mut(slot) {
+                    column.push((*leaf, real.contains(&index)));
+                }
+            }
+        }
+
+        // The game is V-Z-02's: one real against one padding, and the classifier names the real one.
+        // The statistic is the leaf's distance from its own slot's mean across epochs — the natural
+        // thing to try if a slot's padding shared any structure across epochs.
+        for column in &by_slot {
+            let mean: Vec<f64> = (0..32)
+                .map(|b| {
+                    let sum: f64 = column
+                        .iter()
+                        .map(|(d, _)| f64::from(d.get(b).copied().unwrap_or(0)))
+                        .sum();
+                    sum / column.len().max(1) as f64
+                })
+                .collect();
+            let distance = |d: &Digest| -> f64 {
+                (0..32)
+                    .map(|b| {
+                        let v = f64::from(d.get(b).copied().unwrap_or(0));
+                        let m = mean.get(b).copied().unwrap_or(0.0);
+                        (v - m) * (v - m)
+                    })
+                    .sum()
+            };
+            let reals: Vec<&Digest> = column.iter().filter(|(_, r)| *r).map(|(d, _)| d).collect();
+            let pads: Vec<&Digest> = column.iter().filter(|(_, r)| !*r).map(|(d, _)| d).collect();
+            for (r, p) in reals.iter().zip(pads.iter()) {
+                trials = trials.saturating_add(1);
+                if distance(r) > distance(p) {
+                    successes = successes.saturating_add(1);
+                }
+            }
+        }
+
+        assert!(
+            trials >= 1_000,
+            "{trials} trials is too few to say anything; the sample has shrunk"
+        );
+        assert_indistinguishable(
+            "one slot across epochs, distance from its own mean",
+            successes,
+            trials,
+        );
+    }
+}

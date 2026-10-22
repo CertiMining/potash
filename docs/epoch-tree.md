@@ -134,6 +134,34 @@ cargo test --release -p certimining-log -- --ignored
 
 Its numbers are recorded on issue #16 before submission, and the bound there is 0.02.
 
+## What two epochs show that one does not (H-01)
+
+V-Z-02 judges every epoch alone, because D-66 fixed its classifier before the tree existed. Looking
+across epochs finds one thing it cannot, and the finding is a property of the construction rather
+than a weakness in it.
+
+**Padding is bound to its epoch.** `k_e = PRF(k_master, 0x01 ‖ e_le)`, so slot `s` holds a different
+padding leaf in every epoch and no adversary can precompute a table of padding values. That is
+checked rather than assumed: every padding leaf of 64 epochs is collected and a repeat fails.
+
+**A real leaf is not bound to its epoch.** `Keccak256(TAG_MTL0 ‖ leafₙ)` carries no epoch at all. So
+the same submission built into two epochs produces the identical digest, and only its slot moves —
+the slot is keyed by `k_e` and the leaf is not.
+
+**That asymmetry is a distinguisher, with no key and no statistics.** An observer holding two epochs
+that share a submission finds it by intersecting the leaf sets: exactly one digest is in both, and it
+is the real one. The test runs that intersection rather than describing it.
+
+It needs a submission to appear in two epochs, which the batcher does not do — §1.6 assigns each
+submission one promised epoch and `seal` moves the queue forward. So this is what the construction
+permits, not what the deployment exposes. It is recorded here because the difference between those
+two is exactly what a reader of a privacy claim needs, and because a change that made padding
+epoch-independent would silently remove the first property while leaving every existing test green.
+
+A classifier given one slot across many epochs, scoring each leaf's distance from that slot's own
+mean, stays inside the same two-sided band at α = 0.001 as V-Z-02's. Looking across epochs finds no
+statistical tell; it finds the exact one above.
+
 ## What lives elsewhere
 
 - **The batcher and its promises are E-07's.** `build` refuses a set larger than `C`; queueing the
