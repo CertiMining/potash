@@ -9,7 +9,7 @@ use anchor_lang::{AnchorSerialize, Discriminator};
 use certimining_checkpoint::{CheckpointAccount, LogConfig};
 use certimining_client::{
     checkpoint_address, config_address, decode_checkpoint, root_for_epoch, sequence_lag, Fetched,
-    Observation, Refused, RootSource, Unreachable,
+    Observation, OneView, Refused, RootSource, Unreachable,
 };
 use std::collections::HashMap;
 
@@ -32,6 +32,21 @@ impl RootSource for Cluster {
             account: self.accounts.get(address).cloned(),
         })
     }
+
+    /// One map, read once: every answer is the same state, which is what one view means here.
+    ///
+    /// The per-address slots this fixture can carry are deliberately **not** consulted. They exist to
+    /// make several separate reads disagree, which is H-07's question; a single request has one slot
+    /// and this source has one state, so there is nothing for them to disagree about.
+    fn accounts_at(&self, addresses: &[Pubkey]) -> Result<OneView, Unreachable> {
+        Ok(OneView {
+            slot: self.default_slot,
+            accounts: addresses
+                .iter()
+                .map(|address| self.accounts.get(address).cloned())
+                .collect(),
+        })
+    }
 }
 
 /// A cluster nobody can ask, which is a different thing from one holding nothing.
@@ -39,6 +54,10 @@ struct Offline;
 
 impl RootSource for Offline {
     fn account_at(&self, _address: &Pubkey) -> Result<Observation, Unreachable> {
+        Err(Unreachable("the endpoint refused the connection".into()))
+    }
+
+    fn accounts_at(&self, _addresses: &[Pubkey]) -> Result<OneView, Unreachable> {
         Err(Unreachable("the endpoint refused the connection".into()))
     }
 }
@@ -288,18 +307,23 @@ fn an_epoch_inside_the_range_whose_account_was_refused_is_named_as_that() {
     assert!(!lag.is_empty());
 }
 
-/// S9-R2-01. If the configuration says an epoch is published and its account does not come back, one
-/// consistent view of the chain cannot produce that: `publish_checkpoint` writes the checkpoint before
-/// it advances `last_epoch`. But the configuration and the account are separate reads with no shared
-/// response context, so what it proves is that the answers were not one snapshot — **not** that
-/// something other than this program wrote the configuration.
+/// S9-R2-01, **and this test asserted the opposite until H-54 (issue #197).**
+///
+/// If the configuration says an epoch is published and its account does not come back, one consistent
+/// view of the chain cannot produce that: `publish_checkpoint` writes the checkpoint before it
+/// advances `last_epoch`. The old version of this test asserted that the error named *the reads*
+/// rather than the log, because the configuration and the account were separate requests with no
+/// shared response context, so an inconsistency between them was evidence about the responses.
+///
+/// `sequence_lag` now reads them in one request. They are one view by construction, so the same
+/// fixture is a contradiction a single view cannot hold, and the error names the log. The assertion
+/// is flipped and the sentence it checks for is the new one, because the fact underneath it changed.
 #[test]
-fn an_absent_account_inside_the_published_range_is_a_read_that_was_not_one_snapshot() {
+fn an_absent_account_inside_the_published_range_is_now_evidence_about_the_log() {
     let mut cluster = Cluster::default();
     cluster.configure(100, 104);
     cluster.publish(100, [1u8; 32]);
-    // 101 is deliberately not published. Against one view that is unreachable; this fixture is the
-    // inconsistent view a caller can actually be served.
+    // 101 is deliberately not published, which one view of a real chain cannot show.
     let refused = sequence_lag(&cluster, &PROGRAM, 100, 104);
     assert!(
         refused.is_err(),
@@ -307,8 +331,8 @@ fn an_absent_account_inside_the_published_range_is_a_read_that_was_not_one_snaps
     );
     let message = format!("{:?}", refused.unwrap_err());
     assert!(
-        message.contains("not one snapshot") || message.contains("separate reads"),
-        "the error names the reads, not the log: {message}"
+        message.contains("same view") && message.contains("about the log"),
+        "the error names the log, which is what one view makes it able to say: {message}"
     );
     assert!(
         !message.contains("impossible"),
@@ -455,19 +479,30 @@ mod config_decoder {
     }
 }
 
-/// **H-07's read boundary**, and the test the reviewer specified for it (issue #39).
+/// **H-07's read boundary, and what H-54 did to it** (issues #39 and #197).
 ///
-/// `sequence_lag` reads the configuration and then each checkpoint through separate calls. Several
-/// reads that each succeeded are not one view: a stale replica, a load-balanced backend or a
-/// different confirmed fork can answer one request from before another. Until this, nothing tied
-/// them together, so an account answered from before the configuration's own view was indistinguishable
-/// from an account that is not there.
+/// H-07 made `sequence_lag` carry each read's context slot and refuse when a checkpoint came back
+/// from before the configuration's own view. That caught a stale replica. It could not catch two
+/// reads served from different confirmed forks at compatible slot numbers, which is the hole H-35
+/// found in V-Z-01's ordered triple and the one `minContextSlot` does not close either: that
+/// guarantees a view's height, not its chain.
+///
+/// `sequence_lag` now asks once. `getMultipleAccounts` returns a single response context for every
+/// address in it, so the configuration and the checkpoints are one view by construction rather than
+/// by comparison — which is strictly stronger and makes H-07's comparison **unreachable here**. D-80's
+/// rule applies to a client branch as much as to an error code, so the test below asserts what the
+/// new strategy does instead of a condition no path reaches.
+///
+/// `Observation::slot` is unchanged and still public: a caller making several separate reads through
+/// `root_for_epoch_at` has the same boundary H-07 gave it. What changed is that this module's one
+/// consumer no longer needs it.
 mod one_view_of_the_chain {
     use super::*;
 
-    /// The specified case: the configuration observed at slot S, a checkpoint answered from before S.
+    /// H-07's fixture, answered normally now: one request has one slot, so there is nothing to
+    /// disagree with.
     #[test]
-    fn a_checkpoint_answered_from_before_the_configurations_view_is_a_view_problem() {
+    fn a_stale_per_address_slot_cannot_split_a_read_that_is_one_request() {
         let mut cluster = Cluster {
             default_slot: Some(500),
             ..Default::default()
@@ -476,19 +511,17 @@ mod one_view_of_the_chain {
         cluster.publish(100, [1u8; 32]);
         cluster.publish(101, [2u8; 32]);
         cluster.publish(102, [3u8; 32]);
-        // This one comes back from a replica that is behind the one the configuration came from.
+        // H-07's stale replica. It is ignored, because `accounts_at` does not read per-address slots:
+        // a single request cannot be served from two of them.
         cluster.slots.insert(checkpoint_address(&PROGRAM, 101), 499);
 
-        let refused = sequence_lag(&cluster, &PROGRAM, 100, 102);
-        assert!(
-            refused.is_err(),
-            "an account from an earlier view is not evidence about the log"
+        let lag = sequence_lag(&cluster, &PROGRAM, 100, 102).expect("one view, one answer");
+        assert!(lag.is_empty(), "every epoch in the range has a usable root");
+        assert_eq!(
+            lag.views, 1,
+            "three epochs and a configuration are one request"
         );
-        let message = format!("{:?}", refused.expect_err("checked just above"));
-        assert!(
-            message.contains("not one view") && message.contains("499") && message.contains("500"),
-            "the error names both slots and the reads rather than the log: {message}"
-        );
+        assert!(!lag.configuration_moved);
     }
 
     /// The control. Without it the test above would pass on a client that refused everything.
@@ -547,5 +580,128 @@ mod one_view_of_the_chain {
             lag.is_ok(),
             "a comparison needs both sides; one of them missing is not evidence"
         );
+    }
+}
+
+/// **What a range longer than one request does** (H-54, issue #197).
+///
+/// `getMultipleAccounts` takes 100 addresses and the configuration occupies one of them, so 99 epochs
+/// is the most one view can answer for. A longer range is several views, and the answer says so
+/// rather than reading as one observation.
+mod more_than_one_view {
+    use super::*;
+    use std::cell::RefCell;
+
+    /// A fixture that records the size of every request, so the chunking is asserted and not assumed.
+    struct Recording {
+        inner: Cluster,
+        sizes: RefCell<Vec<usize>>,
+    }
+
+    impl RootSource for Recording {
+        fn account_at(&self, address: &Pubkey) -> Result<Observation, Unreachable> {
+            self.inner.account_at(address)
+        }
+
+        fn accounts_at(&self, addresses: &[Pubkey]) -> Result<OneView, Unreachable> {
+            self.sizes.borrow_mut().push(addresses.len());
+            self.inner.accounts_at(addresses)
+        }
+    }
+
+    #[test]
+    fn a_range_of_ninety_nine_epochs_is_one_request_and_a_hundred_is_two() {
+        for (epochs, requests) in [(99u64, 1usize), (100, 2)] {
+            let mut inner = Cluster::default();
+            inner.configure(100, 100 + epochs - 1);
+            for epoch in 100..100 + epochs {
+                inner.publish(epoch, [u8::try_from(epoch % 251).unwrap_or(1); 32]);
+            }
+            let source = Recording {
+                inner,
+                sizes: RefCell::new(Vec::new()),
+            };
+            let lag = sequence_lag(&source, &PROGRAM, 100, 100 + epochs - 1)
+                .unwrap_or_else(|e| panic!("{epochs} epochs: {e:?}"));
+            assert_eq!(
+                lag.views, requests,
+                "{epochs} epochs should be {requests} view(s)"
+            );
+            let sizes = source.sizes.borrow().clone();
+            assert_eq!(sizes.len(), requests);
+            for size in &sizes {
+                assert!(
+                    *size <= certimining_client::ONE_VIEW_LIMIT,
+                    "a request of {size} addresses is over the RPC's limit, and splitting it \
+                     elsewhere would return several views under the name of one"
+                );
+            }
+            // Every request carries the configuration, because every comparison is configuration
+            // against epoch and both sides have to come out of one view.
+            assert_eq!(
+                sizes.iter().sum::<usize>(),
+                usize::try_from(epochs).unwrap_or(0) + requests,
+                "each request holds its epochs and one configuration"
+            );
+        }
+    }
+
+    /// A source whose configuration advances between requests, which is the log publishing mid-scan.
+    struct Shifting {
+        early: Cluster,
+        late: Cluster,
+        asked: RefCell<usize>,
+    }
+
+    impl RootSource for Shifting {
+        fn account_at(&self, address: &Pubkey) -> Result<Observation, Unreachable> {
+            self.early.account_at(address)
+        }
+
+        fn accounts_at(&self, addresses: &[Pubkey]) -> Result<OneView, Unreachable> {
+            let first = {
+                let mut asked = self.asked.borrow_mut();
+                *asked = asked.saturating_add(1);
+                *asked == 1
+            };
+            if first {
+                self.early.accounts_at(addresses)
+            } else {
+                self.late.accounts_at(addresses)
+            }
+        }
+    }
+
+    /// **Not an error, and not silent either.**
+    ///
+    /// Each batch was answered against the configuration read in the same request, so every
+    /// comparison holds. What a caller must not do is treat the whole range as one observation, and
+    /// the only way it can know is to be told.
+    #[test]
+    fn a_configuration_that_moves_between_views_is_reported() {
+        let build = |last: u64| {
+            let mut cluster = Cluster::default();
+            cluster.configure(100, last);
+            for epoch in 100..=last {
+                cluster.publish(epoch, [u8::try_from(epoch % 251).unwrap_or(1); 32]);
+            }
+            cluster
+        };
+        let source = Shifting {
+            early: build(199),
+            late: build(200),
+            asked: RefCell::new(0),
+        };
+        let lag = sequence_lag(&source, &PROGRAM, 100, 200).expect("both views answered");
+        assert_eq!(lag.views, 2);
+        assert!(
+            lag.configuration_moved,
+            "the log published between the two requests and the answer has to say so"
+        );
+        assert_eq!(
+            lag.last_published, 200,
+            "the bounds reported are the most recent view's"
+        );
+        assert!(lag.is_empty(), "every epoch asked about had a usable root");
     }
 }
