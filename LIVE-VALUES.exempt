@@ -67,3 +67,24 @@ programs/certimining-checkpoint/tests/compute.rs  20727  1  the attachment whose
 programs/certimining-checkpoint/tests/checkpoint.rs  20723  1  D-88's incident, recorded in prose: the calendar index a real deployment's compressed run ran 209 days ahead of
 programs/certimining-checkpoint/tests/checkpoint.rs  20932  1  the last_epoch that run reached, the other half of the same sentence
 programs/certimining-checkpoint/tests/compute.rs  20728  1  the publication whose measured compute units this harness is checked against
+
+# **The fourteen epochs whose receipts are confirmed against Bitcoin (H-12, #48).** The subject of
+# `anchor_b_confirmed.rs` is the announced deployment's own anchoring: it reads each epoch's receipt,
+# takes the published root from LIVE-VALUES.txt, and checks that the digest the receipt's operations
+# reach is the merkle root of the Bitcoin block it names. Two epochs appear twice because the comment
+# recording that 20726/20727 and 20732/20733 share a block names them again.
+
+crates/certimining-client/tests/anchor_b_confirmed.rs  20723  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20724  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20725  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20726  2  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20727  2  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20728  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20729  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20730  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20731  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20732  2  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20733  2  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20734  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20735  1  the epoch whose attached receipt this test confirms against the block it names
+crates/certimining-client/tests/anchor_b_confirmed.rs  20736  1  the epoch whose attached receipt this test confirms against the block it names
