@@ -23,10 +23,17 @@
 //! root of the block at the height the receipt names, and returns a `Confirmed` that nothing else can
 //! build. A `BitcoinClaim` is what a receipt says; a `Confirmed` is what a block shows.
 //!
-//! **What is still not established, so the gap is not mistaken for coverage.** No committed receipt
-//! has been confirmed, because confirming one needs headers and this repository commits none beyond
-//! the genesis checkpoint. Every anchor row in `docs/anchoring.md` saying nothing checks the heights
-//! is still true of the receipts on disk. What has changed is that there is now something to run.
+//! **The difficulty is the one in force, not merely a floor (H-53, issue #195).** A header declares
+//! its own target, so the first version of this module checked only that no header was *easier* than a
+//! floor — and a chain fabricated from the checkpoint by mining at that floor would have been
+//! accepted. The checkpoint now carries the target in force at its height and every header must
+//! declare exactly that, which is what makes a fabricated chain cost what the real one cost.
+//!
+//! **A chain crossing a retarget boundary is refused rather than guessed at.** Bitcoin moves the
+//! target every 2016 blocks, and computing where it moves to needs the period's timespan and a
+//! 256-bit multiply. Until that lands, a chain is verified inside one period and a range that leaves
+//! it is refused, which is the honest shape: every confirmation this repository performs is four to
+//! ten headers inside one period, and a longer one says so instead of accepting easy work.
 
 use bitcoin_hashes::{sha256d, Hash};
 
@@ -52,11 +59,23 @@ pub enum HeaderRefused {
     InsufficientWork { at: u32, hash: String },
     /// The `bits` field encodes a target no header can meet, or none at all.
     MalformedTarget { at: u32, bits: u32 },
-    /// The header declares a target easier than the checkpoint allows.
+    /// The header declares a target other than the one in force at the checkpoint.
     ///
     /// A header states its own difficulty, so a chain of trivially-mined headers passes every other
-    /// test here. This is the floor under that.
-    TargetEasierThanAllowed { at: u32, bits: u32 },
+    /// test here. Requiring the target in force is what costs a forger the real chain's work.
+    TargetNotTheOneInForce {
+        at: u32,
+        bits: u32,
+        expected: String,
+    },
+    /// The range leaves the retarget period the checkpoint sits in.
+    ///
+    /// Bitcoin moves the target every 2016 blocks and this module does not yet compute where to.
+    /// Refusing is the only answer that does not accept whatever the headers claim.
+    CrossesARetargetBoundary {
+        checkpoint_period: u32,
+        tip_period: u32,
+    },
     /// No header was supplied for the height asked about.
     HeightNotCovered { wanted: u32, covered: u32 },
     /// The block at that height does not commit the digest the receipt's operations reach.
@@ -170,6 +189,9 @@ pub const POW_LIMIT: [u8; 32] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
+/// Bitcoin's retarget interval: the target is fixed for 2016 blocks at a time.
+pub const RETARGET_INTERVAL: u32 = 2016;
+
 /// Whether a little-endian hash is numerically at or below a big-endian target.
 fn less_than_or_equal_reversed(hash_le: &[u8; 32], target_be: &[u8; 32]) -> bool {
     for i in 0..32 {
@@ -196,12 +218,17 @@ pub struct Checkpoint {
     pub height: u32,
     /// The header's hash in internal byte order, as `prev_hash` carries it.
     pub hash: [u8; 32],
-    /// The easiest target any header in the chain may declare, big-endian.
+    /// The target in force at `height`, big-endian, which every header in the chain must declare.
     ///
-    /// `POW_LIMIT` for Bitcoin. It belongs to the checkpoint because the checkpoint is where trust
-    /// sits in this module: a reader who accepts the committed checkpoint is accepting what it says
-    /// about difficulty along with the block it names.
-    pub easiest_target: [u8; 32],
+    /// **Exactly, not as a floor (H-53, issue #195).** A floor leaves a chain minable at the minimum,
+    /// and reaching a recent height that way costs a fraction of what Bitcoin's history cost. The
+    /// target in force makes each header cost what a real one cost, which is the property the whole
+    /// module is for.
+    ///
+    /// It belongs to the checkpoint because the checkpoint is where trust sits here: a reader who
+    /// accepts the committed checkpoint accepts its height, its hash and its difficulty together, and
+    /// checks all three with one query to any node.
+    pub target: [u8; 32],
 }
 
 /// Verifies that `headers` is one chain of real work beginning at `checkpoint`'s successor.
@@ -209,27 +236,36 @@ pub struct Checkpoint {
 /// Returns the headers' hashes, so a caller can name a block without recomputing them. Every header
 /// must name the previous one and meet its own target; the first must name the checkpoint.
 ///
-/// **What it does not establish, and the first version of this paragraph understated it.** That
-/// paragraph said the missing piece was choosing between competing chains, "which matters at a
-/// reorganisation and not for a block buried under months of it". That is the wrong frame. A header
-/// declares its own difficulty, and nothing here checks that the difficulty is the one Bitcoin's
-/// consensus rules require at that height — only that it is no easier than the checkpoint's floor and
-/// that the hash meets it. So the gap is not a choice between two real chains. It is that **a chain
-/// can be fabricated from the committed checkpoint by mining at the minimum difficulty**, and
-/// reaching a recent height that way costs a fraction of what Bitcoin's own history cost: around
-/// `2^32` hashes per header against today's `2^79`.
+/// **What this establishes about work, and what it does not.** Every header must declare the target in
+/// force at the checkpoint and meet it, so producing one costs what a real block at that difficulty
+/// cost — about `2^79` hashes on the chain this repository anchors to. An earlier version required
+/// only that no header be *easier* than a floor, which left a chain minable from the checkpoint at
+/// `2^32` a header: the floor was never the point, the target in force is.
 ///
-/// Enforcing the retarget schedule — every 2016 blocks, the target moves by the period's timespan,
-/// clamped to a factor of four — is what closes that, because then reaching a height demands the work
-/// the real chain demanded. It needs the checkpoint to carry the target in force and the period's
-/// first timestamp, and it needs a difficulty parameter to be testable at all, so it is filed as H-53
-/// (#195) rather than asserted here. Until it lands, this module refuses a receipt whose digest the
-/// named block does not commit, which is every forgery that does not involve mining, and not one that
-/// does.
+/// Two things remain, and neither is the fabrication above:
+///
+/// * **A range leaving the checkpoint's retarget period is refused**, because the target moves every
+///   2016 blocks and nothing here computes where to. Every confirmation this repository performs is
+///   four to ten headers inside one period. A light client walking from genesis would need the
+///   retarget arithmetic, which is the rest of H-53 (#195).
+/// * **This is not the chain with the most work**, only a chain of the right work from the
+///   checkpoint. Two competing chains at the same difficulty both pass, which matters at a
+///   reorganisation and not for a block buried under months of it.
 pub fn verify_chain(
     checkpoint: Checkpoint,
     headers: &[Header],
 ) -> Result<Vec<[u8; 32]>, HeaderRefused> {
+    // **One retarget period, or nothing (H-53, issue #195).** The target in force belongs to the
+    // period the checkpoint sits in, so a range that leaves it is a range this cannot answer for.
+    let span = u32::try_from(headers.len()).unwrap_or(u32::MAX);
+    let checkpoint_period = checkpoint.height / RETARGET_INTERVAL;
+    let tip_period = checkpoint.height.saturating_add(span) / RETARGET_INTERVAL;
+    if tip_period != checkpoint_period {
+        return Err(HeaderRefused::CrossesARetargetBoundary {
+            checkpoint_period,
+            tip_period,
+        });
+    }
     let mut previous = checkpoint.hash;
     let mut hashes = Vec::with_capacity(headers.len());
     for (offset, header) in headers.iter().enumerate() {
@@ -256,11 +292,11 @@ pub fn verify_chain(
             at: height,
             bits: header.bits(),
         })?;
-        // Both are big-endian, so lexicographic order on the bytes is numeric order.
-        if target > checkpoint.easiest_target {
-            return Err(HeaderRefused::TargetEasierThanAllowed {
+        if target != checkpoint.target {
+            return Err(HeaderRefused::TargetNotTheOneInForce {
                 at: height,
                 bits: header.bits(),
+                expected: hex(&checkpoint.target),
             });
         }
         let hash = header.block_hash();
@@ -322,7 +358,8 @@ pub fn merkle_root_at(
 /// this repository vouches for.
 pub const GENESIS: Checkpoint = Checkpoint {
     height: 0,
-    easiest_target: POW_LIMIT,
+    // Period 0's target is the maximum Bitcoin allows, which is where the chain started.
+    target: POW_LIMIT,
     // Internal byte order. Reversed for display this is
     // 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f.
     hash: [
@@ -423,16 +460,16 @@ mod tests {
     /// random header does not pass by accident.
     const EASY: u32 = 0x1f00_ffff;
 
-    /// A checkpoint whose floor admits `EASY`, because no test can mine at Bitcoin's own difficulty.
+    /// A checkpoint whose target in force is `EASY`, because no test can mine at Bitcoin's own.
     ///
-    /// **This is why the floor lives on the checkpoint.** A constant would make every test here
-    /// either impossible or a test of something else; a field makes the floor part of the trusted
-    /// input, which is what it is.
+    /// **This is why the target lives on the checkpoint.** A constant would make every test here
+    /// either impossible or a test of something else; a field makes the difficulty part of the
+    /// trusted input, which is what it is.
     fn easy_checkpoint() -> Checkpoint {
         Checkpoint {
             height: 100,
             hash: [0x42; 32],
-            easiest_target: match target_from_bits(EASY) {
+            target: match target_from_bits(EASY) {
                 Some(t) => t,
                 None => panic!("the test's own difficulty does not decode"),
             },
@@ -646,22 +683,26 @@ mod tests {
         }
     }
 
-    /// **The floor, and the constant tied to the encoding rather than transcribed.**
+    /// **The target in force, and the constant tied to the encoding rather than transcribed.**
+    ///
+    /// This is the assertion that costs a forger the real chain's work: a header declaring anything
+    /// but the target in force is refused, so a chain cannot be mined from the checkpoint at a
+    /// difficulty of the forger's choosing.
     #[test]
-    fn a_target_easier_than_the_checkpoint_allows_is_refused() {
+    fn a_target_other_than_the_one_in_force_is_refused() {
         assert_eq!(
             target_from_bits(0x1d00_ffff),
             Some(POW_LIMIT),
             "POW_LIMIT must be what Bitcoin's own maximum-difficulty encoding expands to"
         );
-        // A real checkpoint's floor against a chain mined at the difficulty these tests use.
+        // A checkpoint stating Bitcoin's own maximum target, against a chain mined at 2^240.
         let strict = Checkpoint {
-            easiest_target: POW_LIMIT,
+            target: POW_LIMIT,
             ..easy_checkpoint()
         };
         let headers = chain(2, strict.hash);
         match verify_chain(strict, &headers) {
-            Err(HeaderRefused::TargetEasierThanAllowed { at, bits }) => {
+            Err(HeaderRefused::TargetNotTheOneInForce { at, bits, .. }) => {
                 assert_eq!((at, bits), (101, EASY));
             }
             other => panic!(
@@ -669,6 +710,40 @@ mod tests {
                  chain cheap: {other:?}"
             ),
         }
+    }
+
+    /// **A range that leaves the checkpoint's retarget period is refused, not guessed at.**
+    #[test]
+    fn a_chain_crossing_a_retarget_boundary_is_refused() {
+        // The checkpoint is the last block of its period, so its successor starts the next one.
+        let at_the_edge = Checkpoint {
+            height: RETARGET_INTERVAL.saturating_sub(1),
+            ..easy_checkpoint()
+        };
+        let headers = chain(2, at_the_edge.hash);
+        match verify_chain(at_the_edge, &headers) {
+            Err(HeaderRefused::CrossesARetargetBoundary {
+                checkpoint_period,
+                tip_period,
+            }) => assert_eq!((checkpoint_period, tip_period), (0, 1)),
+            other => {
+                panic!("the target moves at a boundary and this cannot say where to: {other:?}")
+            }
+        }
+    }
+
+    /// The control: a range inside one period is verified, which is what every confirmation here is.
+    #[test]
+    fn a_chain_inside_one_retarget_period_is_verified() {
+        let inside = Checkpoint {
+            height: RETARGET_INTERVAL.saturating_mul(3),
+            ..easy_checkpoint()
+        };
+        let headers = chain(4, inside.hash);
+        assert!(
+            verify_chain(inside, &headers).is_ok(),
+            "four headers after a period's first block are inside it"
+        );
     }
 
     #[test]
