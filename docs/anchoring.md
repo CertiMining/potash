@@ -302,15 +302,42 @@ described rather than an argument that it will.
 | 20734 | `0x602451d1…699933` | 509018081 | Bitcoin block 970,582 | `anchors/epochs/20734.ots` | `dual` |
 | 20735 | `0x6aa9a23c…cb6afa` | 509018123 | Bitcoin block 970,572 | `anchors/epochs/20735.ots` | `dual` |
 | 20736 | `0x6bb7ac8d…3fd867` | 509670816 | Bitcoin block 970,857 | `anchors/epochs/20736.ots` | `dual` |
-| 20737 | `0x08182e24…d0b812` | 510088056 | *pending* | *not yet committed* | `single` |
-| 20738 | `0x34540294…406f02` | 510088067 | *pending* | *not yet committed* | `single` |
+| 20737 | `0x08182e24…d0b812` | 510088056 | Bitcoin block 971,047 | *not yet committed* | `single` |
+| 20738 | `0x34540294…406f02` | 510088067 | Bitcoin block 971,047 | *not yet committed* | `single` |
 
-**Epochs 20737 and 20738 are mid-cycle**, published and stamped on day 20738 with calendar
-attestations only. **`single` is a snapshot, not a property.** D-112 spends the one write-once
-opportunity on the upgraded receipt, so every newly published epoch reads `single` for the hours
-before a Bitcoin block confirms it, and the table will show `single` again the next time one is
-published. INV-ANCH-04 budgets that latency; INV-ANCH-05 forbids reporting `dual` on a calendar's
-promise.
+**Epochs 20737 and 20738 carry Bitcoin attestations now and are not yet `dual`**, which is a state
+this table had not had to show before. They were published and stamped on day 20738 with calendar
+attestations only; `ots upgrade` was run on 22 October 2026 and both landed in **Bitcoin block
+971,047** — the same block the repository-head stamp `0003`'s predecessor reached, because the
+calendars aggregated three stamps made minutes apart into one. The upgraded receipts are committed and
+**confirmed against that block**: `confirm-anchor-b` recomputes each receipt's operations and reaches
+`33918556…05cf1d64`, which is 971,047's merkle root, on five committed headers of real work from the
+checkpoint at 971,042.
+
+**What is still missing is the attach, and it is an on-chain write.** `receipt_digest` is write-once
+(INV-ANCH-03), so the one opportunity is spent deliberately and by a person holding the checkpoint
+authority. The digests an attach would write are
+`0xb640cc0ff1b0754f1867f510dbfeb68e78fbbba09a850f6322f0a7c207f0a55b` for 20737 and
+`0x2f88fcc1d5bd12b54b863cb4a324361d71e36229fa06b7641089ec6af609c3d7` for 20738. Until that happens the
+rows read `single`, because `single` and `dual` describe what the chain holds and not what this
+repository has: a row claiming `dual` on an unattached digest would be the failure INV-ANCH-05 names,
+pointed inward.
+
+**The receipts are not committed here yet either, and that is the same rule.** A receipt under
+`anchors/epochs/` means the chain holds its digest — `cargo xtask check-record` enforces exactly that
+coupling, and it refused a first version of this section that committed both files while the rows read
+`single`. The gate was right: committing them early would weaken the one check that ties this document
+to the chain, for the convenience of recording work a day sooner. They stay in the operational
+directory D-118 names, and the attach commits the file and moves the row in one step.
+
+**The receipts were confirmed from there**, which needs nothing committed: `confirm-anchor-b` takes a
+receipt, the bytes it stamped and a file of headers, and both reached 971,047's merkle root on the five
+headers this repository already holds for that block.
+
+**`single` is a snapshot, not a property.** D-112 spends the one write-once opportunity on the upgraded
+receipt, so every newly published epoch reads `single` for the hours before a Bitcoin block confirms
+it, and the table will show `single` again the next time one is published. INV-ANCH-04 budgets that
+latency; INV-ANCH-05 forbids reporting `dual` on a calendar's promise.
 
 **The wait is not a constant and the table shows it.** 20736 confirmed after about a day and a half;
 20734 and 20735 confirmed on day 20736 at blocks 970,582 and 970,572, the later epoch landing in the
@@ -433,6 +460,13 @@ document's word:
 | 20734 | `anchors/epochs/20734.ots` | 3,848 | `867bd6275a305ea6ebc4d67c976060a498b2c3f514b1b889f43ebc2d23001585` | `0xf0eb017e3c65128323ec8539e730244fdc556b387fcc6e605f164fd9d13d2c7b` |
 | 20735 | `anchors/epochs/20735.ots` | 3,848 | `fd8fd9304d230fdd5c60a562daae900a79e1f45ef3db4d8104ebbabc60454c26` | `0x1a56cfbc7d8a12eebc7ae74def60f58352173ed28f595f822eb74cbf54611408` |
 | 20736 | `anchors/epochs/20736.ots` | 3,882 | `fc0380ae289edc944418a71c53a630426fac68f4533b03bfb965427d7365ae7a` | `0x1075160dd4c6607fcd59bac0e754e90c0832b7d33bc0413707ea2d6e93ac24eb` |
+
+**20737 and 20738 have no row here, and that is what the table means.** Its last column is the digest
+*attached on chain*, which `cargo xtask check-record` recomputes from the committed bytes — so a row
+here asserts that the chain holds that digest, and a committed receipt under `anchors/epochs/` means
+the same thing. Both of those epochs have an upgraded receipt carrying Bitcoin, and neither is
+attached, so neither the file nor the row belongs here until it is. The receipts sit in the operational
+directory D-118 names, and the attach commits the file and adds the row in one step.
 
 **The wait is not a constant and the table shows it.** Across fourteen cycles the confirmations landed
 anywhere from six blocks to a few hundred after publication, and two epochs stamped minutes apart
