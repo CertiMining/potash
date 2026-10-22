@@ -178,6 +178,12 @@ its height, hash and difficulty, which is one query to any Bitcoin node. Everyth
 believed for its work. A `BitcoinClaim` is what a receipt says and a `Confirmed` is what a block
 shows, and the two are different types so a caller cannot treat one as the other.
 
+The same arrangement carries §1.6's transfer check. `verify_transferred_promise` takes the checkpoint
+and the headers from its caller and reaches `confirm` by the same path, so a holder judging a promise
+it never observed supplies the one input it has to trust and believes everything after it for its
+work. What the promise receipt adds is a binding rather than a new trust: the receipt must timestamp
+exactly the promise's 161 octets, so a stamp cannot be moved from one promise to another.
+
 The integrity claim rests on both anchors. Until anchor B attaches, a client reports the
 epoch as `single` rather than `dual` — an epoch waiting hours for a Bitcoin block is the latency this
 design budgets for, and reporting it as anchored twice would be a failure the specification treats as
@@ -201,7 +207,7 @@ taken by default.
 |---|---|
 | `crates/certimining-core` | digests, encodings, the record state machine. `no_std`, no Solana dependency |
 | `crates/certimining-log` | the epoch tree, inclusion proofs, the batcher, inclusion promises |
-| `crates/certimining-client` | fetching a root, the publish path, the anchor-B client, and the three binaries around them: `batcher-handoff` builds an epoch and signs the handoff, `anchor-b-worker` publishes a root it was given and refuses to start without one it can verify, and `confirm-anchor-b` checks a receipt against Bitcoin headers. D-139 divides the cycle so `k_master` never reaches the process that runs unattended. Neither runs on a timer yet: the log is paused (D-117, D-139) |
+| `crates/certimining-client` | fetching a root, the publish path, the anchor-B client, §1.6's transfer check — a promise judged against a Bitcoin-confirmed receipt over its own 161-octet encoding (H-02) — and the three binaries around them: `batcher-handoff` builds an epoch and signs the handoff, `anchor-b-worker` publishes a root it was given and refuses to start without one it can verify, and `confirm-anchor-b` checks a receipt against Bitcoin headers. D-139 divides the cycle so `k_master` never reaches the process that runs unattended. Neither runs on a timer yet: the log is paused (D-117, D-139) |
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
