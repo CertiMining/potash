@@ -561,3 +561,140 @@ test("a package arriving as JSON text verifies through the same path", () => {
   assert.equal((notJson.failure as any).failure, "MalformedPackage");
   assert.equal(notJson.chainPosition.established, false);
 });
+
+/**
+ * **§2.5's chain segment (INV-DISC-04, H-15).** A package can carry the chain it claims a position in:
+ * leaf digests and heads, never earlier records' preimages. The verifier recomputes every head and
+ * reports position as established only when the recomputation reaches `chain.head` from `h₀` or from
+ * a head the caller already trusts.
+ */
+test("a segment reaching genesis establishes the position, and the heads are recomputed", () => {
+  const genesis = keccak256(genesisHeadPreimage(ASSET_COMMITMENT, 1));
+  const leafOne = fromHex(`0x${"11".repeat(32)}`, 32);
+  const headOne = advanceHead(genesis, leafOne);
+  const leafTwo = fromHex(`0x${"22".repeat(32)}`, 32);
+  const headTwo = advanceHead(headOne, leafTwo);
+
+  const { pkg, root: r, leaf } = signedPackageAt(3n, headTwo);
+  pkg.chain.segment = [
+    { leaf: toHex(leafOne), head: toHex(headOne) },
+    { leaf: toHex(leafTwo), head: toHex(headTwo) },
+    { leaf: toHex(leaf), head: pkg.chain.head },
+  ];
+
+  const report = verifyDisclosurePackage(pkg, { root: r, configuredHeight: 8 });
+  assert.equal(report.ok, true, JSON.stringify(report.failure));
+  assert.equal(report.chainPosition.established, true, report.chainPosition.detail);
+  assert.match(report.chainPosition.detail, /covers all 3 record\(s\)/);
+  assert.equal(
+    report.checks.some((c) => c.name.includes("segment") && c.status === "pass"),
+    true,
+    "the segment's recomputation is reported as a check that ran",
+  );
+  // The residual is stated every time, because a verified segment is still an unsigned one.
+  assert.equal(
+    report.notes.some((n) => n.includes("unsigned")),
+    true,
+    "a report on a verified segment has to say the links are unsigned",
+  );
+});
+
+test("a segment that does not reach genesis recomputes and leaves the position unestablished", () => {
+  const genesis = keccak256(genesisHeadPreimage(ASSET_COMMITMENT, 1));
+  const leafOne = fromHex(`0x${"11".repeat(32)}`, 32);
+  const headOne = advanceHead(genesis, leafOne);
+  const leafTwo = fromHex(`0x${"22".repeat(32)}`, 32);
+  const headTwo = advanceHead(headOne, leafTwo);
+
+  const { pkg, root: r, leaf } = signedPackageAt(3n, headTwo);
+  // Two of the three records, so the first entry hangs off a head nothing here vouches for.
+  pkg.chain.segment = [
+    { leaf: toHex(leafTwo), head: toHex(headTwo) },
+    { leaf: toHex(leaf), head: pkg.chain.head },
+  ];
+
+  const report = verifyDisclosurePackage(pkg, { root: r, configuredHeight: 8 });
+  assert.equal(report.ok, true, "an unanchored segment is unfinished evidence, not a contradiction");
+  assert.equal(report.chainPosition.established, false);
+  assert.match(report.chainPosition.detail, /starts at a head nothing here vouches for/);
+
+  // The same segment, against the head the caller already holds.
+  const withTrust = verifyDisclosurePackage(pkg, {
+    root: r,
+    configuredHeight: 8,
+    chainContext: { sawResource: false, previousCategory: null, trustedHead: headOne },
+  });
+  assert.equal(withTrust.ok, true, JSON.stringify(withTrust.failure));
+  assert.equal(withTrust.chainPosition.established, true, withTrust.chainPosition.detail);
+  assert.match(withTrust.chainPosition.detail, /the head the caller supplied/);
+});
+
+test("a segment whose links do not recompute is refused, wherever the break is", () => {
+  const genesis = keccak256(genesisHeadPreimage(ASSET_COMMITMENT, 1));
+  const leafOne = fromHex(`0x${"11".repeat(32)}`, 32);
+  const headOne = advanceHead(genesis, leafOne);
+  const leafTwo = fromHex(`0x${"22".repeat(32)}`, 32);
+  const headTwo = advanceHead(headOne, leafTwo);
+  const { pkg, root: r, leaf } = signedPackageAt(3n, headTwo);
+  const whole = [
+    { leaf: toHex(leafOne), head: toHex(headOne) },
+    { leaf: toHex(leafTwo), head: toHex(headTwo) },
+    { leaf: toHex(leaf), head: pkg.chain.head },
+  ];
+
+  const brokenMiddle = clone(pkg);
+  brokenMiddle.chain.segment = clone(whole);
+  brokenMiddle.chain.segment![1]!.head = `0x${"ab".repeat(32)}`;
+  expectCode(brokenMiddle, r, 0x03, "HeadMismatch", "a middle head that does not follow", {
+    configuredHeight: 8,
+  });
+
+  // The first head is the one the segment cannot derive for itself, so breaking it is caught by the
+  // anchor to h₀ rather than by the link walk.
+  const brokenFirst = clone(pkg);
+  brokenFirst.chain.segment = clone(whole);
+  brokenFirst.chain.segment![0]!.head = `0x${"cd".repeat(32)}`;
+  expectCode(brokenFirst, r, 0x03, "HeadMismatch", "a first head that does not follow from h₀", {
+    configuredHeight: 8,
+  });
+
+  // The segment has to end at this record.
+  const wrongLast = clone(pkg);
+  wrongLast.chain.segment = clone(whole);
+  wrongLast.chain.segment![2]!.leaf = `0x${"ef".repeat(32)}`;
+  expectCode(wrongLast, r, 0x03, "HeadMismatch", "a last leaf that is not this record's", {
+    configuredHeight: 8,
+  });
+
+  // More records before this one than its sequence number allows.
+  const tooLong = clone(pkg);
+  tooLong.chain.segment = [...clone(whole), { leaf: toHex(leaf), head: pkg.chain.head }];
+  expectCode(tooLong, r, 0x03, "HeadMismatch", "a segment longer than the record's seq", {
+    configuredHeight: 8,
+  });
+});
+
+test("the segment is inside §2.5's closure, and an empty one is malformed", () => {
+  const { pkg, root: r } = signedPackageAt(1n, keccak256(genesisHeadPreimage(ASSET_COMMITMENT, 1)));
+
+  const empty = clone(pkg);
+  empty.chain.segment = [];
+  expectPackageFailure(empty, r, "MalformedPackage", "an empty segment", { configuredHeight: 8 });
+
+  // V-Z-05's closure reaches inside a segment entry: a field §2.5 does not list is a leak wherever
+  // it sits, and an entry is a place nothing else would look.
+  const smuggled = clone(pkg);
+  smuggled.chain.segment = [{ leaf: `0x${"11".repeat(32)}`, head: `0x${"22".repeat(32)}`, epoch_key: "0xdead" } as any];
+  expectPackageFailure(smuggled, r, "UnlistedField", "an unlisted field inside a segment entry", {
+    configuredHeight: 8,
+  });
+});
+
+test("a package with no segment is verified exactly as it was before v0.2.5", () => {
+  const { pkg, root: r } = signedPackageAt(3n, fromHex(`0x${"99".repeat(32)}`, 32));
+  assert.equal(pkg.chain.segment, undefined);
+  const report = verifyDisclosurePackage(pkg, { root: r, configuredHeight: 8 });
+  assert.equal(report.ok, true, JSON.stringify(report.failure));
+  assert.equal(report.chainPosition.established, false);
+  assert.match(report.chainPosition.detail, /nothing here pins prev_head/);
+});

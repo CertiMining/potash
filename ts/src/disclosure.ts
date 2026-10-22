@@ -36,7 +36,7 @@ export type DisclosurePackage = {
     flags: number;
   };
   preimage_borsh: string;
-  chain: { prev_head: string; head: string; genesis: string };
+  chain: { prev_head: string; head: string; genesis: string; segment?: Array<{ leaf?: string; head?: string }> };
   qp_signature: string;
   inclusion: { epoch: number | string; height: number; slot_index: number; siblings: string[] };
   anchor?: { solana_tx?: string; solana_slot?: number | string; ots_receipt_digest?: string };
@@ -73,6 +73,13 @@ export type FlagReport = {
  * supplies the head it expects, the way §2.2 supplies `expected_qp_key` and §2.3 an observed epoch.
  * Otherwise the head step is an arithmetic relation between two values the package chose itself, and
  * reporting it as a passing chain check would tell a reader something that was never established.
+ *
+ * **A third case since v0.2.5: the package carries the chain (INV-DISC-04, H-15).** A segment of leaf
+ * digests and heads lets this verifier recompute every head from `h₀`, or from a head the caller
+ * trusts, up to `chain.head`. That settles position without the caller holding the chain themselves,
+ * and it is still *unsigned*: §1.3 covers neither `prev_head` nor `head`, so what the recomputation
+ * checks is the issuer'"'"'s arithmetic and not the issuer'"'"'s commitment to an ordering. An issuer can
+ * sign two records at one sequence and release whichever segment suits a counterparty.
  */
 export type ChainPosition = {
   established: boolean;
@@ -118,8 +125,145 @@ export type VerifyOptions = {
      * not established rather than as passing.
      */
     expectedPrevHead?: Uint8Array;
+    /**
+     * A head the holder already trusts, which a segment that does not reach genesis must start from
+     * (INV-DISC-04, H-15).
+     *
+     * A segment covering the whole chain starts at `h₀`, which follows from the signed `c`, so it
+     * needs no input. A shorter one starts at a head the package chose, and believing that is the
+     * thing the segment cannot do for itself — so position is established from a shorter segment only
+     * against a head supplied here.
+     */
+    trustedHead?: Uint8Array;
   };
 };
+
+
+/** What a segment settled, once every head in it has been recomputed (INV-DISC-04, H-15). */
+type SegmentOutcome = { established: boolean; detail: string; steps: number };
+
+/**
+ * Recomputes every head in `chain.segment` and says what that settles.
+ *
+ * **Everything checkable is checked, and the one thing that is not is named.** From the second entry
+ * on, each head must be `Keccak256(TAG_HEAD ‖ previous head ‖ this leaf)`, so the links are verified
+ * outright. The *first* entry's head cannot be derived from the segment alone — it needs the head
+ * before it — so the segment is anchored in one of two ways, and position is established only when
+ * one of them holds:
+ *
+ * - the segment covers the whole chain, `length === seq`, so the head before it is `h₀`, which
+ *   follows from the signed `c`; or
+ * - the caller supplies a head they already trust, which the first entry must follow from.
+ *
+ * Neither, and the links are still verified and the position is **unestablished**: a segment hanging
+ * off a head nobody vouches for is unfinished evidence, not a contradiction, so it is reported rather
+ * than refused.
+ *
+ * A disagreement anywhere else is refused, because it is a package contradicting itself.
+ *
+ * Returns `null` when the package carries no segment, which is every package written before v0.2.5.
+ */
+function walkSegment(
+  raw: unknown,
+  seq: bigint,
+  leaf: Digest,
+  prevHead: Digest,
+  head: Digest,
+  genesis: Digest,
+  trustedHead: Uint8Array | undefined,
+): SegmentOutcome | null {
+  if (raw === undefined || raw === null) return null;
+  if (!Array.isArray(raw)) throw new PackageFailure("MalformedPackage", "chain.segment is not an array");
+  if (raw.length === 0) {
+    throw new PackageFailure("MalformedPackage", "chain.segment is empty, and §2.5 gives it one entry per record");
+  }
+  if (BigInt(raw.length) > seq) {
+    throw new RegistryFailure(
+      "HeadMismatch",
+      `chain.segment has ${raw.length} entries and the record is at seq ${seq}: a chain cannot hold more records up to this one than its sequence number`,
+    );
+  }
+
+  const steps = raw.map((entry, i) => {
+    if (entry === null || typeof entry !== "object") {
+      throw new PackageFailure("MalformedPackage", `chain.segment[${i}] is not an object`);
+    }
+    const e = entry as Record<string, unknown>;
+    return {
+      leaf: hexField(must(e.leaf, `chain.segment[${i}].leaf`), `chain.segment[${i}].leaf`, 32),
+      head: hexField(must(e.head, `chain.segment[${i}].head`), `chain.segment[${i}].head`, 32),
+    };
+  });
+
+  // The links, from the second entry on. These need nothing from outside the segment.
+  for (let i = 1; i < steps.length; i += 1) {
+    const before = steps[i - 1];
+    const step = steps[i];
+    if (before === undefined || step === undefined) continue;
+    if (!bytesEqual(advanceHead(before.head, step.leaf), step.head)) {
+      throw new RegistryFailure(
+        "HeadMismatch",
+        `chain.segment[${i}].head is not Keccak256(TAG_HEAD ‖ chain.segment[${i - 1}].head ‖ chain.segment[${i}].leaf)`,
+      );
+    }
+  }
+
+  // The segment has to end at this record: its last leaf is the one these 161 bytes produce, its last
+  // head is `chain.head`, and the head before it is `chain.prev_head`.
+  const last = steps[steps.length - 1];
+  if (last === undefined) throw new PackageFailure("MalformedPackage", "chain.segment has no last entry");
+  if (!bytesEqual(last.leaf, leaf)) {
+    throw new RegistryFailure("HeadMismatch", "chain.segment's last leaf is not the leaf these preimage bytes produce");
+  }
+  if (!bytesEqual(last.head, head)) {
+    throw new RegistryFailure("HeadMismatch", "chain.segment's last head is not chain.head");
+  }
+  const second = steps[steps.length - 2];
+  if (second !== undefined && !bytesEqual(second.head, prevHead)) {
+    throw new RegistryFailure("HeadMismatch", "chain.segment's second-to-last head is not chain.prev_head");
+  }
+
+  // The anchor. Only this decides whether position is established.
+  const first = steps[0];
+  if (first === undefined) throw new PackageFailure("MalformedPackage", "chain.segment has no first entry");
+  const whole = BigInt(steps.length) === seq;
+  if (whole) {
+    if (!bytesEqual(advanceHead(genesis, first.leaf), first.head)) {
+      throw new RegistryFailure(
+        "HeadMismatch",
+        "chain.segment covers the whole chain and its first head does not follow from chain.genesis",
+      );
+    }
+    if (steps.length === 1 && !bytesEqual(prevHead, genesis)) {
+      throw new RegistryFailure("HeadMismatch", "the segment is one entry at seq 1 and chain.prev_head is not the genesis head");
+    }
+    return {
+      established: true,
+      detail: `the segment covers all ${steps.length} record(s) of this chain and every head recomputes from h₀, which follows from the signed c`,
+      steps: steps.length,
+    };
+  }
+  if (trustedHead !== undefined) {
+    if (!bytesEqual(advanceHead(trustedHead, first.leaf), first.head)) {
+      throw new RegistryFailure(
+        "HeadMismatch",
+        "chain.segment's first head does not follow from the head the caller supplied as trusted",
+      );
+    }
+    return {
+      established: true,
+      detail: `every head in a ${steps.length}-entry segment recomputes from the head the caller supplied, so the position holds relative to that input`,
+      steps: steps.length,
+    };
+  }
+  return {
+    established: false,
+    detail:
+      `the ${steps.length}-entry segment's links all recompute, and the record is at seq ${seq}, so the segment ` +
+      "starts at a head nothing here vouches for: supply it as trusted, or send a segment reaching h₀",
+    steps: steps.length,
+  };
+}
 
 /**
  * §2.5's field list. V-Z-05 passes only when a disclosure package holds "only the fields §2.5
@@ -127,11 +271,15 @@ export type VerifyOptions = {
  * other asset's data. Together those make the list exhaustive rather than illustrative, so a field
  * outside it is refused: the risk is not a malformed shape but a leak in a corner nothing reads.
  *
- * "scalar" is a field §2.5 shows as a value; "scalars" is an array of them. Refusing a structure
- * where §2.5 shows a value closes the remaining hiding place, a nested object under a field this
- * verifier never has to read.
+ * "scalar" is a field §2.5 shows as a value; "scalars" is an array of them; a one-element array
+ * literal is an array of the shape inside it, which is what `chain.segment` is (INV-DISC-04).
+ * Refusing a structure where §2.5 shows a value closes the remaining hiding place, a nested object
+ * under a field this verifier never has to read.
+ *
+ * The array literal is the marker rather than a field name like `each`, because a shape object'"'"'s keys
+ * are §2.5'"'"'s field names and a marker among them could collide with one.
  */
-type Shape = "scalar" | "scalars" | { [field: string]: Shape };
+type Shape = "scalar" | "scalars" | Shape[] | { [field: string]: Shape };
 
 const PACKAGE_SHAPE: { [field: string]: Shape } = {
   schema: "scalar",
@@ -147,7 +295,7 @@ const PACKAGE_SHAPE: { [field: string]: Shape } = {
     flags: "scalar",
   },
   preimage_borsh: "scalar",
-  chain: { prev_head: "scalar", head: "scalar", genesis: "scalar" },
+  chain: { prev_head: "scalar", head: "scalar", genesis: "scalar", segment: [{ leaf: "scalar", head: "scalar" }] },
   qp_signature: "scalar",
   inclusion: { epoch: "scalar", height: "scalar", slot_index: "scalar", siblings: "scalars" },
   anchor: { solana_tx: "scalar", solana_slot: "scalar", ots_receipt_digest: "scalar" },
@@ -198,6 +346,13 @@ export function checkOnlyListedFields(value: unknown, shape: Shape, path: string
   if (shape === "scalars") {
     if (!Array.isArray(value)) throw new PackageFailure("MalformedPackage", `${path} is not an array`);
     value.forEach((element, i) => checkOnlyListedFields(element, "scalar", `${path}[${i}]`));
+    return;
+  }
+  if (Array.isArray(shape)) {
+    if (!Array.isArray(value)) throw new PackageFailure("MalformedPackage", `${path} is not an array`);
+    const inner = shape[0];
+    if (inner === undefined) throw new PackageFailure("MalformedPackage", `${path}: no element shape`);
+    value.forEach((element, i) => checkOnlyListedFields(element, inner, `${path}[${i}]`));
     return;
   }
   if (!isPlainObject(value)) {
@@ -417,7 +572,38 @@ export function verifyDisclosurePackage(pkg: DisclosurePackage, options: VerifyO
     if (expectedPrevHead !== undefined && !bytesEqual(prevHead, expectedPrevHead)) {
       throw new RegistryFailure("HeadMismatch", "prev_head is not the head the caller expects this record to commit against");
     }
-    if (fields.seq === 1n) {
+    const walked = walkSegment(
+      chain.segment,
+      fields.seq,
+      leaf,
+      prevHead,
+      head,
+      genesis,
+      options.chainContext?.trustedHead,
+    );
+    if (walked !== null) {
+      chainPosition = { established: walked.established, detail: walked.detail };
+      record(
+        "prev_head is the chain's head at seq − 1",
+        walked.established ? "pass" : "unestablished",
+        walked.detail,
+      );
+      record(
+        `chain.segment's ${walked.steps} head(s) recompute`,
+        "pass",
+        "every link is Keccak256(TAG_HEAD ‖ hₙ ‖ leafₙ₊₁), recomputed here and not read from the package",
+      );
+      if (!walked.established) {
+        notes.push(
+          `chain position not established: the segment recomputes but starts at a head nothing vouches for. ` +
+            "Supply it as trusted, or send a segment reaching h₀.",
+        );
+      }
+      notes.push(
+        "the segment's links are unsigned: §1.3's leaf preimage covers neither prev_head nor head, so this " +
+          "checks the issuer's arithmetic and not the issuer's commitment to an ordering (INV-DISC-04).",
+      );
+    } else if (fields.seq === 1n) {
       if (!bytesEqual(prevHead, genesis)) {
         throw new RegistryFailure("HeadMismatch", "the record is at seq 1 and prev_head is not the genesis head");
       }
