@@ -35,6 +35,10 @@ cluster = [
     "dep:solana-signature",
     "dep:solana-rpc-client-api",
     "dep:serde_json",
+    # H-13: the batcher signs the handoff, which needs the signer and not only the verifier. Already a
+    # test dependency of this crate — the handoff's own tests sign with it — so the `cluster` feature
+    # promotes a crate the licence and advisory gates had already cleared.
+    "dep:ed25519-dalek",
 ]
 
 [[bin]]
@@ -42,6 +46,14 @@ cluster = [
 # build and every test above it stay free of a network and of a key.
 name = "anchor-b-worker"
 path = "src/bin/anchor-b-worker.rs"
+required-features = ["cluster", "ots"]
+
+[[bin]]
+# The batcher (H-13, D-117, D-139): builds an epoch and signs the handoff the worker publishes. Behind
+# the same features as the worker although it reaches no network, because what the gate is for is
+# keeping keys and networks out of the default build, and this process holds two keys.
+name = "batcher-handoff"
+path = "src/bin/batcher-handoff.rs"
 required-features = ["cluster", "ots"]
 
 [[bin]]
@@ -77,6 +89,7 @@ solana-signer = { version = "=3.0.1", optional = true }
 # promotes the transaction crates above.
 solana-keypair = { version = "=3.1.2", optional = true }
 solana-signature = { version = "=3.4.1", optional = true }
+ed25519-dalek = { version = "=2.2.0", default-features = false, optional = true }
 solana-rpc-client-api = { version = "=4.2.2", default-features = false, optional = true }
 serde_json = { version = "=1.0.151", optional = true }
 

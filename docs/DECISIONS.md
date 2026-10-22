@@ -1421,7 +1421,7 @@ Resting anchor B — one of the two anchors the integrity claim stands on — on
 
 **Date:** 25 Sep 2026 · **Unit:** E-10 · **Class:** cost judgment · **Status:** settled at S0 (owner, 25 Sep 2026)
 
-**Decision.** A worker writes `anchors/epochs/<epoch>.ots` into a working directory outside the repository, and a person commits them — which is how the spec's own stamp under `anchors/` got there. **No worker exists** (D-117, H-13, [issue #49](https://github.com/CertiMining/potash/issues/49)): the cycle is run by hand, and `anchors/epochs/20723.ots` and `20724.ots` were committed by a person from `~/.local/share/potash/receipts/`.
+**Decision.** A worker writes `anchors/epochs/<epoch>.ots` into a working directory outside the repository, and a person commits them — which is how the spec's own stamp under `anchors/` got there. **A worker exists as of 22 Oct 2026** — `anchor-b-worker`, with `batcher-handoff` as the other half D-139 divides the cycle into (D-117, H-13, [issue #49](https://github.com/CertiMining/potash/issues/49)). The sentence here read "no worker exists" and was true until that head. What is still true is that neither runs on a timer: the log has been paused by decision since epoch 20738, the cycle is run by hand, and `anchors/epochs/20723.ots` through `20736.ots` were committed by a person from `~/.local/share/potash/receipts/`.
 
 **Ground.** Issue #10 requires receipts stored and retrievable, and a public repository is the retrievable store this project already has. What it does not require is an unattended process holding write access to the public record: that is a governance change, and the one key that runs unattended is the one D-88 deliberately kept away from anything structural.
 
@@ -1449,6 +1449,31 @@ sentence was written from a reviewer's verification sweep and described their wo
 described these tests, which is the kind of borrowing this repository has now been caught at twice. The
 sweep exists as a test as of this head, so the claim is true because it was made true rather than
 trimmed to fit: every mode from `0000` to `0777` is tried and exactly `0600` is accepted.
+
+**Amended 22 Oct 2026: both processes exist, and this is written in the present tense again (H-13).**
+The future tense above was right when it was written and is not now. D-139 divides the daily cycle in
+two and both halves are binaries in `certimining-client`, behind the `cluster,ots` features so the
+default build and every test above them stay free of a key and of a network:
+
+* **`anchor-b-worker`** reads the checkpoint authority at start and refuses any mode but `0600`, which
+  is the startup path the 28 September amendment said did not exist. It holds neither `k_master` nor
+  the batcher signing key, and it refuses to run without a handoff it can verify — so what it
+  publishes is a root it was given and not one it chose.
+* **`batcher-handoff`** builds the epoch and signs the handoff. It holds `k_master`, from which every
+  epoch key is derived, and a dedicated batcher signing key, both read through the same
+  `refuse_a_readable_key` and neither ever printed. The batcher's **public** half is printed, because
+  the worker has to be configured with it and a public key is not key material.
+
+**The batcher signing key is not the checkpoint authority (owner, 22 Oct 2026).** D-88 keeps the one
+key that runs unattended away from anything structural, and making it also the key that authorises
+what gets published would undo that. `batcher-handoff` refuses to start if its own key path is the
+authority's, by both the path as written and its canonical form — and it never reads the authority at
+all, which is the stronger property and the reason the check is only about paths.
+
+**What is still run by hand is the cycle, not the refusal.** The log has been paused by decision since
+epoch 20738, so neither binary runs on a timer yet; `docs/anchoring.md` records the pause. The
+sentence this amendment replaces claimed no startup path existed to refuse at, which is what has
+changed.
 
 ## D-118 · Silent degradation is a test, not a sentence
 

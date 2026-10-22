@@ -158,6 +158,46 @@ impl Handoff {
     }
 }
 
+/// Why the batcher refused to write a handoff, before any key was used (H-13, D-117).
+///
+/// These are the two decisions the writing process makes, kept here and pure because this crate's
+/// rule is that a binary performs and does not decide (D-84): a decision tested only by running a
+/// process against a cluster is a decision nothing checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HandoffWriteRefused {
+    /// The epoch is ahead of the chain's own day index, which `publish_checkpoint` refuses anyway.
+    ///
+    /// **Refused here so it costs nothing rather than a transaction.** v0.2.4 bounds the program to
+    /// the calendar (H-11), so a handoff for tomorrow is a root the worker would carry to a refusal.
+    EpochAheadOfToday { epoch: u64, today: u64 },
+    /// A handoff for this epoch is already on disk and says something else.
+    ///
+    /// **Not an overwrite, because the worker may already have acted on it.** A second handoff for one
+    /// epoch is either a different root — in which case one of the two is wrong and a process should
+    /// not pick — or the same bytes, which is a re-run and allowed.
+    AlreadyWrittenDifferently { epoch: u64 },
+}
+
+/// Whether the batcher may write this handoff.
+///
+/// `today` is the caller's day index, `existing` whatever is already at the destination.
+pub fn refuse_to_write(
+    epoch: u64,
+    today: u64,
+    existing: Option<&[u8]>,
+    bytes: &[u8; HANDOFF_LEN],
+) -> Result<(), HandoffWriteRefused> {
+    if epoch > today {
+        return Err(HandoffWriteRefused::EpochAheadOfToday { epoch, today });
+    }
+    match existing {
+        Some(already) if already != bytes.as_slice() => {
+            Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch })
+        }
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,5 +338,63 @@ mod tests {
                 "byte {i} was flipped and the handoff still verified"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod writing {
+    use super::*;
+
+    fn bytes(fill: u8) -> [u8; HANDOFF_LEN] {
+        [fill; HANDOFF_LEN]
+    }
+
+    #[test]
+    fn an_epoch_ahead_of_today_is_refused_before_a_key_is_touched() {
+        assert_eq!(
+            refuse_to_write(20_739, 20_738, None, &bytes(1)),
+            Err(HandoffWriteRefused::EpochAheadOfToday {
+                epoch: 20_739,
+                today: 20_738
+            }),
+            "v0.2.4 bounds publish_checkpoint to the calendar, so this would cost a transaction to \
+             learn on chain"
+        );
+    }
+
+    #[test]
+    fn today_and_any_earlier_epoch_are_allowed() {
+        assert_eq!(refuse_to_write(20_738, 20_738, None, &bytes(1)), Ok(()));
+        assert_eq!(
+            refuse_to_write(20_700, 20_738, None, &bytes(1)),
+            Ok(()),
+            "a day the batcher is catching up on is not ahead of anything"
+        );
+    }
+
+    /// **A re-run is allowed and a disagreement is not.** The worker may already have acted on what
+    /// is there.
+    #[test]
+    fn the_same_handoff_may_be_rewritten_and_a_different_one_may_not() {
+        let same = bytes(7);
+        assert_eq!(
+            refuse_to_write(20_738, 20_738, Some(same.as_slice()), &same),
+            Ok(()),
+            "identical bytes are a re-run, which has no effect and no risk"
+        );
+        assert_eq!(
+            refuse_to_write(20_738, 20_738, Some(bytes(8).as_slice()), &same),
+            Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch: 20_738 }),
+            "two different roots for one epoch is a question a process must not answer"
+        );
+    }
+
+    /// A file of the wrong length is still a disagreement, not something to parse first.
+    #[test]
+    fn a_truncated_file_on_disk_counts_as_a_disagreement() {
+        assert_eq!(
+            refuse_to_write(20_738, 20_738, Some(&[7u8; 10]), &bytes(7)),
+            Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch: 20_738 })
+        );
     }
 }

@@ -47,7 +47,7 @@ pub use fetch::{
     sequence_lag, Fetched, Lag, Observation, OneView, PublishedCheckpoint, Refused, RootSource,
     Unreachable, ONE_VIEW_LIMIT,
 };
-pub use handoff::{Handoff, HandoffRefused, HANDOFF_LEN};
+pub use handoff::{refuse_to_write, Handoff, HandoffRefused, HandoffWriteRefused, HANDOFF_LEN};
 pub use ots::{receipt_digest, refuse_a_readable_key, AnchorB, PendingReceipt, ReceiptRefused};
 #[cfg(feature = "ots")]
 pub use ots::{verify_receipt, BitcoinClaim, ReferenceClient};
