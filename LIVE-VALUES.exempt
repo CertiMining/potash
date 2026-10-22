@@ -64,4 +64,6 @@ crates/certimining-client/tests/publish_epoch.rs  20723  1  the range of the ann
 crates/certimining-client/tests/publish_epoch.rs  20730  1  the other end of that range, same sentence
 benches/src/lib.rs  20728  1  the epoch whose published root this benchmark's figures are compared against
 programs/certimining-checkpoint/tests/compute.rs  20727  1  the attachment whose measured compute units this harness is checked against
+programs/certimining-checkpoint/tests/checkpoint.rs  20723  1  D-88's incident, recorded in prose: the calendar index a real deployment's compressed run ran 209 days ahead of
+programs/certimining-checkpoint/tests/checkpoint.rs  20932  1  the last_epoch that run reached, the other half of the same sentence
 programs/certimining-checkpoint/tests/compute.rs  20728  1  the publication whose measured compute units this harness is checked against
