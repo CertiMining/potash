@@ -105,6 +105,42 @@ limit absorbed them. A test that recorded those rows quietly would leave "Hard l
 though it held. Whether 15,000 is the right number, and whether the program should store its bump
 rather than search for it, are the two questions #193 holds.
 
+**What each check costs, measured by removing it (H-05, [#35](https://github.com/CertiMining/potash/issues/35)).**
+That issue has asked since it was filed for "each addition separately rather than inferring from one
+total", naming D-104's ownership test and D-109's clock read, and nothing had measured either. Both
+were measured on 22 October 2026 by deleting the check, rebuilding the program with
+`scripts/build-sbf.sh`, and reading the harness's figure at epoch 40001, bump 255:
+
+| the program | `publish_checkpoint` | the check costs |
+|---|---|---|
+| as committed | 9,071 | — |
+| without D-104's ownership-and-data test | 9,042 | **29 CU** |
+| without H-11's calendar comparison | 8,814 | **257 CU** |
+
+**29 CU, which corrects the premise this issue was filed on.** It said D-104 was one of "two changes"
+that moved `publish_checkpoint` from 8,765 to a figure thought to be 13,310, and that "the extra cost
+is in the checks around it". The checks cost 29 CU. What moved the figure was the bump search
+(H-52): 13,310 is this instruction at bump 252, and D-104's contribution to any of it is a thirtieth
+of one syscall.
+
+**257 and not 256, and the difference is the epoch.** H-11's before-and-after gave 256 CU measured at
+epoch 20721; this gives 257 at epoch 40001. Compute is deterministic, so both are right about their
+own epoch, and the single unit is the residual H-52 records: the `1,500 × (255 − bump)` law holds to
+within a few CU and the remainder moves with the day.
+
+**Only `Clock::get()`'s result is reused, so only the comparison was removed.** The syscall was already
+there for `published_slot` and `published_unix` before H-11, which is why the 257 is the division and
+the `require!` and not the cost of reading the clock. The same care applies to D-104: its
+`to_account_info()` binding is reused for `lamports()` further down, so the two `require!` statements
+came out and the binding stayed. A first attempt removed the bindings too and failed to build, which
+is how both facts were established.
+
+**These three figures are not asserted in CI and that is a limitation, not an oversight.** Asserting
+them would mean two extra SBF builds per run to measure programs this repository does not ship. So a
+change to either check would move no gate, and the figures above would go stale silently — the one
+thing this document is otherwise careful about. They are dated and the method is written down so the
+measurement can be repeated rather than trusted.
+
 **The chain shows 8,810 and that is also right** (H-11, v0.2.4). The deployed program predates the
 calendar bound: an epoch ahead of the chain's own day index is now refused, which costs one comparison
 on a `Clock::get()` the instruction already made — 256 CU — and epoch 20728, whose transaction was
