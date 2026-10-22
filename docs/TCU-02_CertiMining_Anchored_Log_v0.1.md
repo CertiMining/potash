@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.4 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.5 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -19,6 +19,11 @@ fail on it, so no wall-clock regression gate exists until calibration restores t
 index is refused with `0x0D`, and V-N-27 is the vector for it. This closes the hole that put two
 devnet deployments ahead of the calendar and cost each a program id (H-11, D-88).*
 
+*v0.2.5 lets §2.5 carry an unsigned chain segment, so a package can establish its own position rather
+than assert it. INV-DISC-04 is new, §0's claim is narrowed to what a segment reaches, and the residual
+— links that are recomputable but unsigned, and an issuer free to sign two records at one sequence —
+is stated in both places. H-15.*
+
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
 ---
@@ -29,7 +34,9 @@ devnet deployments ahead of the calendar and cost each a program id (H-11, D-88)
 
 **TCU-01 is withdrawn.** It put typed records on-chain — categories, effective dates, QP keys, pledge relationships — which publishes the timing of material change identification at an identified asset. That is incompatible with the selective disclosure regime it claims to serve and unsellable into a sector that treats confidentiality as existential. Nothing from TCU-01's on-chain surface survives; its off-chain state machine (§1.4 there) survives unchanged and is reused here.
 
-**What this asserts.** That a signed record existed, unaltered, and was included in a stated epoch, at a time bounded by a Solana slot and a Bitcoin block. **Position in a chain is established only when the holder also holds the chain segment back to genesis, or back to a head they already trust** — one disclosure package carries the issuer's signed statement of its position and no evidence for it, because §1.3's leaf preimage covers neither `prev_head` nor `head` and an inclusion proof binds only the leaf (D-129, SD-19). A package that carried its own chain segment is a design question filed for after the submission deadline, not a gap in this text.
+**What this asserts.** That a signed record existed, unaltered, and was included in a stated epoch, at a time bounded by a Solana slot and a Bitcoin block. **Position in a chain is established when a chain segment reaching genesis, or reaching a head the holder already trusts, is checked against it** — which §2.5 lets a package carry and INV-DISC-04 defines. A package carrying no segment carries the issuer's signed statement of its position and no evidence for it, because §1.3's leaf preimage covers neither `prev_head` nor `head` and an inclusion proof binds only the leaf (D-129, SD-19); a verifier reports that position as unestablished rather than refusing the package.
+
+**The segment's residual, because carrying it does not remove one.** The links are recomputable and *unsigned*: §1.3's leaf preimage covers neither `prev_head` nor `head`, so the QP signature binds no ordering, and a verifier checking a segment checks the issuer's arithmetic rather than the issuer's commitment to it. An issuer can still sign two records at one sequence and disclose whichever segment suits a counterparty. What a segment adds is that a position asserted in a package can be checked at all, and that a holder no longer has to assemble the chain by hand.
 
 **What this does not assert.** NI 43-101 compliance, the accuracy of the estimate, the honesty of the assayer, the existence of the mineralization, or that the log is complete.
 
@@ -576,7 +583,8 @@ Recording it closes the same gap the discriminator had. An implementer working f
               "assessment_digest": "0x…", "qp_key": "0x…", "payload_uri": "ipfs://…",
               "flags": 0 },
   "preimage_borsh": "base64…",
-  "chain": { "prev_head": "0x…", "head": "0x…", "genesis": "0x…" },
+  "chain": { "prev_head": "0x…", "head": "0x…", "genesis": "0x…",
+             "segment": [{ "leaf": "0x…", "head": "0x…" }] },
   "qp_signature": "0x…64B",
   "inclusion": { "epoch": 20361, "height": 8, "slot_index": 113,
                  "siblings": ["0x…", "…exactly `height` entries"] },
@@ -590,6 +598,12 @@ Recording it closes the same gap the discriminator had. An implementer working f
 **INV-DISC-03.** `flags` is advisory and excluded from every digest. A verifier recomputes flags from the chain rather than trusting the supplied value, and a mismatch is reported as a discrepancy, not an invalid record.
 
 **INV-DISC-02.** A conforming verifier recomputes the leaf from `preimage_borsh`, checks the QP signature, walks the chain segment, verifies inclusion against a root it fetched from Solana independently, and fails closed on any disagreement between JSON fields and the Borsh preimage.
+
+**INV-DISC-04.** `chain.segment` is optional and carries one entry per record, from the first in the segment to this one: a leaf digest and the head it produces, and nothing else. A verifier recomputes every head as `Keccak256(TAG_HEAD ‖ hₙ ‖ leafₙ₊₁)`, starting from `chain.genesis` or from a head the holder already trusts, refuses the package on any disagreement, and reports position as established only when that recomputation reaches `chain.head` from one of those two starting points. A segment starting anywhere else is reported unestablished rather than refused: unfinished evidence is not a contradiction.
+
+*Added in v0.2.5 (H-15).* The residual is stated in §0 and bears repeating where the field is defined: these links are recomputable and **unsigned**, so a verifier checking a segment checks the issuer's arithmetic and not the issuer's commitment to an ordering, and an issuer can sign two records at one sequence and disclose whichever segment suits a counterparty.
+
+**Earlier records' preimages never appear in a segment**, which is what keeps INV-DISC-01 true of it. A leaf digest commits to a 161-byte preimage whose `payload_digest`, `assessment_digest` and `qp_key` are high-entropy, so the digest does not reveal the record it commits to; a holder who already holds a candidate record can confirm it, which is what a commitment is for and not a leak the segment introduces. The segment's length is the record's `seq`, which the package states anyway.
 
 ### 2.6 Hook points for TCU-03 (extension module — unspecified here)
 

@@ -16,11 +16,18 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.4**, SHA-256 `1508dcd28379d5636b07f1c0e3069a83c2c9635776c385978afaa17686f48aa8`,
-865 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
-(H-06), which is the subject of SD-11, and v0.2.3 corrects §4.4a's account of the CI regression band
-(H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). Neither touches
-anything this verifier implements: both are about the program and the figures around it. The rest of the findings below carry unchanged to it, as
+committed today is **v0.2.5**, SHA-256 `e5d2bf1e11fd3f6a15b7f14ba1453a68bbc5aed88932c26b71d56ebae94dfd4a`,
+879 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
+(H-06), which is the subject of SD-11, v0.2.3 corrects §4.4a's account of the CI regression band
+(H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). None of those four
+touches anything this verifier implements: they are about the program and the figures around it.
+
+**v0.2.5 does.** It lets §2.5 carry an unsigned chain segment and adds INV-DISC-04, which this
+verifier implements: it recomputes every head in the segment and reports position as established only
+when the recomputation reaches `chain.head` from genesis or from a head the caller supplied. The
+findings below were written against a §2.5 with no segment and none of them is about it; the field is
+optional, so a package without one is verified exactly as they describe. The rest of the findings
+below carry unchanged to it, as
 they carried to v0.2.0, which differed from the text that was read by
 sixteen lines added and fifteen removed, every one of them the version line, the changelog line or an
 amendment marker losing the words "on this branch, unmerged". No technical content changed, which is
