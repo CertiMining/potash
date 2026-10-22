@@ -42,9 +42,28 @@ exactly one behind, never ahead. Ahead is the backdating attack — a batcher de
 accountability by naming a future epoch and then meeting it. One behind is allowed because a promise
 can cross an epoch boundary.
 
-**A promise passed to someone who observed nothing is weaker** (RES-10): that party holds an
-assertion it cannot check. Closing it needs an independently timestamped receipt, designed and
-deferred rather than implied.
+**A promise passed to someone who observed nothing is judged against a timestamp over the promise
+itself** (§1.6, v0.2.8). The counterparty that receives it stamps its own 161-octet encoding through
+the anchor B path, and the receipt travels with the promise. A later holder runs the same checks
+against the UTC day index of the block the receipt names, in place of an observation it never made.
+The receipt must timestamp exactly those 161 octets, so a stamp cannot be moved from one promise to
+another, and the block must be reachable from a committed checkpoint through headers that each meet
+the target their own difficulty bits encode.
+
+What it fixes is an upper bound: a promise cannot have been accepted after the moment it demonstrably
+already existed, which is the direction the backdating attack runs in. It fixes no lower bound, and a
+claimed acceptance *earlier* than the real one moves the batcher's own deadline earlier, against its
+interest.
+
+Two things it does not fix, and both are in §1.6 rather than left here. The epoch a receipt
+establishes is a calendar epoch where the counterparty's observation is a sequence epoch, so under
+batcher lag this bound is the looser of the two by exactly the lag. And a Bitcoin timestamp is chosen
+by a miner within consensus limits and is not monotone, so the day index derived from it can be one
+too high at a midnight boundary and, more rarely, one too low.
+
+**The promise and its receipt travel as one artifact.** A disclosure package carries neither. The
+receipt covers octets that include the submission identifier, and that identifier reaches no
+disclosure package — which is what the next section is about.
 
 **The key a promise carries is not the authority.** Anyone can sign one, so `verify_promise` takes
 the batcher key the counterparty expects and compares it first: an unexpected key is `0x08`, decided

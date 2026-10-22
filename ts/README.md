@@ -16,11 +16,19 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.7**, SHA-256 `b8d44ceebaa4d2d3eca739744fab3feaf34cdcb6b02c268dc6dd6b7142432beb`,
-930 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
+committed today is **v0.2.8**, SHA-256 `fc34ba78253b3f868dea0ea770a69bfc120fbf6160700b5966bcf4ba8e730dac`,
+945 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
 (H-06), which is the subject of SD-11, v0.2.3 corrects §4.4a's account of the CI regression band
 (H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). None of those four
 touches anything this verifier implements: they are about the program and the figures around it.
+
+**v0.2.8 closes the transfer half of RES-10** — a promise now travels with a timestamp over its own
+161-octet encoding, and §1.6 judges a transferred promise against the UTC day index of the block that
+receipt names rather than against an observation the holder never made. It does not touch this
+verifier: **§2.5 is unchanged**, and it carries neither a promise nor a promise receipt. That is
+deliberate — the receipt covers octets that include `submission_id`, and §1.6 states that identifier
+reaches no disclosure package — so the field list this verifier refuses unknown fields against is the
+same one, and a package is verified exactly as the findings below describe.
 
 **v0.2.7 moves the checkpoint PDA's bump into `publish_checkpoint`'s instruction data** — 48 bytes to
 49 — so the program makes one `create_program_address` call rather than searching. It does not touch
