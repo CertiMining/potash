@@ -278,11 +278,25 @@ receipt — before anything computes a digest over it, and this repository then 
 result: that the start digest is the root that was stamped, and that a Bitcoin attestation is present
 rather than only a calendar's promise (`crates/certimining-client/src/ots.rs`, `verify_receipt`).
 
-**Not "verified".** Checking the attestation against Bitcoin means recomputing the path to a block's
-merkle root, which needs a header source this client does not have
-(H-12, [#48](https://github.com/CertiMining/potash/issues/48)); the function's own documentation says a
-forged attestation passes. That does not make the dependency safe, and it does not make a receipt
-proven. It makes the artefact *parseable and partly checkable* by something that did not produce it.
+**And the attestation is checked against Bitcoin, which this paragraph used to say it was not**
+(H-12, [#48](https://github.com/CertiMining/potash/issues/48), closed 22 October 2026). Checking it
+means recomputing the path to a block's merkle root and comparing it with the root that block
+declares, which needs a source of Bitcoin headers — and the source is untrusted on purpose. A header
+carries its own proof: its hash must meet the target its own `bits` encode, that target must be the
+one in force in its retarget period, and it must name its predecessor back to a checkpoint this
+repository commits. So a node, an explorer or a file a colleague sent are equally acceptable, because
+nothing believes a header for being delivered.
+
+All seventeen receipts this repository holds are confirmed that way against committed headers, in CI
+and offline (`crates/certimining-client/src/bitcoin.rs`, `confirm`). What a reader still takes on this
+repository's word is the checkpoint one block below each range — its height, hash and difficulty,
+which is one query to any node — and everything after it is believed for its work.
+
+**What that does and does not settle.** It does not make the dependency on a Python client safe, and
+it does not make a receipt a proof of anything but a time. `verify_receipt` still returns a
+`BitcoinClaim`, which is what the receipt asserts; `confirm` returns a `Confirmed`, which is what a
+block shows, and only the second path can build one. A caller holding the first has not checked
+anything against Bitcoin, which is why they are different types rather than a flag.
 
 ## The privacy release gate
 
