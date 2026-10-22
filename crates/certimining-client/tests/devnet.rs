@@ -197,6 +197,7 @@ fn the_devnet_column_matches_the_litesvm_column() {
                 &certimining_checkpoint::ID,
                 epoch,
             ),
+            end: certimining_checkpoint::NothingFollows,
         }
         .data(),
     };

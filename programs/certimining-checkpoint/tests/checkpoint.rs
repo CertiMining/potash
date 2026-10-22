@@ -193,6 +193,7 @@ impl Log {
                 epoch,
                 root,
                 checkpoint_bump: self.checkpoint_bump(epoch),
+                end: certimining_checkpoint::NothingFollows,
             }
             .data(),
         };
@@ -624,15 +625,23 @@ fn v_n_26_a_start_epoch_that_is_not_todays_day_index_is_0x05() {
         .expect("today's day index is the one value this accepts");
 }
 
-/// **What the program does with instruction data of the wrong length** (H-52, #193).
+/// **Instruction data that is not exactly the length §1.8 names is refused** (H-52, #193; H-02 round).
 ///
-/// §1.8 says `publish_checkpoint` takes 49 bytes, and this establishes which half of that the program
-/// enforces. It matters because the announced deployment has **not** been redeployed: it runs a program
-/// that takes 48, and a resumed publish would send it 49.
+/// Both directions, because they were not symmetric and the dangerous one succeeded. Anchor
+/// deserialises arguments in order and stops, so a payload one byte short failed on the field that
+/// ran out while a payload one byte long was accepted with that byte neither read nor refused. The
+/// second is what made the wire-format break invisible in the direction the deployment was in: the
+/// program on chain knew 48 octets, a publisher at v0.2.8 sends 49, and that program would have
+/// taken the data, discarded the bump, searched for it as it always had, and recorded none of it.
 ///
-/// The two directions are not symmetric, and the dangerous one is the one that succeeds.
+/// `NothingFollows` closes it. It is the last argument, serialises to nothing — so 49 is still 49 —
+/// and its deserialiser asks the one question the handler cannot reach: is there anything left?
+///
+/// **The refusals run first on purpose.** A refused instruction writes nothing, so the exact-length
+/// publish at the end still finds the epoch unwritten. Reversing the order would leave the last two
+/// cases failing on `CheckpointAlreadyWritten` and passing for the wrong reason.
 #[test]
-fn instruction_data_one_byte_short_is_refused_and_a_trailing_byte_is_ignored() {
+fn instruction_data_that_is_not_exactly_the_length_1_8_names_is_refused() {
     let mut log = Log::new();
     log.initialize(DEPLOYED_HEIGHT).expect("initialize");
     // `START` is the first publishable epoch — `initialize` leaves `last_epoch` one below
@@ -644,39 +653,42 @@ fn instruction_data_one_byte_short_is_refused_and_a_trailing_byte_is_ignored() {
         epoch,
         root: [7u8; 32],
         checkpoint_bump: bump,
+        end: certimining_checkpoint::NothingFollows,
     }
     .data();
     assert_eq!(
         full.len(),
         49,
-        "§1.8: 8 discriminator, 8 epoch, 32 root, 1 bump"
+        "§1.8: 8 discriminator, 8 epoch, 32 root, 1 bump, and `NothingFollows` adds none"
     );
 
-    // **Short is refused.** 102 is Anchor's `InstructionDidNotDeserialize`, which is why a program
-    // built after this change cannot be driven by a publisher from before it: the failure is loud.
-    let short = full.get(..48).map(<[u8]>::to_vec).expect("49 bytes");
     let authority = log.authority.insecure_clone();
+
+    // **One byte short is refused.** 102 is Anchor's `InstructionDidNotDeserialize`. This direction
+    // always failed, and loudly: a publisher that predates v0.2.7 cannot drive this program.
+    let short = full.get(..48).map(<[u8]>::to_vec).expect("49 bytes");
     assert_eq!(
         log.publish_with_data(epoch, &authority, short),
         Err(102),
-        "a publisher that predates v0.2.7 sends 48 bytes, and this program must refuse them rather \
-         than read a root out of a buffer that ends early"
+        "48 octets must be refused rather than read as a root out of a buffer that ends early"
     );
 
-    // **A trailing byte is ignored**, which is the direction that matters for the deployment. The
-    // program reads the fields it knows and does not look at what follows, so the *older* program —
-    // the one on chain, which knows 48 — would accept the 49 a current publisher sends and silently
-    // discard the bump, then search for it as it always did. The publish would succeed, the computed
-    // bump would be thrown away, and nothing would say so.
-    //
-    // That is why §1.8's 49 describes the publisher rather than a bound the program enforces, and why
-    // resuming the log against the un-redeployed program is a decision rather than a non-event.
-    let mut longer = full;
+    // **One byte long is refused too, which it was not before.** Same code, because the refusal is
+    // still a deserialisation failure — `NothingFollows` reports one when a byte remains.
+    let mut longer = full.clone();
     longer.push(0);
     assert_eq!(
         log.publish_with_data(epoch, &authority, longer),
+        Err(102),
+        "50 octets must be refused rather than accepted with the trailing byte discarded, which is \
+         the half that let a publisher and a program disagree in silence"
+    );
+
+    // **And exactly 49 still publishes.** Asserted last and asserted at all, because a length check
+    // that refused everything would satisfy both cases above and be worse than no check.
+    assert_eq!(
+        log.publish_with_data(epoch, &authority, full),
         Ok(()),
-        "trailing instruction data is not read and not refused, which is what makes the wire-format \
-         break invisible in the direction the deployment is in"
+        "the length §1.8 names is the length the program accepts"
     );
 }

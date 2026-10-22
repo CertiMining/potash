@@ -198,6 +198,7 @@ impl Cluster {
                 epoch,
                 root,
                 checkpoint_bump: crate::checkpoint_bump(&self.program_id, epoch),
+                end: certimining_checkpoint::NothingFollows,
             }
             .data(),
         };

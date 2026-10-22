@@ -97,7 +97,7 @@ const ATTACH_CU: u64 = 5_687;
 ///     40010    250    16,573    9,095
 ///     40203    244    25,575    9,097
 ///
-/// A spread of 16,504 CU became one of 6, and the worst case is 9,097 against a bound of 15,000. The
+/// A spread of 16,504 CU became one of 6, and the worst case is 9,100 against a bound of 15,000. The
 /// 22 CU every row gained is the extra instruction-data byte and passing it through.
 ///
 /// **The table stays five rows rather than collapsing to one figure**, because five rows asserting
@@ -107,13 +107,18 @@ const ATTACH_CU: u64 = 5_687;
 /// The 6 CU that remain do not track the bump — 252 is the cheapest row and 244 the dearest — so they
 /// are the same epoch-dependent residual this file recorded before, and it is recorded rather than
 /// explained.
+///
+/// **Every row then rose by exactly 3 CU at v0.2.9, when `NothingFollows` landed**, and that
+/// uniformity is the point: refusing a wrong instruction-data length costs one probe of the
+/// deserialiser's reader, not work that scales with anything. The 6 CU spread did not move, so it is
+/// still the residual above rather than a second effect.
 const MEASURED: [(u64, u8, u64); 5] = [
     // epoch, the canonical bump of its checkpoint PDA, publish_checkpoint CU
-    (START, 255, 9_093),
-    (40_002, 253, 9_093),
-    (40_000, 252, 9_091),
-    (40_010, 250, 9_095),
-    (40_203, 244, 9_097),
+    (START, 255, 9_096),
+    (40_002, 253, 9_096),
+    (40_000, 252, 9_094),
+    (40_010, 250, 9_098),
+    (40_203, 244, 9_100),
 ];
 
 fn metas(accounts: Vec<anchor_lang::prelude::AccountMeta>) -> Vec<solana_instruction::AccountMeta> {
@@ -192,6 +197,7 @@ fn measure(program: &[u8], epoch: u64) -> (u8, u64, u64, u64) {
             root: *b"certimining fixture root   00001",
             // The canonical bump, which the program takes rather than searching for (H-52).
             checkpoint_bump: bump,
+            end: certimining_checkpoint::NothingFollows,
         }
         .data(),
     };
