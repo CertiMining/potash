@@ -375,7 +375,16 @@ does not vanish — it stays owed, and every later epoch is published one day la
 back. Epochs 20726 and 20727 share a Bitcoin block because they were stamped minutes apart and the
 calendars aggregated them into the same one.
 
-**There is no worker.** The cycle is run by hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)), which is why a day can be missed at all.
+**The five misses above happened under a hand-run cycle, and this paragraph used to say no worker
+existed.** One does, as of 22 October 2026: `anchor-b-worker` reads the checkpoint authority at start,
+refuses any mode but `0600`, and refuses to run at all without a handoff it can verify — so what it
+publishes is a root it was given and not one it chose (D-117, D-139,
+[#49](https://github.com/CertiMining/potash/issues/49)).
+
+**What has not happened is a timer**, which is why the misses are still the right explanation of the
+table above and not an account of something that could not recur. The log has been paused by decision
+since epoch 20738, recorded below, so neither half of the cycle has run unattended yet. A day was
+missed because a person had to remember; nothing has yet been asked to remember for them.
 
 Full roots, and the transactions that carry them, are in `LIVE-VALUES.txt`, which is checked against the
 chain by `scripts/live-values-from-chain.py` after every cycle. That check is manual, because it needs
