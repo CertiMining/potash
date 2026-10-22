@@ -37,7 +37,9 @@ mod publish;
 mod schedule;
 mod worker;
 
-pub use anchor::{status_of, AnchorRef, AnchorStatus};
+pub use anchor::{
+    lineage_of, provenance_in, status_of, AnchorRef, AnchorStatus, Lineage, Touched, WhereItLanded,
+};
 #[cfg(feature = "cluster")]
 pub use cluster::PublishFailed;
 pub use fetch::{
