@@ -406,6 +406,42 @@ impl RootSource for Cluster {
             Err(e) => Err(Unreachable(e.to_string())),
         }
     }
+
+    /// `getMultipleAccounts`, which is one request and therefore one view (H-54, issue #197).
+    ///
+    /// The response carries a single context slot for every address in it, so the answers are one
+    /// snapshot of the chain by construction. That is the whole reason this method exists: comparing
+    /// the slots of several separate reads catches a stale one and cannot catch two served from
+    /// different confirmed forks.
+    fn accounts_at(&self, addresses: &[Pubkey]) -> Result<crate::OneView, Unreachable> {
+        if addresses.len() > crate::ONE_VIEW_LIMIT {
+            return Err(Unreachable(format!(
+                "{} addresses in one request and getMultipleAccounts takes {}. Splitting them here \
+                 would return several views under the name of one, which is what this method exists \
+                 to avoid.",
+                addresses.len(),
+                crate::ONE_VIEW_LIMIT
+            )));
+        }
+        let keys: Vec<solana_pubkey::Pubkey> = addresses
+            .iter()
+            .map(|a| solana_pubkey::Pubkey::from(a.to_bytes()))
+            .collect();
+        match self
+            .rpc
+            .get_multiple_accounts_with_commitment(&keys, self.rpc.commitment())
+        {
+            Ok(response) => Ok(crate::OneView {
+                slot: Some(response.context.slot),
+                accounts: response
+                    .value
+                    .into_iter()
+                    .map(|account| account.map(|a| (Pubkey::from(a.owner.to_bytes()), a.data)))
+                    .collect(),
+            }),
+            Err(e) => Err(Unreachable(e.to_string())),
+        }
+    }
 }
 
 /// Why a publication did not produce a reference.

@@ -70,9 +70,9 @@ pub enum WhereItLanded {
 /// the bracket was missing.
 ///
 /// **This works because a publication has a signature, and two plain account reads do not.** The same
-/// fork question is open for `sequence_lag`'"'"'s reads of the configuration and a checkpoint, where the
-/// answer is one request rather than one handle — `getMultipleAccounts` returns a single response
-/// context — and that is H-54 (#197).
+/// fork question was open for `sequence_lag`'s reads of the configuration and a checkpoint, where the
+/// answer is one request rather than one handle: `getMultipleAccounts` returns a single response
+/// context, so those reads are one view by construction. H-54 (#197) did that.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Lineage {
     /// The transaction was found at the slot the account records: the two readings agree.

@@ -63,6 +63,28 @@ impl RootSource for Runtime {
         };
         Ok(observation)
     }
+
+    /// litesvm answers every read from one state, so a batch is one view by construction.
+    fn accounts_at(
+        &self,
+        addresses: &[anchor_lang::prelude::Pubkey],
+    ) -> Result<certimining_client::OneView, Unreachable> {
+        Ok(certimining_client::OneView {
+            slot: None,
+            accounts: addresses
+                .iter()
+                .map(|address| {
+                    let key = solana_pubkey::Pubkey::from(address.to_bytes());
+                    self.svm.get_account(&key).map(|a| {
+                        (
+                            anchor_lang::prelude::Pubkey::from(a.owner.to_bytes()),
+                            a.data,
+                        )
+                    })
+                })
+                .collect(),
+        })
+    }
 }
 
 fn metas(accounts: Vec<anchor_lang::prelude::AccountMeta>) -> Vec<solana_instruction::AccountMeta> {

@@ -103,7 +103,42 @@ pub trait RootSource {
     fn account(&self, address: &Pubkey) -> Result<Option<(Pubkey, Vec<u8>)>, Unreachable> {
         self.account_at(address).map(|seen| seen.account)
     }
+
+    /// Several accounts as **one** view of the chain (H-54, issue #197).
+    ///
+    /// **One request is the only thing that makes it one view.** `getMultipleAccounts` returns a
+    /// single response context for every address in it, so the answers are one snapshot by
+    /// construction. Reading them separately and comparing slots afterwards — which is what H-07 gave
+    /// this trait — catches a stale read and **cannot** catch two reads served from different
+    /// confirmed forks at compatible slot numbers. `minContextSlot` does not close it either: it
+    /// guarantees the view's height, not its chain.
+    ///
+    /// **There is no default implementation on purpose.** A default that looped over `account_at`
+    /// would hand a caller several views under the name of one, which is the defect. A source that
+    /// cannot answer several addresses at once has to say so.
+    ///
+    /// One entry per requested address, in the order asked.
+    fn accounts_at(&self, addresses: &[Pubkey]) -> Result<OneView, Unreachable>;
 }
+
+/// Several accounts as the source answered them, in one request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OneView {
+    /// The slot the source answered at, where it has a notion of one.
+    ///
+    /// `None` is a source with no chain to be inconsistent about — a fixture, an offline map, a
+    /// single-state runtime. It is not a source that declined to say.
+    pub slot: Option<u64>,
+    /// One entry per requested address, in the order asked; `None` where the source holds nothing.
+    pub accounts: Vec<Option<(Pubkey, Vec<u8>)>>,
+}
+
+/// How many addresses one `getMultipleAccounts` request may carry.
+///
+/// **100 is the RPC's own limit**, so a longer range is several requests and several views. The
+/// configuration goes in every batch, which leaves 99 epochs each: every comparison this module makes
+/// is configuration against epoch, so each batch has to hold both sides of it.
+pub const ONE_VIEW_LIMIT: usize = 100;
 
 /// `["cm_ckpt", epoch_le]` against the program id: the address of an epoch's checkpoint, derived
 /// rather than searched for, which is what makes the fetch independent of any index.
@@ -229,75 +264,140 @@ pub fn sequence_lag<S: RootSource>(
     first: u64,
     last: u64,
 ) -> Result<Lag, Unreachable> {
-    let seen = source.account_at(&config_address(program_id))?;
-    let (observed_at, raw) = (seen.slot, seen.account);
-    let config = match raw {
-        Some((owner, data)) => decode_config(program_id, &owner, &data).map_err(|reason| {
-            Unreachable(format!("the log's configuration was refused: {reason:?}"))
-        })?,
-        None => return Err(Unreachable(
-            "the log has no configuration account, so nothing can be said about where an epoch \
-                 sits relative to it"
-                .into(),
-        )),
+    // **The configuration travels in every batch (H-54, issue #197).** Every comparison this function
+    // makes is the configuration against one epoch, so both sides have to come out of the same
+    // request. H-07 read them separately and compared the slots afterwards, which catches a stale
+    // read and cannot catch two reads served from different confirmed forks at compatible slot
+    // numbers: the `Fetched::Absent` arm below had to disclaim exactly that.
+    let config_key = config_address(program_id);
+    let epochs: Vec<u64> = (first..=last).collect();
+    let per_view = ONE_VIEW_LIMIT.saturating_sub(1);
+
+    let mut lag: Option<Lag> = None;
+    let mut first_config: Option<(u64, u64)> = None;
+    let mut views = 0usize;
+    let mut moved = false;
+
+    // An empty range still asks once, because the answer names the log's own bounds and a caller
+    // asking about nothing is entitled to those rather than to a guess.
+    let batches: Vec<&[u64]> = if epochs.is_empty() {
+        vec![&[]]
+    } else {
+        epochs.chunks(per_view).collect()
     };
 
-    let mut lag = Lag {
-        start_epoch: config.start_epoch,
-        last_published: config.last_epoch,
-        before_log_start: Vec::new(),
-        not_yet_published: Vec::new(),
-        refused: Vec::new(),
-    };
-    for epoch in first..=last {
-        if epoch < config.start_epoch {
-            // Not a gap: a day the log did not exist for. A client that could not tell the two apart
-            // would accuse a batcher of failing to publish before it was deployed (INV-ANCH-02).
-            lag.before_log_start.push(epoch);
-            continue;
+    for batch in batches {
+        let mut addresses = Vec::with_capacity(batch.len().saturating_add(1));
+        addresses.push(config_key);
+        addresses.extend(
+            batch
+                .iter()
+                .map(|epoch| checkpoint_address(program_id, *epoch)),
+        );
+        let view = source.accounts_at(&addresses)?;
+        views = views.saturating_add(1);
+        if view.accounts.len() != addresses.len() {
+            return Err(Unreachable(format!(
+                "{} addresses were asked about and {} answers came back. A view missing an entry is \
+                 not a view: nothing here can be matched to the address it belongs to.",
+                addresses.len(),
+                view.accounts.len()
+            )));
         }
-        if epoch > config.last_epoch {
-            lag.not_yet_published.push(epoch);
-            continue;
+
+        let config =
+            match view.accounts.first() {
+                Some(Some((owner, data))) => {
+                    decode_config(program_id, owner, data).map_err(|reason| {
+                        Unreachable(format!("the log's configuration was refused: {reason:?}"))
+                    })?
+                }
+                _ => return Err(Unreachable(
+                    "the log has no configuration account, so nothing can be said about where an \
+                     epoch sits relative to it"
+                        .into(),
+                )),
+            };
+        let bounds = (config.start_epoch, config.last_epoch);
+        match first_config {
+            None => first_config = Some(bounds),
+            Some(earlier) if earlier != bounds => moved = true,
+            Some(_) => {}
         }
-        // Inside the published range. The account must be there, and the only thing left to decide is
-        // whether it is one this client accepts.
-        //
-        // **Bound to the configuration's view first** (H-07). The configuration said this epoch is
-        // published; an account read from *before* that observation is not evidence that it is not.
-        // A source that cannot say which slot it answered at is not bound, which is why both sides
-        // have to be `Some` for the comparison to mean anything.
-        let (at, fetched) = root_for_epoch_at(source, program_id, epoch)?;
-        if let (Some(config_slot), Some(account_slot)) = (observed_at, at) {
-            if account_slot < config_slot {
-                return Err(Unreachable(format!(
-                    "the configuration was observed at slot {config_slot} and epoch {epoch}'s \
-                     account at slot {account_slot}, which is earlier. These reads are not one view \
-                     of the chain, so nothing here is evidence about the log: ask again against one \
-                     view."
-                )));
+
+        let lag = lag.get_or_insert_with(|| Lag {
+            start_epoch: config.start_epoch,
+            last_published: config.last_epoch,
+            before_log_start: Vec::new(),
+            not_yet_published: Vec::new(),
+            refused: Vec::new(),
+            views: 0,
+            configuration_moved: false,
+        });
+        // The bounds reported are the most recent view's, and `configuration_moved` says when that
+        // is not the only set there was.
+        lag.start_epoch = config.start_epoch;
+        lag.last_published = config.last_epoch;
+
+        for (offset, epoch) in batch.iter().enumerate() {
+            let epoch = *epoch;
+            if epoch < config.start_epoch {
+                // Not a gap: a day the log did not exist for. A client that could not tell the two
+                // apart would accuse a batcher of failing to publish before it was deployed
+                // (INV-ANCH-02).
+                lag.before_log_start.push(epoch);
+                continue;
             }
-        }
-        match fetched {
-            Fetched::Placed(_) => {}
-            Fetched::Refused(reason) => lag.refused.push((epoch, reason)),
-            Fetched::Absent => {
-                // On **one** consistent view of the chain this cannot happen: the configuration says
-                // the epoch is published, and `publish_checkpoint` writes the checkpoint before it
-                // advances `last_epoch`. But the configuration and this account came back from
-                // separate requests with no shared response context (S9-R2-01), so what this proves
-                // is that the answers were not one snapshot — not anything about the log. The earlier
-                // wording claimed something other than this program had written the configuration,
-                // which is a conclusion these reads cannot support.
-                return Err(Unreachable(format!(
-                    "epoch {epoch} is inside the published range {}..={} and its account did not come \
-                     back. These are separate reads with no shared response context, so this is \
-                     evidence about the responses and not about the log: ask again against one view.",
-                    config.start_epoch, config.last_epoch
-                )));
+            if epoch > config.last_epoch {
+                lag.not_yet_published.push(epoch);
+                continue;
+            }
+            // Inside the published range, in the same view as the configuration that says so. The
+            // account must be there, and the only thing left to decide is whether it is one this
+            // client accepts.
+            let answer = view.accounts.get(offset.saturating_add(1));
+            let raw = match answer {
+                Some(entry) => entry,
+                None => {
+                    return Err(Unreachable(format!(
+                        "epoch {epoch} had no entry in a view that was asked for it"
+                    )))
+                }
+            };
+            let fetched = match raw {
+                Some((owner, data)) => match decode_checkpoint(program_id, owner, data, epoch) {
+                    Ok(checkpoint) => Fetched::Placed(checkpoint),
+                    Err(reason) => Fetched::Refused(reason),
+                },
+                None => Fetched::Absent,
+            };
+            match fetched {
+                Fetched::Placed(_) => {}
+                Fetched::Refused(reason) => lag.refused.push((epoch, reason)),
+                Fetched::Absent => {
+                    // **This now means what it says (H-54, issue #197).** The configuration and this
+                    // account came back from one request, so they are one view of the chain by
+                    // construction rather than by comparison. `publish_checkpoint` writes the
+                    // checkpoint before it advances `last_epoch`, so a configuration that says the
+                    // epoch is published and a view with no account for it cannot both describe the
+                    // same chain. The old wording had to disclaim this, because the two reads were
+                    // separate requests with no shared response context (S9-R2-01).
+                    return Err(Unreachable(format!(
+                        "epoch {epoch} is inside the published range {}..={} and its account is not \
+                         in the same view the range was read from. `publish_checkpoint` writes the \
+                         checkpoint before it advances `last_epoch`, so one view cannot hold both \
+                         facts: this is evidence about the log and not about the responses.",
+                        config.start_epoch, config.last_epoch
+                    )));
+                }
             }
         }
     }
+
+    let mut lag =
+        lag.ok_or_else(|| Unreachable("no view was read, so there is nothing to report".into()))?;
+    lag.views = views;
+    lag.configuration_moved = moved;
     Ok(lag)
 }
 
@@ -330,6 +430,18 @@ pub struct Lag {
     pub not_yet_published: Vec<u64>,
     /// Epochs inside the published range whose account failed a check.
     pub refused: Vec<(u64, Refused)>,
+    /// How many views the answer was assembled from (H-54, issue #197).
+    ///
+    /// One for any range of 99 epochs or fewer. More than one means every comparison is still sound
+    /// *within* its batch and that no single snapshot covered the whole answer, which a caller
+    /// reasoning about the range as a whole has to know.
+    pub views: usize,
+    /// The configuration moved while the range was being read.
+    ///
+    /// Not an error: the log published during the scan, and each batch was answered against the
+    /// configuration read in the same request. It is reported because a caller treating the whole
+    /// range as one observation would otherwise be wrong without being told.
+    pub configuration_moved: bool,
 }
 
 impl Lag {
