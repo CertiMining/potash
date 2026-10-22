@@ -20,7 +20,9 @@ use solana_message::Message;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 
-use crate::anchor::{status_of, AnchorRef, AnchorStatus};
+use crate::anchor::{
+    lineage_of, provenance_in, status_of, AnchorRef, AnchorStatus, Lineage, Touched, WhereItLanded,
+};
 use crate::fetch::{Fetched, RootSource, Unreachable};
 use crate::publish::{classify, settle, should_retry, Outcome, Settlement};
 
@@ -209,23 +211,138 @@ impl Cluster {
             _ => None,
         };
         match settle(root, on_chain.as_ref()) {
-            Settlement::Matches => self.reference(epoch, String::new()),
+            // **The signature is recovered from the chain (H-35, issue #82).** This path used to
+            // return a publication with an empty signature, so nothing could bind its slot to a
+            // chain and `Lineage::NoSignature` was all a caller could learn. The chain can name the
+            // transaction that wrote the account; where it cannot, the empty signature stands and
+            // says so.
+            Settlement::Matches => {
+                let slot = match &found {
+                    Fetched::Placed(c) => Some(c.published_slot),
+                    _ => None,
+                };
+                let recovered = slot
+                    .and_then(|slot| self.wrote_it(epoch, slot))
+                    .unwrap_or_default();
+                self.reference(epoch, recovered)
+            }
             other => Err(PublishFailed::NotPublished(other)),
         }
     }
 
+    /// The signature the chain says wrote this epoch's checkpoint, for the path that holds none.
+    ///
+    /// **A failure to ask returns `None`, and that is not a lie here.** The caller's fallback is an
+    /// empty signature, which `lineage_of` reports as `NoSignature` — "nothing binds this" — so an
+    /// unreachable endpoint and an unnameable transaction both end at the same honest answer rather
+    /// than at a borrowed one.
+    fn wrote_it(&self, epoch: u64, published_slot: u64) -> Option<String> {
+        let address = solana_pubkey::Pubkey::from(
+            crate::checkpoint_address(&self.program_id, epoch).to_bytes(),
+        );
+        let listing = self.rpc.get_signatures_for_address(&address).ok()?;
+        let touched: Vec<Touched> = listing
+            .into_iter()
+            .map(|entry| Touched {
+                signature: entry.signature,
+                slot: entry.slot,
+                succeeded: entry.err.is_none(),
+            })
+            .collect();
+        provenance_in(published_slot, &touched).map(str::to_string)
+    }
+
     /// Where the epoch ended up, read back from the chain rather than assumed from the submission.
+    ///
+    /// **The lineage is asked for here (H-35, issue #82).** `published_slot` is what the program saw
+    /// on the fork where it executed; a caller measuring anything against it needs to know whether the
+    /// chain this endpoint serves agrees. So the signature's own landing slot is asked for and the
+    /// answer is classified by `lineage_of`, which is pure and tested without a cluster.
     fn reference(&self, epoch: u64, signature: String) -> Result<AnchorRef, PublishFailed> {
         match crate::root_for_epoch(self, &self.program_id, epoch)
             .map_err(PublishFailed::Unreachable)?
         {
-            Fetched::Placed(c) => Ok(AnchorRef {
-                epoch,
-                signature,
-                published_slot: c.published_slot,
-            }),
+            Fetched::Placed(c) => {
+                // Not asked for an empty signature: there is nothing to ask about, and a request
+                // for one would fail and be recorded as `Unasked` rather than `NoSignature`.
+                let landed = if signature.is_empty() {
+                    WhereItLanded::NotFound
+                } else {
+                    self.where_it_landed(&signature)
+                };
+                Ok(AnchorRef {
+                    epoch,
+                    lineage: lineage_of(c.published_slot, &signature, &landed),
+                    signature,
+                    published_slot: c.published_slot,
+                })
+            }
             _ => Err(PublishFailed::NotPublished(Settlement::Unwritten)),
         }
+    }
+
+    /// Asks the endpoint which slot a signature's transaction landed in.
+    ///
+    /// `getSignatureStatuses` answers from the chain this endpoint serves, which is the whole value
+    /// of asking: the account's `published_slot` came from the fork the program ran on, and this is
+    /// the other side of the comparison.
+    ///
+    /// **Its window is bounded and that is why `NotFound` is its own answer.** Solana keeps a
+    /// signature's status for a limited number of recent slots, so asking about a transaction that
+    /// certainly landed, late enough, gets `NotFound`. That is not evidence against the publication
+    /// and `Lineage::Unknown` is not a refusal.
+    fn where_it_landed(&self, signature: &str) -> WhereItLanded {
+        let parsed = match signature.parse::<solana_signature::Signature>() {
+            Ok(parsed) => parsed,
+            Err(e) => return WhereItLanded::NotAsked(format!("{signature}: {e}")),
+        };
+        match self.rpc.get_signature_statuses(&[parsed]) {
+            Err(e) => WhereItLanded::NotAsked(e.to_string()),
+            Ok(answered) => match answered.value.first() {
+                Some(Some(status)) => WhereItLanded::Slot(status.slot),
+                Some(None) => WhereItLanded::NotFound,
+                None => WhereItLanded::NotAsked(
+                    "the endpoint returned no entry for the one signature it was asked about"
+                        .to_string(),
+                ),
+            },
+        }
+    }
+
+    /// The chain's slot, refused unless the endpoint's own view has reached `min_context_slot`.
+    ///
+    /// **This is the upper end of V-Z-01's bracket, bound (H-35, issue #82).** `getSlot` takes
+    /// `minContextSlot`, and an endpoint whose view is behind it answers with an error instead of an
+    /// older slot. A reading taken this way is from a view that already contains the publication,
+    /// rather than a number that happens to be larger than another number.
+    ///
+    /// The typed client has `get_slot_with_commitment` and nothing that carries a context slot, so
+    /// the request is sent as itself. `RpcContextConfig` is `getSlot`'s own config type, not a shape
+    /// invented here.
+    pub fn slot_at_least(&self, min_context_slot: u64) -> Result<u64, Unreachable> {
+        let config = solana_rpc_client_api::config::RpcContextConfig {
+            commitment: Some(self.rpc.commitment()),
+            min_context_slot: Some(min_context_slot),
+        };
+        self.rpc
+            .send(
+                solana_rpc_client_api::request::RpcRequest::GetSlot,
+                serde_json::json!([config]),
+            )
+            .map_err(|e| {
+                Unreachable(format!(
+                    "getSlot with minContextSlot {min_context_slot}: {e}. An endpoint whose view \
+                     has not reached the publication's slot cannot answer for a chain containing it."
+                ))
+            })
+    }
+
+    /// Whether a publication's two slot readings agree about one chain.
+    ///
+    /// Sugar over `AnchorRef::lineage` for a caller that only wants the yes or no, kept here so the
+    /// comparison is written once.
+    pub fn is_bound(reference: &AnchorRef) -> bool {
+        reference.lineage == Lineage::AtItsSlot
     }
 
     /// §2.3's `status`: `Pending`, `Single` or `Dual` for one epoch (INV-ANCH-05).

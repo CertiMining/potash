@@ -21,7 +21,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anchor_lang::{AnchorDeserialize, InstructionData, ToAccountMetas};
 use certimining_checkpoint::LogConfig;
 use certimining_client::cluster::Cluster;
-use certimining_client::{config_address, AnchorStatus};
+use certimining_client::{config_address, AnchorStatus, Lineage};
 use certimining_core::{Digest, NativeKeccak, SubmissionId};
 use certimining_log::{BuiltEpoch, EpochTree};
 use solana_keypair::Keypair;
@@ -285,9 +285,41 @@ fn v_z_01_landing_delay_does_not_follow_epoch_content() {
         // head is equally impossible — a stale or mixed read can return one arbitrarily far ahead, and
         // a single such outlier drags both correlations under the bound. So the observation must sit
         // inside a bracket read at the same endpoint and commitment as the first snapshot.
-        let after = with_retry("get_slot after", || {
-            rpc.get_slot().map_err(|e| e.to_string())
+        //
+        // **An ordered triple is not one chain, which is H-35 (#82).** All three readings are at
+        // `confirmed`, and Solana distinguishes that from rooted `finalized`: the middle one can
+        // belong to another confirmed fork and satisfy `before <= published <= after` anyway. The
+        // review of PR #69 showed the predicate's incompleteness with a local probe. Two things bind
+        // it now.
+        //
+        // First, the publication's own signature. `published_slot` is what the program saw on the
+        // fork it executed on; `getSignatureStatuses` answers from the chain this endpoint serves,
+        // and `Lineage::AtItsSlot` is the two agreeing. A `Disagreed` is a fork crossing and not a
+        // delay, and the assertion below refuses it rather than averaging it into the correlation.
+        //
+        // Second, the upper reading carries `minContextSlot`, so the endpoint must answer from a view
+        // that already contains the publication rather than from any view with a larger number in it.
+        //
+        // **What the lower end still rests on, stated rather than implied.** `before` is read at a
+        // time when the publication does not exist, so nothing can bind it to the chain that ends up
+        // carrying one. It does not need to be: a `before` taken from a fork that was later abandoned
+        // can only be *larger* than the surviving chain's slots at that moment, which trips the
+        // monotonicity assertion below and fails the run. The unbound end can cost a false failure
+        // and cannot buy a false pass, which is the safe direction for it to be wrong in.
+        let after = with_retry("get_slot after, at least the publication's slot", || {
+            cluster
+                .slot_at_least(anchored.published_slot)
+                .map_err(|e| format!("{e:?}"))
         });
+        assert_eq!(
+            anchored.lineage,
+            Lineage::AtItsSlot,
+            "epoch {next_epoch}: the account records slot {} and the chain this endpoint serves \
+             does not place the publication's transaction there ({:?}). Two readings that describe \
+             different forks bracket nothing, and a delay computed from them is not a delay.",
+            anchored.published_slot,
+            anchored.lineage
+        );
         assert!(
             anchored.published_slot >= before,
             "epoch {next_epoch}: published in slot {} but slot {before} was read before submitting. \

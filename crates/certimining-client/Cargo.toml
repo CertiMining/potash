@@ -26,6 +26,15 @@ cluster = [
     "dep:solana-transaction",
     "dep:solana-signer",
     "dep:solana-keypair",
+    # H-35 (#82): binding a publication's slot readings to one chain. `solana-signature` parses the
+    # signature a status is asked about, `solana-rpc-client-api` carries `getSlot`'s own
+    # `RpcContextConfig`, and `serde_json` sends the request the typed client has no method for. All
+    # three are already in the lock file — the first two as `solana-rpc-client`'s own dependencies and
+    # the third as this crate's test dependency — so no crate enters the graph that the licence and
+    # advisory gates had not already cleared.
+    "dep:solana-signature",
+    "dep:solana-rpc-client-api",
+    "dep:serde_json",
 ]
 
 [[bin]]
@@ -67,6 +76,9 @@ solana-signer = { version = "=3.0.1", optional = true }
 # the trait. Already in the graph as a test dependency; the `cluster` feature promotes it, the way it
 # promotes the transaction crates above.
 solana-keypair = { version = "=3.1.2", optional = true }
+solana-signature = { version = "=3.4.1", optional = true }
+solana-rpc-client-api = { version = "=4.2.2", default-features = false, optional = true }
+serde_json = { version = "=1.0.151", optional = true }
 
 # Anchor B's receipts (D-115). This crate parses and verifies a receipt and cannot create one; the
 # reference client creates, and this checks what it produced before anything hashes it.
