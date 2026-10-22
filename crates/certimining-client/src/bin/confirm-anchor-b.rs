@@ -24,6 +24,8 @@
 //! it, because a hash pasted from a browser in the order a header stores it is the mistake worth
 //! designing out rather than documenting. `CERTIMINING_CHECKPOINT_BITS` is that period's compact
 //! target, which every header must declare exactly; all three are set together or none is.
+//! `CERTIMINING_CHECKPOINT_TIME` is the checkpoint's own timestamp, and setting it on a checkpoint
+//! whose height is a multiple of 2016 is what lets a chain cross a retarget boundary (H-53, #195).
 //!
 //! **What a success here means, and where it stops (H-53, #195).** Every header declares the target
 //! in force and meets it, so producing one costs what a real block at that difficulty cost. The chain
@@ -100,6 +102,18 @@ fn checkpoint() -> Result<Checkpoint, String> {
                 target: target_from_bits(parsed).ok_or_else(|| {
                     format!("{parsed:#010x} is not a target any header can carry")
                 })?,
+                // **Set only for a checkpoint on a retarget boundary (H-53, #195).** It is what lets a
+                // chain cross one: the retarget at `h` needs the timestamp of the block at `h - 2016`,
+                // which is the checkpoint when its height is a multiple of 2016. Off a boundary it
+                // would be read for nothing, and a range leaving the period is refused instead.
+                time: std::env::var("CERTIMINING_CHECKPOINT_TIME")
+                    .ok()
+                    .map(|raw| {
+                        raw.trim()
+                            .parse::<u32>()
+                            .map_err(|e| format!("CERTIMINING_CHECKPOINT_TIME={raw}: {e}"))
+                    })
+                    .transpose()?,
             })
         }
         // **A partial checkpoint is worse than none.** A height with the wrong hash, or the right

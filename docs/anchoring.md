@@ -66,13 +66,15 @@ Three things it does not establish, so the row is read for what it is:
 * **The checkpoint is this repository's word.** Each range starts one block below the attested height,
   and that block's height, hash and compact difficulty are constants in the test. Checking all three
   is one query to any Bitcoin node or explorer; everything after them is believed for its work.
-* **The chain has to lie inside one retarget period.** Every header must declare the target in force
-  at the checkpoint and meet it, so producing one costs what a real block at that difficulty cost —
-  around `2^79` hashes. Bitcoin moves that target every 2016 blocks and nothing here computes where
-  to, so a range leaving the period is refused rather than accepted on whatever difficulty the
-  headers claim. Each window above is four to ten headers inside one period. Walking from genesis
-  needs the retarget arithmetic, which is the rest of H-53
-  ([#195](https://github.com/CertiMining/potash/issues/195)).
+* **Each window lies inside one retarget period.** Every header must declare the target in force at
+  the checkpoint and meet it, so producing one costs what a real block at that difficulty cost —
+  around `2^79` hashes. Bitcoin moves that target every 2016 blocks, and since H-53
+  ([#195](https://github.com/CertiMining/potash/issues/195)) the verifier computes where to and can
+  walk across a boundary — but only from a checkpoint whose height is a multiple of 2016, because the
+  arithmetic needs the timestamp of the period's first block and that is the checkpoint itself only
+  then. The windows above start one block below an attested height, so none of them is on a boundary
+  and none needs to be: each is four to ten headers inside one period, and a range leaving it would be
+  refused rather than accepted on whatever difficulty the headers claim.
 * **Where a receipt carries more than one Bitcoin attestation, one height is checked.** It is the
   first in the operation tree, which is the one the row names and the one `verify_receipt` returns.
   The others are still only what the receipt carries.

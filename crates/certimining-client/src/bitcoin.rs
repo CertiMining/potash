@@ -29,11 +29,13 @@
 //! accepted. The checkpoint now carries the target in force at its height and every header must
 //! declare exactly that, which is what makes a fabricated chain cost what the real one cost.
 //!
-//! **A chain crossing a retarget boundary is refused rather than guessed at.** Bitcoin moves the
-//! target every 2016 blocks, and computing where it moves to needs the period's timespan and a
-//! 256-bit multiply. Until that lands, a chain is verified inside one period and a range that leaves
-//! it is refused, which is the honest shape: every confirmation this repository performs is four to
-//! ten headers inside one period, and a longer one says so instead of accepting easy work.
+//! **And a chain can cross a retarget boundary now (H-53, issue #195).** Bitcoin moves the target
+//! every 2016 blocks, by the ratio of the period's measured timespan to two weeks, clamped to a factor
+//! of four. `retarget` computes it, against Bitcoin's own two most recent boundaries as the expected
+//! values, and `verify_chain` walks across one — **when the checkpoint sits on a boundary and carries
+//! its timestamp**, which is what the arithmetic needs: the period's first block is then the
+//! checkpoint itself. Off a boundary, a range leaving the period is still refused rather than taken on
+//! the headers' word, which is what every window this repository commits does.
 
 use bitcoin_hashes::{sha256d, Hash};
 
@@ -123,6 +125,18 @@ impl Header {
         out
     }
 
+    /// The block's own timestamp, bytes 68 to 72, little-endian.
+    ///
+    /// Bitcoin's timestamps are not monotonic — a block may carry one earlier than its predecessor's —
+    /// which is why the retarget arithmetic computes its timespan as a signed difference and clamps it.
+    pub fn time(&self) -> u32 {
+        let mut raw = [0u8; 4];
+        if let (Some(slot), Some(field)) = (raw.get_mut(..), self.0.get(68..72)) {
+            slot.copy_from_slice(field);
+        }
+        u32::from_le_bytes(raw)
+    }
+
     /// The compact difficulty encoding, bytes 72 to 76, little-endian.
     pub fn bits(&self) -> u32 {
         let mut raw = [0u8; 4];
@@ -192,6 +206,135 @@ pub const POW_LIMIT: [u8; 32] = [
 /// Bitcoin's retarget interval: the target is fixed for 2016 blocks at a time.
 pub const RETARGET_INTERVAL: u32 = 2016;
 
+/// Two weeks, the timespan 2016 blocks are meant to take.
+pub const TARGET_TIMESPAN: i64 = 14 * 24 * 60 * 60;
+
+/// Compresses a 32-byte big-endian target into the compact encoding a header carries.
+///
+/// The inverse of [`target_from_bits`], and needed because a retarget produces a full 256-bit number
+/// while a header stores 24 bits of mantissa: comparing the two directly would reject every
+/// legitimate boundary over the truncation. `None` for zero, which no header can carry.
+///
+/// **The sign-bit shift is consensus, not tidiness.** A mantissa whose top byte is 0x80 or above would
+/// set the bit Bitcoin reads as a sign, so the mantissa moves down a byte and the exponent up one.
+pub fn bits_from_target(target: &[u8; 32]) -> Option<u32> {
+    let first = target.iter().position(|b| *b != 0)?;
+    let mut size = u32::try_from(32usize.checked_sub(first)?).ok()?;
+    // The top three significant bytes, padded with zeros past the end — which is `target >> 8(size-3)`
+    // when the target has three or more significant bytes and `target << 8(3-size)` when it has fewer.
+    let mut mantissa: u32 = 0;
+    for i in 0..3usize {
+        let byte = first
+            .checked_add(i)
+            .and_then(|idx| target.get(idx))
+            .copied()
+            .unwrap_or(0);
+        mantissa = mantissa.checked_shl(8)?.checked_add(u32::from(byte))?;
+    }
+    if mantissa & 0x0080_0000 != 0 {
+        mantissa >>= 8;
+        size = size.checked_add(1)?;
+    }
+    size.checked_shl(24)?.checked_add(mantissa)
+}
+
+/// `value * mul / div` on a 32-byte big-endian number, truncating, or `None` if it needs 256 bits.
+///
+/// **The product is formed in 320 bits and only the quotient has to fit in 256.** A first version
+/// multiplied inside 32 bytes and treated an overflow as "easier than the limit", which capped the
+/// result at the pow limit. For Bitcoin's own targets, around `2^176`, times a timespan under `2^23`,
+/// that never happens — and the test that crosses a boundary at a target of `2^240` found it at once,
+/// which is why the test exists at a difficulty a test can mine rather than at Bitcoin's.
+fn mul_div(value: &[u8; 32], mul: u64, div: u64) -> Option<[u8; 32]> {
+    if div == 0 {
+        return None;
+    }
+    // 40 bytes: 32 for the value and 8 for anything a `u64` multiplier carries above it.
+    let mut wide = [0u8; 40];
+    let mut carry: u128 = 0;
+    for i in (0..32usize).rev() {
+        let v = u128::from(*value.get(i)?)
+            .checked_mul(u128::from(mul))?
+            .checked_add(carry)?;
+        *wide.get_mut(i.checked_add(8)?)? = (v & 0xff) as u8;
+        carry = v >> 8;
+    }
+    for i in (0..8usize).rev() {
+        *wide.get_mut(i)? = (carry & 0xff) as u8;
+        carry >>= 8;
+    }
+    if carry != 0 {
+        return None;
+    }
+
+    let mut quotient = [0u8; 40];
+    let mut remainder: u128 = 0;
+    for i in 0..40usize {
+        let current = remainder
+            .checked_shl(8)?
+            .checked_add(u128::from(*wide.get(i)?))?;
+        let divisor = u128::from(div);
+        *quotient.get_mut(i)? = (current.checked_div(divisor)?) as u8;
+        remainder = current.checked_rem(divisor)?;
+    }
+    // Anything in the top eight bytes is a result past 256 bits, which no target can be.
+    if quotient.get(..8)?.iter().any(|b| *b != 0) {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    out.get_mut(..)?.copy_from_slice(quotient.get(8..40)?);
+    Some(out)
+}
+
+/// The target in force after a retarget, from the one before it and the period's measured timespan.
+///
+/// Bitcoin's rule: scale the previous target by the ratio of the period's actual timespan to two
+/// weeks, clamp that ratio to a factor of four either way, and never go easier than the pow limit.
+///
+/// **The timespan is measured across 2015 intervals and not 2016, which is consensus rather than an
+/// error to fix.** It is the difference between the timestamps of the period's first and last blocks,
+/// and a period of 2016 blocks has 2015 gaps between them. An implementation that used 2016 would
+/// compute a different target from Bitcoin's and reject every boundary.
+///
+/// The result is round-tripped through the compact encoding before being returned, because that is
+/// what a header can carry: a target with more than 24 bits of mantissa is not a target any block
+/// declares, and comparing against one would reject every legitimate boundary.
+pub fn retarget(previous: &[u8; 32], actual_timespan: i64) -> Option<[u8; 32]> {
+    retarget_in(previous, actual_timespan, MAINNET)
+}
+
+/// The two consensus constants this module enforces, as a parameter so the walk can be tested.
+///
+/// **A test can reach neither of them.** 2016 headers at Bitcoin's difficulty is tens of millions of
+/// hashes, and a target at the pow limit is `2^32` per header — so with both fixed, the walk across a
+/// boundary and the retarget it computes would be the only parts of this module nothing exercised, and
+/// an untested branch in a consensus rule is worse than a missing one.
+///
+/// `Rules` is private and `MAINNET` is the only value any public function passes. Nothing a caller
+/// does can vary either number.
+#[derive(Debug, Clone, Copy)]
+struct Rules {
+    interval: u32,
+    pow_limit: [u8; 32],
+}
+
+const MAINNET: Rules = Rules {
+    interval: RETARGET_INTERVAL,
+    pow_limit: POW_LIMIT,
+};
+
+fn retarget_in(previous: &[u8; 32], actual_timespan: i64, rules: Rules) -> Option<[u8; 32]> {
+    let clamped = actual_timespan.clamp(TARGET_TIMESPAN / 4, TARGET_TIMESPAN.saturating_mul(4));
+    let scaled = u64::try_from(clamped).ok()?;
+    let computed = match mul_div(previous, scaled, u64::try_from(TARGET_TIMESPAN).ok()?) {
+        // An overflow or a target easier than the rules allow both land on the limit, which is the
+        // rule: the difficulty never falls below the one the chain started at.
+        Some(t) if t <= rules.pow_limit => t,
+        _ => rules.pow_limit,
+    };
+    target_from_bits(bits_from_target(&computed)?)
+}
+
 /// Whether a little-endian hash is numerically at or below a big-endian target.
 fn less_than_or_equal_reversed(hash_le: &[u8; 32], target_be: &[u8; 32]) -> bool {
     for i in 0..32 {
@@ -229,6 +372,17 @@ pub struct Checkpoint {
     /// accepts the committed checkpoint accepts its height, its hash and its difficulty together, and
     /// checks all three with one query to any node.
     pub target: [u8; 32],
+    /// The checkpoint's own timestamp, where it is known (H-53, issue #195).
+    ///
+    /// **Only a checkpoint on a retarget boundary can carry a chain across one**, and this is the
+    /// field that makes it possible. A retarget at height `h` needs the timestamps of the period's
+    /// first and last blocks: the last is a header in the chain, and the first is the block at
+    /// `h - 2016`, which is the checkpoint itself when `height % 2016 == 0`.
+    ///
+    /// `None`, or a checkpoint off a boundary, and a range leaving the period is refused instead —
+    /// which is what every window this repository commits does, each being four to ten headers inside
+    /// one period.
+    pub time: Option<u32>,
 }
 
 /// Verifies that `headers` is one chain of real work beginning at `checkpoint`'s successor.
@@ -244,10 +398,11 @@ pub struct Checkpoint {
 ///
 /// Two things remain, and neither is the fabrication above:
 ///
-/// * **A range leaving the checkpoint's retarget period is refused**, because the target moves every
-///   2016 blocks and nothing here computes where to. Every confirmation this repository performs is
-///   four to ten headers inside one period. A light client walking from genesis would need the
-///   retarget arithmetic, which is the rest of H-53 (#195).
+/// * **A range leaving the period is refused unless the checkpoint sits on a boundary and carries its
+///   timestamp.** The retarget needs the timespan of the period that closed, whose first block is the
+///   checkpoint exactly when the checkpoint's height is a multiple of 2016. `GENESIS` qualifies; the
+///   windows this repository commits do not and do not need to, being four to ten headers inside one
+///   period.
 /// * **This is not the chain with the most work**, only a chain of the right work from the
 ///   checkpoint. Two competing chains at the same difficulty both pass, which matters at a
 ///   reorganisation and not for a block buried under months of it.
@@ -255,18 +410,50 @@ pub fn verify_chain(
     checkpoint: Checkpoint,
     headers: &[Header],
 ) -> Result<Vec<[u8; 32]>, HeaderRefused> {
-    // **One retarget period, or nothing (H-53, issue #195).** The target in force belongs to the
-    // period the checkpoint sits in, so a range that leaves it is a range this cannot answer for.
+    verify_chain_in(checkpoint, headers, MAINNET)
+}
+
+/// `verify_chain`, with the retarget interval as a parameter so the crossing can be tested.
+///
+/// **This exists because 2016 headers cannot be mined in a test.** At a difficulty a test can reach,
+/// a chain long enough to cross a real boundary is tens of millions of hashes, so the walk across one
+/// would be the only part of this module nothing exercised — and an untested branch in a consensus
+/// rule is worse than a missing one. The tests call this with an interval of 4.
+///
+/// It is private, and `verify_chain` is the only way in from outside: nothing a caller does can vary
+/// Bitcoin's own constants.
+fn verify_chain_in(
+    checkpoint: Checkpoint,
+    headers: &[Header],
+    rules: Rules,
+) -> Result<Vec<[u8; 32]>, HeaderRefused> {
+    let interval = rules.interval;
+    // **A boundary is crossed by computing the retarget, or it is refused (H-53, issue #195).**
+    // Bitcoin moves the target every 2016 blocks, and the arithmetic needs the timestamps of the
+    // period's first and last blocks. The last is a header in this chain. The first is the block at
+    // `h - 2016`, which is *the checkpoint itself* exactly when the checkpoint sits on a boundary — so
+    // that is the condition under which this can walk across one, and otherwise a range leaving the
+    // period is refused rather than taken on the headers' word.
     let span = u32::try_from(headers.len()).unwrap_or(u32::MAX);
-    let checkpoint_period = checkpoint.height / RETARGET_INTERVAL;
-    let tip_period = checkpoint.height.saturating_add(span) / RETARGET_INTERVAL;
-    if tip_period != checkpoint_period {
+    // `interval` is a constant of the rules and never zero; the fallbacks keep the arithmetic
+    // checked rather than trusting that, because a zero here would divide by it.
+    let checkpoint_period = checkpoint.height.checked_div(interval).unwrap_or(0);
+    let tip_period = checkpoint
+        .height
+        .saturating_add(span)
+        .checked_div(interval)
+        .unwrap_or(0);
+    let on_a_boundary = interval != 0 && checkpoint.height.is_multiple_of(interval);
+    if tip_period != checkpoint_period && !(on_a_boundary && checkpoint.time.is_some()) {
         return Err(HeaderRefused::CrossesARetargetBoundary {
             checkpoint_period,
             tip_period,
         });
     }
     let mut previous = checkpoint.hash;
+    // The target in force, and the timestamp of the current period's first block.
+    let mut in_force = checkpoint.target;
+    let mut period_began = checkpoint.time;
     let mut hashes = Vec::with_capacity(headers.len());
     for (offset, header) in headers.iter().enumerate() {
         let height = checkpoint
@@ -292,11 +479,38 @@ pub fn verify_chain(
             at: height,
             bits: header.bits(),
         })?;
-        if target != checkpoint.target {
+        // At a boundary the period that just closed sets the new target. Its first block's timestamp
+        // is `period_began`; its last is the header one below this one, which is the checkpoint when
+        // this is the chain's first header and a header already walked otherwise.
+        if interval != 0 && height.is_multiple_of(interval) {
+            let began = period_began.ok_or(HeaderRefused::CrossesARetargetBoundary {
+                checkpoint_period,
+                tip_period,
+            })?;
+            let closed = match offset.checked_sub(1).and_then(|i| headers.get(i)) {
+                Some(before) => before.time(),
+                // `offset == 0`, so the block below this one is the checkpoint, which is only on a
+                // boundary itself when the interval is 1 — not Bitcoin's. Refused rather than guessed.
+                None => {
+                    return Err(HeaderRefused::CrossesARetargetBoundary {
+                        checkpoint_period,
+                        tip_period,
+                    })
+                }
+            };
+            let elapsed = i64::from(closed).saturating_sub(i64::from(began));
+            in_force =
+                retarget_in(&in_force, elapsed, rules).ok_or(HeaderRefused::MalformedTarget {
+                    at: height,
+                    bits: header.bits(),
+                })?;
+            period_began = Some(header.time());
+        }
+        if target != in_force {
             return Err(HeaderRefused::TargetNotTheOneInForce {
                 at: height,
                 bits: header.bits(),
-                expected: hex(&checkpoint.target),
+                expected: hex(&in_force),
             });
         }
         let hash = header.block_hash();
@@ -360,6 +574,9 @@ pub const GENESIS: Checkpoint = Checkpoint {
     height: 0,
     // Period 0's target is the maximum Bitcoin allows, which is where the chain started.
     target: POW_LIMIT,
+    // Height 0 is a retarget boundary, so this checkpoint can carry a chain across one. The timestamp
+    // is the genesis header's own, and the test below derives it from those 80 bytes.
+    time: Some(1_231_006_505),
     // Internal byte order. Reversed for display this is
     // 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f.
     hash: [
@@ -434,7 +651,18 @@ mod tests {
     /// A low difficulty, so the test mines in milliseconds. The arithmetic under test is the same at
     /// any difficulty: nothing here special-cases how hard the target is.
     fn mined(prev: [u8; 32], root: [u8; 32], bits: u32) -> Header {
+        mined_at(prev, root, bits, 0)
+    }
+
+    /// `mined`, with the block's timestamp set, which the retarget arithmetic reads.
+    ///
+    /// The time is written **before** the nonce search rather than after it, because changing any
+    /// header byte invalidates the nonce: setting it afterwards would mean mining the block twice.
+    fn mined_at(prev: [u8; 32], root: [u8; 32], bits: u32, time: u32) -> Header {
         let mut raw = [0u8; 80];
+        if let Some(slot) = raw.get_mut(68..72) {
+            slot.copy_from_slice(&time.to_le_bytes());
+        }
         if let Some(slot) = raw.get_mut(4..36) {
             slot.copy_from_slice(&prev);
         }
@@ -469,6 +697,9 @@ mod tests {
         Checkpoint {
             height: 100,
             hash: [0x42; 32],
+            // No timestamp and not on a boundary, so a range leaving the period is refused. The
+            // retarget tests build their own checkpoint.
+            time: None,
             target: match target_from_bits(EASY) {
                 Some(t) => t,
                 None => panic!("the test's own difficulty does not decode"),
@@ -743,6 +974,211 @@ mod tests {
         assert!(
             verify_chain(inside, &headers).is_ok(),
             "four headers after a period's first block are inside it"
+        );
+    }
+
+    /// **Bitcoin's own retargets, as the expected values** (H-53, issue #195).
+    ///
+    /// Two real mainnet boundaries. Every input is read from a real header — the previous period's
+    /// declared difficulty and the timestamps of its first and last blocks — and the expected output
+    /// is the difficulty the boundary block itself declares. Nothing in these four rows is a value
+    /// this repository chose, which is what makes them a check on the arithmetic rather than on my
+    /// transcription of it.
+    ///
+    ///     boundary   previous bits   period timespan   declared at the boundary
+    ///     969,696    0x1702_1ec5     1,209,975 s       0x1702_1ef0   (14.00 days, barely easier)
+    ///     971,712    0x1702_1ef0     1,141,962 s       0x1702_0093   (13.22 days, harder)
+    #[test]
+    fn the_retarget_reproduces_two_real_bitcoin_boundaries() {
+        for (previous, timespan, expected) in [
+            (0x1702_1ec5u32, 1_209_975i64, 0x1702_1ef0u32),
+            (0x1702_1ef0, 1_141_962, 0x1702_0093),
+        ] {
+            let before = match target_from_bits(previous) {
+                Some(t) => t,
+                None => panic!("{previous:#010x} does not decode"),
+            };
+            let after = match retarget(&before, timespan) {
+                Some(t) => t,
+                None => panic!("the retarget produced nothing for {previous:#010x}"),
+            };
+            assert_eq!(
+                bits_from_target(&after),
+                Some(expected),
+                "a {timespan}-second period after {previous:#010x} is {expected:#010x} on the chain \
+                 itself, and this computed something else"
+            );
+        }
+    }
+
+    /// **The arithmetic's own edges**, including the one the boundary test found.
+    #[test]
+    fn the_scaling_refuses_a_result_that_does_not_fit_in_a_target() {
+        let limit = match target_from_bits(0x1d00_ffff) {
+            Some(t) => t,
+            None => panic!("the pow limit does not decode"),
+        };
+        // Doubling a target near 2^240 stays inside 256 bits; multiplying it by 2^20 does not, and the
+        // wide product is what makes the first case work — an implementation multiplying inside 32
+        // bytes loses both.
+        let high = match target_from_bits(EASY) {
+            Some(t) => t,
+            None => panic!("EASY does not decode"),
+        };
+        assert!(
+            mul_div(&high, 1_209_000, 1_209_600).is_some(),
+            "a ratio just under one must survive a target of 2^240, which is what a 320-bit product \
+             is for"
+        );
+        assert_eq!(
+            mul_div(&high, 1_000_000, 1),
+            None,
+            "a million times 2^240 is not a 256-bit number and saying so beats capping it quietly"
+        );
+        assert_eq!(mul_div(&limit, 4, 0), None, "a zero divisor has no answer");
+        assert_eq!(
+            mul_div(&limit, 1, 1),
+            Some(limit),
+            "the identity, without which the two above could pass on a function that never works"
+        );
+    }
+
+    /// The compact encoding round-trips, which is what lets a computed target be compared with a
+    /// declared one at all.
+    #[test]
+    fn the_compact_encoding_round_trips_for_every_real_difficulty_here() {
+        for bits in [
+            0x1d00_ffffu32,
+            0x1702_1ec5,
+            0x1702_1ef0,
+            0x1702_0093,
+            0x1f00_ffff,
+        ] {
+            let target = match target_from_bits(bits) {
+                Some(t) => t,
+                None => panic!("{bits:#010x} does not decode"),
+            };
+            assert_eq!(bits_from_target(&target), Some(bits));
+        }
+        assert_eq!(bits_from_target(&[0u8; 32]), None, "zero is not a target");
+    }
+
+    /// **A chain walked across a boundary, with the new target enforced** (H-53, issue #195).
+    ///
+    /// The interval is 4 rather than 2016, because 2016 headers cannot be mined in a test; the walk is
+    /// the same code. The period's measured timespan is seconds rather than weeks, so the clamp takes
+    /// it to a quarter of two weeks and the target becomes four times harder — a value this test does
+    /// not choose either, since it asks `retarget` what it is and then mines to it.
+    /// The rules these tests can reach: a four-block period and a limit at the difficulty they mine.
+    fn easy_rules() -> Rules {
+        Rules {
+            interval: 4,
+            pow_limit: match target_from_bits(EASY) {
+                Some(t) => t,
+                None => panic!("EASY does not decode"),
+            },
+        }
+    }
+
+    #[test]
+    fn a_chain_crossing_a_boundary_is_verified_against_the_computed_target() {
+        let began = 1_700_000_000u32;
+        let checkpoint = Checkpoint {
+            height: 100,
+            hash: [0x42; 32],
+            target: match target_from_bits(EASY) {
+                Some(t) => t,
+                None => panic!("EASY does not decode"),
+            },
+            time: Some(began),
+        };
+        // 101, 102, 103 under the old target.
+        let mut headers = Vec::new();
+        let mut prev = checkpoint.hash;
+        // The period runs 1,209,000 seconds, a shade under two weeks, so the target gets harder by
+        // a factor of 1.0005 — one step of the compact mantissa, which is visible in the bits and
+        // costs nothing to mine. A larger move would be a slower test and not a better one.
+        let times = [1u32, 2, 1_209_000];
+        for (i, offset) in times.iter().enumerate() {
+            let label = u8::try_from(i).unwrap_or(0);
+            let header = mined_at(prev, [label; 32], EASY, began.saturating_add(*offset));
+            prev = header.block_hash();
+            headers.push(header);
+        }
+        // 104 is the boundary. The period that closed ran from the checkpoint to 103.
+        let closed = match headers.get(2) {
+            Some(h) => h.time(),
+            None => panic!("three headers"),
+        };
+        let elapsed = i64::from(closed).saturating_sub(i64::from(began));
+        let next_target = match retarget_in(&checkpoint.target, elapsed, easy_rules()) {
+            Some(t) => t,
+            None => panic!("the retarget produced nothing"),
+        };
+        let next_bits = match bits_from_target(&next_target) {
+            Some(b) => b,
+            None => panic!("the computed target has no compact form"),
+        };
+        assert_ne!(next_bits, EASY, "a four-second period must move the target");
+
+        let boundary = mined_at(prev, [0x9a; 32], next_bits, closed.saturating_add(1));
+        headers.push(boundary);
+        match verify_chain_in(checkpoint, &headers, easy_rules()) {
+            Ok(hashes) => assert_eq!(hashes.len(), 4),
+            Err(e) => panic!("a chain declaring the computed target must verify: {e:?}"),
+        }
+
+        // **The control.** The same chain with the boundary block keeping the old difficulty.
+        let mut stale = headers.clone();
+        if let Some(last) = stale.get_mut(3) {
+            *last = mined_at(prev, [0x9a; 32], EASY, closed.saturating_add(1));
+        }
+        match verify_chain_in(checkpoint, &stale, easy_rules()) {
+            Err(HeaderRefused::TargetNotTheOneInForce { at, bits, .. }) => {
+                assert_eq!((at, bits), (104, EASY));
+            }
+            other => panic!("a boundary block keeping the old target must be refused: {other:?}"),
+        }
+    }
+
+    /// A checkpoint off a boundary still refuses a crossing, because the arithmetic needs a timestamp
+    /// it does not have: the first block of its period is not the checkpoint.
+    #[test]
+    fn a_checkpoint_off_a_boundary_still_refuses_a_crossing() {
+        let checkpoint = Checkpoint {
+            height: 101,
+            time: Some(1_700_000_000),
+            ..easy_checkpoint()
+        };
+        let headers = chain(4, checkpoint.hash);
+        match verify_chain_in(checkpoint, &headers, easy_rules()) {
+            Err(HeaderRefused::CrossesARetargetBoundary { .. }) => {}
+            other => panic!("101 is not a multiple of 4, so this cannot answer for 104: {other:?}"),
+        }
+    }
+
+    /// And a boundary checkpoint with no timestamp refuses one too, for the same reason.
+    #[test]
+    fn a_boundary_checkpoint_without_its_timestamp_refuses_a_crossing() {
+        let headers = chain(4, easy_checkpoint().hash);
+        match verify_chain_in(easy_checkpoint(), &headers, easy_rules()) {
+            Err(HeaderRefused::CrossesARetargetBoundary { .. }) => {}
+            other => panic!("100 is a multiple of 4 but carries no time: {other:?}"),
+        }
+    }
+
+    /// The genesis checkpoint's timestamp is the genesis header's own, not a transcribed number.
+    #[test]
+    fn the_committed_genesis_checkpoint_carries_the_genesis_timestamp() {
+        assert_eq!(
+            GENESIS.time,
+            Some(Header(GENESIS_HEADER).time()),
+            "the committed timestamp is not the genesis header's own"
+        );
+        assert_eq!(
+            GENESIS.height % RETARGET_INTERVAL,
+            0,
+            "genesis is a retarget boundary, which is what lets it carry a chain across one"
         );
     }
 
