@@ -21,6 +21,7 @@
 //! Being a tool rather than shipped code, this crate may panic: a generator that cannot produce a
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
+mod citations;
 mod demo;
 mod live_values;
 mod record;
@@ -122,6 +123,23 @@ fn main() {
         }
         // The deployment record against the files it describes (H-36). Separate from the live-values
         // check because that one reads values and this one reads the prose and tables around them.
+        // Documents that cite an invariant, against the specification's text for it (H-46, #143).
+        Some("check-citations") => {
+            citations::check_citations(&repo_root());
+        }
+        // Re-records that manifest, which is the statement that the documents it names were read
+        // against the specification's current text.
+        Some("gen-citations") => {
+            let root = repo_root();
+            let rendered = citations::render(&root);
+            let at = root.join("docs/CITED-INVARIANTS.sha256");
+            fs::write(&at, &rendered).unwrap_or_else(|e| panic!("{}: {e}", at.display()));
+            println!(
+                "citations: wrote {} line(s) to {}",
+                rendered.lines().count(),
+                at.display()
+            );
+        }
         Some("check-record") => {
             record::check_record(&repo_root());
         }
