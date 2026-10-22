@@ -92,6 +92,15 @@ impl Log {
         .0
     }
 
+    /// The canonical bump, which `publish_checkpoint` takes rather than searching for (H-52).
+    fn checkpoint_bump(&self, epoch: u64) -> u8 {
+        Pubkey::find_program_address(
+            &[CheckpointAccount::SEED, &epoch.to_le_bytes()],
+            &self.program_id,
+        )
+        .1
+    }
+
     fn send(&mut self, ix: Instruction, signers: &[&Keypair]) -> Result<(), u32> {
         let message = Message::new(&[ix], Some(&self.payer.pubkey()));
         let mut all: Vec<&Keypair> = vec![&self.payer];
@@ -151,7 +160,12 @@ impl Log {
             .into_iter()
             .map(convert_meta)
             .collect(),
-            data: certimining_checkpoint::instruction::PublishCheckpoint { epoch, root }.data(),
+            data: certimining_checkpoint::instruction::PublishCheckpoint {
+                epoch,
+                root,
+                checkpoint_bump: self.checkpoint_bump(epoch),
+            }
+            .data(),
         };
         self.send(ix, &[signer])
     }

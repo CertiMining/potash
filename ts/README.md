@@ -16,11 +16,18 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.6**, SHA-256 `db9e74036b908b45e8f417fd6f78ea996bddda589765844455f3e06e7fc93ce5`,
-892 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
+committed today is **v0.2.7**, SHA-256 `8633a287ea5bb628c5eb43b5670fea1e6de4c8111c58ddf8d87d9b13418854a1`,
+920 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
 (H-06), which is the subject of SD-11, v0.2.3 corrects §4.4a's account of the CI regression band
 (H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). None of those four
 touches anything this verifier implements: they are about the program and the figures around it.
+
+**v0.2.7 moves the checkpoint PDA's bump into `publish_checkpoint`'s instruction data** — 48 bytes to
+49 — so the program makes one `create_program_address` call rather than searching. It does not touch
+this verifier: §2.4's address derivation, which `ts/` implements, is unchanged, and the bump this
+verifier computes canonically is the one a correct publisher passes. §1.8 now says canonicality is the
+publisher's, and a non-canonical publish reads to this verifier as a missing epoch, which is what it
+already reports for an absent account.
 
 **v0.2.6 corrects §4.4a's account of what CI asserts** — the regression band fails on drift again
 (H-47) and `publish_checkpoint`'s compute cost is a table rather than a figure (H-52). Neither touches

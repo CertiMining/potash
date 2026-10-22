@@ -43,9 +43,9 @@ pub use anchor::{
 #[cfg(feature = "cluster")]
 pub use cluster::PublishFailed;
 pub use fetch::{
-    checkpoint_address, config_address, decode_checkpoint, decode_config, root_for_epoch,
-    sequence_lag, Fetched, Lag, Observation, OneView, PublishedCheckpoint, Refused, RootSource,
-    Unreachable, ONE_VIEW_LIMIT,
+    checkpoint_address, checkpoint_bump, config_address, decode_checkpoint, decode_config,
+    root_for_epoch, sequence_lag, Fetched, Lag, Observation, OneView, PublishedCheckpoint, Refused,
+    RootSource, Unreachable, ONE_VIEW_LIMIT,
 };
 pub use handoff::{refuse_to_write, Handoff, HandoffRefused, HandoffWriteRefused, HANDOFF_LEN};
 pub use ots::{receipt_digest, refuse_a_readable_key, AnchorB, PendingReceipt, ReceiptRefused};

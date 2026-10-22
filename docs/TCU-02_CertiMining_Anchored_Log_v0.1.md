@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.6 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.7 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -30,6 +30,12 @@ end of the ruling v0.2.3 recorded the near end of (H-47) — so this text no lon
 wall-clock gate exists. And `publish_checkpoint`'s compute cost is a table rather than a figure: it
 depends on the canonical bump of the epoch's PDA, so a single number was a property of the day the
 harness pinned (H-52). §1.8's bound is untouched here and remains an open question.*
+
+*v0.2.7 moves the checkpoint PDA's bump into `publish_checkpoint`'s instruction data, 48 bytes to 49,
+so the program derives the address with one `create_program_address` call instead of searching for the
+canonical bump. Its compute cost stops depending on the epoch: the five recorded rows spanned 9,071 to
+25,575 CU and now span 9,091 to 9,097, and no epoch exceeds §1.8's bound. Canonicality becomes the
+publisher's, which §1.8 states, because proving a bump canonical is the search this removes (H-52).*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -276,7 +282,7 @@ holder does not choose the policy its own promise is judged against.
 | Inclusion proof | exactly `H` siblings (256 bytes at default) |
 | Record flags | `u16`, schema-1 bits 0–1 used, excluded from leaf preimage |
 | `CheckpointAccount` | 106 bytes |
-| Instruction data, `publish_checkpoint` | 48 bytes |
+| Instruction data, `publish_checkpoint` | 49 bytes |
 | `payload_uri` | ≤128 bytes, scheme ∈ {`ipfs://`,`https://`,`ar://`} |
 | Tenure ID post-canonicalization | ≤64 bytes |
 | Tenure ID raw input | ≤256 bytes |
@@ -526,7 +532,7 @@ pub struct InclusionProof {
 pub mod certimining_checkpoint {
     pub fn initialize(ctx: Context<Initialize>, authority: Pubkey,
                       tree_height: u8, start_epoch: u64) -> Result<()>;
-    pub fn publish_checkpoint(ctx: Context<Publish>, epoch: u64, root: [u8;32]) -> Result<()>;
+    pub fn publish_checkpoint(ctx: Context<Publish>, epoch: u64, root: [u8;32], checkpoint_bump: u8) -> Result<()>;
     pub fn attach_anchor_receipt(ctx: Context<Attach>, epoch: u64,
                                  receipt_digest: [u8;32], kind: u8) -> Result<()>;
 }
@@ -535,6 +541,28 @@ pub mod certimining_checkpoint {
 `initialize` takes `tree_height` (4..=16, default 8) and writes it once; anything outside the range is `0x05` (V-N-22). It also takes `start_epoch` and writes it once, refusing with `0x05` anything but the UTC day index the on-chain clock reports (§1.4, D-109); `last_epoch` is written as `start_epoch - 1`, so the first publication is `start_epoch` itself. `start_epoch` occupies eight of the sixteen bytes that were reserved, so `LogConfig` is still 68 bytes. No instruction changes it afterwards (INV-TREE-06). The `LogConfig` PDA is its own guard against a second call, since the account already exists. **Whoever calls `initialize` first owns the log**, so it belongs to the deploy procedure rather than to whoever gets there first; a front-run is visible because `LogConfig.authority` is not the operator's key, and the remedy is a redeploy to a new program id. The program's upgrade authority is settled in the same step, which is where INV-GOV-01's choice is made (D-79).
 
 **`publish_checkpoint` checks in this order** (D-80): the checkpoint account already exists is `0x0E`, and only then `epoch ≠ last_epoch + 1` is `0x0D`. Both conditions can hold at once — republishing epoch `e` is also an epoch that is not `last + 1` — so the order is stated here rather than left to an implementation, and the account is created explicitly so existence can be seen before it is refused.
+
+**The bump travels in the instruction data, and canonicality is the publisher's *(v0.2.7)*.**
+`checkpoint_bump` is the bump of the checkpoint PDA for `epoch`, and the program derives the address
+with one `create_program_address` call over the seeds and that bump. It does **not** check that the
+bump is the canonical one, and it cannot do so cheaply: proving a bump canonical means showing every
+larger candidate is on the curve, which is a search from 255 downward and is exactly the cost this
+removes. A PDA is a hash, so there is no algebraic shortcut.
+
+**So canonicality is enforced by the publisher, and a non-canonical publish reads as a missing epoch
+to every verifier.** A non-canonical bump names a different valid PDA for the same seeds, so the
+checkpoint would be written where nothing looks: a verifier derives the address canonically, finds no
+account, and reports the epoch absent — while `last_epoch` has advanced, which a client surfaces as a
+published range whose account is not in the same view (INV-ANCH-02). It is detectable, immediately,
+and by everyone. And only the checkpoint authority can cause it, because this instruction requires
+that signature: it is the authority damaging its own log in public, not an attack a third party can
+mount.
+
+**Why the bump moved here at all.** `#[account(init, seeds = …, bump)]` searches, each rejected
+candidate costs one `create_program_address` syscall, and the epoch is one of the seeds — so the cost
+was `8,810 + 1,500 × (255 − bump)` and crossed the bound in this table for roughly one epoch in 32.
+Four of the 212 epochs a superseded deployment published were over it. `attach_anchor_receipt` never
+had the problem because it reads the bump the account stores.
 
 **The epoch must be the chain's day, or the day before it *(v0.2.4)*.** After the monotonicity check, `publish_checkpoint` refuses an `epoch` greater than `floor(clock.unix_timestamp / 86400)` with `0x0D`. The publication for day *d* is submitted at its scheduled time inside day *d* and may land in day *d + 1* if the network is slow, so an epoch equal to the clock's day or one behind it is accepted and anything ahead of it is not. A log that has fallen behind catches up one epoch per transaction, and a log cannot run ahead at all.
 

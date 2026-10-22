@@ -193,6 +193,10 @@ fn the_devnet_column_matches_the_litesvm_column() {
         data: certimining_checkpoint::instruction::PublishCheckpoint {
             epoch,
             root: *b"certimining fixture root   00001",
+            checkpoint_bump: certimining_client::checkpoint_bump(
+                &certimining_checkpoint::ID,
+                epoch,
+            ),
         }
         .data(),
     };

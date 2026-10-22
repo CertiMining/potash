@@ -183,7 +183,15 @@ impl Log {
                 system_program: anchor_lang::system_program::ID,
             }
             .to_account_metas(None),
-            certimining_checkpoint::instruction::PublishCheckpoint { epoch, root }.data(),
+            certimining_checkpoint::instruction::PublishCheckpoint {
+                epoch,
+                root,
+                checkpoint_bump: certimining_client::checkpoint_bump(
+                    &certimining_checkpoint::ID,
+                    epoch,
+                ),
+            }
+            .data(),
             true,
         );
     }

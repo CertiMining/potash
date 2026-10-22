@@ -93,7 +93,7 @@ fn publish_epoch(
 ) -> Published {
     let program_id = certimining_checkpoint::ID;
     let (config, _) = Pubkey::find_program_address(&[LogConfig::SEED], &program_id);
-    let (checkpoint, _) = Pubkey::find_program_address(
+    let (checkpoint, checkpoint_bump) = Pubkey::find_program_address(
         &[CheckpointAccount::SEED, &epoch.to_le_bytes()],
         &program_id,
     );
@@ -108,7 +108,12 @@ fn publish_epoch(
     clock.unix_timestamp = (epoch * certimining_checkpoint::SECONDS_PER_DAY) as i64;
     svm.set_sysvar(&clock);
 
-    let data = certimining_checkpoint::instruction::PublishCheckpoint { epoch, root }.data();
+    let data = certimining_checkpoint::instruction::PublishCheckpoint {
+        epoch,
+        root,
+        checkpoint_bump,
+    }
+    .data();
     let metas = certimining_checkpoint::accounts::Publish {
         config: anchor_lang::prelude::Pubkey::from(config.to_bytes()),
         checkpoint: anchor_lang::prelude::Pubkey::from(checkpoint.to_bytes()),
@@ -170,14 +175,26 @@ fn permitted_transaction_ranges(
     ranges.push(find(serialized, checkpoint, "the checkpoint address"));
     ranges.push(find(serialized, blockhash, "the recent blockhash"));
     // Inside the instruction data, the eight discriminator bytes are not permitted to differ; the
-    // arguments after them are `epoch` and `root`.
+    // arguments after them are `epoch`, `root` and the checkpoint PDA's bump.
+    //
+    // **49 since v0.2.7, and this is not a privacy test being bent to fit a change** (H-52, #193).
+    // What these tests establish is that an epoch's footprint does not move with its *record count*,
+    // and the length is part of that footprint. The bump is a function of the epoch and the program
+    // id alone — not of the record count, not of anything a filer does — so the length stays constant
+    // across every record count exactly as it did at 48, which is the property V-Z-01 and V-Z-06
+    // assert. The byte's *value* varies by epoch and carries nothing: anyone can derive it from the
+    // epoch, which is already in the clear two fields earlier.
+    //
+    // The number moved because §1.8 moved. If a future change made this length depend on what an
+    // epoch holds, that would be the leak these tests exist for, and it would read as this assertion
+    // failing rather than as a number to update.
     assert_eq!(
         instruction_data.len(),
-        48,
-        "§1.8: 8 discriminator, 8 epoch, 32 root, and nothing else"
+        49,
+        "§1.8: 8 discriminator, 8 epoch, 32 root, 1 bump, and nothing else"
     );
     let data = find(serialized, instruction_data, "the instruction data");
-    ranges.push(data.start + 8..data.start + 48);
+    ranges.push(data.start + 8..data.start + 49);
     ranges
 }
 
@@ -472,10 +489,15 @@ fn p03_no_record_count_moves_an_epochs_footprint() {
             CheckpointAccount::LEN,
             "§2.4: 106 bytes, and an epoch of {records} records wrote a different number"
         );
+        // **49 since v0.2.7, and this assertion is the privacy property, not the byte count**
+        // (H-52, #193). What it establishes is that the length does not move with `records` — the
+        // bump §1.8 added is a function of the epoch and the program id, and this loop holds the
+        // epoch fixed at `START` while varying the record count, so a length that moved here would
+        // be a leak and not a stale number.
         assert_eq!(
             published.instruction_data.len(),
-            48,
-            "§1.8: 48 bytes, and an epoch of {records} records sent a different number"
+            49,
+            "§1.8: 49 bytes, and an epoch of {records} records sent a different number"
         );
 
         let (transaction, account) = redact(&published, &permitted_offsets);

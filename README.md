@@ -39,7 +39,7 @@ that description, which is why D-137 removed its bound.
 
 | | Threshold | Measured | By |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU (**exceeded; see below**) | 9,071 to 25,575 CU, by epoch | LiteSVM; the chain shows 8,810, which is the program before v0.2.4 ([why](docs/performance.md)) |
+| `publish_checkpoint` compute | ≤ 15,000 CU | 9,091 to 9,097 CU | LiteSVM; the chain shows 8,810, which is the program before v0.2.4 and v0.2.7 ([why](docs/performance.md)) |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
 | Chain walk, 10,000 records, hash recomputation only | none (D-137) | 7–19.5 ms, machine-dependent | Rust |
 | Epoch root build, 256 leaves | none (D-137) | 0.20–0.38 ms | Rust |
@@ -52,17 +52,23 @@ that description, which is why D-137 removed its bound.
 | Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 | devnet, 200 epochs |
 | Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 | devnet, 200 epochs |
 
-**`publish_checkpoint` has no single compute figure, and §1.8's bound is exceeded.** Its cost is
-`8,810 + 1,500 × (255 − bump)` CU, where `bump` is the canonical bump of the epoch's checkpoint PDA:
-Anchor searches downward from 255 and each rejected candidate costs a `create_program_address`
-syscall, and the epoch is one of the seeds. So the figure is a property of the day, not of the
-instruction. CI records five rows with their epochs and bumps and asserts all of them.
+**`publish_checkpoint`'s cost used to depend on the day it published, and no longer does.** Anchor
+searched downward from 255 for the checkpoint PDA's canonical bump, each rejected candidate cost a
+`create_program_address` syscall, and the epoch is one of the seeds — so the cost was
+`8,810 + 1,500 × (255 − bump)`. Five rejected candidates crossed 15,000, about one epoch in 32, and
+**four of the 212 epochs the superseded deployment actually published were over §1.8's bound**, by
+1,500 to 6,000 CU. They succeeded because nothing here requests a compute budget, so the runtime's own
+200,000 CU limit absorbed them.
 
-Five rejected candidates cross 15,000, which is about one epoch in 32 — and **four of the 212 epochs
-the superseded deployment actually published were over the bound**, by 1,500 to 6,000 CU. They
-succeeded because nothing here requests a compute budget, so the runtime's own 200,000 CU limit
-absorbed them. Whether 15,000 is the right number is open
-([#193](https://github.com/CertiMining/potash/issues/193)); the measurement is not.
+Since v0.2.7 the bump travels in the instruction data — 48 bytes to 49 — and the program makes one
+call. The five epochs CI records spanned 9,071 to 25,575 CU and now span **9,091 to 9,097**, which is
+a spread of 6 where it was 16,504. The table stays five rows because five rows agreeing at five
+different bumps is what shows the dependence is gone.
+
+What the program does not check is that the bump is *canonical*, because proving that is the search
+this removed. §1.8 makes canonicality the publisher's and says what a non-canonical publish looks
+like: an epoch every verifier reports as missing, caused by the only key that can sign the
+instruction.
 
 Two independent implementations — Rust and TypeScript, the second written from the specification
 alone by someone who never read the first — agree on all 32 committed vectors, including the ones

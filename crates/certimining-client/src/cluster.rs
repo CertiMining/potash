@@ -191,7 +191,15 @@ impl Cluster {
         let ix = solana_instruction::Instruction {
             program_id: program,
             accounts,
-            data: certimining_checkpoint::instruction::PublishCheckpoint { epoch, root }.data(),
+            // The canonical bump, derived here and passed to the program, which makes one
+            // `create_program_address` call rather than searching for it (H-52). §1.8 makes
+            // canonicality the publisher's, and `checkpoint_bump` is where the publisher derives it.
+            data: certimining_checkpoint::instruction::PublishCheckpoint {
+                epoch,
+                root,
+                checkpoint_bump: crate::checkpoint_bump(&self.program_id, epoch),
+            }
+            .data(),
         };
         // A fresh blockhash per attempt, fetched here rather than promised in a comment.
         let blockhash = self.rpc.get_latest_blockhash().map_err(|_| None)?;
