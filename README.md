@@ -39,7 +39,7 @@ that description, which is why D-137 removed its bound.
 
 | | Threshold | Measured | By |
 |---|---|---|---|
-| `publish_checkpoint` compute | ≤ 15,000 CU | 9,066 CU | LiteSVM; the chain shows 8,810, which is the program before v0.2.4 ([why](docs/performance.md)) |
+| `publish_checkpoint` compute | ≤ 15,000 CU (**exceeded; see below**) | 9,071 to 25,575 CU, by epoch | LiteSVM; the chain shows 8,810, which is the program before v0.2.4 ([why](docs/performance.md)) |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | 5,687 CU | LiteSVM, and the same on chain |
 | Chain walk, 10,000 records, hash recomputation only | none (D-137) | 7–19.5 ms, machine-dependent | Rust |
 | Epoch root build, 256 leaves | none (D-137) | 0.20–0.38 ms | Rust |
@@ -51,6 +51,18 @@ that description, which is why D-137 removed its bound.
 | Full verification including per-record Ed25519 | none in v0.1 | 1,004 ms | TypeScript |
 | Landing-delay correlation with record count | \|r\| < 0.2 | −0.0440 | devnet, 200 epochs |
 | Landing-delay correlation with build time | \|r\| < 0.2 | +0.0693 | devnet, 200 epochs |
+
+**`publish_checkpoint` has no single compute figure, and §1.8's bound is exceeded.** Its cost is
+`8,810 + 1,500 × (255 − bump)` CU, where `bump` is the canonical bump of the epoch's checkpoint PDA:
+Anchor searches downward from 255 and each rejected candidate costs a `create_program_address`
+syscall, and the epoch is one of the seeds. So the figure is a property of the day, not of the
+instruction. CI records five rows with their epochs and bumps and asserts all of them.
+
+Five rejected candidates cross 15,000, which is about one epoch in 32 — and **four of the 212 epochs
+the superseded deployment actually published were over the bound**, by 1,500 to 6,000 CU. They
+succeeded because nothing here requests a compute budget, so the runtime's own 200,000 CU limit
+absorbed them. Whether 15,000 is the right number is open
+([#193](https://github.com/CertiMining/potash/issues/193)); the measurement is not.
 
 Two independent implementations — Rust and TypeScript, the second written from the specification
 alone by someone who never read the first — agree on all 32 committed vectors, including the ones
@@ -144,10 +156,23 @@ offline against a root they fetch themselves.
 published at a fixed time whether the epoch held 255 records or none, so the cadence discloses
 nothing about filing activity. OpenTimestamps and Bitcoin are anchor B: the epoch's root is
 timestamped independently, and the receipt's digest is attached to the checkpoint once the receipt
-carries a Bitcoin attestation. **That attestation is the receipt's claim, checked for presence and not
-against Bitcoin**: verifying it means recomputing the path to a block's merkle root, which needs a
-source of Bitcoin headers this client does not have ([#48](https://github.com/CertiMining/potash/issues/48),
-`crates/certimining-client/src/ots.rs`, `BitcoinClaim`). The integrity claim rests on both. Until anchor B attaches, a client reports the
+carries a Bitcoin attestation.
+
+**That attestation is checked against Bitcoin, and this paragraph used to say it was not.** All
+seventeen receipts this repository holds — the three repository-head stamps and the fourteen epoch
+rows — are confirmed: the digest each receipt's operations reach *is* the merkle root of the block it
+names. The headers are committed bytes and each must meet the target its own `bits` encode, which is
+the target in force in its retarget period, so an altered one fails arithmetic rather than a
+comparison with an authority. It runs in CI, offline
+([#48](https://github.com/CertiMining/potash/issues/48),
+`crates/certimining-client/src/bitcoin.rs`, `Confirmed`).
+
+What a reader still takes on this repository's word is the **checkpoint** one block below each range —
+its height, hash and difficulty, which is one query to any Bitcoin node. Everything after it is
+believed for its work. A `BitcoinClaim` is what a receipt says and a `Confirmed` is what a block
+shows, and the two are different types so a caller cannot treat one as the other.
+
+The integrity claim rests on both anchors. Until anchor B attaches, a client reports the
 epoch as `single` rather than `dual` — an epoch waiting hours for a Bitcoin block is the latency this
 design budgets for, and reporting it as anchored twice would be a failure the specification treats as
 a merge blocker.
@@ -170,11 +195,11 @@ taken by default.
 |---|---|
 | `crates/certimining-core` | digests, encodings, the record state machine. `no_std`, no Solana dependency |
 | `crates/certimining-log` | the epoch tree, inclusion proofs, the batcher, inclusion promises |
-| `crates/certimining-client` | fetching a root, the publish path, and the anchor-B client a worker would use. There is no worker: the daily cycle is run by hand (D-117, [#49](https://github.com/CertiMining/potash/issues/49)) |
+| `crates/certimining-client` | fetching a root, the publish path, the anchor-B client, and the three binaries around them: `batcher-handoff` builds an epoch and signs the handoff, `anchor-b-worker` publishes a root it was given and refuses to start without one it can verify, and `confirm-anchor-b` checks a receipt against Bitcoin headers. D-139 divides the cycle so `k_master` never reaches the process that runs unattended. Neither runs on a timer yet: the log is paused (D-117, D-139) |
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
-| `benches/` | §4.4a's performance figures: Criterion distributions, the reported wall-clock measures, and the CI regression band ([`docs/performance.md`](docs/performance.md)) |
+| `benches/` | §4.4a's performance figures: Criterion distributions, the reported wall-clock measures, and the CI regression band, which **fails** on drift past 15% — derived from 30 CI runs, in which no measure exceeded its baseline by more than 2.4% ([`docs/performance.md`](docs/performance.md)) |
 | `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
 | `ts/` | the independent TypeScript verifier a counterparty runs, with its own gate ([`ts/README.md`](ts/README.md)) |
 | `demo/` | three browser scenes and a read-only status page that reads devnet ([`demo/README.md`](demo/README.md)) |
