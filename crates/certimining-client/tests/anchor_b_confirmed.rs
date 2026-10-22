@@ -145,6 +145,10 @@ fn checkpoint_of(anchor: &Anchor) -> Checkpoint {
     Checkpoint {
         height: anchor.checkpoint_height,
         hash: from_displayed(anchor.checkpoint_hash),
+        // Not on a retarget boundary and no timestamp, so each window is verified inside one
+        // period and a range leaving it would be refused (H-53, #195). Every window here is four to
+        // ten headers, all inside one.
+        time: None,
         target: match target_from_bits(anchor.checkpoint_bits) {
             Some(target) => target,
             None => panic!("the committed bits do not decode to a target"),
@@ -417,6 +421,10 @@ fn every_attached_epoch_receipt_is_confirmed_by_the_block_it_names() {
         let checkpoint = Checkpoint {
             height: anchor.checkpoint_height,
             hash: from_displayed(anchor.checkpoint_hash),
+            // Not on a retarget boundary and no timestamp, so each window is verified inside one
+            // period and a range leaving it would be refused (H-53, #195). Every window here is four to
+            // ten headers, all inside one.
+            time: None,
             target: match target_from_bits(anchor.checkpoint_bits) {
                 Some(target) => target,
                 None => panic!("the committed bits do not decode to a target"),
@@ -451,6 +459,10 @@ fn every_epoch_chain_with_one_bit_of_work_undone_refuses_its_receipt() {
         let checkpoint = Checkpoint {
             height: anchor.checkpoint_height,
             hash: from_displayed(anchor.checkpoint_hash),
+            // Not on a retarget boundary and no timestamp, so each window is verified inside one
+            // period and a range leaving it would be refused (H-53, #195). Every window here is four to
+            // ten headers, all inside one.
+            time: None,
             target: match target_from_bits(anchor.checkpoint_bits) {
                 Some(target) => target,
                 None => panic!("the committed bits do not decode to a target"),
