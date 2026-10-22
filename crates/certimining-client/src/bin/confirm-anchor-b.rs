@@ -28,10 +28,16 @@
 //! whose height is a multiple of 2016 is what lets a chain cross a retarget boundary (H-53, #195).
 //!
 //! **What a success here means, and where it stops (H-53, #195).** Every header declares the target
-//! in force and meets it, so producing one costs what a real block at that difficulty cost. The chain
-//! must lie inside the checkpoint's retarget period — the target moves every 2016 blocks and nothing
-//! here computes where to — so a longer range is refused rather than accepted on whatever difficulty
-//! the headers happen to claim.
+//! in force and meets it, so producing one costs what a real block at that difficulty cost. A range
+//! that crosses a retarget boundary is verified when the checkpoint sits on one and carries its
+//! timestamp, because the boundary target is then computed from the timespan of the period that
+//! closed; a range that leaves the period without those is refused rather than accepted on whatever
+//! difficulty the headers happen to claim.
+//!
+//! *Corrected (H-60, #226).* This paragraph said the chain must lie inside one period because
+//! "nothing here computes where to", three lines after the paragraph above says that setting the
+//! checkpoint's timestamp is what lets a chain cross a boundary. H-53 added the capability and
+//! updated one sentence of two, so the tool's own description offered the feature and denied it.
 #![forbid(unsafe_code)]
 #![deny(
     clippy::unwrap_used,
@@ -40,7 +46,9 @@
     clippy::arithmetic_side_effects
 )]
 
-use certimining_client::bitcoin::{confirm, target_from_bits, Checkpoint, Header, GENESIS};
+use certimining_client::bitcoin::{
+    confirm, target_from_bits, Checkpoint, Header, GENESIS, POW_LIMIT,
+};
 use certimining_client::verify_receipt;
 use std::process::ExitCode;
 
@@ -99,9 +107,7 @@ fn checkpoint() -> Result<Checkpoint, String> {
                 // declare exactly this. An operator supplying an easier one would accept a chain
                 // mined for less than the real one cost, which is why it belongs to the checkpoint:
                 // the whole checkpoint is the trusted input, and one query to a node checks all of it.
-                target: target_from_bits(parsed).ok_or_else(|| {
-                    format!("{parsed:#010x} is not a target any header can carry")
-                })?,
+                target: checkpoint_target(parsed)?,
                 // **Set only for a checkpoint on a retarget boundary (H-53, #195).** It is what lets a
                 // chain cross one: the retarget at `h` needs the timestamp of the block at `h - 2016`,
                 // which is the checkpoint when its height is a multiple of 2016. Off a boundary it
@@ -186,6 +192,74 @@ fn main() -> ExitCode {
         Err(why) => {
             eprintln!("confirm-anchor-b: {why}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+/// The checkpoint's target from its compact encoding, refusing one Bitcoin itself could not carry.
+///
+/// **This cannot tell whether the operator supplied the *right* target.** That is exactly what the
+/// trust in a checkpoint is, and one query to a node settles it. What it can do is refuse a target
+/// **easier than Bitcoin's own limit**, which describes no mainnet block at any height: `0x207fffff`
+/// is minutes of mining on a laptop, and an independent review on 22 October supplied precisely that
+/// and reached a confirmation (H-57, issue #223).
+///
+/// The library takes the checkpoint on its caller's word by contract, and says so. This binary is the
+/// one place a checkpoint arrives from outside the process — three environment variables — so the
+/// floor belongs here rather than there.
+fn checkpoint_target(parsed: u32) -> Result<[u8; 32], String> {
+    let target = target_from_bits(parsed)
+        .ok_or_else(|| format!("{parsed:#010x} is not a target any header can carry"))?;
+    if target > POW_LIMIT {
+        return Err(format!(
+            "{parsed:#010x} is easier than Bitcoin's own limit, 0x1d00ffff, so no mainnet block \
+             carries it. A chain mined at this difficulty costs nothing to produce."
+        ));
+    }
+    Ok(target)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Mainnet's own limit is accepted, because it is a floor and not an exclusion.
+    #[test]
+    fn the_limit_itself_is_accepted() {
+        assert_eq!(checkpoint_target(0x1d00_ffff), Ok(POW_LIMIT));
+    }
+
+    /// A real in-force target from the committed anchors, which is far harder than the limit.
+    #[test]
+    fn a_real_mainnet_target_is_accepted() {
+        assert!(
+            checkpoint_target(0x1702_1ef0).is_ok(),
+            "the difficulty the committed receipt windows were mined at"
+        );
+    }
+
+    /// **The case the review exhibited.**
+    #[test]
+    fn a_target_easier_than_the_limit_is_refused() {
+        match checkpoint_target(0x207f_ffff) {
+            Err(why) => assert!(
+                why.contains("easier than Bitcoin's own limit"),
+                "the refusal says what is wrong with it: {why}"
+            ),
+            Ok(_) => panic!("0x207fffff describes no mainnet block and must be refused"),
+        }
+    }
+
+    /// Still refused for being structurally undecodable, which is a different fault with its own
+    /// message — so the floor did not swallow the check it was added beside.
+    #[test]
+    fn a_structurally_malformed_target_is_still_refused_as_malformed() {
+        match checkpoint_target(0x2100_0000) {
+            Err(why) => assert!(
+                why.contains("not a target any header can carry"),
+                "a malformed encoding keeps its own message: {why}"
+            ),
+            Ok(_) => panic!("a shift past 32 bytes is not a target"),
         }
     }
 }

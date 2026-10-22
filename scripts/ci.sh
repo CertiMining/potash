@@ -253,6 +253,11 @@ checks() {
   # needs no OpenTimestamps client and no network.
   check "client, ots feature" cargo clippy -p certimining-client --all-targets --features ots -- -D warnings
   check "anchor b" cargo test -p certimining-client --features ots --test ots
+  # **The binaries' own unit tests, which no group named.** Every `cargo test` line here passes
+  # explicit `--test` targets, and that excludes `--bin` ones — so a test written beside a binary's
+  # own logic was a test nobody ran, which is the same thing as no test. `confirm-anchor-b` holds the
+  # checkpoint floor of H-57 (#223).
+  check "confirm-anchor-b" cargo test -p certimining-client --features ots --bin confirm-anchor-b
   # **All seventeen committed receipts** against real mainnet headers (H-12): the three repository
   # anchors and the fourteen epochs with an attached receipt, each swept by its own test. Offline:
   # the headers are committed bytes and each is checked against the target its own `bits` encode, so
