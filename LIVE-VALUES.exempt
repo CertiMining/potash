@@ -1,5 +1,22 @@
 # Artifacts that carry a live value legitimately, one per line: the file, two spaces, the value, two
-# spaces, and why. Anything not recorded here fails generation.
+# spaces, **how many times it may appear**, two spaces, and why. Anything not recorded here fails
+# generation.
+#
+# **The occurrence count is new with H-20 (#60), and it is the part that is enforced rather than read.**
+# An exemption used to be a file and a value, so one entry blanketed every occurrence in that file: a
+# second use could appear beneath it and no gate would say so. The count is the raw number of times
+# the value appears in the file, comments included, because the gate compares it against the tree and
+# a qualified number cannot be compared. A count that no longer matches fails and names both figures.
+#
+# `LIVE-VALUES.txt` carried a hand-written block of exactly these counts, for the values the list
+# could not hold. Six of its rows were uses of the epoch index 20723; those epochs are listed now, so
+# those rows are entries below and a person no longer has to be the one checking them.
+#
+# **It also found a dead entry the moment it was added.** `vectors/V-P-12.json` was exempted for the
+# checkpoint address `H3ERVV7P3yNQxXXJrzVvmS2Nzh9qBd283kcAgMHzHDNn`, "the two-seed case". That address
+# appears nowhere in the repository but this file and `LIVE-VALUES.txt`: the vector was regenerated at
+# some point and the entry stayed. The old check asked only whether the list held the value, which it
+# does, so nothing could see it. The line is gone, and a count of zero is now refused outright.
 #
 # **The file is its repository-relative path, exactly (H-25 review, H3).** A bare file name was
 # accepted too, and one entry for `(X.json, value)` then exempted that value in every other `X.json`
@@ -9,14 +26,13 @@
 # The distinction the rule draws: an artifact whose *subject* is the announced deployment may name it;
 # an artifact that merely looks more concrete for carrying one may not.
 
-vectors/V-P-12.json  By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  §2.4's derivation is checked against this deployment, which is the vector's whole subject
-vectors/V-P-12.json  0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee  the same program id, as the bytes the derivation hashes
-vectors/V-P-12.json  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address §2.4 publishes and the derivation must reproduce
-vectors/V-P-12.json  0xabb9dc3b417c0d0fe2b99d109e5d1b0b8b71c7e693c20e756cabdf7e6d30d6fc  the same address, as bytes
-vectors/V-P-12.json  H3ERVV7P3yNQxXXJrzVvmS2Nzh9qBd283kcAgMHzHDNn  the two-seed case, answered for by the cluster, which is the check
-vectors/V-P-12.json  0xee4d543bd97a4e39c47cf3e12e017b329fe9d1b5bd0ee7bb9942f98206bb612f  the same address, as the bytes the vector carries
-ts/test/units.test.ts  By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  §2.4's derivation checked against the announced deployment, which is this test's subject (H-25)
-ts/test/units.test.ts  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address that derivation must reproduce, and the reason the test is worth running (H-25)
+vectors/V-P-12.json  By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  1  §2.4's derivation is checked against this deployment, which is the vector's whole subject
+vectors/V-P-12.json  0xa2f283cb90ea20af164f791073b89f5f22f59081f8509f664721ec57df9fb7ee  1  the same program id, as the bytes the derivation hashes
+vectors/V-P-12.json  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  1  the address §2.4 publishes and the derivation must reproduce
+vectors/V-P-12.json  0xabb9dc3b417c0d0fe2b99d109e5d1b0b8b71c7e693c20e756cabdf7e6d30d6fc  1  the same address, as bytes
+vectors/V-P-12.json  0xee4d543bd97a4e39c47cf3e12e017b329fe9d1b5bd0ee7bb9942f98206bb612f  1  the same address, as the bytes the vector carries
+ts/test/units.test.ts  By5XeTsCS4Qf17U9EuGUTzEFz29wQdFFeqJtfhnFQkZB  1  §2.4's derivation checked against the announced deployment, which is this test's subject (H-25)
+ts/test/units.test.ts  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  1  the address that derivation must reproduce, and the reason the test is worth running (H-25)
 
 # The two placeholder constants the 24 September deployment holds (review of PR #121, H-01).
 # These travelled out of the repository, not into it: `tests/devnet.rs` published them to a
@@ -31,3 +47,21 @@ ts/test/units.test.ts  CZM6LnvAX2D7FGbGwfWMCTG9rRhgzX3JjZQxTjNvRYz7  the address
 # from it.
 #
 # Every future record vector will need a line like this. H-45 (#137) records that cost.
+
+# **Epoch day indices (H-20, #60).** Listed since 21 October 2026, so these uses are exempted here
+# rather than recorded in a comment for a reader to check. Twelve of the twenty-seven uses in the
+# synthetic surface are artifacts whose subject really is the announced deployment; the other fifteen
+# were synthetic artifacts that had borrowed a real date, and those values were changed instead.
+
+demo/app.js  20723  1  Scene 1 rebuilds the announced log's first epoch, which is the scene's subject
+demo/fixtures/root.json  20723  1  the committed root fixture for that scene
+demo/fixtures/disclosure.json  20723  1  the package the scene verifies, same epoch
+demo/fixtures/tampered.json  20723  1  the altered copy of that package
+demo/test/footprint.test.mjs  20723  5  the scene's own account and two instructions, plus the comment explaining why the slot that used to sit beside them is gone
+vectors/V-P-12.json  20723  2  §2.4's derivation is checked against this deployment's epoch-20723 checkpoint, which is the vector's whole subject
+crates/certimining-client/tests/program_addresses.rs  20723  1  the same derivation through Solana's own find_program_address, spelled `20_723`, which is this file's whole subject
+crates/certimining-client/tests/publish_epoch.rs  20723  1  the range of the announced log's epochs this harness built, recorded in prose
+crates/certimining-client/tests/publish_epoch.rs  20730  1  the other end of that range, same sentence
+benches/src/lib.rs  20728  1  the epoch whose published root this benchmark's figures are compared against
+programs/certimining-checkpoint/tests/compute.rs  20727  1  the attachment whose measured compute units this harness is checked against
+programs/certimining-checkpoint/tests/compute.rs  20728  1  the publication whose measured compute units this harness is checked against

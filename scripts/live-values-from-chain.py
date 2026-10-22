@@ -75,6 +75,7 @@ RPC = os.environ.get("CERTIMINING_RPC", "https://api.devnet.solana.com")
 # §2.4's CheckpointAccount: 8 discriminator, 2 schema, 8 epoch, 32 root, 8 slot, 8 unix, 32 receipt
 # digest, 1 anchor kind, 1 bump, 6 reserved.
 CHECKPOINT_LEN = 106
+CHECKPOINT_EPOCH = (10, 18)
 CHECKPOINT_ROOT = (18, 50)
 CHECKPOINT_SLOT = (50, 58)
 CHECKPOINT_UNIX = (58, 66)
@@ -343,10 +344,33 @@ def main() -> int:
     #: A refusal is unconditional: no entry in the list can satisfy it, because the point is that the
     #: script does not know what it is looking at.
     refusals: list[str] = []
+    #: Values this script read and `LIVE-VALUES.txt` cannot hold, which is neither a pass nor a
+    #: failure and has to be said rather than dropped. Only one class reaches it: an epoch day index
+    #: of fewer than five digits.
+    review_enforced: list[str] = []
 
     def check(value: str, what: str) -> None:
         if value.lower() not in listed:
             missing.append(f"{what}: {value}")
+
+    def check_epoch(value: int, what: str) -> None:
+        """An epoch day index, which H-20 made listable — above the floor the list can hold.
+
+        Every deployment here publishes five-digit day indices but one: the program superseded on 24
+        September holds a single checkpoint, at epoch 1. `LIVE-VALUES.txt` cannot hold a one-digit
+        value, because it would match nearly every file in the corpus, so that one stays
+        review-enforced and is **named** rather than reported as missing or dropped. A check that
+        cannot cover a value says which value; that is the difference between this and the silent pass
+        this script was rewritten to stop making.
+        """
+        text = str(value)
+        if len(text) < 5:
+            review_enforced.append(
+                f"{what}: {text} — under the five-digit floor LIVE-VALUES.txt can hold, so it is "
+                "review-enforced and nothing here checks it"
+            )
+            return
+        check(text, what)
 
     def check_address(raw: bytes, what: str) -> None:
         """Both spellings of an address, because the list carries both.
@@ -404,6 +428,12 @@ def main() -> int:
                 # real slot beside a fabricated root and a fabricated receipt digest and both halves of the
                 # gate exited 0. They are little-endian u64 and i64 at §2.4's offsets, compared as the
                 # decimal text the list holds.
+                # **The epoch day index, listed since H-20 (#60).** The sentence this script printed
+                # said epoch numbers were review-enforced, and `LIVE-VALUES.txt` said they were
+                # "deliberately absent" on the argument that a UTC day index is a date rather than
+                # something the deployment produced. The index records the day the batcher published,
+                # which is exactly what a fixture borrowing it borrows, so it is listed and read here.
+                check_epoch(le_u64(account_data, CHECKPOINT_EPOCH), f"an epoch day index stored at {address}, owned by {label}")
                 check(str(le_u64(account_data, CHECKPOINT_SLOT)), f"a published slot stored at {address}, owned by {label}")
                 check(str(le_i64(account_data, CHECKPOINT_UNIX)), f"a published timestamp stored at {address}, owned by {label}")
                 digest = hex32(account_data, CHECKPOINT_RECEIPT)
@@ -457,6 +487,8 @@ def main() -> int:
                 if co != signature:
                     check(co, f"a co-signature inside transaction {signature[:8]}…")
 
+    for line in dict.fromkeys(review_enforced):
+        print(f"live-values: {line}")
     for line in dict.fromkeys(refusals):
         print(f"live-values: {line}", file=sys.stderr)
     for line in dict.fromkeys(missing):
@@ -481,10 +513,12 @@ def main() -> int:
     # a live bump this script does not read; a success message may not claim more than its own coverage.
     print(
         f"live-values: of the fields this script reads — addresses, roots, publication slots and "
-        f"timestamps, receipt digests, the authority and every **transaction id** "
-        f"`getSignaturesForAddress` returns **and every signature inside those transactions** — "
+        f"timestamps, **epoch day indices**, receipt digests, the authority and every **transaction "
+        f"id** `getSignaturesForAddress` returns **and every signature inside those transactions** — "
         f"**every deployment named in {PROGRAM_FILE.name} and {SUPERSEDED_FILE.name}** holds nothing "
-        f"{LIST.name} does not. Not read: bumps and epoch numbers, which are review-enforced (H-20). "
+        f"{LIST.name} does not. Not read: bumps, which stay review-enforced because one of 256 "
+        f"possibilities carries no provenance. Read and not listable: "
+        f"{len(set(review_enforced))} epoch index(es) under the five-digit floor, each named above. "
         f"This sentence read 'not asked at all: the two superseded deployments ... whose addresses "
         f"this list does not hold' after the commit that added all 215 of those addresses, so it was "
         f"false in two directions at once; they are now asked, and listing them was never the point."

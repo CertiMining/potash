@@ -30,7 +30,10 @@ fn real_epoch() -> (BuiltEpoch, Digest, SubmissionId) {
     id[0] = 1;
     let mut leaf = [0u8; 32];
     leaf[0] = 0x77;
-    let built = <BuiltEpoch as EpochTree>::build::<NativeKeccak>(20_723, 8, &master, &[(id, leaf)])
+    // 40_000 is not a day index any deployment published (H-20, #60). It used to be the announced
+    // log's first epoch, which the control never needed: what it fixes is a tree, a height and one
+    // leaf.
+    let built = <BuiltEpoch as EpochTree>::build::<NativeKeccak>(40_000, 8, &master, &[(id, leaf)])
         .expect("the engine builds this epoch");
     (built, leaf, id)
 }
@@ -55,9 +58,9 @@ fuzz_target!(|input: Input| {
     // **A second genuine proof, and this one varies (H-24).** The control above is one epoch, one
     // leaf, one identifier and one height, so it is one slot and one path. Arbitrary input is
     // overwhelmingly a refusal and supplies no second genuine proof, which leaves path-selective
-    // refusal alive: a review made `verify` refuse every proof whose epoch is not 20723 and this
-    // target stayed green, because its only genuine proof was at 20723 and every other proof it
-    // generated was permitted to refuse.
+    // refusal alive: a review made `verify` refuse every proof whose epoch is not the control's and
+    // target stayed green, because its only genuine proof was at that one epoch and every other
+    // proof it generated was permitted to refuse.
     //
     // So a genuine epoch is built from the input as well. The height is 4 to 6 rather than the
     // deployment's 8: the fixed control already covers 8, and a second full-height tree per

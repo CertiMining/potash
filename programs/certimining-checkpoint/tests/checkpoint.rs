@@ -33,7 +33,18 @@ const DEPLOYED_HEIGHT: u8 = 8;
 
 /// §1.4's epoch clock. Every test below runs on one fixed day, so `start_epoch` is a constant rather
 /// than whatever the runner's wall clock says (D-109).
-const START: u64 = 20_721;
+/// **The day is 40_001, which is not a date any deployment published (H-20, #60).** It used to be the
+/// first epoch the program superseded on 25 September holds, and four harnesses carried that live
+/// value for no reason: a pinned clock needs a well-formed day index, not a real one. The old value is
+/// not repeated here, because naming it would put it back.
+///
+/// **Why 40_001 and not 40_000, said rather than left to look arbitrary.** `publish_checkpoint`'s
+/// compute cost depends on the canonical bump of the epoch's checkpoint PDA — Anchor searches downward
+/// from 255 and each rejected candidate costs a `create_program_address` syscall — so the epoch a
+/// harness pins changes the figure. 40_000's bump is 252 and 40_001's is 255, which is what every
+/// recorded figure in this repository was measured at. Measured and filed as H-52 (#193); a pinned
+/// clock is not the place to change what the compute harness is measuring.
+const START: u64 = 40_001;
 
 fn pin_the_clock(svm: &mut LiteSVM) {
     let mut clock: anchor_lang::prelude::Clock = svm.get_sysvar();

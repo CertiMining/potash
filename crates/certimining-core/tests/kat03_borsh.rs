@@ -168,13 +168,13 @@ fn kat03_the_spi_preimage_is_borsh_of_its_fields() {
 fn kat03_the_handoff_preimage_is_borsh_of_its_fields() {
     let want = borsh_fields(&[
         to_vec(b"CMopsHOF").unwrap(),
-        to_vec(&20_739u64).unwrap(),
+        to_vec(&20_357u64).unwrap(),
         to_vec(&8u8).unwrap(),
         to_vec(&LEAF).unwrap(),
     ]);
     assert_eq!(want.len(), 49, "8 + 8 + 1 + 32 (D-139)");
     let p = HandoffPreimage {
-        epoch: 20_739,
+        epoch: 20_357,
         height: 8,
         root: LEAF,
     };
@@ -189,15 +189,15 @@ fn kat03_the_handoff_preimage_is_borsh_of_its_fields() {
 #[test]
 fn kat03_a_handoff_cannot_be_read_as_a_promise() {
     let handoff = bytes_of(&HandoffPreimage {
-        epoch: 20_739,
+        epoch: 20_357,
         height: 8,
         root: LEAF,
     });
     let promise = bytes_of(&SpiPreimage {
         leaf: LEAF,
         submission_id: SUBMISSION,
-        accepted_epoch: 20_739,
-        promised_epoch: 20_741,
+        accepted_epoch: 20_357,
+        promised_epoch: 20_359,
         max_merge_delay: 2,
     });
 
