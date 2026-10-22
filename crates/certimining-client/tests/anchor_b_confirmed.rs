@@ -211,3 +211,225 @@ fn a_chain_with_one_bit_of_work_undone_refuses_the_same_receipt() {
         other => panic!("a header whose work was undone must be refused: {other:?}"),
     }
 }
+
+/// One of the log's own epochs: its receipt, and the chain that answers for the height it names.
+///
+/// **The root is not written here.** It is read from `LIVE-VALUES.txt`, which is the repository's
+/// record of what the chain holds, so there is one copy of each published root rather than two —
+/// and reading it means this test also checks that record against the receipts. A wrong root there
+/// makes `verify_receipt` answer `WrongRoot` and fails this file.
+struct EpochAnchor {
+    epoch: u64,
+    headers: &'static [u8],
+    checkpoint_height: u32,
+    checkpoint_hash: &'static str,
+    /// The Bitcoin height the receipt names, which this test confirms rather than accepts.
+    height: u32,
+}
+
+/// The fourteen epochs with an attached receipt.
+///
+/// **Twelve distinct heights for fourteen receipts**, and that is the calendar rather than an error:
+/// epochs 20726 and 20727 were stamped into block 969474, and 20732 and 20733 into 970294. Two
+/// submissions can reach one Bitcoin block, which is what a calendar aggregating digests does.
+const EPOCH_ANCHORS: [EpochAnchor; 14] = [
+    EpochAnchor {
+        epoch: 20723,
+        headers: include_bytes!("data/mainnet-headers-968914-968917.bin"),
+        checkpoint_height: 968913,
+        checkpoint_hash: "0000000000000000000020c010c4fbf57615dacaceac0da5941ded710f9bcbb0",
+        height: 968917,
+    },
+    EpochAnchor {
+        epoch: 20724,
+        headers: include_bytes!("data/mainnet-headers-968920-968923.bin"),
+        checkpoint_height: 968919,
+        checkpoint_hash: "00000000000000000001db6aca70ede91b51b6d351eceff6d1517199bea85b36",
+        height: 968923,
+    },
+    EpochAnchor {
+        epoch: 20725,
+        headers: include_bytes!("data/mainnet-headers-969170-969173.bin"),
+        checkpoint_height: 969169,
+        checkpoint_hash: "000000000000000000001913077c626d1e143fbd41054f700245dc15ba5f6153",
+        height: 969173,
+    },
+    EpochAnchor {
+        epoch: 20726,
+        headers: include_bytes!("data/mainnet-headers-969471-969474.bin"),
+        checkpoint_height: 969470,
+        checkpoint_hash: "000000000000000000015f8ae7f77d172dc90a46bac7b69f24db317ce6ee7ab6",
+        height: 969474,
+    },
+    EpochAnchor {
+        epoch: 20727,
+        headers: include_bytes!("data/mainnet-headers-969471-969474.bin"),
+        checkpoint_height: 969470,
+        checkpoint_hash: "000000000000000000015f8ae7f77d172dc90a46bac7b69f24db317ce6ee7ab6",
+        height: 969474,
+    },
+    EpochAnchor {
+        epoch: 20728,
+        headers: include_bytes!("data/mainnet-headers-969629-969632.bin"),
+        checkpoint_height: 969628,
+        checkpoint_hash: "000000000000000000015e6ca9cc235bffa7a52aa5689c77e14232bfd889bf28",
+        height: 969632,
+    },
+    EpochAnchor {
+        epoch: 20729,
+        headers: include_bytes!("data/mainnet-headers-969806-969809.bin"),
+        checkpoint_height: 969805,
+        checkpoint_hash: "00000000000000000001bbc2841099e501d370266206aac3f30ac64976f59117",
+        height: 969809,
+    },
+    EpochAnchor {
+        epoch: 20730,
+        headers: include_bytes!("data/mainnet-headers-969866-969869.bin"),
+        checkpoint_height: 969865,
+        checkpoint_hash: "00000000000000000000faadee7fca154253ae78aec00f51101d40ac615bedbc",
+        height: 969869,
+    },
+    EpochAnchor {
+        epoch: 20731,
+        headers: include_bytes!("data/mainnet-headers-969965-969968.bin"),
+        checkpoint_height: 969964,
+        checkpoint_hash: "000000000000000000004f94bcc7e1cd2d5c23b11f63533244b67e5fe58294a6",
+        height: 969968,
+    },
+    EpochAnchor {
+        epoch: 20732,
+        headers: include_bytes!("data/mainnet-headers-970291-970294.bin"),
+        checkpoint_height: 970290,
+        checkpoint_hash: "0000000000000000000193abbc886e0c016074cd1075a9b97a5dd8491d4a7b59",
+        height: 970294,
+    },
+    EpochAnchor {
+        epoch: 20733,
+        headers: include_bytes!("data/mainnet-headers-970291-970294.bin"),
+        checkpoint_height: 970290,
+        checkpoint_hash: "0000000000000000000193abbc886e0c016074cd1075a9b97a5dd8491d4a7b59",
+        height: 970294,
+    },
+    EpochAnchor {
+        epoch: 20734,
+        headers: include_bytes!("data/mainnet-headers-970579-970582.bin"),
+        checkpoint_height: 970578,
+        checkpoint_hash: "000000000000000000018595d41b4c02d96d24dc1939b9d857a01fa750ffd28b",
+        height: 970582,
+    },
+    EpochAnchor {
+        epoch: 20735,
+        headers: include_bytes!("data/mainnet-headers-970569-970572.bin"),
+        checkpoint_height: 970568,
+        checkpoint_hash: "00000000000000000001d62038106eb14d0843d95b5f19a878cb3a144eec8c27",
+        height: 970572,
+    },
+    EpochAnchor {
+        epoch: 20736,
+        headers: include_bytes!("data/mainnet-headers-970854-970857.bin"),
+        checkpoint_height: 970853,
+        checkpoint_hash: "000000000000000000012e5db3d4ec26d50091ecab13eb7abd6359eb39728dea",
+        height: 970857,
+    },
+];
+
+/// The published root for an epoch, read from the repository's record of what the chain holds.
+fn published_root(epoch: u64) -> [u8; 32] {
+    let text = String::from_utf8_lossy(&repo("LIVE-VALUES.txt")).into_owned();
+    let want = format!("published root, epoch {epoch}");
+    for line in text.lines() {
+        let Some((value, what)) = line.split_once("  ") else {
+            continue;
+        };
+        if what.trim() != want {
+            continue;
+        }
+        let bare = value.trim().strip_prefix("0x").unwrap_or(value.trim());
+        return from_hex(bare);
+    }
+    panic!("LIVE-VALUES.txt holds no published root for epoch {epoch}");
+}
+
+/// 64 hexadecimal characters as the 32 bytes they spell, in the order written.
+fn from_hex(text: &str) -> [u8; 32] {
+    assert_eq!(text.len(), 64, "a root is 64 hex characters: {text:?}");
+    let mut out = [0u8; 32];
+    for (i, pair) in text.as_bytes().chunks_exact(2).enumerate() {
+        let hex = match std::str::from_utf8(pair) {
+            Ok(hex) => hex,
+            Err(e) => panic!("{text:?}: {e}"),
+        };
+        match (u8::from_str_radix(hex, 16), out.get_mut(i)) {
+            (Ok(byte), Some(slot)) => *slot = byte,
+            (Err(e), _) => panic!("{hex:?}: {e}"),
+            (_, None) => panic!("{text:?} is longer than 32 bytes"),
+        }
+    }
+    out
+}
+
+/// **Every epoch the log attached a receipt to, confirmed by the block the receipt names.**
+///
+/// `docs/anchoring.md` has said of every epoch row that the height is the one the receipt carries and
+/// that nothing checks it against Bitcoin. This is the check, over all fourteen.
+#[test]
+fn every_attached_epoch_receipt_is_confirmed_by_the_block_it_names() {
+    for anchor in &EPOCH_ANCHORS {
+        let receipt = repo(&format!("anchors/epochs/{}.ots", anchor.epoch));
+        let stamped = published_root(anchor.epoch);
+        let claim = match verify_receipt(&receipt, &stamped) {
+            Ok(claim) => claim,
+            Err(e) => panic!("epoch {}: {e:?}", anchor.epoch),
+        };
+        assert_eq!(
+            claim.height, anchor.height,
+            "epoch {}: the receipt names another block",
+            anchor.epoch
+        );
+        let checkpoint = Checkpoint {
+            height: anchor.checkpoint_height,
+            hash: from_displayed(anchor.checkpoint_hash),
+            easiest_target: POW_LIMIT,
+        };
+        match confirm(claim, checkpoint, &headers_of(anchor.headers)) {
+            Ok(confirmed) => assert_eq!(confirmed.height, anchor.height),
+            Err(e) => panic!(
+                "epoch {}: the block at {} does not confirm this receipt: {e:?}",
+                anchor.epoch, anchor.height
+            ),
+        }
+    }
+}
+
+/// The control, over the whole set: one bit undone in each chain and every receipt must be refused.
+#[test]
+fn every_epoch_chain_with_one_bit_of_work_undone_refuses_its_receipt() {
+    for anchor in &EPOCH_ANCHORS {
+        let receipt = repo(&format!("anchors/epochs/{}.ots", anchor.epoch));
+        let claim = match verify_receipt(&receipt, &published_root(anchor.epoch)) {
+            Ok(claim) => claim,
+            Err(e) => panic!("epoch {}: {e:?}", anchor.epoch),
+        };
+        let mut headers = headers_of(anchor.headers);
+        let Some(first) = headers.get_mut(0) else {
+            panic!("epoch {}: the chain is empty", anchor.epoch)
+        };
+        if let Some(slot) = first.0.get_mut(76) {
+            *slot ^= 0x01;
+        }
+        let checkpoint = Checkpoint {
+            height: anchor.checkpoint_height,
+            hash: from_displayed(anchor.checkpoint_hash),
+            easiest_target: POW_LIMIT,
+        };
+        match confirm(claim, checkpoint, &headers) {
+            Err(HeaderRefused::InsufficientWork { at, .. }) => {
+                assert_eq!(at, anchor.checkpoint_height.saturating_add(1));
+            }
+            other => panic!(
+                "epoch {}: a header whose work was undone must be refused: {other:?}",
+                anchor.epoch
+            ),
+        }
+    }
+}

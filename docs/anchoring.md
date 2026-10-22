@@ -50,9 +50,28 @@ so it is the same timestamp and not a second one.
 
 That two-stage shape is the one D-112 gives an epoch, and the honesty INV-ANCH-05 requires of one: a
 calendar's promise is not an anchor, and a row claiming otherwise would be the defect this document
-exists against. As with every epoch row, the block heights are the ones the receipt carries and
-nothing in this repository checks them against Bitcoin, which is H-12
-([#48](https://github.com/CertiMining/potash/issues/48)).
+exists against.
+
+**Those heights are checked against Bitcoin now, and this paragraph used to say they were not.** H-12
+([#48](https://github.com/CertiMining/potash/issues/48)) closed on 22 October 2026. For every receipt
+this repository holds — these three and the fourteen epoch rows below —
+`crates/certimining-client/tests/anchor_b_confirmed.rs` executes the receipt's operations from the
+root it stamped and checks that the digest they reach is the merkle root of the block at the height
+the receipt names. The headers are committed bytes and each must meet the target its own `bits`
+encode and name its predecessor, so an altered one fails arithmetic rather than a comparison with an
+authority. It runs in CI, offline.
+
+Three things it does not establish, so the row is read for what it is:
+
+* **The checkpoint is this repository's word.** Each range starts one block below the attested height
+  and the hash of that block is a constant in the test. Checking it is one query to any Bitcoin node
+  or explorer; everything after it is believed for its work.
+* **A header's declared difficulty is not checked against Bitcoin's rules**, only against a floor. A
+  chain fabricated from the checkpoint by mining at the minimum would be accepted, which costs far
+  less than the real history. That is H-53 ([#195](https://github.com/CertiMining/potash/issues/195)).
+* **Where a receipt carries more than one Bitcoin attestation, one height is checked.** It is the
+  first in the operation tree, which is the one the row names and the one `verify_receipt` returns.
+  The others are still only what the receipt carries.
 
 Unlike an epoch's `receipt_digest`, nothing here is write-once — these are files, not an on-chain
 field — so replacing the pending receipt costs a commit and no more.
@@ -301,8 +320,11 @@ day 20730, and `attach_anchor_receipt` committed the digest of the upgraded rece
 969,632 because that is the height the attached claim carries — the first Bitcoin attestation in the
 receipt's operation tree, which is what `verify_receipt` returns. The receipt also carries a second
 calendar's attestation at block 969,627, and naming one of two is the convention every row here follows.
-Neither height is checked against Bitcoin by anything in this repository, which is H-12
-([#48](https://github.com/CertiMining/potash/issues/48)).
+**Block 969,632 is confirmed**: the digest this receipt's operations reach is that block's merkle root,
+checked against committed mainnet headers in CI (H-12,
+[#48](https://github.com/CertiMining/potash/issues/48)). Block 969,627 is not — it is the second
+attestation, and one height is checked per receipt, with the limits the §"Three things it does not
+establish" note above gives.
 
 **A day has been missed five times, and all five were paid the day after.** Nothing published on day
 20726; on day 20727 both 20726 and 20727 were published, stamped and attached. Nothing published on day
