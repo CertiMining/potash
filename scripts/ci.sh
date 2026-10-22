@@ -248,6 +248,13 @@ checks() {
   # kat01-onchain instead, because `checks` installs no Agave toolchain and builds no artefact — CI
   # found that by failing where a local run had passed against a stale target directory.
   check "test client" cargo test -p certimining-client --test fetch --test schedule
+  # **V-P-12, which no group named (H-62, #230).** `program_addresses` holds two offline tests and
+  # neither was run by anything. One of them is `v_p_12_the_order_the_specification_first_printed_is_
+  # not_what_this_derives` — the regression test for §2.4 having printed the PDA seeds in the wrong
+  # order, which an implementer could have followed and been unable to fetch the log. The remedy for
+  # a defect that shipped was itself never exercised. It needs no compiled program and no cluster, so
+  # it belongs here beside the other offline client tests.
+  check "address vector" cargo test -p certimining-client --test program_addresses
   check "client, cluster feature" cargo clippy -p certimining-client --all-targets --features cluster -- -D warnings
   # Anchor B (E-10). The unit tests read a committed receipt from disk and reach no calendar, so CI
   # needs no OpenTimestamps client and no network.
