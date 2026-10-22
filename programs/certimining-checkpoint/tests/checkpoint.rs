@@ -92,6 +92,15 @@ impl Log {
         .0
     }
 
+    /// The canonical bump, which `publish_checkpoint` takes rather than searching for (H-52).
+    fn checkpoint_bump(&self, epoch: u64) -> u8 {
+        Pubkey::find_program_address(
+            &[CheckpointAccount::SEED, &epoch.to_le_bytes()],
+            &self.program_id,
+        )
+        .1
+    }
+
     fn send(&mut self, ix: Instruction, signers: &[&Keypair]) -> Result<(), u32> {
         let message = Message::new(&[ix], Some(&self.payer.pubkey()));
         let mut all: Vec<&Keypair> = vec![&self.payer];
@@ -136,6 +145,35 @@ impl Log {
         self.send(ix, &[])
     }
 
+    /// `publish`, with the instruction data replaced by whatever the caller hands over.
+    ///
+    /// For the two wire-format tests below. The accounts are the ones a correct publish uses, so the
+    /// only thing under test is the data.
+    fn publish_with_data(
+        &mut self,
+        epoch: u64,
+        signer: &Keypair,
+        data: Vec<u8>,
+    ) -> Result<(), u32> {
+        let checkpoint = self.checkpoint(epoch);
+        let ix = Instruction {
+            program_id: self.program_id,
+            accounts: certimining_checkpoint::accounts::Publish {
+                config: self.config,
+                checkpoint,
+                authority: anchor_lang::prelude::Pubkey::from(signer.pubkey().to_bytes()),
+                payer: anchor_lang::prelude::Pubkey::from(self.payer.pubkey().to_bytes()),
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None)
+            .into_iter()
+            .map(convert_meta)
+            .collect(),
+            data,
+        };
+        self.send(ix, &[signer])
+    }
+
     fn publish(&mut self, epoch: u64, root: [u8; 32], signer: &Keypair) -> Result<(), u32> {
         let checkpoint = self.checkpoint(epoch);
         let ix = Instruction {
@@ -151,7 +189,12 @@ impl Log {
             .into_iter()
             .map(convert_meta)
             .collect(),
-            data: certimining_checkpoint::instruction::PublishCheckpoint { epoch, root }.data(),
+            data: certimining_checkpoint::instruction::PublishCheckpoint {
+                epoch,
+                root,
+                checkpoint_bump: self.checkpoint_bump(epoch),
+            }
+            .data(),
         };
         self.send(ix, &[signer])
     }
@@ -579,4 +622,61 @@ fn v_n_26_a_start_epoch_that_is_not_todays_day_index_is_0x05() {
     let mut log = Log::new();
     log.initialize_with(DEPLOYED_HEIGHT, START)
         .expect("today's day index is the one value this accepts");
+}
+
+/// **What the program does with instruction data of the wrong length** (H-52, #193).
+///
+/// §1.8 says `publish_checkpoint` takes 49 bytes, and this establishes which half of that the program
+/// enforces. It matters because the announced deployment has **not** been redeployed: it runs a program
+/// that takes 48, and a resumed publish would send it 49.
+///
+/// The two directions are not symmetric, and the dangerous one is the one that succeeds.
+#[test]
+fn instruction_data_one_byte_short_is_refused_and_a_trailing_byte_is_ignored() {
+    let mut log = Log::new();
+    log.initialize(DEPLOYED_HEIGHT).expect("initialize");
+    // `START` is the first publishable epoch — `initialize` leaves `last_epoch` one below
+    // `start_epoch` — and the clock `initialize` pinned is already that day, so v0.2.4's calendar
+    // bound is satisfied without moving it.
+    let epoch = START;
+    let bump = log.checkpoint_bump(epoch);
+    let full = certimining_checkpoint::instruction::PublishCheckpoint {
+        epoch,
+        root: [7u8; 32],
+        checkpoint_bump: bump,
+    }
+    .data();
+    assert_eq!(
+        full.len(),
+        49,
+        "§1.8: 8 discriminator, 8 epoch, 32 root, 1 bump"
+    );
+
+    // **Short is refused.** 102 is Anchor's `InstructionDidNotDeserialize`, which is why a program
+    // built after this change cannot be driven by a publisher from before it: the failure is loud.
+    let short = full.get(..48).map(<[u8]>::to_vec).expect("49 bytes");
+    let authority = log.authority.insecure_clone();
+    assert_eq!(
+        log.publish_with_data(epoch, &authority, short),
+        Err(102),
+        "a publisher that predates v0.2.7 sends 48 bytes, and this program must refuse them rather \
+         than read a root out of a buffer that ends early"
+    );
+
+    // **A trailing byte is ignored**, which is the direction that matters for the deployment. The
+    // program reads the fields it knows and does not look at what follows, so the *older* program —
+    // the one on chain, which knows 48 — would accept the 49 a current publisher sends and silently
+    // discard the bump, then search for it as it always did. The publish would succeed, the computed
+    // bump would be thrown away, and nothing would say so.
+    //
+    // That is why §1.8's 49 describes the publisher rather than a bound the program enforces, and why
+    // resuming the log against the un-redeployed program is a decision rather than a non-event.
+    let mut longer = full;
+    longer.push(0);
+    assert_eq!(
+        log.publish_with_data(epoch, &authority, longer),
+        Ok(()),
+        "trailing instruction data is not read and not refused, which is what makes the wire-format \
+         break invisible in the direction the deployment is in"
+    );
 }

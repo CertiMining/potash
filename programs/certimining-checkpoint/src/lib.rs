@@ -81,7 +81,37 @@ pub mod certimining_checkpoint {
 
     /// Publishes one root for one epoch. Checks in the order §2.4 states: the checkpoint account
     /// already exists is `0x0E`, and only then an epoch that is not `last + 1` is `0x0D` (D-80).
-    pub fn publish_checkpoint(ctx: Context<Publish>, epoch: u64, root: [u8; 32]) -> Result<()> {
+    /// §2.4's `publish_checkpoint`, which takes the checkpoint PDA's bump rather than finding it.
+    ///
+    /// **The bump is instruction data since v0.2.7 (H-52, issue #193), and the reason is compute.**
+    /// `#[account(init, seeds = …, bump)]` makes Anchor search downward from 255 for the canonical
+    /// bump, and each rejected candidate costs one `create_program_address` syscall at 1,500 CU. The
+    /// epoch is one of the seeds, so the cost was a property of the day: `8,810 + 1,500 × (255 − bump)`,
+    /// which crossed §1.8's bound for about one epoch in 32 and did cross it for four of the 212 epochs
+    /// the program superseded on 25 September published. Given the bump, Anchor makes one call and the
+    /// cost is a property of the instruction again.
+    ///
+    /// `attach_anchor_receipt` has always worked this way — `bump = checkpoint.bump`, read from the
+    /// account it is updating — which is why its figure never moved.
+    ///
+    /// **What this does not check, stated because it cannot be checked cheaply.** That the bump is the
+    /// *canonical* one. Proving it is the largest valid bump means showing every larger candidate is
+    /// on the curve, which is the search this change removes: there is no algebraic shortcut, because
+    /// a PDA is a hash. So canonicality is the publisher's to enforce, and §1.8 says so.
+    ///
+    /// What a non-canonical bump would do, so the exposure is legible rather than implied: it names a
+    /// different valid PDA for the same seeds, so the account would be created somewhere no verifier
+    /// looks. Every verifier derives the address canonically, finds nothing, and reports the epoch
+    /// absent — while `last_epoch` advanced, which `sequence_lag` surfaces as a published range whose
+    /// account is missing from the same view (H-54). And only the checkpoint authority can do it,
+    /// because this instruction requires that signature: it is the authority damaging its own log in
+    /// a way every reader sees at once, not an attack anyone else can mount.
+    pub fn publish_checkpoint(
+        ctx: Context<Publish>,
+        epoch: u64,
+        root: [u8; 32],
+        checkpoint_bump: u8,
+    ) -> Result<()> {
         require!(
             ctx.accounts.config.schema_version == SCHEMA_VERSION,
             CheckpointError::UnsupportedSchemaVersion
@@ -145,7 +175,7 @@ pub mod certimining_checkpoint {
         // program's `create_account` refuses any address already holding lamports, so an address a
         // third party funded could never be written through it; topping up, allocating and assigning
         // reaches the same account from either starting point (D-104).
-        let bump = ctx.bumps.checkpoint;
+        let bump = checkpoint_bump;
         let epoch_le = epoch.to_le_bytes();
         let seeds: &[&[u8]] = &[CheckpointAccount::SEED, &epoch_le, &[bump]];
         let signer: &[&[&[u8]]] = &[seeds];
@@ -317,15 +347,19 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(epoch: u64)]
+#[instruction(epoch: u64, root: [u8; 32], checkpoint_bump: u8)]
 pub struct Publish<'info> {
     #[account(mut, seeds = [LogConfig::SEED], bump = config.bump, has_one = authority)]
     pub config: Account<'info, LogConfig>,
     /// Unchecked on purpose: existence is the first thing `publish_checkpoint` decides, and an
     /// account declared with `init` cannot be inspected before Anchor creates it (D-80).
-    /// CHECK: the seeds constrain it to this program's checkpoint PDA for `epoch`, and the
-    /// instruction refuses it unless it is empty before creating it itself.
-    #[account(mut, seeds = [CheckpointAccount::SEED, &epoch.to_le_bytes()], bump)]
+    /// CHECK: the seeds and the supplied bump constrain it to a checkpoint PDA of this program for
+    /// `epoch`, and the instruction refuses it unless it is empty before creating it itself.
+    ///
+    /// **`bump = checkpoint_bump` is one `create_program_address` call** where a bare `bump` is a
+    /// search from 255 downward (H-52). It still proves the account is a valid PDA for these seeds;
+    /// it does not prove the bump is canonical, which the handler's documentation and §1.8 both say.
+    #[account(mut, seeds = [CheckpointAccount::SEED, &epoch.to_le_bytes()], bump = checkpoint_bump)]
     pub checkpoint: UncheckedAccount<'info>,
     pub authority: Signer<'info>,
     #[account(mut)]

@@ -23,8 +23,8 @@ const PROGRAM: &str = concat!(
 const PUBLISH_LIMIT: u64 = 15_000;
 
 /// §1.4's epoch clock. The figures below are measured on fixed days, so `start_epoch` is a constant
-/// rather than whatever the runner's wall clock says (D-109), and `START` is the one the single
-/// figures belong to.
+/// rather than whatever the runner's wall clock says (D-109), and `START` is the table's first row —
+/// the one `initialize` and `attach_anchor_receipt`'s single figures were taken at.
 ///
 /// **The day is 40_001, which is not a date any deployment published (H-20, #60).** It used to be the
 /// first epoch the program superseded on 25 September holds, and four harnesses carried that live
@@ -81,31 +81,39 @@ const ATTACH_CU: u64 = 5_687;
 
 /// What `publish_checkpoint` costs, per epoch, with the bump each epoch's PDA has (H-52, #193).
 ///
-/// **Why it varies.** `#[account(init, seeds = …, bump)]` makes Anchor search for the canonical bump,
-/// downward from 255, and each rejected candidate costs one `create_program_address` syscall at 1,500
-/// CU. The epoch is one of the seeds, so the number of rejected candidates — and the cost — is a
-/// property of the day. The rows below differ by 1,500 per candidate to within a few CU; the residual
-/// varies with the epoch and this file records it rather than explaining it.
+/// **It no longer varies with the bump, and that is what the table is for** (owner's ruling, 22 Oct
+/// 2026, v0.2.7). `#[account(init, seeds = …, bump)]` made Anchor search for the canonical bump,
+/// downward from 255, and each rejected candidate cost one `create_program_address` syscall at 1,500
+/// CU — and the epoch is one of the seeds, so the cost was a property of the day:
+/// `8,810 + 1,500 × (255 − bump)`. Two of these five epochs were over §1.8's bound, and four of the
+/// 212 epochs the program superseded on 25 September published really were.
 ///
-/// **Two of these rows exceed §1.8's bound of 15,000, and the test asserts that they do.** That is not
-/// a failure of the harness. §1.8 is headed "Hard limits" and the cost is bounded by nothing but the
-/// search: 5 rejected candidates cross it, which is about one epoch in 32. **Four of the 212 epochs
-/// the program superseded on 25 September actually published were over it**, by 1,500 to 6,000 CU on
-/// the program as it stood then; #193 names which. They succeeded because nothing in this repository
-/// requests a compute budget, so the runtime's own 200,000 CU limit absorbed them. The days
-/// themselves are not written here: they are live epoch indices, and this is a synthetic artifact
-/// (H-20, #60).
+/// The bump is instruction data now and Anchor makes one call, so the same five epochs read:
 ///
-/// Whether §1.8's number is the right one, and whether the program should store the bump rather than
-/// search for it, are the two questions #193 holds. Until one of them is answered, the breach belongs
-/// in a test rather than in a document nobody runs.
+///     epoch    bump   before    after
+///     40001    255     9,071    9,093
+///     40002    253    12,071    9,093
+///     40000    252    13,569    9,091
+///     40010    250    16,573    9,095
+///     40203    244    25,575    9,097
+///
+/// A spread of 16,504 CU became one of 6, and the worst case is 9,097 against a bound of 15,000. The
+/// 22 CU every row gained is the extra instruction-data byte and passing it through.
+///
+/// **The table stays five rows rather than collapsing to one figure**, because five rows asserting
+/// almost the same cost at five different bumps is what establishes the dependence is gone. One figure
+/// would assert it.
+///
+/// The 6 CU that remain do not track the bump — 252 is the cheapest row and 244 the dearest — so they
+/// are the same epoch-dependent residual this file recorded before, and it is recorded rather than
+/// explained.
 const MEASURED: [(u64, u8, u64); 5] = [
     // epoch, the canonical bump of its checkpoint PDA, publish_checkpoint CU
-    (40_001, 255, 9_071),
-    (40_002, 253, 12_071),
-    (40_000, 252, 13_569),
-    (40_010, 250, 16_573),
-    (40_203, 244, 25_575),
+    (START, 255, 9_093),
+    (40_002, 253, 9_093),
+    (40_000, 252, 9_091),
+    (40_010, 250, 9_095),
+    (40_203, 244, 9_097),
 ];
 
 fn metas(accounts: Vec<anchor_lang::prelude::AccountMeta>) -> Vec<solana_instruction::AccountMeta> {
@@ -182,6 +190,8 @@ fn measure(program: &[u8], epoch: u64) -> (u8, u64, u64, u64) {
         data: certimining_checkpoint::instruction::PublishCheckpoint {
             epoch,
             root: *b"certimining fixture root   00001",
+            // The canonical bump, which the program takes rather than searching for (H-52).
+            checkpoint_bump: bump,
         }
         .data(),
     };
@@ -269,24 +279,26 @@ fn both_instructions_stay_inside_the_limits_1_8_gives() {
         if measured_publish > PUBLISH_LIMIT {
             over_the_bound = over_the_bound.saturating_add(1);
         }
-        if epoch == START {
-            assert!(
-                measured_publish <= PUBLISH_LIMIT,
-                "§1.8: publish_checkpoint is bounded at {PUBLISH_LIMIT} CU and used \
-                 {measured_publish} at the epoch this harness pins"
-            );
-        }
+        // **Every row, not only the pinned epoch's.** While the cost depended on the bump, two rows
+        // were legitimately over §1.8 and the bound could only be asserted where it held. It holds
+        // everywhere now, so asserting it everywhere is what notices if that stops being true.
+        assert!(
+            measured_publish <= PUBLISH_LIMIT,
+            "§1.8: publish_checkpoint is bounded at {PUBLISH_LIMIT} CU and used {measured_publish} \
+             at epoch {epoch}, bump {bump}"
+        );
     }
 
-    // **The breach, asserted rather than described (H-52, #193).** Two rows are over §1.8's bound and
-    // the measurement says so; a test that quietly recorded them would leave "Hard limits" reading as
-    // though it held. If the program is changed to store the bump rather than search for it, this
-    // assertion fails — which is correct, because the table would then be wrong and somebody should
-    // re-measure it rather than find out later.
+    // **The breach is closed, and this assertion is how that was noticed.** While the program searched
+    // for its bump, two of these rows were over §1.8 and this required exactly two — so that a change
+    // removing the search would fail here and force a re-measurement rather than pass quietly. That is
+    // what happened: the owner ruled on 22 October 2026 that the bump travels in instruction data, the
+    // search went, and the count went to zero.
     assert_eq!(
-        over_the_bound, 2,
-        "two of the recorded rows exceed §1.8's {PUBLISH_LIMIT} CU and {over_the_bound} did. Either \
-         the program no longer searches for its bump, in which case re-measure every row, or §1.8's \
-         number has been settled, in which case this assertion is the thing to change."
+        over_the_bound, 0,
+        "{over_the_bound} of the recorded rows exceed §1.8's {PUBLISH_LIMIT} CU. The bump is \
+         instruction data since v0.2.7, so one `create_program_address` call is all this instruction \
+         makes and no epoch can cost thousands more than another. A row over the bound means the \
+         search is back, or the figures were not re-measured after a change that moved them."
     );
 }

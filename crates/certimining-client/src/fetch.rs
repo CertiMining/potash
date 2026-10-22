@@ -146,6 +146,17 @@ pub fn checkpoint_address(program_id: &Pubkey, epoch: u64) -> Pubkey {
     Pubkey::find_program_address(&[CheckpointAccount::SEED, &epoch.to_le_bytes()], program_id).0
 }
 
+/// The canonical bump of an epoch's checkpoint PDA (H-52, issue #193).
+///
+/// **`publish_checkpoint` takes this as instruction data since v0.2.7**, so that the program makes one
+/// `create_program_address` call instead of searching from 255 downward — and so that its compute cost
+/// is a property of the instruction rather than of the day. The program cannot check that a bump is
+/// canonical without the search it no longer performs, so §1.8 makes canonicality the publisher's, and
+/// this is the publisher's one derivation of it.
+pub fn checkpoint_bump(program_id: &Pubkey, epoch: u64) -> u8 {
+    Pubkey::find_program_address(&[CheckpointAccount::SEED, &epoch.to_le_bytes()], program_id).1
+}
+
 /// The log's configuration address.
 pub fn config_address(program_id: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[LogConfig::SEED], program_id).0

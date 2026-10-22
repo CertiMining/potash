@@ -72,7 +72,36 @@ at `=0.16.0` against Agave 4.2.2, and if that pin moves the figures are re-measu
 naming the version that moved them. Not widened into a bound — §1.8's bounds are separate assertions
 in the same test, and a figure inside its bound can still drift a long way unseen.
 
-**`publish_checkpoint` is a table and not a figure, and this document said 9,066 in four places**
+**`publish_checkpoint` no longer depends on the epoch, as of v0.2.7 (H-52).** The bump travels in the
+instruction data — 48 bytes to 49 — so Anchor makes one `create_program_address` call where it used to
+search from 255 downward. The five rows CI records read:
+
+| epoch | bump | before v0.2.7 | after |
+|---|---|---|---|
+| 40001 | 255 | 9,071 | 9,093 |
+| 40002 | 253 | 12,071 | 9,093 |
+| 40000 | 252 | 13,569 | 9,091 |
+| 40010 | 250 | **16,573** | 9,095 |
+| 40203 | 244 | **25,575** | 9,097 |
+
+A spread of 16,504 CU became one of 6; the 22 CU every row gained is the extra instruction-data byte.
+No row exceeds §1.8's bound now, and `compute.rs` asserts the bound on **every** row rather than only
+on the epoch it pins — the assertion that required exactly two rows over the bound is what failed when
+the search came out, which is how it earned its place.
+
+**The table stays five rows.** Five rows agreeing at five different bumps is what establishes the
+dependence is gone; one figure would assert it.
+
+**What is not checked is canonicality**, because proving a bump canonical means showing every larger
+candidate is on the curve — the search this removed. §1.8 makes it the publisher's and states the
+consequence: a non-canonical publish writes the account where nothing looks, so every verifier reports
+the epoch missing while `last_epoch` has advanced. Detectable at once, and only causable by the key
+that signs the instruction.
+
+**The account below is of the program before v0.2.7**, kept because it is how the dependence was found
+and because the chain still runs that program.
+
+**`publish_checkpoint` was a table and not a figure, and this document said 9,066 in four places**
 (H-52, [#193](https://github.com/CertiMining/potash/issues/193)). Its cost is
 
     publish_checkpoint = 8,810 + 1,500 × (255 − bump)
