@@ -33,6 +33,8 @@ pub mod cluster;
 mod fetch;
 mod handoff;
 mod ots;
+#[cfg(feature = "ots")]
+mod promise_receipt;
 mod publish;
 mod schedule;
 mod worker;
@@ -51,6 +53,10 @@ pub use handoff::{refuse_to_write, Handoff, HandoffRefused, HandoffWriteRefused,
 pub use ots::{receipt_digest, refuse_a_readable_key, AnchorB, PendingReceipt, ReceiptRefused};
 #[cfg(feature = "ots")]
 pub use ots::{verify_receipt, BitcoinClaim, ReferenceClient};
+#[cfg(feature = "ots")]
+pub use promise_receipt::{
+    judge_against_confirmation, verify_transferred_promise, Established, TransferRefused,
+};
 pub use publish::{
     classify, settle, should_retry, Outcome, Settlement, CHECKPOINT_ALREADY_WRITTEN,
 };

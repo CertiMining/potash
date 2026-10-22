@@ -260,6 +260,9 @@ checks() {
   # checked. This comment said "three" while the file swept seventeen, which is the same shape of
   # defect the gates here exist to catch, occurring in the gate list itself.
   check "anchor b confirmed" cargo test -p certimining-client --features ots --test anchor_b_confirmed
+  # A promise judged against a Bitcoin-confirmed receipt over its own encoding (H-02, #30). Offline
+  # for the same reason: committed headers, and a receipt this repository already published.
+  check "promise receipt" cargo test -p certimining-client --features ots --test promise_receipt
   # H-18: `fuzz/` is its own Cargo workspace (D-131), so `--workspace` above never reaches §4.5's
   # five targets. Sixteen seconds, and they are lint-clean, so there is no reason to leave them out.
   check "clippy fuzz" cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
