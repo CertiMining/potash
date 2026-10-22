@@ -22,6 +22,8 @@ PAYER_KEY="$KEYS/deploy-keypair.json"
 SO="target/deploy/certimining_checkpoint.so"
 # The ProgramData account carries a 45-byte header before the program bytes (bpf_loader_upgradeable).
 PROGRAMDATA_HEADER=45
+# bpf_loader_upgradeable's floor for ExtendProgram, which refuses anything smaller.
+MIN_EXTEND=10240
 
 # The same version gate build-sbf.sh and deploy-devnet.sh apply. An upgrade from an unpinned toolchain
 # would replace bytes on a public cluster with bytes no CI run ever saw.
@@ -46,7 +48,13 @@ fi
 show="$("$AGAVE_BIN/solana" program show "$declared" --url "$URL")"
 programdata="$(awk '/ProgramData Address:/ {print $3}' <<<"$show")"
 authority="$(awk '/Authority:/ {print $2}' <<<"$show")"
-deployed_len="$(awk '/Data Length:/ {print $3}' <<<"$show")"
+# **`Data Length` is the account's capacity, not the program's length.** It is the ProgramData
+# account's size less the 45-byte header, and the loader keeps no record of how many of those bytes
+# the ELF occupies — it writes the program and zero-pads the rest. Before the first extend the two
+# coincided, because the account had been allocated to fit exactly, and the first run of this script
+# printed that coincidence as the deployed length. After an extend it reports 174,992 for a program
+# of 166,896.
+capacity_reported="$(awk '/Data Length:/ {print $3}' <<<"$show")"
 deployed_slot="$(awk '/Last Deployed In Slot:/ {print $5}' <<<"$show")"
 
 # **The authority is checked here rather than discovered by a failed transaction.** If the upgrade
@@ -79,24 +87,26 @@ artefact_len="$(wc -c <"$SO" | tr -d ' ')"
 artefact_sha="$(shasum -a 256 "$SO" | cut -d' ' -f1)"
 source_commit="$(git rev-parse HEAD)"
 
-# **A no-op upgrade is refused rather than performed.** Only checkable when the lengths agree: the
-# dumped account is padded to its own size, so it is truncated to the length the chain reports before
-# being hashed.
-if [ "$artefact_len" = "$deployed_len" ]; then
-  dump="$(mktemp -t potash-deployed)"
-  trap 'rm -f "$dump"' EXIT
-  "$AGAVE_BIN/solana" program dump "$declared" "$dump" --url "$URL" >/dev/null
-  deployed_sha="$(dd if="$dump" bs=1 count="$deployed_len" 2>/dev/null | shasum -a 256 | cut -d' ' -f1)"
-  if [ "$deployed_sha" = "$artefact_sha" ]; then
-    echo "upgrade: the cluster already holds these exact bytes (sha256 $artefact_sha)." >&2
-    echo "         Nothing to upgrade. Rebuild from the commit you meant, or there is no change." >&2
-    exit 1
-  fi
+# **A no-op upgrade is refused rather than performed**, and the comparison is over bytes rather than
+# lengths. The first version gated on `artefact_len = deployed_len`, where the second was a capacity:
+# after any extend those never agree, so the guard would have stopped firing without saying so — a
+# check that passes by not looking, which is the shape this repository keeps finding.
+#
+# The dump is the account's whole capacity, zero-padded past the ELF. So the artefact is compared
+# against the dump's leading bytes and the remainder is required to be zeros: together those say the
+# cluster holds exactly this program and nothing after it.
+dump="$(mktemp -t potash-deployed)"
+trap 'rm -f "$dump"' EXIT
+"$AGAVE_BIN/solana" program dump "$declared" "$dump" --url "$URL" >/dev/null
+if python3 -I "$(dirname "$0")/holds-exactly.py" "$dump" "$SO"; then
+  echo "upgrade: the cluster already holds these exact bytes (sha256 $artefact_sha)." >&2
+  echo "         Nothing to upgrade. Rebuild from the commit you meant, or there is no change." >&2
+  exit 1
 fi
 
 echo "program:   $declared"
 echo "authority: $payer_id  (also the payer, disclosed per D-88)"
-echo "before:    $deployed_len bytes, last deployed in slot $deployed_slot"
+echo "before:    slot $deployed_slot, account capacity $capacity_reported bytes"
 echo "after:     $artefact_len bytes  sha256 $artefact_sha"
 echo "source:    $source_commit  (clean)"
 echo
@@ -109,17 +119,25 @@ pd_len="$("$AGAVE_BIN/solana" account "$programdata" --url "$URL" | awk '/^Lengt
 capacity=$((pd_len - PROGRAMDATA_HEADER))
 echo "ProgramData $programdata holds $pd_len bytes, so $capacity are usable for program bytes."
 if [ "$artefact_len" -gt "$capacity" ]; then
-  additional=$((artefact_len - capacity))
-  echo "That is $additional bytes short of this artefact."
+  shortfall=$((artefact_len - capacity))
+  # **The loader enforces a floor of 10,240 additional bytes**, so the shortfall is not a request it
+  # accepts. The first version printed the shortfall and the loader refused it: "ExtendProgram
+  # requires a minimum of 10240 additional bytes or to extend to maximum size, but only 2144 were
+  # requested". The floor is the smallest thing that works, and the surplus is headroom the next
+  # upgrade does not have to buy again.
+  additional=$MIN_EXTEND
+  [ "$shortfall" -gt "$MIN_EXTEND" ] && additional=$shortfall
+  echo "That is $shortfall bytes short of this artefact."
+  echo "The loader's minimum extend is $MIN_EXTEND bytes, so the request is $additional."
   echo
   echo "An extend is irreversible — a ProgramData account cannot be shrunk — and it costs rent."
+  "$AGAVE_BIN/solana" rent "$pd_len" --url "$URL" | sed 's/^/  rent now:   /'
+  "$AGAVE_BIN/solana" rent "$((pd_len + additional))" --url "$URL" | sed 's/^/  rent after: /'
+  echo
   echo "Run it, then run this script again:"
   echo
   echo "  $AGAVE_BIN/solana program extend $declared $additional \\"
   echo "    --url $URL --keypair $PAYER_KEY"
-  echo
-  echo "Extending by exactly the shortfall rather than a margin, so nothing is spent on a guess"
-  echo "about the next build. A larger build later needs another extend, and this will say so."
   exit 1
 fi
 echo "Room for the artefact; no extend needed."
