@@ -3,21 +3,48 @@
 # (D-09). Actions are pinned to full commit SHAs, and tools are installed with rustup and cargo (D-12).
 name: ci
 
+# `pull_request` is here because nothing tested a merge *result* (H-55, #214). A pull request's green
+# tick describes its branch in isolation, and two branches that each pass can still produce a `main`
+# that fails: #191 against #194 did exactly that on 22 October and left `main` red until it was
+# repaired. GitHub builds the merge commit for this event, so the result is tested before it lands
+# rather than after.
+#
+# It runs in addition to `push` rather than instead of it, so a push to a branch with an open pull
+# request produces two runs — one for the pushed commit, one for the merge commit — each in its own
+# concurrency group, because `github.sha` differs between them. That doubling is what testing the
+# merge costs here. Narrowing `push` to `branches: [main]` would remove it and would also mean a
+# branch without a pull request gets no run at all; that is a separate decision and not this one.
 on:
   push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A new push to a branch makes the previous run irrelevant, so cancelling it saves runner minutes.
-# `main` is the exception: every merge shares the ref `refs/heads/main`, so cancelling there kills the
-# run for the commit before it and leaves that commit a cancelled X forever (H-50, #171). Three
-# consecutive commits on main read `cancelled` on 13 October, and the only full-pipeline run `3134579`
-# would ever have had was one of them.
+# **Keyed by commit rather than by ref (H-55, #214).** A ref-keyed group holds one *pending* run, and
+# GitHub's run creation can lag a push by tens of minutes. The two met badly, in both directions.
+#
+# On `main`, where cancelling was off, each merge displaced the run queued for the merge before it,
+# and a run displaced before it ever materialised left **no record at all** — not a `cancelled` row,
+# nothing. Five merge commits on 22 October have no `ci` run of any kind.
+#
+# Off `main`, where cancelling was on, the late runs arrived out of order. On #213 the run for the
+# older of two commits was created last and cancelled the run for the branch head, so the only live
+# run was testing a commit that was not the head, and the tick it earned described nothing that would
+# merge.
+#
+# A commit key cannot do either. Two runs share a group only when they are for the same commit, so
+# cancelling the earlier is always correct — it is redundant work — and no run for one commit can
+# cancel the run for another. What it costs: a superseded commit's run now finishes instead of being
+# cancelled, which is runner minutes spent on a commit nobody will merge.
+#
+# H-50 (#171) is why the old key carried an exception for `main` — cancelling there killed the run for
+# the commit before it, and three consecutive commits read `cancelled` on 13 October. The exception is
+# gone because the key makes it unnecessary, not because that lesson stopped being true.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.sha }}
+  cancel-in-progress: true
 
 jobs:
   kat01-offchain:
