@@ -66,21 +66,30 @@ pub fn receipt_digest<H: Hasher>(receipt: &[u8]) -> Option<Digest> {
 /// rather than assuming their length, because assuming it is how a fixture stops being usable and a
 /// caller stops being checked. This is the second place SHA-256 is unavoidable, after §2.4's address
 /// and discriminator derivations, and INV-PRIM-01 still forbids it in terms.
-/// The Bitcoin attestation a receipt carries — **the height the receipt names, not a height this
-/// code has checked.**
+/// The Bitcoin attestation a receipt carries — **what the receipt asserts, not what has been
+/// checked.**
 ///
-/// Verifying an attestation means recomputing the operations from the start digest and comparing the
-/// result with that block's merkle root, which needs a source of Bitcoin headers. This crate has
-/// none, so what `verify_receipt` establishes is that the receipt parses, commits to this epoch's
-/// root, and carries a Bitcoin attestation rather than only a calendar's promise. **A forged receipt
-/// naming a block it never reached passes that.** The type exists so a caller cannot mistake one for
-/// the other: it hands back the claim, labelled as a claim. Real verification against Bitcoin is
-/// filed for after the submission deadline.
+/// Both fields come out of the receipt. The height is read from the attestation; the digest is
+/// *computed*, by this crate executing the receipt's operations from the start digest, which is why
+/// the file cannot assert it. Neither has been compared with Bitcoin: that comparison needs a block
+/// header, and `bitcoin::confirm` is the half that does it, returning a `bitcoin::Confirmed` that
+/// only that path can build. **A forged receipt naming a block it never reached still passes this
+/// function**, which is why the two types are different types (H-12, issue #48).
 #[cfg(feature = "ots")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BitcoinClaim {
     /// The block height the receipt names. Unchecked.
     pub height: u32,
+    /// The digest the receipt's operations reach, which that block's merkle root must equal.
+    ///
+    /// **Derived rather than read.** `opentimestamps` executes each operation as it deserialises and
+    /// stores the result, so this is the output of appending, prepending and hashing from the start
+    /// digest onward — a value a forged file cannot simply state. What it is *not* is a merkle root
+    /// anyone has seen: that is `bitcoin::confirm`'s business.
+    ///
+    /// In Bitcoin's internal byte order, which is how a header stores its merkle root and how
+    /// OpenTimestamps compares against it. Reversing it gives the spelling an explorer displays.
+    pub attested_digest: [u8; 32],
 }
 
 #[cfg(feature = "ots")]
@@ -102,17 +111,39 @@ pub fn verify_receipt(receipt: &[u8], stamped: &[u8]) -> Result<BitcoinClaim, Re
 
     // A receipt is a tree of operations ending in attestations. A calendar's `Pending` attestation
     // is a promise; only `Bitcoin` is the anchor (D-112).
-    fn confirmed(step: &Step) -> Option<u32> {
+    //
+    // **The step's `output` is what the operations reach**, and it is the second half of what a
+    // caller needs. `opentimestamps` computes it while deserialising — `op.execute(&input_digest)`
+    // per step — so it is derived from the start digest and the operations, not read out of the
+    // file. That is what makes it worth comparing with a block.
+    fn confirmed(step: &Step) -> Option<(usize, &[u8])> {
         if let StepData::Attestation(Attestation::Bitcoin { height }) = step.data {
-            return Some(height as u32);
+            return Some((height, step.output.as_slice()));
         }
         step.next.iter().find_map(confirmed)
     }
 
-    match confirmed(&parsed.timestamp.first_step) {
-        Some(height) => Ok(BitcoinClaim { height }),
-        None => Err(ReceiptRefused::NotYetConfirmed),
-    }
+    let Some((height, output)) = confirmed(&parsed.timestamp.first_step) else {
+        return Err(ReceiptRefused::NotYetConfirmed);
+    };
+    // **`as u32` was a silent truncation**, and the crate's height is a `usize`. A height above
+    // `u32::MAX` is not a Bitcoin height, and a receipt claiming one would have had it wrapped into a
+    // plausible small number rather than refused. Nothing produces such a receipt; a cast that
+    // quietly invents a credible value out of an incredible one is the shape of defect this file is
+    // full of notes about.
+    let height = u32::try_from(height).map_err(|_| {
+        ReceiptRefused::Unparsable(format!("the attestation names block height {height}"))
+    })?;
+    let attested_digest = <[u8; 32]>::try_from(output).map_err(|_| {
+        ReceiptRefused::Unparsable(format!(
+            "the attestation's operations reach {} bytes and a merkle root is 32",
+            output.len()
+        ))
+    })?;
+    Ok(BitcoinClaim {
+        height,
+        attested_digest,
+    })
 }
 
 /// Anchor B's two operations, behind a trait so the worker's logic is testable without a calendar.
