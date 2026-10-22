@@ -333,7 +333,13 @@ fn v_z_01_an_epochs_footprint_does_not_move_with_its_record_count() {
             assert_eq!(
                 published.instruction_data.len(),
                 first.instruction_data.len(),
-                "§1.8: the instruction is 48 bytes whatever the record count, and {records} is not"
+                // No figure here on purpose. This assertion compares two measurements of the same
+                // thing, so it never checks a length against a number, and the number this message
+                // used to name — 48 — had been wrong since v0.2.7 without anything noticing. The
+                // length §1.8 fixes is asserted against a literal further down, which is why that
+                // one was updated and this one was not.
+                "§1.8: an epoch's instruction data does not move with its record count, and \
+                 {records} records produced a different length"
             );
             assert_eq!(
                 published.transaction.len(),
