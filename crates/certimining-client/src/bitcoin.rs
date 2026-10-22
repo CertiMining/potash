@@ -61,6 +61,16 @@ pub enum HeaderRefused {
     InsufficientWork { at: u32, hash: String },
     /// The `bits` field encodes a target no header can meet, or none at all.
     MalformedTarget { at: u32, bits: u32 },
+    /// A compact difficulty that is not the canonical encoding of the target it expands to
+    /// (H-59, issue #225).
+    DifficultyNotCanonical {
+        /// The height of the header that declared it.
+        at: u32,
+        /// What the header carried.
+        bits: u32,
+        /// The encoding Bitcoin would have produced for the same target.
+        canonical: u32,
+    },
     /// The header declares a target other than the one in force at the checkpoint.
     ///
     /// A header states its own difficulty, so a chain of trivially-mined headers passes every other
@@ -506,6 +516,27 @@ fn verify_chain_in(
                 })?;
             period_began = Some(header.time());
         }
+        // **The encoding, not only the number it expands to (H-59, issue #225).** Two different
+        // compact values can expand to one target — `0x1f7f0000` and `0x20007f00` do — so comparing
+        // expanded targets treats both as the target in force. Bitcoin compares the header's `nBits`
+        // against the exact value its own arithmetic produces and refuses anything else as
+        // `bad-diffbits`. Checked by round-trip rather than against a stored encoding: `bits_from_target`
+        // *is* that arithmetic, so a field equal to its own re-encoding is canonical by construction
+        // and the checkpoint needs to carry nothing new.
+        //
+        // The header still does the same work either way, so this costs a forger nothing. What it
+        // refuses is a header Bitcoin would not have accepted.
+        let canonical = bits_from_target(&target).ok_or(HeaderRefused::MalformedTarget {
+            at: height,
+            bits: header.bits(),
+        })?;
+        if canonical != header.bits() {
+            return Err(HeaderRefused::DifficultyNotCanonical {
+                at: height,
+                bits: header.bits(),
+                canonical,
+            });
+        }
         if target != in_force {
             return Err(HeaderRefused::TargetNotTheOneInForce {
                 at: height,
@@ -940,6 +971,46 @@ mod tests {
         }
     }
 
+    /// **A compact difficulty that is not its target's canonical encoding is refused** (H-59, #225).
+    ///
+    /// The pair the independent review of 22 October exhibited. Both expand to one target, so a
+    /// comparison of expanded targets accepts either; Bitcoin produces exactly one of them and
+    /// refuses the other as `bad-diffbits`.
+    #[test]
+    fn a_non_canonical_compact_difficulty_is_refused() {
+        let canonical = 0x1f7f_0000;
+        let other = 0x2000_7f00;
+        assert_eq!(
+            target_from_bits(canonical),
+            target_from_bits(other),
+            "this case tests nothing unless the two encodings expand to one target"
+        );
+        assert_ne!(canonical, other, "and unless they are different encodings");
+
+        let checkpoint = Checkpoint {
+            height: 100,
+            hash: [0x42; 32],
+            time: None,
+            target: match target_from_bits(canonical) {
+                Some(t) => t,
+                None => panic!("the canonical encoding decodes"),
+            },
+        };
+        // Mined against the easy target the non-canonical value expands to, so the refusal is about
+        // the encoding and not about absent work.
+        let header = mined([0x42; 32], [0x62; 32], other);
+        match verify_chain_in(checkpoint, &[header], easy_rules()) {
+            Err(HeaderRefused::DifficultyNotCanonical {
+                at,
+                bits,
+                canonical: c,
+            }) => {
+                assert_eq!((at, bits, c), (101, other, canonical));
+            }
+            other => panic!("a non-canonical compact field is not the target in force: {other:?}"),
+        }
+    }
+
     /// **The target in force, and the constant tied to the encoding rather than transcribed.**
     ///
     /// This is the assertion that costs a forger the real chain's work: a header declaring anything
@@ -1070,7 +1141,15 @@ mod tests {
     }
 
     /// The compact encoding round-trips, which is what lets a computed target be compared with a
-    /// declared one at all.
+    /// declared one at all — and, since H-59 (#225), what makes a header's own field checkable for
+    /// canonicality: a field equal to its re-encoding is the one Bitcoin would have produced.
+    ///
+    /// **Bitcoin's own limit is the case to keep in mind here.** `0x1d00ffff`'s mantissa carries a
+    /// leading zero byte, because `GetCompact` shifts right and raises the exponent rather than let
+    /// the mantissa's top bit be read as a sign. So "the top mantissa byte is non-zero" is *not* the
+    /// canonical rule, and a check written from that intuition would refuse the real network's floor.
+    /// The round-trip is the rule, which is why it is asserted over real difficulties rather than
+    /// described.
     #[test]
     fn the_compact_encoding_round_trips_for_every_real_difficulty_here() {
         for bits in [
@@ -1078,6 +1157,9 @@ mod tests {
             0x1702_1ec5,
             0x1702_1ef0,
             0x1702_0093,
+            // The third difficulty the committed anchor windows were mined at, which this list was
+            // missing (H-59, #225).
+            0x1702_355e,
             0x1f00_ffff,
         ] {
             let target = match target_from_bits(bits) {
