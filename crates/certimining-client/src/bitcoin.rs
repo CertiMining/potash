@@ -526,15 +526,17 @@ fn verify_chain_in(
     Ok(hashes)
 }
 
-/// The merkle root of the block at `height`, from a chain already verified against `checkpoint`.
+/// The header of the block at `height`, from a chain already verified against `checkpoint`.
 ///
-/// This is what an OpenTimestamps Bitcoin attestation at that height claims a receipt's operations
-/// reach. Comparing the two is the other half of H-12 and is not done here.
-pub fn merkle_root_at(
+/// Returning the header rather than one field of it means a caller needing two facts about the same
+/// block — its merkle root and its timestamp, which is what H-02 needs — walks the chain once and
+/// reads both out of the same 80 bytes. Two calls would leave a later refactor free to answer them
+/// from different blocks.
+pub fn header_at(
     checkpoint: Checkpoint,
     headers: &[Header],
     height: u32,
-) -> Result<[u8; 32], HeaderRefused> {
+) -> Result<Header, HeaderRefused> {
     verify_chain(checkpoint, headers)?;
     let covered = checkpoint
         .height
@@ -549,11 +551,23 @@ pub fn merkle_root_at(
         })?;
     headers
         .get(offset)
-        .map(Header::merkle_root)
+        .copied()
         .ok_or(HeaderRefused::HeightNotCovered {
             wanted: height,
             covered,
         })
+}
+
+/// The merkle root of the block at `height`, from a chain already verified against `checkpoint`.
+///
+/// This is what an OpenTimestamps Bitcoin attestation at that height claims a receipt's operations
+/// reach. Comparing the two is the other half of H-12 and is not done here.
+pub fn merkle_root_at(
+    checkpoint: Checkpoint,
+    headers: &[Header],
+    height: u32,
+) -> Result<[u8; 32], HeaderRefused> {
+    header_at(checkpoint, headers, height).map(|at| at.merkle_root())
 }
 
 /// Bitcoin's genesis block: the one checkpoint this repository can commit without vouching for
@@ -599,6 +613,16 @@ pub struct Confirmed {
     pub height: u32,
     /// The block's merkle root, equal to the digest the receipt's operations reach.
     pub merkle_root: [u8; 32],
+    /// The block's own timestamp, as its header states it.
+    ///
+    /// **A Bitcoin timestamp is not a clock.** The miner chooses it; consensus asks only that it
+    /// exceed the median of the preceding eleven blocks and sit no more than two hours ahead of
+    /// network-adjusted time, and it is not monotone from one block to the next. So it bounds when
+    /// the attested digest existed to within hours rather than seconds, and a UTC day index derived
+    /// from it can be one too high near a midnight boundary, or — needing a block whose timestamp
+    /// runs behind its predecessor's, which is rarer — one too low. Whatever depends on this says
+    /// what that costs rather than treating the value as exact.
+    pub time: u32,
 }
 
 /// Confirms a receipt's Bitcoin attestation against a chain of headers.
@@ -618,7 +642,8 @@ pub fn confirm(
     checkpoint: Checkpoint,
     headers: &[Header],
 ) -> Result<Confirmed, HeaderRefused> {
-    let merkle_root = merkle_root_at(checkpoint, headers, claim.height)?;
+    let at = header_at(checkpoint, headers, claim.height)?;
+    let merkle_root = at.merkle_root();
     if merkle_root != claim.attested_digest {
         return Err(HeaderRefused::DigestNotInTheBlock {
             at: claim.height,
@@ -629,6 +654,7 @@ pub fn confirm(
     Ok(Confirmed {
         height: claim.height,
         merkle_root,
+        time: at.time(),
     })
 }
 

@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.7 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.8 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -36,6 +36,15 @@ so the program derives the address with one `create_program_address` call instea
 canonical bump. Its compute cost stops depending on the epoch: the five recorded rows spanned 9,071 to
 25,575 CU and now span 9,091 to 9,097, and no epoch exceeds §1.8's bound. Canonicality becomes the
 publisher's, which §1.8 states, because proving a bump canonical is the search this removes (H-52).*
+
+*v0.2.8 closes the transfer half of RES-10. The counterparty receiving a promise stamps the promise's
+own 161-octet encoding through §1.5's anchor B path, the receipt travels with the promise, and §1.6
+judges a transferred promise against the UTC day index of the block that receipt names rather than
+against an observation the holder never made. §2.5 is unchanged and carries no promise: the receipt
+covers octets that include `submission_id`, and putting those inside a disclosure package would have
+moved a privacy claim §1.6 makes. What the receipt does not fix — it bounds existence from above
+only, and the epoch it establishes is a calendar epoch where `observed_epoch` is a sequence one — is
+stated in §1.6. H-02.*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -254,7 +263,13 @@ SPI = Ed25519_sign( batcher_key,
 
 So verification takes that observation as an input. `accepted_epoch` must equal the checkpoint epoch the counterparty observed when the promise arrived, or be exactly one behind it, and **never ahead**: an acceptance epoch later than observed is the backdating attack, in which a batcher defers its own accountability by naming a future epoch and then meeting it, leaving no visible breach. One epoch behind is allowed because a promise can arrive across an epoch boundary. Anything else is `0x17`.
 
-A promise's later transfer to a party that made no observation of its own is not covered by this. Closing that needs an independently timestamped receipt, which is recorded as a decision and deferred (D-74, Appendix A's RES-10).
+**A promise's later transfer is closed by a timestamp over the promise itself.** The counterparty that receives a promise stamps its own 161-octet encoding through §1.5's anchor B path, and that receipt travels with the promise. A later holder checks the stamp instead of the batcher's assertion, because a Bitcoin block fixes when the promise existed **in a third party's hands** rather than when the batcher says it was issued. The checks above then run against the UTC day index of the block the receipt names, in place of an observation that holder never made. Two conditions carry the weight: the receipt must timestamp **exactly** those 161 octets, so a stamp cannot be moved from one promise to another, and the block must be reachable from a committed checkpoint through headers that each meet the target their own `bits` encode (§1.5, H-12).
+
+**The receipt and the promise travel as one artifact, and §2.5's package is not involved.** A disclosure package carries neither a promise nor a promise receipt. That is deliberate rather than unfinished: the receipt covers the promise's encoding, `submission_id` is sixteen of those octets, and the paragraph below states that the identifier reaches no disclosure package. Carrying the pair inside a package would have put a submission's position in the batcher's sequence into the artifact INV-DISC-01 already warns is correlatable. So the promise stays what INV-SPI-01 calls it, self-contained and transferable, and §2.5's field list stays closed.
+
+**What the receipt fixes is an upper bound**, which is the direction the attack runs in. A promise cannot have been accepted after the moment it demonstrably already existed, so a batcher naming a future acceptance epoch is refused by a holder who observed nothing. It fixes no lower bound: a timestamp establishes that something existed by a moment and never that it did not exist before one. An acceptance epoch claimed *earlier* than the real one moves the batcher's own deadline earlier and is against its interest.
+
+**Two residuals, stated here rather than left to be found.** The epoch a receipt establishes is a **calendar** epoch where `observed_epoch` is a **sequence** epoch. The two agree while the batcher is current and diverge by exactly its lag when it is not, so under lag this bound is the looser of the two. It does not reach the device, because `promised_epoch` must still fall inside the merge delay and a lagging batcher has not published the roots that window names. And a Bitcoin timestamp is chosen by a miner, required only to exceed the median of the eleven preceding blocks and to stay under two hours ahead of network-adjusted time, and it is not monotone — so the day index derived from it can be one too high at a midnight boundary and, more rarely, one too low.
 
 `submission_id` is minted by the batcher, which takes only a leaf, and it is an ordinal counter (D-69). **It therefore reveals the submission's position in the batcher's sequence to anyone shown the promise**, and it travels only inside the promise: it appears in no disclosure package, no checkpoint and nothing on chain. Position in the epoch tree does not follow from it, because §1.4 assigns slots by PRF over it under a key the counterparty does not hold.
 
@@ -889,7 +904,7 @@ certifies compliance
 - **RES-06 · Canonicalization is the real identity attack surface.** Two spellings of one tenure produce two commitments. Published rules and a registry-code namespace narrow it; they do not close it. Letters with no compatibility decomposition, such as œ, æ and ß, are removed rather than transliterated, so spellings that differ only in them still produce different commitments.
 - **RES-07 · Batcher liveness.** A stalled batcher stalls the integrity claim for everyone in the batch. Gap detection makes the stall visible; it does not prevent it.
 - **RES-08 · The physical-digital boundary.** Sampling fraud, grade misrepresentation at the point of measurement, and sample substitution sit entirely outside what any of this can reach.
-- **RES-10 · A promise establishes acceptance only to the party that observed it, and its construction carries no version.** Verification compares the signed acceptance epoch against the counterparty's own observation at receipt (§1.6), so a promise transferred onward to a party that observed nothing carries an assertion that party cannot check. Closing that needs an independently timestamped receipt, deferred by D-74. Separately, the SPI construction has no version field: it is fixed for this deployment, and changing it once promises exist outside this repository would need a mechanism §1.6 does not have, where the record chain has `schema_version`.
+- **RES-10 · The SPI construction carries no version.** It is fixed for this deployment, and changing it once promises exist outside this repository would need a mechanism §1.6 does not have, where the record chain has `schema_version`. *Narrowed in v0.2.8 (H-02).* This item also held that a promise establishes acceptance only to the party that observed it, and that half is closed: §1.6 now judges a transferred promise against a receipt over the promise's own encoding, so a holder who observed nothing has something to check. What that receipt does not fix is stated in §1.6 — it bounds existence from above only, and the epoch it establishes is a calendar epoch rather than a sequence one.
 - **RES-09 · Count-hiding is computational, not information-theoretic.** Padding leaves are PRF outputs under `k_e`, so indistinguishability holds against an adversary who cannot recover that key and fails against one who can. §4.4's V-Z-02 bounds a named battery of statistics, which is evidence that the construction carries no obvious tell; it is not a proof that no distinguisher exists. The claim to make outside this document is that an outside observer cannot tell how many records an epoch holds, never that nobody can.
 
 ---
