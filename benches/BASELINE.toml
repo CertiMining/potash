@@ -127,3 +127,51 @@ class_tolerance_percent = 6.0
 # slower. That gap is why D-132 sent §4.4a's absolute figures to the reference machine and gave CI a band
 # instead — D-136's 10 ms chain-walk threshold would have failed outright on the runner, on code that
 # met it.
+
+# **The classes, each committed from the output of the run that first printed it.**
+#
+# A block's name is its own `calibration_ms` with the decimal point dropped. That is deliberate: a
+# class names itself from the figure that identifies it, so the name is chosen by the run rather than
+# by whoever pastes it, two classes cannot collide while they are more than
+# `class_tolerance_percent` apart, and nothing has to be re-ranked when a class nobody has met yet
+# turns up. The comment on each block says what it was measured against.
+#
+# **Three of the four classes the 30-run series inferred have now been met**, over four CI runs on
+# 22-23 October 2026 (runs 39889325316, 39889287950, 39891954601, 39891952477 of this pull request).
+# The series had placed them at about 1.13, 1.00, 0.88 and 0.61 times the single baseline above, from
+# `chain_walk` ratios alone; measured with a calibration beside them they sit at 0.61, 0.80 and 1.01.
+# The 0.88 estimate and the 0.80 measurement are the same class seen two ways, and the 1.13 class has
+# not appeared yet. When it does, `band.rs` will fail once and print its block.
+#
+# **The run-to-run spread inside one class is 1.35%, which is what makes a 6% tolerance usable.**
+# Runs 39889325316 and 39891952477 landed on the same class minutes apart and read 0.8717 ms and
+# 0.8601 ms, 1.35% apart, with their chain walks 0.71% apart. That is the number the tolerance had to
+# clear and the only one that could not be derived from the earlier series, because the calibration
+# did not exist then.
+#
+# **Do not read these as a conversion table.** The calibration and the measures do not scale together
+# across machines: `cal-0872` to `cal-1034` is 18.7% on the calibration and 31.0% on the chain walk,
+# because Ed25519 verification and SHA-256 hashing do not depend on the same silicon. That is exactly
+# why each class carries its own measured baselines instead of a figure derived from its calibration.
+
+# 0.61x the single baseline above. First met by run 39889325316; run 39891952477 read 0.8601 on it.
+[class.cal-0872]
+calibration_ms = 0.8717
+chain_walk_hash_chain_only = 7.8618
+epoch_root_256_leaves = 0.2191
+inclusion_proof_verify = 0.0025
+
+# 0.80x the single baseline above. First met by run 39889287950.
+[class.cal-1034]
+calibration_ms = 1.0344
+chain_walk_hash_chain_only = 10.2976
+epoch_root_256_leaves = 0.2891
+inclusion_proof_verify = 0.0033
+
+# 1.01x the single baseline above, which is the class that baseline came from: its chain walk is
+# 12.9602 against the 12.8476 recorded there, 0.88% apart. First met by run 39891954601.
+[class.cal-1284]
+calibration_ms = 1.2838
+chain_walk_hash_chain_only = 12.9602
+epoch_root_256_leaves = 0.3698
+inclusion_proof_verify = 0.0042
