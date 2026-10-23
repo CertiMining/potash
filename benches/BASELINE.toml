@@ -138,7 +138,9 @@ class_tolerance_percent = 2.5
 # gate that passed on hardware it has no baseline for would be reporting a comparison it did not make —
 # the same defect as an absent baseline, which this file has failed on since it was written. The
 # failure prints a `[class.…]` block from that run's own figures, and **that block is committed from
-# that output**, which is how every figure in this file has ever got here. Expect one failure per class
+# that output**, which is how all but one figure in this file got here — the exception is the centred
+# class below, ruled on 23 October when two machines were met 4.73% apart and neither could be
+# committed beside the other. Expect one failure per class
 # as the fleet is met, and no more.
 #
 # A class whose hardware is unchanged but whose speed moves — a kernel or microcode update — stops
@@ -198,8 +200,9 @@ class_tolerance_percent = 2.5
 # neighbouring class rather than their own. A figure that nothing measured is what this file refuses.
 #
 # So the fleet is met again, under the instrument that will judge it. Each class fails once and prints
-# its block, which is committed from that run's own output — the same path every figure in this file
-# has ever taken, and the cost of changing the instrument rather than the figures.
+# its block, which is committed from that run's own output — the same path all but one figure in this
+# file has taken, and the cost of changing the instrument rather than the figures. The exception is
+# the centred class below, which is marked as such where it stands.
 #
 # **What was here, kept as the record it is.** These are not usable as class blocks and are not
 # written as blocks, so nothing can select them:
@@ -216,13 +219,27 @@ class_tolerance_percent = 2.5
 # +2.80% from `cal-0872` and -3.27% from `cal-0926` — a genuine machine in the gap between two
 # classes, which is the subject of its own issue and is not what this change addresses.
 
-# Slow class. First met under the minimum by run 39912334445, which is this pull request's own
-# `pull_request` run. Its median figure was 1.2838, so the minimum reads 0.44% lower.
-[class.cal-1278]
-calibration_ms = 1.2781
-chain_walk_hash_chain_only = 12.7398
-epoch_root_256_leaves = 0.3634
-inclusion_proof_verify = 0.0041
+# **Slow class, and the one figure in this file that no run printed** (owner's ruling, 23 October
+# 2026, H-64 issue #243). Two machines were met here and they are 4.73% apart: 1.2781 by run
+# 39912334445 and 1.3386 by run 39956416735, both with ratios to their own chain walks inside the band
+# every unperturbed run occupies, so both are machines rather than perturbed readings.
+#
+# **Neither could be committed beside the other.** At a 2.5% tolerance two classes need 5.13% between
+# them or their windows meet, and `band.rs` refuses an overlapping file — so committing the second
+# would have failed every run on either machine, for ever. They are one class here, centred between
+# them, and each sits 2.31% from the centre, inside the window.
+#
+# **So a class figure is now centred rather than taken from a run, and that is a ruling and not a
+# drift.** Every other figure in this file came from the output of a run that printed it, and that
+# rule is what has kept the file from carrying numbers nobody measured. This entry does not: it is
+# the midpoint of two measurements, and each measure below is the midpoint of that measure. The two
+# runs' own figures are named above so the arithmetic can be checked, and the band it feeds is 15%
+# where these sit 2.36% and 2.50% from their centres.
+[class.cal-1308]
+calibration_ms = 1.3083
+chain_walk_hash_chain_only = 12.4464
+epoch_root_256_leaves = 0.3546
+inclusion_proof_verify = 0.0040
 
 # Fastest class. First met under the minimum by run 39912327567, this pull request's `push` run. Its
 # median figure was 0.8717, so the minimum reads **2.02% lower** — which is why the old blocks could
