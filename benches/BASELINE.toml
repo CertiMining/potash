@@ -52,6 +52,13 @@
 # `band.rs` now says when it is on one — 8 of 30 runs reported a pass that the gate had no part in.
 band_percent = 15.0
 
+# **How close a run's calibration must be to a class's for that class to apply (H-61, issue #228).**
+#
+# The classes observed sit at about 1.13, 1.00, 0.88 and 0.61 times the old single baseline. The
+# narrowest gap between neighbours is 0.88 to 1.00, about 14%, so 6% separates every pair while leaving
+# room for a class's own run-to-run noise, which the 30-run series put under 2.4%.
+class_tolerance_percent = 6.0
+
 # **And it fired on a busy machine, which is H-31 (#72).** Running another test suite alongside it put
 # this machine at 19.73 ms against a 19.27 ms limit, with all three measures marginal — unchanged code,
 # over the limit on load. A measure over its limit on a developer machine means "check what else is
@@ -71,21 +78,52 @@ band_percent = 15.0
 # gates the reference machine either: since D-137, `scripts/ci.sh thresholds` measures §4.4a's figures
 # there and reports them with the machine named.
 
-# Measured on ubuntu-24.04, GitHub's shared runner, by the bench-band job of CI run 37046282848
-# (commit c16b6a5) — the run whose failure printed them, which is the only way an entry gets here.
+# **One block per runner class, since H-61 (#228). The single baseline below it is the record of what
+# this file held before, because it was right about the machine it came from and wrong about every
+# other one.**
 #
-# **One run, and the 30-run series since says it was a representative one.** A baseline from a single
-# sample carries that sample's noise; these figures turn out to sit at the top of the slow class, within
-# 0.5% of its median across 22 later samples from that class. That is luck rather than method, and it is
-# what makes the 15% band safe: the baseline is the slowest thing the fleet produces.
+# A baseline is a statement about a machine. Holding one and comparing every run against it made two
+# opposite mistakes at once:
 #
-# For scale: the reference machine does the chain walk in 7.1 ms and this runner in 12.8 ms, about 1.8x
-# slower. That gap is the whole reason D-132 sent §4.4a's absolute figures to the reference machine and
-# gave CI a band instead — D-136's 10 ms chain-walk threshold would have failed outright here, on code
-# that met it. D-137 has since removed those absolutes, on the same evidence read across two machines
-# rather than two environments; with this comparison reporting rather than failing, no wall-clock
-# regression gate is left.
-[measures]
-chain_walk_hash_chain_only = 12.8476
-epoch_root_256_leaves = 0.3685
-inclusion_proof_verify = 0.0041
+#   * **a slower class failed with nothing wrong.** Four pull requests did this on 22 October. On one of
+#     them the *same commit* passed its `pull_request` run at 12.81 ms and failed its `push` run at
+#     14.60 ms, minutes apart on different machines — a verdict about hardware allocation, reported as a
+#     verdict about the diff;
+#   * **a faster class could not fail at all.** 8 of the 30 calibration runs came in at 0.59 to 0.64 of
+#     the baseline, where no code change could have pushed a measure over the limit. "Every measure is
+#     inside its limit" was a true sentence about a gate that had not been exercised. `band.rs` used to
+#     say so in a disclosure; it no longer needs to, because such a run now has a baseline of its own.
+#
+# **How a class is identified: `calibration_ms`.** A fixed count of `ed25519-dalek` verifications,
+# version-pinned, timed on the same instrument as the measures. It cannot be one of the three measures:
+# a code regression would shift the class selection and so pick a baseline that absorbed it, and the
+# gate would hide what it exists to find. Nothing in `crates/` is on the calibration's path.
+#
+# **The first run on an unseen class fails, and that is the design** (owner's ruling, 22 October). A
+# gate that passed on hardware it has no baseline for would be reporting a comparison it did not make —
+# the same defect as an absent baseline, which this file has failed on since it was written. The
+# failure prints a `[class.…]` block from that run's own figures, and **that block is committed from
+# that output**, which is how every figure in this file has ever got here. Expect one failure per class
+# as the fleet is met, and no more.
+#
+# A class whose hardware is unchanged but whose speed moves — a kernel or microcode update — stops
+# matching and fails the same way, asking for a new block. From here that is indistinguishable from new
+# hardware, and it is the right failure either way.
+#
+# **What this file held before, and where it came from.** Measured on ubuntu-24.04, GitHub's shared
+# runner, by the bench-band job of CI run 37046282848 (commit c16b6a5) — the run whose failure printed
+# them, which was then and is now the only way an entry gets here. No calibration figure exists for it,
+# because the calibration measure did not exist when it was taken, so it cannot become a class block
+# and is kept as the record it is:
+#
+#     chain_walk_hash_chain_only = 12.8476
+#     epoch_root_256_leaves      = 0.3685
+#     inclusion_proof_verify     = 0.0041
+#
+# Those figures sat at the top of the slow class, within 0.5% of its median across 22 later samples. The
+# first run on that class will print them again beside a calibration, and the block will say so.
+#
+# For scale: the reference machine does the chain walk in 7.1 ms and that runner in 12.8 ms, about 1.8x
+# slower. That gap is why D-132 sent §4.4a's absolute figures to the reference machine and gave CI a band
+# instead — D-136's 10 ms chain-walk threshold would have failed outright on the runner, on code that
+# met it.
