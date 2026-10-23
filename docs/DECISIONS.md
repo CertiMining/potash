@@ -737,7 +737,7 @@ Each entry states the decision, its ground and its class. A security necessity n
 
 **V-Z-04's bound** is a number. Pearson correlation of slot index against submission order, against issuer index and against time within epoch must satisfy `|r| < 0.05` at the sample size CI runs, and `|r| < 0.02` over the full 10,000 epochs. Both are conservative: at CI's sample size the standard error is about 0.006, so the bound is eight standard errors out, and a real positional leak produces a correlation near 1.
 
-**What runs where.** CI runs a reduced sample with the power to catch a leak: 200 epochs for V-Z-02 and 400 for V-Z-04. The full 10,000-epoch run of V-Z-04 is a release gate, ignored by default, run before submission and recorded on issue #16. A post-deadline issue against milestone 5 strengthens the classifier.
+**What runs where.** CI runs a reduced sample with the power to catch a leak: 200 epochs for V-Z-02 and 400 for V-Z-04. The full 10,000-epoch run of V-Z-04 is a release gate, ignored by default, run before submission and recorded on issue #16. A post-deadline issue against milestone 5 strengthens the classifier — taken on 23 October 2026, and the amendment below is what it added.
 
 **Measured after the fact (23 Sep 2026).** The full run costs 1.96 seconds in a release build and 140.91 seconds in the debug build CI uses, rather than the hours the wording implied when this was settled. It stays a release gate under this decision; whether to promote it into CI at that price is the owner's to take, and the numbers are in the unit's record.
 
@@ -750,7 +750,38 @@ The second review found the correction incomplete. The specification was right a
 **Cost.** About six seconds in the `checks` group, measured rather than estimated: the three tests
 run in 5.6 to 5.9 seconds on the reference laptop in a debug build.
 
-**Revisit if.** The classifier is strengthened post-deadline and the band needs restating for a larger sample.
+**Amended 23 October 2026 (H-01, issue #26, owner's ruling of 22 October).** The classifier is strengthened, and this is the adversary added. **The band does not change** — the same two-sided binomial test at α = 0.001 against p = 1/2 — so what follows is a new sample and a new adversary rather than a new threshold.
+
+**The second adversary is given cross-epoch structure.** Padding at slot `s` is `PRF(k_e, 0x03 ‖ s)`, so one slot's values across many epochs differ only by the key, and a real leaf stands outside the family they form. The adversary studies 32 epochs it is told nothing about — each holding padding in some slots and real leaves in others, as a reader of the published log sees them, because a reference set of padding alone would be the key handed over — and is then shown epochs it has not studied. It scores each slot by how well its leaf fits its own slot's family: agreement with the family's majority bit at each of 256 bit positions, with its modal byte at each of 32 byte positions, and the smallest Hamming distance to any member.
+
+**Exact recurrence is asserted, not scored, and the reason is the defect this repository keeps filing.** A slot's value recurring in its own family is the sharpest cross-epoch question — a padding derivation that ignored the epoch key would make it the family's size for every padding slot. Under the specification it is zero on both sides of every comparison, so put through the binomial band it would be ties, and ties are coins: the band would report a perfect pass for a statistic that had measured nothing. It is asserted to be zero over a stated sample instead, 102,400 slots in the occupancy form and 12,800 in the leaf-by-leaf form.
+
+**The occupancy form asks the count rather than the leaf.** Two epochs of different occupancy — `C/4` and `3C/4` — are presented and the adversary names the one holding more real leaves. Chance is one half. This is the question that matters commercially, and an estimator that beats chance at it is a count-hiding failure even when no single leaf is ever named. Each cross-epoch feature is scored alone and the three together on a pooled scale, which the combination needs or it is one feature wearing three names: "agreeing bits" ranges over 256 and the others do not.
+
+**CI's sample for the cross-epoch adversary** is 32 reference epochs, 200 occupancy pairs and 50 balanced epochs of 128 pairs. Ground truth is taken by recomputation from §1.2 and §1.4, never from the assignment the engine recorded nor from the occupancy the test asked for, and the occupancy form asserts that the epoch holds the count it requested.
+
+**What the strengthening is worth, measured rather than asserted — and what it is not.** Three mutations were run, each applied to the engine *and* to the test's independent oracle together, so that the construction itself changes rather than the engine disagreeing with the specification:
+
+```
+mutation                        within-epoch   existing cross-   V-Z-03   new family   new occupancy
+                                battery        epoch tests                form
+padding byte 0 -> 0x00          fails          per-slot fails    fails    fails        fails, 200/200
+padding byte 0, one bit -> 0    fails          both pass         passes   fails        fails, 135/200
+k_e period 8 or 64              passes         repeat test       fails    fails        fails
+                                               fails at 8
+```
+
+The occupancy band at 200 pairs is [76.7, 123.3], so 200 of 200 and 135 of 200 are both decisively outside it; the second is a **single bit** of bias in a 256-bit padding leaf.
+
+**The honest result is that no probe run here was caught by the new adversary and missed by the rest of the suite**, and that is recorded rather than left for a reviewer to discover. The key-period mutations look like isolation and are not: `k_e` also keys the slot assignment, so V-Z-03's assignment oracle refuses any change to it, and at short periods `no_padding_leaf_repeats_across_epochs` refuses it too. A reviewer reading only "the new test fails here" would have concluded more than the probes support.
+
+**What the unit adds is therefore the question, not a catch nothing else makes.** No test in §4.4 estimated a count. "Is this leaf real" can be answered no while "how many are real" is answered well, because the second aggregates over every slot of an epoch and the first does not — the occupancy form sees 256 slots per trial where the pair game sees two leaves. A count that an observer can estimate is the count-hiding failure INV-TREE-02 is about, whether or not any leaf is ever named, and until now the repository asserted that property without testing it. `no_padding_leaf_repeats_across_epochs` and `a_classifier_given_one_slot_across_many_epochs_does_no_better_than_chance` already looked across epochs, and this adversary's recurrence assertion duplicates the first deliberately — it is the premise the family features rest on, asserted where they use it, and the 64-epoch test remains the thorough one.
+
+**Three of the five strengthenings issue #26 names remain open**: a learned distinguisher trained under a known key and tested under an unknown one, conditioning on the slot index, and a joint statistic over the leaf set with power against a small constant bias. RES-09 records which.
+
+**Cost.** The three V-Z-02 tests run in 1.08 seconds in a release build on the reference laptop, 482 epochs of real Keccak-256 included.
+
+**Revisit if.** One of the three remaining strengthenings is taken, or a reference set larger than 32 epochs is wanted — the modal-byte feature is weak at 32 members, where a byte's modal value is usually one that occurred once.
 
 ## D-67 · A submission the epoch does not hold has its own code
 

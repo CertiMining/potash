@@ -453,3 +453,209 @@ pub fn pearson(observed: &[f64], feature: &[f64], feature_name: &str) -> f64 {
     );
     covariance / (variance_observed.sqrt() * variance_feature.sqrt())
 }
+
+// ------------------------------------------- H-01: the cross-epoch occupancy adversary (§4.4, #26)
+
+/// The cross-epoch features. Each asks whether a leaf belongs to the family its slot forms across
+/// **other** epochs, which is the structure a single epoch cannot show however it is scored.
+///
+/// **Why this family and not another.** A padding leaf is `PRF(k_e, 0x03 ‖ slot)` (§1.4). The slot is
+/// the same in every epoch and only the key changes, so if the key were ignored, derived from
+/// something public, or leaked into its output, one slot's values across epochs would be a family a
+/// real leaf never belongs to. Every feature below is a way of asking "does this value belong to that
+/// family", and all four are scored so a leak in any one of them fails rather than being averaged
+/// away — the same discipline `FEATURE_NAMES` applies within an epoch.
+///
+/// Higher means a better fit, so under a leak padding scores above real on each of them.
+///
+/// **Exact repetition is not among them, and it is not an omission.** It is the sharpest of the
+/// cross-epoch questions — a padding derivation that ignored the epoch key would make a slot's value
+/// recur in every epoch — but under the specification it is zero on both sides of every comparison,
+/// and zero against zero is a tie. Scored through a binomial band, ties become coins and the band
+/// reports a perfect pass for a statistic that measured nothing, which is the defect this repository
+/// has filed more often than any other. [`family_repeats`] asserts it exactly instead.
+pub const FAMILY_FEATURE_NAMES: [&str; 3] = [
+    "slot family, agreeing bits",
+    "slot family, modal bytes",
+    "slot family, nearest member",
+];
+
+pub const FAMILY_FEATURE_COUNT: usize = FAMILY_FEATURE_NAMES.len();
+
+/// What an observer can learn about each slot from epochs other than the one under test.
+///
+/// **It carries no ground truth, which is the point.** A reference slot holds padding in some of these
+/// epochs and a real leaf in others, and the adversary cannot tell which — exactly what someone
+/// reading a published log sees. Giving the family only padding would be giving it the key.
+pub struct SlotFamilies {
+    per_slot: Vec<Vec<Digest>>,
+}
+
+impl SlotFamilies {
+    /// Builds the reference from epochs the adversary may study, excluding the one under test.
+    pub fn observed(reference: &[&BuiltEpoch]) -> Self {
+        let width = reference.first().map(|e| e.leaves.len()).unwrap_or(0);
+        let mut per_slot = vec![Vec::with_capacity(reference.len()); width];
+        for epoch in reference {
+            assert_eq!(
+                epoch.leaves.len(),
+                width,
+                "the reference epochs are not all the same width, so a slot's family would mix slots"
+            );
+            for (slot, leaf) in epoch.leaves.iter().enumerate() {
+                if let Some(family) = per_slot.get_mut(slot) {
+                    family.push(*leaf);
+                }
+            }
+        }
+        Self { per_slot }
+    }
+
+    /// How many epochs the family at `slot` was built from.
+    pub fn members(&self, slot: usize) -> usize {
+        self.per_slot.get(slot).map(Vec::len).unwrap_or(0)
+    }
+
+    /// How many of `slot`'s family members are exactly `leaf`.
+    pub fn repeats(&self, slot: usize, leaf: &Digest) -> usize {
+        self.per_slot
+            .get(slot)
+            .map(|family| family.iter().filter(|m| *m == leaf).count())
+            .unwrap_or(0)
+    }
+
+    /// How well `leaf` fits `slot`'s family, feature by feature, higher being a better fit.
+    pub fn fit(&self, slot: usize, leaf: &Digest) -> [f64; FAMILY_FEATURE_COUNT] {
+        let Some(family) = self.per_slot.get(slot) else {
+            return [0.0; FAMILY_FEATURE_COUNT];
+        };
+        if family.is_empty() {
+            return [0.0; FAMILY_FEATURE_COUNT];
+        }
+
+        // 1. Agreeing bits against the family's majority bit at each of the 256 positions. Catches a
+        //    bias that is not a repeat: a key that moved only some bits, or a PRF with a fixed region.
+        let mut agreeing = 0usize;
+        for byte in 0..32usize {
+            for bit in 0..8u32 {
+                let ones = family
+                    .iter()
+                    .filter(|m| m.get(byte).map(|b| (b >> bit) & 1 == 1).unwrap_or(false))
+                    .count();
+                let majority = ones * 2 > family.len();
+                let mine = leaf.get(byte).map(|b| (b >> bit) & 1 == 1).unwrap_or(false);
+                if mine == majority {
+                    agreeing = agreeing.saturating_add(1);
+                }
+            }
+        }
+
+        // 2. Modal bytes. The same question one byte at a time, which sees structure the bitwise
+        //    majority averages over.
+        let mut modal = 0usize;
+        for byte in 0..32usize {
+            let mut counts = [0usize; 256];
+            for member in family {
+                if let Some(v) = member.get(byte) {
+                    if let Some(c) = counts.get_mut(usize::from(*v)) {
+                        *c = c.saturating_add(1);
+                    }
+                }
+            }
+            let mut best = 0u8;
+            let mut best_count = 0usize;
+            for (value, count) in counts.iter().enumerate() {
+                if *count > best_count {
+                    best_count = *count;
+                    best = u8::try_from(value).unwrap_or(0);
+                }
+            }
+            if leaf.get(byte) == Some(&best) {
+                modal = modal.saturating_add(1);
+            }
+        }
+
+        // 3. Nearest member, as 256 minus the smallest Hamming distance to any one of them. A family
+        //    whose members cluster near each other would put padding close to one of them and leave a
+        //    real leaf at the distance of two independent values.
+        let nearest = family.iter().map(|m| hamming(m, leaf)).min().unwrap_or(0);
+        let nearest = 256.0 - f64::from(nearest);
+
+        [agreeing as f64, modal as f64, nearest]
+    }
+}
+
+/// How many family members a slot's own leaf exactly equals, summed over an epoch's slots.
+///
+/// **Asserted exactly rather than scored, for the reason [`FAMILY_FEATURE_NAMES`] gives.** Under the
+/// specification this is zero for every epoch: padding at slot `s` is `PRF(k_e, 0x03 ‖ s)` and `k_e`
+/// differs per epoch, so no slot's value recurs, and a real leaf is unrelated to either. One repeat
+/// is a failure, not a shift in a rate, so the test says so with the sample it saw.
+pub fn family_repeats(families: &SlotFamilies, leaves: &[Digest]) -> usize {
+    leaves
+        .iter()
+        .enumerate()
+        .map(|(slot, leaf)| families.repeats(slot, leaf))
+        .sum()
+}
+
+/// One row per slot: how well that slot's leaf fits its cross-epoch family.
+pub fn family_fit_matrix(
+    families: &SlotFamilies,
+    leaves: &[Digest],
+) -> Vec<[f64; FAMILY_FEATURE_COUNT]> {
+    leaves
+        .iter()
+        .enumerate()
+        .map(|(slot, leaf)| families.fit(slot, leaf))
+        .collect()
+}
+
+/// A feature's mean over an epoch's slots. **This is the occupancy statistic**: it does not name any
+/// leaf, and an epoch holding more padding has more slots that fit their family, so under a leak the
+/// mean moves with the count. That is the question §4.4 cares about commercially — not "is this leaf
+/// real" but "how many of these are".
+pub fn family_fit_means(matrix: &[[f64; FAMILY_FEATURE_COUNT]]) -> [f64; FAMILY_FEATURE_COUNT] {
+    let mut means = [0.0; FAMILY_FEATURE_COUNT];
+    if matrix.is_empty() {
+        return means;
+    }
+    for row in matrix {
+        for (mean, value) in means.iter_mut().zip(row) {
+            *mean += value;
+        }
+    }
+    for mean in means.iter_mut() {
+        *mean /= matrix.len() as f64;
+    }
+    means
+}
+
+/// The pooled standard deviation of each feature across two epochs' slots, used to put the two
+/// epochs' differences on one scale before they are added.
+///
+/// **A combination has to be scale-free or it is one feature wearing four names.** "Agreeing bits"
+/// ranges over 256 and "exact repeats" over the family's size, so an unstandardised sum would be the
+/// bit count and nothing else.
+pub fn family_pooled_spread(
+    a: &[[f64; FAMILY_FEATURE_COUNT]],
+    b: &[[f64; FAMILY_FEATURE_COUNT]],
+) -> [f64; FAMILY_FEATURE_COUNT] {
+    let mut spread = [0.0; FAMILY_FEATURE_COUNT];
+    let n = a.len().saturating_add(b.len());
+    if n == 0 {
+        return spread;
+    }
+    for feature in 0..FAMILY_FEATURE_COUNT {
+        let values = a
+            .iter()
+            .chain(b.iter())
+            .filter_map(|row| row.get(feature).copied());
+        let mean = values.clone().sum::<f64>() / n as f64;
+        let variance = values.map(|v| (v - mean) * (v - mean)).sum::<f64>() / n as f64;
+        if let Some(slot) = spread.get_mut(feature) {
+            *slot = variance.sqrt();
+        }
+    }
+    spread
+}
