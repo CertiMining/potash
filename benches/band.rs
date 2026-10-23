@@ -59,6 +59,11 @@ const RFC8032_SECRET: [u8; 32] = [
 /// published key. Nothing in `crates/` is on this path. A version bump would move the figure and
 /// every class with it, which is a deliberate change that owes a re-measure; the pin is what makes
 /// that a decision rather than a drift.
+///
+/// **It reads the fastest sample, not the median (H-64, issue #243, ruled 23 October 2026).**
+/// [`minimum_ms`] records why. The same change makes the figures a *median* produced no longer
+/// describe this measure, which is why `BASELINE.toml` carries no class blocks until runs under this
+/// instrument put them there.
 fn calibration_ms() -> f64 {
     use ed25519_dalek::{Signer as _, SigningKey, Verifier as _};
     let key = SigningKey::from_bytes(&RFC8032_SECRET);
@@ -68,7 +73,7 @@ fn calibration_ms() -> f64 {
     verifying
         .verify(message, &signature)
         .expect("the calibration's own signature verifies before anything is timed");
-    median_ms(|| {
+    minimum_ms(|| {
         let mut ok = 0usize;
         for _ in 0..CALIBRATION_VERIFICATIONS {
             if verifying.verify(message, &signature).is_ok() {
@@ -87,7 +92,34 @@ fn calibration_ms() -> f64 {
 
 /// Warm up, then the median of `SAMPLES`. The same instrument `thresholds.rs` uses, for the same reason:
 /// without warm-up this reads 30% high and measures cache state rather than code.
-fn median_ms<T>(mut f: impl FnMut() -> T) -> f64 {
+fn median_ms<T>(f: impl FnMut() -> T) -> f64 {
+    sorted_ms(f)[SAMPLES / 2]
+}
+
+/// Warm up, then the **fastest** of `SAMPLES`, which is what the calibration reads (H-64, issue #243).
+///
+/// **Interference can only make a sample slower.** A timed run shares its machine with whatever else
+/// the host is doing, and every one of those things adds time; none removes it. So the smallest of a
+/// set of samples is the closest any of them came to the machine's own speed, and the median carries
+/// whatever the machine was also doing during the middle sample.
+///
+/// That matters because the calibration is the shortest thing this file times — 0.87 ms on the
+/// fastest class, against a 7.9 ms chain walk — and it is the one that decides which baseline the
+/// other three are compared against. Commit `d24dd83` passed `bench-band` on its `push` run and
+/// failed on its `pull_request` run minutes later: the chain walks were 1.8% apart, which is the same
+/// machine, and the calibrations were 90% apart. A verdict about interference, delivered as a verdict
+/// about the diff — which is the defect H-61 was written to end, relocated from the measures to the
+/// thing that selects their baseline.
+///
+/// **The three measures keep the median**, because they are not identifying anything: they are
+/// compared against a band, and a band derived from medians has to be read by one.
+fn minimum_ms<T>(f: impl FnMut() -> T) -> f64 {
+    // `sorted_ms` sorts, so the first element is the fastest sample.
+    sorted_ms(f)[0]
+}
+
+/// Warm up, then `SAMPLES` timings in milliseconds, ascending.
+fn sorted_ms<T>(mut f: impl FnMut() -> T) -> [f64; SAMPLES] {
     for _ in 0..WARM_UP {
         drop(std::hint::black_box(f()));
     }
@@ -99,7 +131,11 @@ fn median_ms<T>(mut f: impl FnMut() -> T) -> f64 {
         drop(std::hint::black_box(out));
     }
     times.sort_unstable();
-    times[SAMPLES / 2].as_secs_f64() * 1_000.0
+    let mut out = [0.0; SAMPLES];
+    for (slot, time) in out.iter_mut().zip(&times) {
+        *slot = time.as_secs_f64() * 1_000.0;
+    }
+    out
 }
 
 /// One runner class: what the calibration reads on it, and what the measures were when it was taken.

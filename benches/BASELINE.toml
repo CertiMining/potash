@@ -69,21 +69,29 @@ band_percent = 15.0
 # inside both, matched two classes, and `band.rs` refuses an ambiguous match rather than picking one.
 # The fast class would have failed every run, for ever, on a file that looked correct.
 #
-# **2.5 is what the two measured quantities leave room for.** It has to clear the widest run-to-run
-# spread inside one class, and stay under the narrowest gap between two classes:
+# **2.5 was derived to sit between two measured quantities.** It has to clear the widest run-to-run
+# spread inside one class, and stay under the narrowest gap between two classes. As derived, on two
+# samples of one class:
 #
-#     widest observed within-class spread   1.349%   (runs 39889325316 and 39891952477, same class)
+#     widest within-class spread, n=2       1.349%   (runs 39889325316 and 39891952477, same class)
 #     narrowest observed between-class gap  6.275%   (cal-0872 to cal-0926)
-#     t must satisfy                        1.349% < t  and  (1+t)/(1-t) < 1.06275, i.e. t < 3.046%
+#     t had to satisfy                      1.349% < t  and  (1+t)/(1-t) < 1.06275, i.e. t < 3.046%
 #
-# 2.5% sits between them with 1.85x headroom over the noise and 0.55 points under the ceiling. 3.0%
-# would clear the ceiling by 0.046 points, which is no margin at all.
+# **The first line did not survive more samples, and it was flagged as thin when it was written
+# (H-64, issue #243).** Over seventeen runs the widest within-class spread is **3.31%**, above the
+# 3.046% ceiling the second line sets — so on those figures no value of `t` both holds a class
+# together and keeps two classes apart. Both failures the original warning predicted then arrived:
+# `main`'s commit 027da83 read 2.78% from its class's figure and failed, and a later run read 0.8961,
+# which is +2.80% from one fast class and -3.27% from the other, a machine in the gap between two of
+# them.
 #
-# **What is thin here, said rather than discovered later.** The 1.349% is two samples of one class. It
-# is the only direct measurement of within-class spread that exists — the earlier series could not
-# produce one — and a wider spread on some class would show up as a run matching nothing and printing a
-# block nearly identical to one already committed. That is the failure to watch for, and it is the
-# cheaper of the two: a redundant block is noise, where an overlap was a permanent red.
+# **So 2.5 is retained rather than re-derived, and that is deliberate.** Every one of those seventeen
+# readings is a *median*, and the calibration now reads the fastest sample instead. The quantity the
+# tolerance has to clear is the spread of **minima**, which no run has yet produced: on the noisiest
+# machine available the minimum cut the spread of twelve readings from 49.7% to 14.9%, with nine of
+# the twelve inside 0.35% of one another, but a developer laptop is not the fleet. Re-deriving from
+# numbers the instrument no longer takes would be the same mistake the 1.349% was. The figure stands
+# until runs under this instrument say what it should be.
 class_tolerance_percent = 2.5
 
 # **And it fired on a busy machine, which is H-31 (#72).** Running another test suite alongside it put
@@ -170,44 +178,40 @@ class_tolerance_percent = 2.5
 # 0.80 and 1.01. **So the series' count was right and its spacing was not**, which is what the
 # tolerance paragraph above had to be rewritten for.
 #
-# **The run-to-run spread inside one class is 1.349%.** Runs 39889325316 and 39891952477 landed on the
-# same class minutes apart and read 0.8717 ms and 0.8601 ms, with their chain walks 0.71% apart. That
-# is the number the tolerance has to clear, and the only one that could not be derived from the earlier
-# series, because the calibration measure did not exist when it was collected.
+# **The run-to-run spread inside one class was put at 1.349% from two samples and reached 3.31% over
+# seventeen (H-64, issue #243).** Those are all medians; the calibration now reads the fastest sample,
+# and the spread of minima is what the tolerance will have to clear once runs under this instrument
+# have measured it.
 #
 # **Do not read these as a conversion table.** The calibration and the measures do not scale together
 # across machines: `cal-0872` to `cal-1034` is 18.7% on the calibration and 31.0% on the chain walk,
 # because Ed25519 verification and SHA-256 hashing do not depend on the same silicon. That is exactly
 # why each class carries its own measured baselines instead of a figure derived from its calibration.
 
-# 0.61x the single baseline above. First met by run 39889325316; run 39891952477 read 0.8601 on it,
-# and run 39896365907 is the first run this class ever passed on.
-[class.cal-0872]
-calibration_ms = 0.8717
-chain_walk_hash_chain_only = 7.8618
-epoch_root_256_leaves = 0.2191
-inclusion_proof_verify = 0.0025
-
-# 0.66x the single baseline above, and the class the tolerance had to be re-derived for: it is 6.275%
-# from `cal-0872`, where the first derivation had assumed no pair would be closer than 14%. First met
-# by run 39896363146.
-[class.cal-0926]
-calibration_ms = 0.9264
-chain_walk_hash_chain_only = 8.4500
-epoch_root_256_leaves = 0.2331
-inclusion_proof_verify = 0.0027
-
-# 0.80x the single baseline above. First met by run 39889287950.
-[class.cal-1034]
-calibration_ms = 1.0344
-chain_walk_hash_chain_only = 10.2976
-epoch_root_256_leaves = 0.2891
-inclusion_proof_verify = 0.0033
-
-# 1.01x the single baseline above, which is the class that baseline came from: its chain walk is
-# 12.9602 against the 12.8476 recorded there, 0.88% apart. First met by run 39891954601.
-[class.cal-1284]
-calibration_ms = 1.2838
-chain_walk_hash_chain_only = 12.9602
-epoch_root_256_leaves = 0.3698
-inclusion_proof_verify = 0.0042
+# **No class block stands here, and that is the state this change leaves (H-64, issue #243).**
+#
+# Four were committed, measured on 22-23 October, and every one of them was a *median* of seven
+# samples. The calibration now reads the *fastest* of those samples instead, for the reason
+# `minimum_ms` gives, so those four figures describe a measure this file no longer takes. A minimum
+# is never above its median and usually below it, so keeping them would not merely be untidy: a run
+# would be compared against a number taken with a different instrument, and some runs would match a
+# neighbouring class rather than their own. A figure that nothing measured is what this file refuses.
+#
+# So the fleet is met again, under the instrument that will judge it. Each class fails once and prints
+# its block, which is committed from that run's own output — the same path every figure in this file
+# has ever taken, and the cost of changing the instrument rather than the figures.
+#
+# **What was here, kept as the record it is.** These are not usable as class blocks and are not
+# written as blocks, so nothing can select them:
+#
+#     class       calibration (median)   chain_walk   epoch_root   inclusion   first met by run
+#     cal-0872    0.8717                 7.8618       0.2191       0.0025      39889325316
+#     cal-0926    0.9264                 8.4500       0.2331       0.0027      39896363146
+#     cal-1034    1.0344                10.2976       0.2891       0.0033      39889287950
+#     cal-1284    1.2838                12.9602       0.3698       0.0042      39891954601
+#
+# Seventeen runs under the median instrument are tabulated in issue #243, including the two that
+# selected no class: one perturbed (a calibration 84% out of line with its own measures) and one
+# ordinary slow-class run 2.78% from its class's committed figure. A later run read 0.8961, which is
+# +2.80% from `cal-0872` and -3.27% from `cal-0926` — a genuine machine in the gap between two
+# classes, which is the subject of its own issue and is not what this change addresses.
