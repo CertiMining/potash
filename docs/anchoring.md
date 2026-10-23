@@ -73,8 +73,8 @@ Three things it does not establish, so the row is read for what it is:
   walk across a boundary — but only from a checkpoint whose height is a multiple of 2016, because the
   arithmetic needs the timestamp of the period's first block and that is the checkpoint itself only
   then. The windows above start one block below an attested height, so none of them is on a boundary
-  and none needs to be: each is four to ten headers inside one period, and a range leaving it would be
-  refused rather than accepted on whatever difficulty the headers claim.
+  and none needs to be: each is ten to sixteen headers inside one period, and a range leaving it would
+  be refused rather than accepted on whatever difficulty the headers claim.
 * **Where a receipt carries more than one Bitcoin attestation, one height is checked.** It is the
   first in the operation tree, which is the one the row names and the one `verify_receipt` returns.
   The others are still only what the receipt carries.
@@ -331,8 +331,8 @@ attestations only; `ots upgrade` was run on 22 October 2026 and both landed in *
 971,047** — the same block the repository-head stamp `0003`'s predecessor reached, because the
 calendars aggregated three stamps made minutes apart into one. The upgraded receipts are committed and
 **confirmed against that block**: `confirm-anchor-b` recomputes each receipt's operations and reaches
-`33918556…05cf1d64`, which is 971,047's merkle root, on five committed headers of real work from the
-checkpoint at 971,042.
+`33918556…05cf1d64`, which is 971,047's merkle root, on eleven committed headers of real work from the
+checkpoint at 971,042 — the attested block and the six above it that H-56 requires.
 
 **What is still missing is the attach, and it is an on-chain write.** `receipt_digest` is write-once
 (INV-ANCH-03), so the one opportunity is spent deliberately and by a person holding the checkpoint
@@ -351,8 +351,8 @@ to the chain, for the convenience of recording work a day sooner. They stay in t
 directory D-118 names, and the attach commits the file and moves the row in one step.
 
 **The receipts were confirmed from there**, which needs nothing committed: `confirm-anchor-b` takes a
-receipt, the bytes it stamped and a file of headers, and both reached 971,047's merkle root on the five
-headers this repository already holds for that block.
+receipt, the bytes it stamped and a file of headers, and both reached 971,047's merkle root on the
+eleven headers this repository holds for that block.
 
 **`single` is a snapshot, not a property.** D-112 spends the one write-once opportunity on the upgraded
 receipt, so every newly published epoch reads `single` for the hours before a Bitcoin block confirms
