@@ -16,8 +16,8 @@ was written for.
 
 **It was re-read on 7 October 2026 against SHA-256
 `9088099e6a4297ca5c3b966d142f7f427e1a00672646fb44d7bde05e1fc55e14`, 831 lines.** The specification as
-committed today is **v0.2.9**, SHA-256 `cf3572b1323036009b0d2fc42dce3842b51bebe9c85c98fa2ed06dc00ddbfbc3`,
-960 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
+committed today is **v0.2.10**, SHA-256 `656506f2868d13249d85f9d5e15f02864ff6b1825fac9be5ab32c20a1107d82c`,
+972 lines. v0.2.1 added V-P-13 to §4.2 (H-04), v0.2.2 retires `TAG_CKPT` and reserves its bytes
 (H-06), which is the subject of SD-11, v0.2.3 corrects §4.4a's account of the CI regression band
 (H-37, H-31), and v0.2.4 bounds `publish_checkpoint` to the calendar (H-11). None of those four
 touches anything this verifier implements: they are about the program and the figures around it.

@@ -16,8 +16,10 @@ use certimining_core::{epoch_key, padding_prf, Digest, Hasher, NativeKeccak, Sub
 use certimining_log::{BuiltEpoch, EpochTree};
 use common::{
     assert_indistinguishable, assignment_oracle, binomial_band, combined_scores, epoch,
-    feature_deviations, feature_matrix, leaf_digest, padding_slots, pearson, real_slots,
-    scattered_id, sequential_id, SplitMix, FEATURE_COUNT, FEATURE_NAMES, TEST_MASTER_KEY,
+    family_fit_matrix, family_fit_means, family_pooled_spread, family_repeats, feature_deviations,
+    feature_matrix, leaf_digest, padding_slots, pearson, real_slots, scattered_id, sequential_id,
+    SlotFamilies, SplitMix, FAMILY_FEATURE_COUNT, FAMILY_FEATURE_NAMES, FEATURE_COUNT,
+    FEATURE_NAMES, TEST_MASTER_KEY,
 };
 
 /// The deployment's height (D-02).
@@ -1200,6 +1202,319 @@ mod cross_epoch {
         assert_indistinguishable(
             "one slot across epochs, distance from its own mean",
             successes,
+            trials,
+        );
+    }
+}
+
+// ----------------------------------------------- H-01: the cross-epoch occupancy adversary (#26)
+
+/// Epochs the cross-epoch adversary may study. Each slot's family has this many members.
+const REFERENCE_EPOCHS_H01: usize = 32;
+/// Occupancy trials, each comparing two epochs of different occupancy.
+const TRIALS_H01: usize = 200;
+/// Balanced epochs for the leaf-by-leaf form of the same adversary.
+const LEAF_EPOCHS_H01: u64 = 50;
+
+const _: () = assert!(
+    REFERENCE_EPOCHS_H01 == 32,
+    "D-66's reference set for the cross-epoch adversary"
+);
+const _: () = assert!(
+    TRIALS_H01 == 200,
+    "D-66's occupancy sample for the cross-epoch adversary"
+);
+const _: () = assert!(
+    LEAF_EPOCHS_H01 == 50,
+    "D-66's leaf-by-leaf sample for the cross-epoch adversary"
+);
+
+/// How many of an epoch's slots hold real leaves, decided by recomputation rather than from the
+/// assignment the engine recorded.
+fn real_count_by_recomputation(built: &BuiltEpoch, number: u64) -> usize {
+    real_by_recomputation(built, number)
+        .iter()
+        .filter(|real| **real)
+        .count()
+}
+
+/// **The adversary H-01 asks for: occupancy, with cross-epoch structure (§4.4, issue #26).**
+///
+/// **The question is the new part, and it is worth being exact about which part is new.** The
+/// `cross_epoch` module below already looks across epochs: `no_padding_leaf_repeats_across_epochs`
+/// refuses a padding value that recurs over 64 epochs, and
+/// `a_classifier_given_one_slot_across_many_epochs_does_no_better_than_chance` scores one slot's
+/// column with the within-epoch features. What no test in §4.4 asked is **the count**: not whether a
+/// leaf is real but how many of an epoch's leaves are, which is the question a counterparty's
+/// competitor asks and the one INV-TREE-02's count-hiding claim is about. "Is this leaf real" can be
+/// answered no while "how many are real" is answered well, because this form aggregates over all
+/// `C` slots of an epoch where the pair game weighs two leaves.
+///
+/// So the adversary is given `REFERENCE_EPOCHS_H01` epochs to study, no key and no ground truth about
+/// them, and then two epochs of different occupancy. It must say which holds more real leaves. Chance
+/// is one half, and the band is the same α = 0.001 every other statistic here is held to.
+///
+/// The scores are cross-epoch because that is the structure a count estimator can use: padding at
+/// slot `s` is `PRF(k_e, 0x03 ‖ s)`, so a slot's values across epochs differ only by the key, and an
+/// epoch holding more padding has more slots that fit their own slot's family.
+///
+/// **It is added beside the existing classifier and replaces none of it**, which is the issue's first
+/// acceptance condition: what passed before is still being asked. D-66 records the probes run against
+/// it, including the result that none of them was caught here and missed by the rest of the suite.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "482 epochs of real Keccak-256; Miri covers the same code paths in tree.rs"
+)]
+fn v_z_02_occupancy_is_indistinguishable_across_epochs() {
+    let capacity = 1usize << HEIGHT;
+    // The two occupancies compared. Far apart on purpose: an adversary is given the easiest form of
+    // its task, so a pass means the hard form is out of reach too.
+    let sparse = capacity / 4;
+    let dense = capacity - capacity / 4;
+    assert!(sparse < dense, "the two occupancies must differ");
+
+    // The reference epochs, which the adversary studies and which are never one of the two under
+    // test. Built once: the families are what an observer accumulates by reading the log.
+    let reference: Vec<BuiltEpoch> = (0..REFERENCE_EPOCHS_H01)
+        .map(|i| epoch::<NativeKeccak>(500_000 + i as u64, HEIGHT, capacity / 2))
+        .collect();
+    let families = SlotFamilies::observed(&reference.iter().collect::<Vec<_>>());
+    for slot in 0..capacity {
+        assert_eq!(
+            families.members(slot),
+            REFERENCE_EPOCHS_H01,
+            "slot {slot}'s family is not the reference set"
+        );
+    }
+
+    let mut successes = [0usize; FAMILY_FEATURE_COUNT + 1];
+    let mut trials = 0usize;
+    let mut repeats = 0usize;
+    let mut slots_examined = 0usize;
+    let mut mix = SplitMix(0x5eed_0001);
+    // Which features varied at all, so a statistic cannot be computed over a column of constants.
+    let mut live = [0usize; FAMILY_FEATURE_COUNT];
+
+    for trial in 0..TRIALS_H01 {
+        let first = 600_000 + 2 * trial as u64;
+        let second = first + 1;
+        // Which of the pair is the dense one alternates, so a predictor that always answers "the
+        // first" scores one half rather than one.
+        let dense_first = mix.next_u64() & 1 == 0;
+        let (a_count, b_count) = if dense_first {
+            (dense, sparse)
+        } else {
+            (sparse, dense)
+        };
+        let a = epoch::<NativeKeccak>(first, HEIGHT, a_count);
+        let b = epoch::<NativeKeccak>(second, HEIGHT, b_count);
+        // Ground truth by recomputation, never from the counts asked for or the assignment recorded.
+        let a_real = real_count_by_recomputation(&a, first);
+        let b_real = real_count_by_recomputation(&b, second);
+        assert_eq!(
+            a_real, a_count,
+            "epoch {first} does not hold the occupancy asked for"
+        );
+        assert_eq!(
+            b_real, b_count,
+            "epoch {second} does not hold the occupancy asked for"
+        );
+
+        // Exact repetition, asserted over the whole sample rather than scored. See
+        // `FAMILY_FEATURE_NAMES`: zero against zero is a tie, and a band full of ties reads as ideal.
+        // **This duplicates `no_padding_leaf_repeats_across_epochs` on purpose**, which is the
+        // thorough version at 64 epochs and over every slot. Here it is the premise the family
+        // features rest on, asserted where they use it: if a slot's value recurred, every one of them
+        // would be measuring that recurrence instead of what it names.
+        repeats = repeats
+            .saturating_add(family_repeats(&families, &a.leaves))
+            .saturating_add(family_repeats(&families, &b.leaves));
+        slots_examined = slots_examined
+            .saturating_add(a.leaves.len())
+            .saturating_add(b.leaves.len());
+
+        let a_matrix = family_fit_matrix(&families, &a.leaves);
+        let b_matrix = family_fit_matrix(&families, &b.leaves);
+        let a_means = family_fit_means(&a_matrix);
+        let b_means = family_fit_means(&b_matrix);
+        let spread = family_pooled_spread(&a_matrix, &b_matrix);
+
+        for (seen, s) in live.iter_mut().zip(&spread) {
+            if *s > 0.0 {
+                *seen += 1;
+            }
+        }
+
+        // Per feature: the epoch that fits its families *less* well is the one holding fewer padding
+        // leaves, so it is the one holding more real ones.
+        for feature in 0..FAMILY_FEATURE_COUNT {
+            let (Some(am), Some(bm)) = (a_means.get(feature), b_means.get(feature)) else {
+                continue;
+            };
+            let tie = mix.next_u64() & 1 == 0;
+            let says_a_is_denser_in_real = if am == bm { tie } else { am < bm };
+            let truth = a_real > b_real;
+            if says_a_is_denser_in_real == truth {
+                if let Some(count) = successes.get_mut(feature) {
+                    *count += 1;
+                }
+            }
+        }
+
+        // And the four together, each put on its own scale first.
+        let mut combined = 0.0;
+        for feature in 0..FAMILY_FEATURE_COUNT {
+            let (Some(am), Some(bm), Some(s)) = (
+                a_means.get(feature),
+                b_means.get(feature),
+                spread.get(feature),
+            ) else {
+                continue;
+            };
+            if *s > 0.0 {
+                combined += (am - bm) / s;
+            }
+        }
+        let tie = mix.next_u64() & 1 == 0;
+        let says_a_is_denser_in_real = if combined == 0.0 { tie } else { combined < 0.0 };
+        if says_a_is_denser_in_real == (a_real > b_real) {
+            if let Some(count) = successes.get_mut(FAMILY_FEATURE_COUNT) {
+                *count += 1;
+            }
+        }
+        trials += 1;
+    }
+
+    assert_eq!(
+        trials, TRIALS_H01,
+        "D-66's occupancy sample is {TRIALS_H01} pairs of epochs"
+    );
+    assert_eq!(
+        slots_examined,
+        TRIALS_H01 * 2 * capacity,
+        "every slot of both epochs in every pair is examined for repetition"
+    );
+    assert_eq!(
+        repeats, 0,
+        "a slot's leaf recurred in its own cross-epoch family {repeats} time(s) over \
+         {slots_examined} slots against {REFERENCE_EPOCHS_H01} reference epochs. Under §1.4 padding \
+         is PRF(k_e, 0x03 || slot) and k_e differs per epoch, so no slot's value may recur; one \
+         repeat identifies padding outright."
+    );
+
+    // **A feature that never varied is not an indistinguishable feature, it is an absent one.** The
+    // same condition the within-epoch form checks, for the same reason: a column of constants makes
+    // every comparison a tie and every tie a coin, which reads as a perfect pass.
+    let thin: Vec<String> = FAMILY_FEATURE_NAMES
+        .iter()
+        .zip(&live)
+        .filter(|(_, seen)| **seen * 2 < TRIALS_H01)
+        .map(|(name, seen)| format!("{name} ({seen} of {TRIALS_H01})"))
+        .collect();
+    assert!(
+        thin.is_empty(),
+        "{} of {FAMILY_FEATURE_COUNT} cross-epoch features varied in fewer than half the trials, so \
+         they do not support a statistic computed over them: {}",
+        thin.len(),
+        thin.join(", ")
+    );
+
+    for (index, count) in successes.iter().enumerate() {
+        let label = if index == FAMILY_FEATURE_COUNT {
+            "occupancy, combined cross-epoch score"
+        } else {
+            FAMILY_FEATURE_NAMES[index]
+        };
+        assert_indistinguishable(&format!("occupancy by {label}"), *count, trials);
+    }
+}
+
+/// The same adversary asked the leaf-level question, so cross-epoch structure is tested against both
+/// forms V-Z-02 states: one real leaf against one padding leaf, scored only by how each fits the
+/// family its slot forms in other epochs.
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "82 epochs of real Keccak-256; Miri covers the same code paths in tree.rs"
+)]
+fn v_z_02_a_slots_family_across_epochs_does_not_name_its_padding() {
+    let capacity = 1usize << HEIGHT;
+    let reference: Vec<BuiltEpoch> = (0..REFERENCE_EPOCHS_H01)
+        .map(|i| epoch::<NativeKeccak>(800_000 + i as u64, HEIGHT, capacity / 2))
+        .collect();
+    let families = SlotFamilies::observed(&reference.iter().collect::<Vec<_>>());
+
+    let mut successes = [0usize; FAMILY_FEATURE_COUNT];
+    let mut trials = 0usize;
+    let mut repeats = 0usize;
+    let mut slots_examined = 0usize;
+    let mut mix = SplitMix(0x5eed_0003);
+
+    for number in 700_000..700_000 + LEAF_EPOCHS_H01 {
+        let built = epoch::<NativeKeccak>(number, HEIGHT, capacity / 2);
+        let truth = real_by_recomputation(&built, number);
+        repeats = repeats.saturating_add(family_repeats(&families, &built.leaves));
+        slots_examined = slots_examined.saturating_add(built.leaves.len());
+        let matrix = family_fit_matrix(&families, &built.leaves);
+
+        let mut reals: Vec<usize> = (0..capacity)
+            .filter(|s| truth.get(*s) == Some(&true))
+            .collect();
+        let mut paddings: Vec<usize> = (0..capacity)
+            .filter(|s| truth.get(*s) == Some(&false))
+            .collect();
+        assert_eq!(reals.len(), paddings.len(), "a balanced epoch");
+        mix.shuffle(&mut reals);
+        mix.shuffle(&mut paddings);
+
+        for (real_slot, padding_slot) in reals.iter().zip(&paddings) {
+            let (Some(real_row), Some(padding_row)) =
+                (matrix.get(*real_slot), matrix.get(*padding_slot))
+            else {
+                continue;
+            };
+            for feature in 0..FAMILY_FEATURE_COUNT {
+                let (Some(r), Some(p)) = (real_row.get(feature), padding_row.get(feature)) else {
+                    continue;
+                };
+                // Padding is the one that should fit its family, so naming it means scoring it above.
+                let tie = mix.next_u64() & 1 == 0;
+                let names_padding = if p == r { tie } else { p > r };
+                if names_padding {
+                    if let Some(count) = successes.get_mut(feature) {
+                        *count += 1;
+                    }
+                }
+            }
+            trials += 1;
+        }
+    }
+
+    assert_eq!(
+        trials,
+        LEAF_EPOCHS_H01 as usize * (capacity / 2),
+        "D-66's leaf-by-leaf cross-epoch sample is {LEAF_EPOCHS_H01} balanced epochs of {} pairs",
+        capacity / 2
+    );
+    assert_eq!(
+        slots_examined,
+        LEAF_EPOCHS_H01 as usize * capacity,
+        "every slot of every epoch is examined for repetition"
+    );
+    assert_eq!(
+        repeats, 0,
+        "a slot's leaf recurred in its own cross-epoch family {repeats} time(s) over \
+         {slots_examined} slots"
+    );
+
+    for (index, count) in successes.iter().enumerate() {
+        assert_indistinguishable(
+            &format!(
+                "slot family names padding by {}",
+                FAMILY_FEATURE_NAMES[index]
+            ),
+            *count,
             trials,
         );
     }

@@ -162,6 +162,15 @@ A classifier given one slot across many epochs, scoring each leaf's distance fro
 mean, stays inside the same two-sided band at α = 0.001 as V-Z-02's. Looking across epochs finds no
 statistical tell; it finds the exact one above.
 
+**And an occupancy estimator stays inside it too, which is the question added in v0.2.10 (H-01).**
+Everything above asks whether a leaf is real. The count is a separate question with a separate answer:
+an observer who can estimate how many records an epoch holds has broken count-hiding whether or not
+any leaf is ever named, and an estimator aggregating over all `C` slots has power a two-leaf game does
+not. Two epochs of different occupancy are presented and the adversary names the one holding more real
+leaves, scoring each slot by how well its leaf fits the family its own slot forms across 32 epochs it
+was told nothing about. Chance is one half and the same band applies. D-66 records what the probes
+showed, including that none of them was caught by this adversary and missed by the rest of the suite.
+
 ## What lives elsewhere
 
 - **The batcher and its promises are E-07's.** `build` refuses a set larger than `C`; queueing the
