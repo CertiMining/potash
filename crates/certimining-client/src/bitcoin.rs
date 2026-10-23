@@ -36,6 +36,24 @@
 //! its timestamp**, which is what the arithmetic needs: the period's first block is then the
 //! checkpoint itself. Off a boundary, a range leaving the period is still refused rather than taken on
 //! the headers' word, which is what every window this repository commits does.
+//!
+//! **Bitcoin's contextual header rules, the two of them that need no clock (H-58, issue #224).** An
+//! independent review at `80aa55f` served this module headers carrying `time = 0` and
+//! `time = 4294967295`, and both were accepted: timestamps were read only by the retarget arithmetic
+//! and the version field was not read at all. A version floor now applies from the height Bitcoin's
+//! own took effect, and median-time-past applies wherever the eleven headers below the one being
+//! judged are inside the range supplied.
+//!
+//! **No attested block this repository commits is deep enough into its window for that rule.** The
+//! windows are ten to sixteen headers since H-56, and each attested block sits at the fourth to the
+//! tenth of them, where fewer than eleven headers precede it. The rule does reach headers *above* an
+//! attested block in the longest window, so it is not dormant — it is simply never the attested
+//! block's own timestamp that it judges. `Confirmed` carries which it was rather than leaving a
+//! caller to read silence as a pass. **And the third rule, the two-hour future bound, is not here**: it
+//! compares a timestamp against network-adjusted time, and §2.3 with INV-IFACE-01 keep clocks out of
+//! verification. So on a short range a header's timestamp may still sit arbitrarily far ahead — the
+//! part of the review's finding that a clock-free bound would close, which issue #224 puts to the
+//! owner as a contract question rather than an implementation one.
 
 use bitcoin_hashes::{sha256d, Hash};
 
@@ -61,6 +79,17 @@ pub enum HeaderRefused {
     InsufficientWork { at: u32, hash: String },
     /// The `bits` field encodes a target no header can meet, or none at all.
     MalformedTarget { at: u32, bits: u32 },
+    /// A target easier than the network's proof-of-work limit (H-57, issue #223).
+    EasierThanThePowLimit {
+        /// The checkpoint's own height, or the height of the header that declared it.
+        at: u32,
+        /// The target offered.
+        target: String,
+        /// The limit it is easier than.
+        limit: String,
+        /// Whose limit, so the refusal names the rules it was judged against.
+        network: &'static str,
+    },
     /// A compact difficulty that is not the canonical encoding of the target it expands to
     /// (H-59, issue #225).
     DifficultyNotCanonical {
@@ -88,6 +117,31 @@ pub enum HeaderRefused {
         checkpoint_period: u32,
         tip_period: u32,
     },
+    /// A header's timestamp is not after the median of the eleven blocks below it
+    /// (H-58, issue #224).
+    ///
+    /// Bitcoin's BIP 113 rule, and the one [`Confirmed::time`] has always named as the bound on how
+    /// far a miner may move a timestamp backwards.
+    TimestampNotAfterMedianTimePast {
+        /// The height of the header that declared it.
+        at: u32,
+        /// The timestamp the header declares.
+        time: u32,
+        /// The median of the eleven below it, which the timestamp must exceed and does not.
+        median: u32,
+    },
+    /// A header declares a block version the network had stopped accepting at that height
+    /// (H-58, issue #224).
+    VersionTooOld {
+        /// The height of the header that declared it.
+        at: u32,
+        /// The version the header declares, read as the signed integer Bitcoin stores.
+        version: i32,
+        /// The lowest version the network accepts at that height.
+        floor: i32,
+        /// Whose floor, so the refusal names the rules it was judged against.
+        network: &'static str,
+    },
     /// No header was supplied for the height asked about.
     HeightNotCovered { wanted: u32, covered: u32 },
     /// The block at that height does not commit the digest the receipt's operations reach.
@@ -113,6 +167,19 @@ impl Header {
     /// reverses it, and a comparison against a displayed hash has to reverse one side.
     pub fn block_hash(&self) -> [u8; 32] {
         sha256d::Hash::hash(&self.0).to_byte_array()
+    }
+
+    /// The block version, bytes 0 to 4, little-endian and **signed**.
+    ///
+    /// Bitcoin stores `nVersion` as an `int32_t` and its version rules compare it as one, so a
+    /// header declaring `0x80000000` carries a negative version and fails a floor rather than
+    /// clearing it as a large unsigned number.
+    pub fn version(&self) -> i32 {
+        let mut raw = [0u8; 4];
+        if let (Some(slot), Some(field)) = (raw.get_mut(..), self.0.get(0..4)) {
+            slot.copy_from_slice(field);
+        }
+        i32::from_le_bytes(raw)
     }
 
     /// The predecessor this header names, bytes 4 to 36.
@@ -320,20 +387,78 @@ pub fn retarget(previous: &[u8; 32], actual_timespan: i64) -> Option<[u8; 32]> {
 /// boundary and the retarget it computes would be the only parts of this module nothing exercised, and
 /// an untested branch in a consensus rule is worse than a missing one.
 ///
-/// `Rules` is private and `MAINNET` is the only value any public function passes. Nothing a caller
-/// does can vary either number.
+/// **`Network` is private and `MAINNET` is the only value any public function passes**, so nothing a
+/// caller does can vary either number. A test names the network it means, which is why the type
+/// carries one: a refusal says which network's rules refused it rather than quoting a bare limit
+/// (H-57, issue #223).
 #[derive(Debug, Clone, Copy)]
-struct Rules {
+struct Network {
     interval: u32,
+    /// The easiest target the network allows. **A target easier than this describes no block of it**,
+    /// however much work was done for the header carrying it.
     pow_limit: [u8; 32],
+    /// The lowest block version the network accepts at or above `version_floor_from`.
+    version_floor: i32,
+    /// The height from which `version_floor` is enforced.
+    ///
+    /// **The floor is height-conditional because Bitcoin's is** (H-58, issue #224). Version 1 was
+    /// correct at height 1 and is invalid now: BIP 34, BIP 66 and BIP 65 each raised the floor at a
+    /// height the chain records. Holding all of history to today's floor would refuse genuine early
+    /// blocks, so the height a floor took effect is part of the rules rather than assumed away.
+    version_floor_from: u32,
+    name: &'static str,
 }
 
-const MAINNET: Rules = Rules {
+/// The height from which mainnet refuses a block of version below 4.
+///
+/// BIP 65's activation: at 388,381 the supermajority rule that had been accepting version 3 stopped,
+/// and `CHECKLOCKTIMEVERIFY` became enforced. It is the last of the three version floors, so it is
+/// the only one a chain walked from a checkpoint above it can meet.
+const VERSION_FLOOR_FROM: u32 = 388_381;
+
+/// The version floor in force above [`VERSION_FLOOR_FROM`].
+const VERSION_FLOOR: i32 = 4;
+
+/// How many blocks Bitcoin's median-time-past is taken over: `nMedianTimeSpan`, the eleven below the
+/// header being judged.
+const MEDIAN_TIME_SPAN: usize = 11;
+
+/// The median of the eleven timestamps below `offset`, where the range holds all eleven.
+///
+/// `None` means the rule is not computable here, which is **not** the same as passing it: the eleven
+/// headers below this one are not all in the range, and the only timestamps this module will read are
+/// the ones in the range it verified. The checkpoint carries at most its own, which would buy a single
+/// header and make the rule's reach depend on an optional field, so it is not used for this.
+///
+/// A median over fewer blocks is a different and *stricter* rule than Bitcoin's — timestamps climb,
+/// so a median of the nearest few sits above a median of eleven — and a verifier that refused headers
+/// Bitcoin accepts would be worse than one that says what it did not check. [`Confirmed`] carries
+/// which it was.
+///
+/// Computed as Bitcoin's `GetMedianTimePast` does: the timestamps sorted, the middle one taken.
+fn median_time_past(headers: &[Header], offset: usize) -> Option<u32> {
+    let from = offset.checked_sub(MEDIAN_TIME_SPAN)?;
+    let window = headers.get(from..offset)?;
+    if window.len() != MEDIAN_TIME_SPAN {
+        return None;
+    }
+    let mut times = [0u32; MEDIAN_TIME_SPAN];
+    for (slot, header) in times.iter_mut().zip(window) {
+        *slot = header.time();
+    }
+    times.sort_unstable();
+    times.get(MEDIAN_TIME_SPAN / 2).copied()
+}
+
+const MAINNET: Network = Network {
     interval: RETARGET_INTERVAL,
     pow_limit: POW_LIMIT,
+    version_floor: VERSION_FLOOR,
+    version_floor_from: VERSION_FLOOR_FROM,
+    name: "mainnet",
 };
 
-fn retarget_in(previous: &[u8; 32], actual_timespan: i64, rules: Rules) -> Option<[u8; 32]> {
+fn retarget_in(previous: &[u8; 32], actual_timespan: i64, rules: Network) -> Option<[u8; 32]> {
     let clamped = actual_timespan.clamp(TARGET_TIMESPAN / 4, TARGET_TIMESPAN.saturating_mul(4));
     let scaled = u64::try_from(clamped).ok()?;
     let computed = match mul_div(previous, scaled, u64::try_from(TARGET_TIMESPAN).ok()?) {
@@ -390,8 +515,8 @@ pub struct Checkpoint {
     /// `h - 2016`, which is the checkpoint itself when `height % 2016 == 0`.
     ///
     /// `None`, or a checkpoint off a boundary, and a range leaving the period is refused instead —
-    /// which is what every window this repository commits does, each being four to ten headers inside
-    /// one period.
+    /// which is what every window this repository commits does, each being ten to sixteen headers
+    /// inside one period.
     pub time: Option<u32>,
 }
 
@@ -406,16 +531,27 @@ pub struct Checkpoint {
 /// only that no header be *easier* than a floor, which left a chain minable from the checkpoint at
 /// `2^32` a header: the floor was never the point, the target in force is.
 ///
-/// Two things remain, and neither is the fabrication above:
+/// Three things remain, and none of them is the fabrication above:
 ///
 /// * **A range leaving the period is refused unless the checkpoint sits on a boundary and carries its
 ///   timestamp.** The retarget needs the timespan of the period that closed, whose first block is the
 ///   checkpoint exactly when the checkpoint's height is a multiple of 2016. `GENESIS` qualifies; the
-///   windows this repository commits do not and do not need to, being four to ten headers inside one
-///   period.
+///   windows this repository commits do not and do not need to, being ten to sixteen headers inside
+///   one period.
 /// * **This is not the chain with the most work**, only a chain of the right work from the
 ///   checkpoint. Two competing chains at the same difficulty both pass, which matters at a
-///   reorganisation and not for a block buried under months of it.
+///   reorganisation. **This used to add "and not for a block buried under months of it", which
+///   described none of this repository's own evidence** (H-56, issue #222): every committed window
+///   ended at the attested block, so every confirmation was made at zero depth — the one depth at
+///   which a competing chain is cheapest — while the text implied months. `confirm` now requires
+///   [`CONFIRMATION_DEPTH`] headers above the attested block and the windows carry them.
+/// * **A timestamp is not bounded from above, and on a short range it is not bounded at all**
+///   (H-58, issue #224). The version floor applies to every header above the height Bitcoin's own
+///   took effect. Median-time-past applies only where the eleven headers below the one being judged
+///   are in `headers`, which the committed windows are too short for, and `Confirmed` says which it
+///   was. Bitcoin's remaining timestamp rule compares against network-adjusted time, and §2.3 with
+///   INV-IFACE-01 keep clocks out of verification, so nothing here refuses a timestamp for being in
+///   the future.
 pub fn verify_chain(
     checkpoint: Checkpoint,
     headers: &[Header],
@@ -431,13 +567,31 @@ pub fn verify_chain(
 /// rule is worse than a missing one. The tests call this with an interval of 4.
 ///
 /// It is private, and `verify_chain` is the only way in from outside: nothing a caller does can vary
-/// Bitcoin's own constants.
+/// Bitcoin's own constants. Since H-57 (#223) the network is also what the proof-of-work floor is
+/// taken from, so a test that mines at an easy target says which network's limit it means instead of
+/// slipping past one.
 fn verify_chain_in(
     checkpoint: Checkpoint,
     headers: &[Header],
-    rules: Rules,
+    rules: Network,
 ) -> Result<Vec<[u8; 32]>, HeaderRefused> {
     let interval = rules.interval;
+    // **The checkpoint's target is held to the network's limit before anything is walked**
+    // (H-57, issue #223). It is the caller's value and it seeds `in_force`, so an unchecked one sets
+    // the difficulty every header is then measured against. `0x207fffff` is minutes of mining and
+    // would have carried a whole chain past every other condition here — an independent review of
+    // 22 October did exactly that and reached a `Confirmed`.
+    //
+    // **Why the gap was easy to miss**: `retarget_in` clamps a *computed* target to this limit, so
+    // the limit looked enforced. The one target nothing clamped was the one arriving from outside.
+    if checkpoint.target > rules.pow_limit {
+        return Err(HeaderRefused::EasierThanThePowLimit {
+            at: checkpoint.height,
+            target: hex(&checkpoint.target),
+            limit: hex(&rules.pow_limit),
+            network: rules.name,
+        });
+    }
     // **A boundary is crossed by computing the retarget, or it is refused (H-53, issue #195).**
     // Bitcoin moves the target every 2016 blocks, and the arithmetic needs the timestamps of the
     // period's first and last blocks. The last is a header in this chain. The first is the block at
@@ -485,10 +639,53 @@ fn verify_chain_in(
                 }
             });
         }
+        // **Bitcoin's two contextual header rules that need no clock** (H-58, issue #224). An
+        // independent review at `80aa55f` served this chain headers carrying `time = 0` and
+        // `time = 4294967295` and both were accepted: timestamps were read only by the retarget
+        // arithmetic below, and the version field was not read at all.
+        //
+        // **The third rule, the two-hour future bound, is not here and cannot be.** It compares a
+        // timestamp against network-adjusted time, and §2.3 with INV-IFACE-01 keep clocks out of
+        // verification. That is an adopted constraint rather than an omission, and a clock-free
+        // bound in its place is a contract question the issue puts to the owner.
+        if height >= rules.version_floor_from && header.version() < rules.version_floor {
+            return Err(HeaderRefused::VersionTooOld {
+                at: height,
+                version: header.version(),
+                floor: rules.version_floor,
+                network: rules.name,
+            });
+        }
+        // **Where the eleven headers below this one are in the range, and nowhere else.** The
+        // windows this repository commits are ten to sixteen headers and every attested block sits
+        // at the fourth to the tenth, so this reaches headers above an attested block in the longest
+        // of them and no attested block's own timestamp. `Confirmed` says which it was rather than
+        // leaving a caller to read silence as a pass.
+        if let Some(median) = median_time_past(headers, offset) {
+            if header.time() <= median {
+                return Err(HeaderRefused::TimestampNotAfterMedianTimePast {
+                    at: height,
+                    time: header.time(),
+                    median,
+                });
+            }
+        }
         let target = target_from_bits(header.bits()).ok_or(HeaderRefused::MalformedTarget {
             at: height,
             bits: header.bits(),
         })?;
+        // Per header, as Bitcoin checks the range of each header's own target. Every target here must
+        // equal `in_force`, which is checked below and is already held to the limit, so this is
+        // redundant today — and it is here because a later path that set `in_force` by some other
+        // route would otherwise reopen the gap in silence.
+        if target > rules.pow_limit {
+            return Err(HeaderRefused::EasierThanThePowLimit {
+                at: height,
+                target: hex(&target),
+                limit: hex(&rules.pow_limit),
+                network: rules.name,
+            });
+        }
         // At a boundary the period that just closed sets the new target. Its first block's timestamp
         // is `period_began`; its last is the header one below this one, which is the checkpoint when
         // this is the chain's first header and a header already walked otherwise.
@@ -568,21 +765,46 @@ pub fn header_at(
     headers: &[Header],
     height: u32,
 ) -> Result<Header, HeaderRefused> {
-    verify_chain(checkpoint, headers)?;
-    let covered = checkpoint
-        .height
-        .saturating_add(u32::try_from(headers.len()).unwrap_or(u32::MAX));
-    let offset = height
-        .checked_sub(checkpoint.height)
-        .and_then(|d| d.checked_sub(1))
-        .and_then(|d| usize::try_from(d).ok())
-        .ok_or(HeaderRefused::HeightNotCovered {
-            wanted: height,
-            covered,
-        })?;
+    header_at_in(checkpoint, headers, height, MAINNET)
+}
+
+/// `header_at`, against a named network, so a test mining at an easy target says which (H-57, #223).
+fn header_at_in(
+    checkpoint: Checkpoint,
+    headers: &[Header],
+    height: u32,
+    rules: Network,
+) -> Result<Header, HeaderRefused> {
+    verify_chain_in(checkpoint, headers, rules)?;
+    let offset = offset_of(checkpoint, headers, height)?;
     headers
         .get(offset)
         .copied()
+        .ok_or(HeaderRefused::HeightNotCovered {
+            wanted: height,
+            covered: checkpoint
+                .height
+                .saturating_add(u32::try_from(headers.len()).unwrap_or(u32::MAX)),
+        })
+}
+
+/// Where `height` sits in a range running from `checkpoint`'s successor upward.
+///
+/// Extracted so that the one caller needing the index as well as the header — `confirm_in`, which
+/// reports whether median-time-past reached the attested block — asks the same arithmetic rather than
+/// restating it. Two copies of this would be free to disagree about which block was judged.
+fn offset_of(
+    checkpoint: Checkpoint,
+    headers: &[Header],
+    height: u32,
+) -> Result<usize, HeaderRefused> {
+    let covered = checkpoint
+        .height
+        .saturating_add(u32::try_from(headers.len()).unwrap_or(u32::MAX));
+    height
+        .checked_sub(checkpoint.height)
+        .and_then(|d| d.checked_sub(1))
+        .and_then(|d| usize::try_from(d).ok())
         .ok_or(HeaderRefused::HeightNotCovered {
             wanted: height,
             covered,
@@ -598,7 +820,17 @@ pub fn merkle_root_at(
     headers: &[Header],
     height: u32,
 ) -> Result<[u8; 32], HeaderRefused> {
-    header_at(checkpoint, headers, height).map(|at| at.merkle_root())
+    merkle_root_at_in(checkpoint, headers, height, MAINNET)
+}
+
+/// `merkle_root_at`, against a named network (H-57, #223).
+fn merkle_root_at_in(
+    checkpoint: Checkpoint,
+    headers: &[Header],
+    height: u32,
+    rules: Network,
+) -> Result<[u8; 32], HeaderRefused> {
+    header_at_in(checkpoint, headers, height, rules).map(|at| at.merkle_root())
 }
 
 /// Bitcoin's genesis block: the one checkpoint this repository can commit without vouching for
@@ -654,6 +886,55 @@ pub struct Confirmed {
     /// runs behind its predecessor's, which is rarer — one too low. Whatever depends on this says
     /// what that costs rather than treating the value as exact.
     pub time: u32,
+    /// Whether [`Self::time`] was held to Bitcoin's median-time-past rule (H-58, issue #224).
+    ///
+    /// **`false` does not mean the rule was broken; it means it was not applied.** The rule needs the
+    /// eleven headers below the attested block inside the range supplied. The windows this repository
+    /// commits are ten to sixteen headers and each attested block sits at the fourth to the tenth of
+    /// them, so for its own evidence this is `false` — the rule reaches headers above an attested
+    /// block in the longest window, but never the attested block itself. The field exists because the
+    /// alternative is a caller reading an unchecked timestamp as a checked one, which is this
+    /// repository's oldest defect: an instrument reporting a comparison it did not make.
+    ///
+    /// Neither value is a statement about the two-hour future bound, which needs a clock that §2.3
+    /// and INV-IFACE-01 keep out of verification and which nothing here enforces.
+    pub checked_against_median_time_past: bool,
+}
+
+/// How many headers of real work must sit **above** the attested block before this code reads it as
+/// confirmed (H-56, issue #222).
+///
+/// **Six, by the owner's ruling of 22 October 2026**, and counted as headers past the attested block
+/// rather than as Bitcoin's "confirmations", which include the containing block. So this is one block
+/// stricter than the familiar six-confirmation convention, and a window at this depth holds the
+/// attested block plus six.
+///
+/// **Why any depth at all.** An independent review found that `confirm` would turn a matching claim
+/// into a `Confirmed` from a range ending exactly at the attested block, and that all seventeen
+/// committed windows were such ranges. A one-block reorganisation at any of those heights would have
+/// orphaned the block the receipt names, and `confirm` would have said `Confirmed` beforehand. Work
+/// built on top is what makes that progressively unaffordable, and it is the only thing that does.
+pub const CONFIRMATION_DEPTH: usize = 6;
+
+/// What a verified chain says about the block a receipt names.
+///
+/// **Pending is not a refusal.** The chain verified, the block commits the digest, and the only thing
+/// absent is work built on top — which arrives by waiting. A refusal says the evidence is wrong;
+/// this says it is not yet deep enough. Keeping them apart is the point of the type: a caller cannot
+/// read one as the other, and `Confirmed` still means what it has always meant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confirmation {
+    /// The block commits the digest and carries at least [`CONFIRMATION_DEPTH`] headers above it.
+    Confirmed(Confirmed),
+    /// The block commits the digest, and the range does not show enough work built on top of it.
+    Pending {
+        /// The height the receipt names.
+        height: u32,
+        /// How many verified headers sit above it in the range supplied.
+        depth: usize,
+        /// How many it needs, which is [`CONFIRMATION_DEPTH`].
+        required: usize,
+    },
 }
 
 /// Confirms a receipt's Bitcoin attestation against a chain of headers.
@@ -672,8 +953,19 @@ pub fn confirm(
     claim: crate::BitcoinClaim,
     checkpoint: Checkpoint,
     headers: &[Header],
-) -> Result<Confirmed, HeaderRefused> {
-    let at = header_at(checkpoint, headers, claim.height)?;
+) -> Result<Confirmation, HeaderRefused> {
+    confirm_in(claim, checkpoint, headers, MAINNET)
+}
+
+/// `confirm`, against a named network (H-57, #223).
+fn confirm_in(
+    claim: crate::BitcoinClaim,
+    checkpoint: Checkpoint,
+    headers: &[Header],
+    rules: Network,
+) -> Result<Confirmation, HeaderRefused> {
+    let at = header_at_in(checkpoint, headers, claim.height, rules)?;
+    let offset = offset_of(checkpoint, headers, claim.height)?;
     let merkle_root = at.merkle_root();
     if merkle_root != claim.attested_digest {
         return Err(HeaderRefused::DigestNotInTheBlock {
@@ -682,11 +974,26 @@ pub fn confirm(
             merkle_root: hex(&merkle_root),
         });
     }
-    Ok(Confirmed {
+    // **The depth is read off the range that was verified, not off the range that was supplied.**
+    // Every header above the attested block has been through the walk: it names its predecessor,
+    // declares the target in force and meets it. So this counts work, which is the only thing a
+    // depth is worth counting.
+    let depth = headers.len().saturating_sub(offset).saturating_sub(1);
+    if depth < CONFIRMATION_DEPTH {
+        return Ok(Confirmation::Pending {
+            height: claim.height,
+            depth,
+            required: CONFIRMATION_DEPTH,
+        });
+    }
+    Ok(Confirmation::Confirmed(Confirmed {
         height: claim.height,
         merkle_root,
         time: at.time(),
-    })
+        // The same predicate the walk applied, asked of the same range, so the two cannot disagree
+        // about whether the attested block's own timestamp was judged.
+        checked_against_median_time_past: median_time_past(headers, offset).is_some(),
+    }))
 }
 
 #[cfg(test)]
@@ -741,6 +1048,72 @@ mod tests {
         panic!("no nonce met a target this easy, which means the target decoding is wrong");
     }
 
+    /// `mined_at`, with the block version set, which the version floor reads.
+    ///
+    /// Written before the nonce search for the same reason the timestamp is: any header byte changed
+    /// afterwards invalidates the nonce.
+    fn mined_with_version(
+        prev: [u8; 32],
+        root: [u8; 32],
+        bits: u32,
+        time: u32,
+        version: i32,
+    ) -> Header {
+        let mut raw = [0u8; 80];
+        if let Some(slot) = raw.get_mut(0..4) {
+            slot.copy_from_slice(&version.to_le_bytes());
+        }
+        if let Some(slot) = raw.get_mut(68..72) {
+            slot.copy_from_slice(&time.to_le_bytes());
+        }
+        if let Some(slot) = raw.get_mut(4..36) {
+            slot.copy_from_slice(&prev);
+        }
+        if let Some(slot) = raw.get_mut(36..68) {
+            slot.copy_from_slice(&root);
+        }
+        if let Some(slot) = raw.get_mut(72..76) {
+            slot.copy_from_slice(&bits.to_le_bytes());
+        }
+        for nonce in 0u32..u32::MAX {
+            if let Some(slot) = raw.get_mut(76..80) {
+                slot.copy_from_slice(&nonce.to_le_bytes());
+            }
+            let header = Header(raw);
+            if header.meets_its_target() == Ok(true) {
+                return header;
+            }
+        }
+        panic!("no nonce met a target this easy, which means the target decoding is wrong");
+    }
+
+    /// A chain of `len` headers whose timestamps are `step` apart from `first`.
+    ///
+    /// Bitcoin's own spacing, which matters here: median-time-past is a statement about a sequence of
+    /// timestamps, and a chain where every one is zero — which `chain` produces — cannot exercise it
+    /// in either direction.
+    fn chain_at_times(
+        len: usize,
+        from: [u8; 32],
+        first: u32,
+        step: u32,
+        version: i32,
+    ) -> Vec<Header> {
+        let mut out = Vec::new();
+        let mut prev = from;
+        for i in 0..len {
+            let mut root = [0u8; 32];
+            if let Some(b) = root.get_mut(0) {
+                *b = u8::try_from(i).unwrap_or(0);
+            }
+            let time = first.saturating_add(step.saturating_mul(u32::try_from(i).unwrap_or(0)));
+            let header = mined_with_version(prev, root, EASY, time, version);
+            prev = header.block_hash();
+            out.push(header);
+        }
+        out
+    }
+
     /// `bits` for a target of roughly 2^240: easy enough to mine in a test, hard enough that a
     /// random header does not pass by accident.
     const EASY: u32 = 0x1f00_ffff;
@@ -783,7 +1156,7 @@ mod tests {
     fn a_chain_of_real_work_from_the_checkpoint_verifies() {
         let checkpoint = easy_checkpoint();
         let headers = chain(4, checkpoint.hash);
-        match verify_chain(checkpoint, &headers) {
+        match verify_chain_in(checkpoint, &headers, testnet()) {
             Ok(hashes) => assert_eq!(hashes.len(), 4),
             Err(e) => panic!("a mined chain must verify: {e:?}"),
         }
@@ -802,7 +1175,7 @@ mod tests {
         if let Some(slot) = first.0.get_mut(76..80) {
             slot.copy_from_slice(&0u32.to_le_bytes());
         }
-        match verify_chain(checkpoint, &headers) {
+        match verify_chain_in(checkpoint, &headers, testnet()) {
             Err(HeaderRefused::InsufficientWork { at, .. }) => assert_eq!(at, 101),
             other => panic!("an unmined header must be refused, got {other:?}"),
         }
@@ -812,7 +1185,7 @@ mod tests {
     fn a_chain_that_does_not_begin_at_the_checkpoint_is_refused() {
         let checkpoint = easy_checkpoint();
         let headers = chain(2, [0x99; 32]);
-        match verify_chain(checkpoint, &headers) {
+        match verify_chain_in(checkpoint, &headers, testnet()) {
             Err(HeaderRefused::NotFromTheCheckpoint { .. }) => {}
             other => panic!("a chain from elsewhere must be refused, got {other:?}"),
         }
@@ -823,7 +1196,7 @@ mod tests {
         let checkpoint = easy_checkpoint();
         let mut headers = chain(3, checkpoint.hash);
         headers.remove(1);
-        match verify_chain(checkpoint, &headers) {
+        match verify_chain_in(checkpoint, &headers, testnet()) {
             Err(HeaderRefused::Broken { at, .. }) => assert_eq!(at, 102),
             other => panic!("a missing header must break the chain, got {other:?}"),
         }
@@ -836,18 +1209,18 @@ mod tests {
         for (offset, header) in headers.iter().enumerate() {
             let height = 101u32.saturating_add(u32::try_from(offset).unwrap_or(0));
             assert_eq!(
-                merkle_root_at(checkpoint, &headers, height),
+                merkle_root_at_in(checkpoint, &headers, height, testnet()),
                 Ok(header.merkle_root()),
                 "height {height} is the header at offset {offset}"
             );
         }
         assert!(matches!(
-            merkle_root_at(checkpoint, &headers, 104),
+            merkle_root_at_in(checkpoint, &headers, 104, testnet()),
             Err(HeaderRefused::HeightNotCovered { .. })
         ));
         assert!(
             matches!(
-                merkle_root_at(checkpoint, &headers, 100),
+                merkle_root_at_in(checkpoint, &headers, 100, testnet()),
                 Err(HeaderRefused::HeightNotCovered { .. })
             ),
             "the checkpoint's own height is not covered: no header for it was supplied"
@@ -895,25 +1268,108 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_digest_the_named_block_commits_is_confirmed() {
-        let checkpoint = easy_checkpoint();
-        let attested = [0x99; 32];
-        // Four blocks; the third carries the digest the receipt's operations reach.
+    /// A chain of `len` headers carrying `attested` as the merkle root of its `at`th block.
+    fn chain_committing(len: usize, from: [u8; 32], at: usize, attested: [u8; 32]) -> Vec<Header> {
         let mut headers = Vec::new();
-        let mut prev = checkpoint.hash;
-        for i in 0..4 {
-            let root = if i == 2 { attested } else { [i; 32] };
+        let mut prev = from;
+        for i in 0..len {
+            let root = if i.saturating_add(1) == at {
+                attested
+            } else {
+                let mut r = [0u8; 32];
+                if let Some(b) = r.get_mut(0) {
+                    *b = u8::try_from(i).unwrap_or(0);
+                }
+                r
+            };
             let header = mined(prev, root, EASY);
             prev = header.block_hash();
             headers.push(header);
         }
-        match confirm(claim_for(103, attested), checkpoint, &headers) {
-            Ok(confirmed) => {
+        headers
+    }
+
+    #[test]
+    fn a_digest_the_named_block_commits_is_confirmed() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        // The third block carries the digest, and `CONFIRMATION_DEPTH` blocks follow it, which is
+        // what `confirm` requires before it will say `Confirmed` (H-56, #222).
+        let headers = chain_committing(3 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Ok(Confirmation::Confirmed(confirmed)) => {
                 assert_eq!(confirmed.height, 103);
                 assert_eq!(confirmed.merkle_root, attested);
             }
-            Err(e) => panic!("the block at 103 commits this digest: {e:?}"),
+            other => panic!("the block at 103 commits this digest: {other:?}"),
+        }
+    }
+
+    // ---------------------------------------------------------------- H-56 (issue #222)
+
+    /// **The case the review demonstrated, and the case all seventeen committed windows were**: a
+    /// range ending exactly at the attested block. It used to answer `Confirmed`.
+    #[test]
+    fn a_range_ending_at_the_attested_block_is_pending_rather_than_confirmed() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let headers = chain_committing(3, checkpoint.hash, 3, attested);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Ok(Confirmation::Pending {
+                height,
+                depth,
+                required,
+            }) => {
+                assert_eq!(height, 103);
+                assert_eq!(depth, 0, "nothing is built on top of the attested block");
+                assert_eq!(required, CONFIRMATION_DEPTH);
+            }
+            other => panic!("a range ending at the attested block must be pending: {other:?}"),
+        }
+    }
+
+    /// **One header short of the depth is still pending**, which is the boundary the ruling draws.
+    #[test]
+    fn one_header_short_of_the_depth_is_pending() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let headers = chain_committing(2 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Ok(Confirmation::Pending { depth, .. }) => {
+                assert_eq!(depth, CONFIRMATION_DEPTH - 1, "one short of the depth")
+            }
+            other => panic!("one header short of the depth must be pending: {other:?}"),
+        }
+    }
+
+    /// And exactly the depth confirms, so the boundary is tested from both sides.
+    #[test]
+    fn exactly_the_depth_confirms() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let headers = chain_committing(3 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Ok(Confirmation::Confirmed(confirmed)) => assert_eq!(confirmed.height, 103),
+            other => panic!("exactly the depth must confirm: {other:?}"),
+        }
+    }
+
+    /// **The depth counts headers the walk verified, not headers supplied.** A range whose later
+    /// headers do not chain is refused outright, so a depth cannot be padded with bytes.
+    #[test]
+    fn headers_above_the_attested_block_are_themselves_verified() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let mut headers = chain_committing(3 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
+        // Break the last one's linkage. It sits above the attested block and is there only to make
+        // up the depth, which is exactly the header a padded range would forge.
+        if let Some(last) = headers.last_mut() {
+            *last = mined([0x77; 32], [0x11; 32], EASY);
+        }
+        let expected = checkpoint.height + 3 + u32::try_from(CONFIRMATION_DEPTH).unwrap_or(0);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Err(HeaderRefused::Broken { at, .. }) => assert_eq!(at, expected),
+            other => panic!("a header padding the depth is verified like any other: {other:?}"),
         }
     }
 
@@ -922,7 +1378,7 @@ mod tests {
     fn a_digest_the_named_block_does_not_commit_is_refused() {
         let checkpoint = easy_checkpoint();
         let headers = chain(4, checkpoint.hash);
-        match confirm(claim_for(103, [0x99; 32]), checkpoint, &headers) {
+        match confirm_in(claim_for(103, [0x99; 32]), checkpoint, &headers, testnet()) {
             Err(HeaderRefused::DigestNotInTheBlock { at, .. }) => assert_eq!(at, 103),
             other => panic!("a block that commits something else must be refused: {other:?}"),
         }
@@ -953,7 +1409,7 @@ mod tests {
         if let Some(slot) = first.0.get_mut(76..80) {
             slot.copy_from_slice(&0u32.to_le_bytes());
         }
-        match confirm(claim_for(103, attested), checkpoint, &headers) {
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
             Err(HeaderRefused::InsufficientWork { at, .. }) => assert_eq!(at, 101),
             other => panic!("a chain missing its work must be refused: {other:?}"),
         }
@@ -963,12 +1419,89 @@ mod tests {
     fn a_height_no_header_covers_is_refused_rather_than_confirmed() {
         let checkpoint = easy_checkpoint();
         let headers = chain(2, checkpoint.hash);
-        match confirm(claim_for(900_000, [0x99; 32]), checkpoint, &headers) {
+        match confirm_in(
+            claim_for(900_000, [0x99; 32]),
+            checkpoint,
+            &headers,
+            testnet(),
+        ) {
             Err(HeaderRefused::HeightNotCovered { wanted, covered }) => {
                 assert_eq!((wanted, covered), (900_000, 102));
             }
             other => panic!("a height outside the chain is not confirmed: {other:?}"),
         }
+    }
+
+    /// **A checkpoint easier than mainnet's limit is refused by the public entry point** (H-57, #223).
+    ///
+    /// `0x207fffff` is minutes of mining on a laptop. Before the floor it seeded `in_force`, every
+    /// header was measured against it and passed, and a chain produced for nothing reached a
+    /// `Confirmed` — which the independent review of 22 October exhibited. The checkpoint is the one
+    /// input a reader takes on this repository's word, and that word is that it names a real block,
+    /// not a licence for it to name an impossible difficulty.
+    ///
+    /// Asserted through `verify_chain`, the mainnet entry point, because that is the path a caller
+    /// outside this crate has: `Network`'s fields are private and `MAINNET` is the only value such a
+    /// caller can reach, so the floor is not something they can opt out of.
+    #[test]
+    fn a_mainnet_checkpoint_easier_than_the_pow_limit_is_refused() {
+        let easy = match target_from_bits(0x207f_ffff) {
+            Some(target) => target,
+            None => panic!("0x207fffff is a structurally valid compact target"),
+        };
+        assert!(
+            easy > POW_LIMIT,
+            "this case tests nothing unless 0x207fffff is easier than Bitcoin's limit"
+        );
+        let checkpoint = Checkpoint {
+            height: 700,
+            hash: [9u8; 32],
+            target: easy,
+            time: None,
+        };
+        // Mined to meet the easy target, so the refusal is about the difficulty being impossible for
+        // this network rather than about the work being absent.
+        let header = mined([9u8; 32], [0x62u8; 32], 0x207f_ffff);
+        assert_eq!(
+            header.meets_its_target(),
+            Ok(true),
+            "the header does meet the target it declares"
+        );
+        match verify_chain(checkpoint, &[header]) {
+            Err(HeaderRefused::EasierThanThePowLimit { at, network, .. }) => {
+                assert_eq!(at, 700, "the refusal names the checkpoint's own height");
+                assert_eq!(network, "mainnet", "and whose limit refused it");
+            }
+            other => {
+                panic!("a checkpoint below Bitcoin's difficulty floor is not a chain: {other:?}")
+            }
+        }
+    }
+
+    /// **A target exactly at the limit is accepted**, which makes the case above a floor rather than
+    /// an exclusion. Bitcoin's own genesis carries the limit itself.
+    ///
+    /// Run under the test network, because mining at Bitcoin's real floor — `0x1d00ffff`, the easiest
+    /// target the network allows — is about 2^32 hashes and would make this a test of patience. The
+    /// comparison under test is the same one either way.
+    #[test]
+    fn a_target_at_the_networks_limit_is_accepted() {
+        assert_eq!(
+            GENESIS.target, POW_LIMIT,
+            "genesis carries the limit itself, so the comparison must not be strict against it"
+        );
+        let rules = testnet();
+        let checkpoint = Checkpoint {
+            height: 700,
+            hash: [9u8; 32],
+            target: rules.pow_limit,
+            time: None,
+        };
+        let header = mined([9u8; 32], [0x62u8; 32], EASY);
+        assert!(
+            verify_chain_in(checkpoint, &[header], rules).is_ok(),
+            "a target equal to the limit is the easiest the rules allow, not one they forbid"
+        );
     }
 
     /// **A compact difficulty that is not its target's canonical encoding is refused** (H-59, #225).
@@ -999,7 +1532,21 @@ mod tests {
         // Mined against the easy target the non-canonical value expands to, so the refusal is about
         // the encoding and not about absent work.
         let header = mined([0x42; 32], [0x62; 32], other);
-        match verify_chain_in(checkpoint, &[header], easy_rules()) {
+        // **A network whose limit is exactly the target under test** (H-57, #223). `0x1f7f0000` is
+        // easier than `testnet()`'s own limit, so judging it there would refuse the case for being
+        // out of range and never reach the encoding — which is the whole point of it. Naming a
+        // network for the case is the honest way to say what rules it is being judged against.
+        let for_the_encoding = Network {
+            interval: RETARGET_INTERVAL,
+            pow_limit: match target_from_bits(canonical) {
+                Some(t) => t,
+                None => panic!("the canonical encoding decodes"),
+            },
+            version_floor: VERSION_FLOOR,
+            version_floor_from: u32::MAX,
+            name: "testnet, limit at the target under test",
+        };
+        match verify_chain_in(checkpoint, &[header], for_the_encoding) {
             Err(HeaderRefused::DifficultyNotCanonical {
                 at,
                 bits,
@@ -1029,7 +1576,7 @@ mod tests {
             ..easy_checkpoint()
         };
         let headers = chain(2, strict.hash);
-        match verify_chain(strict, &headers) {
+        match verify_chain_in(strict, &headers, testnet()) {
             Err(HeaderRefused::TargetNotTheOneInForce { at, bits, .. }) => {
                 assert_eq!((at, bits), (101, EASY));
             }
@@ -1049,7 +1596,7 @@ mod tests {
             ..easy_checkpoint()
         };
         let headers = chain(2, at_the_edge.hash);
-        match verify_chain(at_the_edge, &headers) {
+        match verify_chain_in(at_the_edge, &headers, testnet()) {
             Err(HeaderRefused::CrossesARetargetBoundary {
                 checkpoint_period,
                 tip_period,
@@ -1069,7 +1616,7 @@ mod tests {
         };
         let headers = chain(4, inside.hash);
         assert!(
-            verify_chain(inside, &headers).is_ok(),
+            verify_chain_in(inside, &headers, testnet()).is_ok(),
             "four headers after a period's first block are inside it"
         );
     }
@@ -1178,13 +1725,50 @@ mod tests {
     /// it to a quarter of two weeks and the target becomes four times harder — a value this test does
     /// not choose either, since it asks `retarget` what it is and then mines to it.
     /// The rules these tests can reach: a four-block period and a limit at the difficulty they mine.
-    fn easy_rules() -> Rules {
-        Rules {
+    /// **A test network, named rather than a relaxed mainnet** (H-57, #223). Its limit is `EASY`, so
+    /// a header costs milliseconds to mine; its retarget interval is Bitcoin's, so every test that is
+    /// not about boundaries runs under the real period length.
+    ///
+    /// The point of naming it: before this, these cases mined easy headers and asked *mainnet's*
+    /// entry point to accept them, which it did because nothing held the checkpoint's target to a
+    /// floor. A chain of that difficulty is not a mainnet chain, and the tests now say so.
+    fn testnet() -> Network {
+        Network {
+            interval: RETARGET_INTERVAL,
+            pow_limit: match target_from_bits(EASY) {
+                Some(t) => t,
+                None => panic!("EASY does not decode"),
+            },
+            // Out of reach of the heights these chains are mined at, so a test about work or
+            // difficulty is not also a test about versions. `testnet_from_version_4` is the network
+            // that exercises the floor, and it is a separate value so that neither can be reached by
+            // accident.
+            version_floor: VERSION_FLOOR,
+            version_floor_from: u32::MAX,
+            name: "testnet",
+        }
+    }
+
+    /// The test network with the version floor in force from the chain's first header.
+    fn testnet_from_version_4(from: u32) -> Network {
+        Network {
+            version_floor_from: from,
+            ..testnet()
+        }
+    }
+
+    /// The same test network with a four-block retarget period, for the boundary cases: 2016 headers
+    /// at any difficulty is more than a test can mine.
+    fn testnet_short_period() -> Network {
+        Network {
             interval: 4,
             pow_limit: match target_from_bits(EASY) {
                 Some(t) => t,
                 None => panic!("EASY does not decode"),
             },
+            version_floor: VERSION_FLOOR,
+            version_floor_from: u32::MAX,
+            name: "testnet, four-block period",
         }
     }
 
@@ -1219,7 +1803,7 @@ mod tests {
             None => panic!("three headers"),
         };
         let elapsed = i64::from(closed).saturating_sub(i64::from(began));
-        let next_target = match retarget_in(&checkpoint.target, elapsed, easy_rules()) {
+        let next_target = match retarget_in(&checkpoint.target, elapsed, testnet_short_period()) {
             Some(t) => t,
             None => panic!("the retarget produced nothing"),
         };
@@ -1231,7 +1815,7 @@ mod tests {
 
         let boundary = mined_at(prev, [0x9a; 32], next_bits, closed.saturating_add(1));
         headers.push(boundary);
-        match verify_chain_in(checkpoint, &headers, easy_rules()) {
+        match verify_chain_in(checkpoint, &headers, testnet_short_period()) {
             Ok(hashes) => assert_eq!(hashes.len(), 4),
             Err(e) => panic!("a chain declaring the computed target must verify: {e:?}"),
         }
@@ -1241,7 +1825,7 @@ mod tests {
         if let Some(last) = stale.get_mut(3) {
             *last = mined_at(prev, [0x9a; 32], EASY, closed.saturating_add(1));
         }
-        match verify_chain_in(checkpoint, &stale, easy_rules()) {
+        match verify_chain_in(checkpoint, &stale, testnet_short_period()) {
             Err(HeaderRefused::TargetNotTheOneInForce { at, bits, .. }) => {
                 assert_eq!((at, bits), (104, EASY));
             }
@@ -1259,7 +1843,7 @@ mod tests {
             ..easy_checkpoint()
         };
         let headers = chain(4, checkpoint.hash);
-        match verify_chain_in(checkpoint, &headers, easy_rules()) {
+        match verify_chain_in(checkpoint, &headers, testnet_short_period()) {
             Err(HeaderRefused::CrossesARetargetBoundary { .. }) => {}
             other => panic!("101 is not a multiple of 4, so this cannot answer for 104: {other:?}"),
         }
@@ -1269,7 +1853,7 @@ mod tests {
     #[test]
     fn a_boundary_checkpoint_without_its_timestamp_refuses_a_crossing() {
         let headers = chain(4, easy_checkpoint().hash);
-        match verify_chain_in(easy_checkpoint(), &headers, easy_rules()) {
+        match verify_chain_in(easy_checkpoint(), &headers, testnet_short_period()) {
             Err(HeaderRefused::CrossesARetargetBoundary { .. }) => {}
             other => panic!("100 is a multiple of 4 but carries no time: {other:?}"),
         }
@@ -1295,5 +1879,238 @@ mod tests {
         assert_eq!(target_from_bits(0x0000_0000), None, "a zero mantissa");
         assert_eq!(target_from_bits(0x1d80_ffff), None, "a set sign bit");
         assert_eq!(target_from_bits(0xff00_ffff), None, "a shift past 32 bytes");
+    }
+
+    // ---------------------------------------------------------------- H-58 (issue #224)
+
+    /// A header carrying `time`, built without mining because `median_time_past` reads timestamps and
+    /// nothing else. The chain rules are exercised by the mined chains below.
+    fn header_with_time(time: u32) -> Header {
+        let mut raw = [0u8; 80];
+        if let Some(slot) = raw.get_mut(68..72) {
+            slot.copy_from_slice(&time.to_le_bytes());
+        }
+        Header(raw)
+    }
+
+    /// **The median is the middle of the sorted eleven, not the middle header of the eleven.**
+    ///
+    /// Bitcoin sorts before taking the middle, and the two differ whenever timestamps are not already
+    /// in order — which is exactly the case the rule exists for, a miner moving one backwards. The
+    /// times here are scrambled so that a positional read returns 70 and a sorted one returns 50:
+    /// an implementation that forgot to sort passes every climbing chain in this file and fails here.
+    #[test]
+    fn the_median_time_past_is_the_middle_of_the_sorted_eleven() {
+        let times = [10u32, 90, 20, 80, 30, 70, 40, 60, 50, 100, 5];
+        let headers: Vec<Header> = times.iter().copied().map(header_with_time).collect();
+        assert_eq!(times.len(), MEDIAN_TIME_SPAN, "the window is eleven wide");
+        assert_eq!(
+            times.get(MEDIAN_TIME_SPAN / 2),
+            Some(&70),
+            "the positional middle, which is the wrong answer and must differ from the right one"
+        );
+        assert_eq!(
+            median_time_past(&headers, MEDIAN_TIME_SPAN),
+            Some(50),
+            "the median of 5,10,20,…,100 is 50"
+        );
+    }
+
+    /// **Not computable is reported as not computable, never as a pass.**
+    #[test]
+    fn a_range_too_short_for_the_median_has_no_median() {
+        let headers: Vec<Header> = (0..MEDIAN_TIME_SPAN)
+            .map(|i| header_with_time(u32::try_from(i).unwrap_or(0)))
+            .collect();
+        for offset in 0..MEDIAN_TIME_SPAN {
+            assert_eq!(
+                median_time_past(&headers, offset),
+                None,
+                "offset {offset} does not have eleven headers below it"
+            );
+        }
+    }
+
+    /// The rule's accepting side: a chain spaced as Bitcoin's is verifies past the twelfth header.
+    #[test]
+    fn a_chain_whose_timestamps_climb_verifies_past_the_median() {
+        let checkpoint = easy_checkpoint();
+        let headers = chain_at_times(13, checkpoint.hash, 1_700_000_000, 600, 0);
+        match verify_chain_in(checkpoint, &headers, testnet()) {
+            Ok(hashes) => assert_eq!(hashes.len(), 13),
+            Err(e) => panic!("a chain of climbing timestamps must verify: {e:?}"),
+        }
+    }
+
+    /// **The rejecting test: a timestamp equal to the median is refused**, which is the boundary
+    /// Bitcoin draws — `nTime > MedianTimePast`, so equality fails.
+    #[test]
+    fn a_timestamp_not_after_the_median_of_the_eleven_below_it_is_refused() {
+        let checkpoint = easy_checkpoint();
+        let first = 1_700_000_000u32;
+        let step = 600u32;
+        let mut headers = chain_at_times(MEDIAN_TIME_SPAN, checkpoint.hash, first, step, 0);
+        // The eleven below the next header are the whole range so far, so their median is the sixth.
+        let median = match median_time_past(&headers, MEDIAN_TIME_SPAN) {
+            Some(m) => m,
+            None => panic!("eleven headers have a median"),
+        };
+        assert_eq!(
+            median,
+            first + step * 5,
+            "the median of eleven climbing timestamps is the sixth"
+        );
+        let prev = match headers.last() {
+            Some(h) => h.block_hash(),
+            None => panic!("the range is not empty"),
+        };
+        headers.push(mined_with_version(prev, [0xab; 32], EASY, median, 0));
+        match verify_chain_in(checkpoint, &headers, testnet()) {
+            Err(HeaderRefused::TimestampNotAfterMedianTimePast {
+                at,
+                time,
+                median: reported,
+            }) => {
+                assert_eq!(at, checkpoint.height + 12, "the twelfth header's height");
+                assert_eq!(time, median, "the timestamp offered");
+                assert_eq!(reported, median, "the median it had to exceed");
+            }
+            other => panic!("a timestamp equal to the median must be refused: {other:?}"),
+        }
+    }
+
+    /// And one below the median, not merely equal to it.
+    #[test]
+    fn a_timestamp_behind_the_median_of_the_eleven_below_it_is_refused() {
+        let checkpoint = easy_checkpoint();
+        let first = 1_700_000_000u32;
+        let mut headers = chain_at_times(MEDIAN_TIME_SPAN, checkpoint.hash, first, 600, 0);
+        let prev = match headers.last() {
+            Some(h) => h.block_hash(),
+            None => panic!("the range is not empty"),
+        };
+        headers.push(mined_with_version(prev, [0xcd; 32], EASY, first, 0));
+        match verify_chain_in(checkpoint, &headers, testnet()) {
+            Err(HeaderRefused::TimestampNotAfterMedianTimePast { at, .. }) => {
+                assert_eq!(at, checkpoint.height + 12)
+            }
+            other => panic!("a timestamp behind the median must be refused: {other:?}"),
+        }
+    }
+
+    /// **The rejecting test for the version floor.**
+    #[test]
+    fn a_header_below_the_version_floor_is_refused() {
+        let checkpoint = easy_checkpoint();
+        let headers = chain_at_times(2, checkpoint.hash, 1_700_000_000, 600, 3);
+        let rules = testnet_from_version_4(checkpoint.height + 1);
+        match verify_chain_in(checkpoint, &headers, rules) {
+            Err(HeaderRefused::VersionTooOld {
+                at,
+                version,
+                floor,
+                network,
+            }) => {
+                assert_eq!(
+                    at,
+                    checkpoint.height + 1,
+                    "the first header is at the floor"
+                );
+                assert_eq!(version, 3, "what the header declared");
+                assert_eq!(floor, VERSION_FLOOR, "the floor it is below");
+                assert_eq!(network, "testnet", "the rules it was judged against");
+            }
+            other => panic!("version 3 at or above the floor's height must be refused: {other:?}"),
+        }
+    }
+
+    /// A version with the high bit set is **negative** and fails the floor, rather than clearing it
+    /// as a large unsigned number — which is how Bitcoin reads `nVersion` and the reason
+    /// `Header::version` returns `i32`.
+    #[test]
+    fn a_header_whose_version_is_negative_is_refused() {
+        let checkpoint = easy_checkpoint();
+        let headers = chain_at_times(2, checkpoint.hash, 1_700_000_000, 600, i32::MIN);
+        assert!(
+            headers.first().map(|h| h.version() < 0).unwrap_or(false),
+            "the fixture's version must read as negative"
+        );
+        match verify_chain_in(
+            checkpoint,
+            &headers,
+            testnet_from_version_4(checkpoint.height + 1),
+        ) {
+            Err(HeaderRefused::VersionTooOld { version, .. }) => {
+                assert_eq!(version, i32::MIN, "read signed, as Bitcoin stores it")
+            }
+            other => panic!("a negative version must be refused: {other:?}"),
+        }
+    }
+
+    /// The floor's accepting side: at its height, the floor itself verifies.
+    #[test]
+    fn a_header_at_the_version_floor_verifies() {
+        let checkpoint = easy_checkpoint();
+        let headers = chain_at_times(2, checkpoint.hash, 1_700_000_000, 600, VERSION_FLOOR);
+        let rules = testnet_from_version_4(checkpoint.height + 1);
+        if let Err(e) = verify_chain_in(checkpoint, &headers, rules) {
+            panic!("version {VERSION_FLOOR} at the floor's height must verify: {e:?}");
+        }
+    }
+
+    /// **The floor is height-conditional, and this is what proves it is not applied everywhere.**
+    ///
+    /// Version 1 was correct at height 1. A floor applied over all of history would refuse genuine
+    /// early blocks, so a header below the activation height keeps the version it has.
+    #[test]
+    fn a_header_below_the_floors_height_keeps_its_old_version() {
+        let checkpoint = easy_checkpoint();
+        let headers = chain_at_times(2, checkpoint.hash, 1_700_000_000, 600, 1);
+        let rules = testnet_from_version_4(checkpoint.height + 50);
+        if let Err(e) = verify_chain_in(checkpoint, &headers, rules) {
+            panic!("version 1 below the floor's height must verify: {e:?}");
+        }
+    }
+
+    /// Mainnet's floor takes effect at BIP 65's activation, and the committed checkpoints sit above
+    /// it — so the rule is in force for every chain this repository actually walks.
+    #[test]
+    fn mainnets_version_floor_is_bip65s_activation() {
+        assert_eq!(MAINNET.version_floor, 4);
+        assert_eq!(MAINNET.version_floor_from, 388_381);
+    }
+
+    /// **`Confirmed` says whether the median rule reached the attested block, and both answers come
+    /// out of one chain.**
+    ///
+    /// The same sixteen headers confirm two heights: one with eleven headers below it inside the
+    /// range and one without. A field that was always `false` would be a disclosure of nothing, and a
+    /// field that was always `true` would be the defect it exists to prevent.
+    #[test]
+    fn whether_the_median_rule_reached_the_attested_block_is_reported() {
+        let checkpoint = easy_checkpoint();
+        // Twenty, so the deeper of the two heights has eleven headers below it *and*
+        // `CONFIRMATION_DEPTH` above it: at a shallower range H-56 answers `Pending`, which carries
+        // no disclosure to read.
+        let headers = chain_at_times(20, checkpoint.hash, 1_700_000_000, 600, 0);
+        let rules = testnet();
+        for (height, expected) in [
+            (checkpoint.height + 4, false),
+            (checkpoint.height + 12, true),
+        ] {
+            let root = match merkle_root_at_in(checkpoint, &headers, height, rules) {
+                Ok(r) => r,
+                Err(e) => panic!("the range covers {height}: {e:?}"),
+            };
+            match confirm_in(claim_for(height, root), checkpoint, &headers, rules) {
+                Ok(Confirmation::Confirmed(confirmed)) => assert_eq!(
+                    confirmed.checked_against_median_time_past,
+                    expected,
+                    "at height {height}, with {} headers below it in the range",
+                    height - checkpoint.height - 1
+                ),
+                other => panic!("the block at {height} must confirm: {other:?}"),
+            }
+        }
     }
 }

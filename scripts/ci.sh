@@ -271,6 +271,27 @@ checks() {
   # own logic was a test nobody ran, which is the same thing as no test. `confirm-anchor-b` holds the
   # checkpoint floor of H-57 (#223).
   check "confirm-anchor-b" cargo test -p certimining-client --features ots --bin confirm-anchor-b
+  # **And the library's own unit tests, which no group named either (H-58, #224).** The line above
+  # records that explicit `--test` targets exclude `--bin` ones. They exclude the `--lib` target too,
+  # and this package is the only one in the workspace where *every* `cargo test` line carries such a
+  # filter: `certimining-core`, `certimining-log`, `certimining-checkpoint` and `xtask` are each run
+  # bare somewhere above, which reaches their unit tests as a side effect. This one was reached by
+  # nothing.
+  #
+  # What that left unexercised is the whole of `bitcoin.rs` — the chain walk, the retarget
+  # arithmetic, the proof-of-work floor of H-57 (#223), the canonical-difficulty check of H-59 (#225)
+  # and the two contextual rules of H-58 — plus the client's own scheduling and hand-off tests. The
+  # remedies for filed defects were sitting in a target CI did not name, which is the same shape as
+  # the two cases above it and was found the same way: by asking what runs this, rather than whether
+  # a test exists.
+  #
+  # **`xtask check-test-targets` does not see this one (H-62, #230).** It enumerates `cargo
+  # metadata`'s `test` and `bin` kinds, so a `lib` target is outside what it inspects — a coverage
+  # gate blind to the commonest kind of test target. Named here because the line below is the remedy
+  # for today and the gate is the remedy for tomorrow.
+  #
+  # `--features ots` because `bitcoin` sits behind that feature and is not compiled without it.
+  check "client lib" cargo test -p certimining-client --features ots --lib
   # **All seventeen committed receipts** against real mainnet headers (H-12): the three repository
   # anchors and the fourteen epochs with an attached receipt, each swept by its own test. Offline:
   # the headers are committed bytes and each is checked against the target its own `bits` encode, so
