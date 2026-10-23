@@ -44,7 +44,7 @@
 use certimining_core::{Hasher, RegistryError, Verifier};
 use certimining_log::{verify_promise, SignedPromise};
 
-use crate::bitcoin::{confirm, Checkpoint, Confirmed, Header, HeaderRefused};
+use crate::bitcoin::{confirm, Checkpoint, Confirmation, Confirmed, Header, HeaderRefused};
 use crate::{day_index, verify_receipt, ReceiptRefused};
 
 /// What a confirmed receipt established about a promise.
@@ -78,6 +78,21 @@ pub enum TransferRefused {
         /// The timestamp the header carried.
         time: u32,
     },
+    /// The attested block is not yet buried under [`crate::bitcoin::CONFIRMATION_DEPTH`] headers
+    /// (H-56, #222).
+    ///
+    /// **Not a fault in the evidence.** The chain verified and the block commits exactly this
+    /// promise's octets; what is absent is work built on top, which arrives by waiting. It is a
+    /// separate variant from `NotInBitcoin` for that reason: that one says the receipt is wrong,
+    /// this one says it is early, and a holder's response to the two is not the same.
+    NotYetBuriedDeepEnough {
+        /// The height the receipt names.
+        height: u32,
+        /// How many verified headers sit above it in the range supplied.
+        depth: usize,
+        /// How many it needs.
+        required: usize,
+    },
     /// The promise failed §1.6's own checks against the epoch the receipt established.
     Promise(RegistryError),
 }
@@ -90,7 +105,8 @@ pub enum TransferRefused {
 ///    is `NotThisPromise`, so the stamp cannot be lifted from one promise onto another.
 /// 2. The block the receipt names must be reachable from `checkpoint` through `headers`, each
 ///    meeting the target its own `bits` encode (H-12). A receipt naming a block it never reached is
-///    `NotInBitcoin`.
+///    `NotInBitcoin`. It must also carry [`crate::bitcoin::CONFIRMATION_DEPTH`] verified headers
+///    above it, or the answer is `NotYetBuriedDeepEnough` rather than a judgment (H-56, #222).
 /// 3. That block's timestamp gives the epoch the promise existed by.
 /// 4. §1.6's checks then run against that epoch rather than against the holder's own observation.
 pub fn verify_transferred_promise<H: Hasher, V: Verifier>(
@@ -104,7 +120,23 @@ pub fn verify_transferred_promise<H: Hasher, V: Verifier>(
     // whether the receipt covers this promise and not whether it covers something that hashes alike.
     let claim =
         verify_receipt(receipt, &promise.encode()).map_err(TransferRefused::NotThisPromise)?;
-    let confirmed = confirm(claim, checkpoint, headers).map_err(TransferRefused::NotInBitcoin)?;
+    let confirmed =
+        match confirm(claim, checkpoint, headers).map_err(TransferRefused::NotInBitcoin)? {
+            Confirmation::Confirmed(confirmed) => confirmed,
+            // Reported rather than judged. A promise judged against a block that may still be orphaned
+            // would be a judgment this code would have to withdraw, and §1.6 has no way to withdraw one.
+            Confirmation::Pending {
+                height,
+                depth,
+                required,
+            } => {
+                return Err(TransferRefused::NotYetBuriedDeepEnough {
+                    height,
+                    depth,
+                    required,
+                })
+            }
+        };
     judge_against_confirmation::<H, V>(promise, expected_batcher_key, &confirmed)
 }
 

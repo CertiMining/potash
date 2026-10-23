@@ -44,9 +44,12 @@
 //! own took effect, and median-time-past applies wherever the eleven headers below the one being
 //! judged are inside the range supplied.
 //!
-//! **The windows this repository commits are four to ten headers, which is too short for that
-//! rule**, so `Confirmed` carries whether it reached the attested block rather than leaving a caller
-//! to read silence as a pass. **And the third rule, the two-hour future bound, is not here**: it
+//! **No attested block this repository commits is deep enough into its window for that rule.** The
+//! windows are ten to sixteen headers since H-56, and each attested block sits at the fourth to the
+//! tenth of them, where fewer than eleven headers precede it. The rule does reach headers *above* an
+//! attested block in the longest window, so it is not dormant — it is simply never the attested
+//! block's own timestamp that it judges. `Confirmed` carries which it was rather than leaving a
+//! caller to read silence as a pass. **And the third rule, the two-hour future bound, is not here**: it
 //! compares a timestamp against network-adjusted time, and §2.3 with INV-IFACE-01 keep clocks out of
 //! verification. So on a short range a header's timestamp may still sit arbitrarily far ahead — the
 //! part of the review's finding that a clock-free bound would close, which issue #224 puts to the
@@ -512,8 +515,8 @@ pub struct Checkpoint {
     /// `h - 2016`, which is the checkpoint itself when `height % 2016 == 0`.
     ///
     /// `None`, or a checkpoint off a boundary, and a range leaving the period is refused instead —
-    /// which is what every window this repository commits does, each being four to ten headers inside
-    /// one period.
+    /// which is what every window this repository commits does, each being ten to sixteen headers
+    /// inside one period.
     pub time: Option<u32>,
 }
 
@@ -533,11 +536,15 @@ pub struct Checkpoint {
 /// * **A range leaving the period is refused unless the checkpoint sits on a boundary and carries its
 ///   timestamp.** The retarget needs the timespan of the period that closed, whose first block is the
 ///   checkpoint exactly when the checkpoint's height is a multiple of 2016. `GENESIS` qualifies; the
-///   windows this repository commits do not and do not need to, being four to ten headers inside one
-///   period.
+///   windows this repository commits do not and do not need to, being ten to sixteen headers inside
+///   one period.
 /// * **This is not the chain with the most work**, only a chain of the right work from the
 ///   checkpoint. Two competing chains at the same difficulty both pass, which matters at a
-///   reorganisation and not for a block buried under months of it.
+///   reorganisation. **This used to add "and not for a block buried under months of it", which
+///   described none of this repository's own evidence** (H-56, issue #222): every committed window
+///   ended at the attested block, so every confirmation was made at zero depth — the one depth at
+///   which a competing chain is cheapest — while the text implied months. `confirm` now requires
+///   [`CONFIRMATION_DEPTH`] headers above the attested block and the windows carry them.
 /// * **A timestamp is not bounded from above, and on a short range it is not bounded at all**
 ///   (H-58, issue #224). The version floor applies to every header above the height Bitcoin's own
 ///   took effect. Median-time-past applies only where the eleven headers below the one being judged
@@ -649,9 +656,11 @@ fn verify_chain_in(
                 network: rules.name,
             });
         }
-        // **Where the eleven headers below this one are in the range, and nowhere else.** Every
-        // window this repository commits is four to ten headers, so this rule does not reach them,
-        // and `Confirmed` says so rather than leaving a caller to read silence as a pass.
+        // **Where the eleven headers below this one are in the range, and nowhere else.** The
+        // windows this repository commits are ten to sixteen headers and every attested block sits
+        // at the fourth to the tenth, so this reaches headers above an attested block in the longest
+        // of them and no attested block's own timestamp. `Confirmed` says which it was rather than
+        // leaving a caller to read silence as a pass.
         if let Some(median) = median_time_past(headers, offset) {
             if header.time() <= median {
                 return Err(HeaderRefused::TimestampNotAfterMedianTimePast {
@@ -880,14 +889,52 @@ pub struct Confirmed {
     /// Whether [`Self::time`] was held to Bitcoin's median-time-past rule (H-58, issue #224).
     ///
     /// **`false` does not mean the rule was broken; it means it was not applied.** The rule needs the
-    /// eleven headers below the attested block inside the range supplied, and every window this
-    /// repository commits is four to ten headers, so for its own evidence this is `false`. The field
-    /// exists because the alternative is a caller reading an unchecked timestamp as a checked one —
-    /// which is this repository's oldest defect, an instrument reporting a comparison it did not make.
+    /// eleven headers below the attested block inside the range supplied. The windows this repository
+    /// commits are ten to sixteen headers and each attested block sits at the fourth to the tenth of
+    /// them, so for its own evidence this is `false` — the rule reaches headers above an attested
+    /// block in the longest window, but never the attested block itself. The field exists because the
+    /// alternative is a caller reading an unchecked timestamp as a checked one, which is this
+    /// repository's oldest defect: an instrument reporting a comparison it did not make.
     ///
     /// Neither value is a statement about the two-hour future bound, which needs a clock that §2.3
     /// and INV-IFACE-01 keep out of verification and which nothing here enforces.
     pub checked_against_median_time_past: bool,
+}
+
+/// How many headers of real work must sit **above** the attested block before this code reads it as
+/// confirmed (H-56, issue #222).
+///
+/// **Six, by the owner's ruling of 22 October 2026**, and counted as headers past the attested block
+/// rather than as Bitcoin's "confirmations", which include the containing block. So this is one block
+/// stricter than the familiar six-confirmation convention, and a window at this depth holds the
+/// attested block plus six.
+///
+/// **Why any depth at all.** An independent review found that `confirm` would turn a matching claim
+/// into a `Confirmed` from a range ending exactly at the attested block, and that all seventeen
+/// committed windows were such ranges. A one-block reorganisation at any of those heights would have
+/// orphaned the block the receipt names, and `confirm` would have said `Confirmed` beforehand. Work
+/// built on top is what makes that progressively unaffordable, and it is the only thing that does.
+pub const CONFIRMATION_DEPTH: usize = 6;
+
+/// What a verified chain says about the block a receipt names.
+///
+/// **Pending is not a refusal.** The chain verified, the block commits the digest, and the only thing
+/// absent is work built on top — which arrives by waiting. A refusal says the evidence is wrong;
+/// this says it is not yet deep enough. Keeping them apart is the point of the type: a caller cannot
+/// read one as the other, and `Confirmed` still means what it has always meant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confirmation {
+    /// The block commits the digest and carries at least [`CONFIRMATION_DEPTH`] headers above it.
+    Confirmed(Confirmed),
+    /// The block commits the digest, and the range does not show enough work built on top of it.
+    Pending {
+        /// The height the receipt names.
+        height: u32,
+        /// How many verified headers sit above it in the range supplied.
+        depth: usize,
+        /// How many it needs, which is [`CONFIRMATION_DEPTH`].
+        required: usize,
+    },
 }
 
 /// Confirms a receipt's Bitcoin attestation against a chain of headers.
@@ -906,7 +953,7 @@ pub fn confirm(
     claim: crate::BitcoinClaim,
     checkpoint: Checkpoint,
     headers: &[Header],
-) -> Result<Confirmed, HeaderRefused> {
+) -> Result<Confirmation, HeaderRefused> {
     confirm_in(claim, checkpoint, headers, MAINNET)
 }
 
@@ -916,8 +963,9 @@ fn confirm_in(
     checkpoint: Checkpoint,
     headers: &[Header],
     rules: Network,
-) -> Result<Confirmed, HeaderRefused> {
+) -> Result<Confirmation, HeaderRefused> {
     let at = header_at_in(checkpoint, headers, claim.height, rules)?;
+    let offset = offset_of(checkpoint, headers, claim.height)?;
     let merkle_root = at.merkle_root();
     if merkle_root != claim.attested_digest {
         return Err(HeaderRefused::DigestNotInTheBlock {
@@ -926,18 +974,26 @@ fn confirm_in(
             merkle_root: hex(&merkle_root),
         });
     }
-    Ok(Confirmed {
+    // **The depth is read off the range that was verified, not off the range that was supplied.**
+    // Every header above the attested block has been through the walk: it names its predecessor,
+    // declares the target in force and meets it. So this counts work, which is the only thing a
+    // depth is worth counting.
+    let depth = headers.len().saturating_sub(offset).saturating_sub(1);
+    if depth < CONFIRMATION_DEPTH {
+        return Ok(Confirmation::Pending {
+            height: claim.height,
+            depth,
+            required: CONFIRMATION_DEPTH,
+        });
+    }
+    Ok(Confirmation::Confirmed(Confirmed {
         height: claim.height,
         merkle_root,
         time: at.time(),
         // The same predicate the walk applied, asked of the same range, so the two cannot disagree
         // about whether the attested block's own timestamp was judged.
-        checked_against_median_time_past: median_time_past(
-            headers,
-            offset_of(checkpoint, headers, claim.height)?,
-        )
-        .is_some(),
-    })
+        checked_against_median_time_past: median_time_past(headers, offset).is_some(),
+    }))
 }
 
 #[cfg(test)]
@@ -1212,25 +1268,108 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_digest_the_named_block_commits_is_confirmed() {
-        let checkpoint = easy_checkpoint();
-        let attested = [0x99; 32];
-        // Four blocks; the third carries the digest the receipt's operations reach.
+    /// A chain of `len` headers carrying `attested` as the merkle root of its `at`th block.
+    fn chain_committing(len: usize, from: [u8; 32], at: usize, attested: [u8; 32]) -> Vec<Header> {
         let mut headers = Vec::new();
-        let mut prev = checkpoint.hash;
-        for i in 0..4 {
-            let root = if i == 2 { attested } else { [i; 32] };
+        let mut prev = from;
+        for i in 0..len {
+            let root = if i.saturating_add(1) == at {
+                attested
+            } else {
+                let mut r = [0u8; 32];
+                if let Some(b) = r.get_mut(0) {
+                    *b = u8::try_from(i).unwrap_or(0);
+                }
+                r
+            };
             let header = mined(prev, root, EASY);
             prev = header.block_hash();
             headers.push(header);
         }
+        headers
+    }
+
+    #[test]
+    fn a_digest_the_named_block_commits_is_confirmed() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        // The third block carries the digest, and `CONFIRMATION_DEPTH` blocks follow it, which is
+        // what `confirm` requires before it will say `Confirmed` (H-56, #222).
+        let headers = chain_committing(3 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
         match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
-            Ok(confirmed) => {
+            Ok(Confirmation::Confirmed(confirmed)) => {
                 assert_eq!(confirmed.height, 103);
                 assert_eq!(confirmed.merkle_root, attested);
             }
-            Err(e) => panic!("the block at 103 commits this digest: {e:?}"),
+            other => panic!("the block at 103 commits this digest: {other:?}"),
+        }
+    }
+
+    // ---------------------------------------------------------------- H-56 (issue #222)
+
+    /// **The case the review demonstrated, and the case all seventeen committed windows were**: a
+    /// range ending exactly at the attested block. It used to answer `Confirmed`.
+    #[test]
+    fn a_range_ending_at_the_attested_block_is_pending_rather_than_confirmed() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let headers = chain_committing(3, checkpoint.hash, 3, attested);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Ok(Confirmation::Pending {
+                height,
+                depth,
+                required,
+            }) => {
+                assert_eq!(height, 103);
+                assert_eq!(depth, 0, "nothing is built on top of the attested block");
+                assert_eq!(required, CONFIRMATION_DEPTH);
+            }
+            other => panic!("a range ending at the attested block must be pending: {other:?}"),
+        }
+    }
+
+    /// **One header short of the depth is still pending**, which is the boundary the ruling draws.
+    #[test]
+    fn one_header_short_of_the_depth_is_pending() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let headers = chain_committing(2 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Ok(Confirmation::Pending { depth, .. }) => {
+                assert_eq!(depth, CONFIRMATION_DEPTH - 1, "one short of the depth")
+            }
+            other => panic!("one header short of the depth must be pending: {other:?}"),
+        }
+    }
+
+    /// And exactly the depth confirms, so the boundary is tested from both sides.
+    #[test]
+    fn exactly_the_depth_confirms() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let headers = chain_committing(3 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Ok(Confirmation::Confirmed(confirmed)) => assert_eq!(confirmed.height, 103),
+            other => panic!("exactly the depth must confirm: {other:?}"),
+        }
+    }
+
+    /// **The depth counts headers the walk verified, not headers supplied.** A range whose later
+    /// headers do not chain is refused outright, so a depth cannot be padded with bytes.
+    #[test]
+    fn headers_above_the_attested_block_are_themselves_verified() {
+        let checkpoint = easy_checkpoint();
+        let attested = [0x99; 32];
+        let mut headers = chain_committing(3 + CONFIRMATION_DEPTH, checkpoint.hash, 3, attested);
+        // Break the last one's linkage. It sits above the attested block and is there only to make
+        // up the depth, which is exactly the header a padded range would forge.
+        if let Some(last) = headers.last_mut() {
+            *last = mined([0x77; 32], [0x11; 32], EASY);
+        }
+        let expected = checkpoint.height + 3 + u32::try_from(CONFIRMATION_DEPTH).unwrap_or(0);
+        match confirm_in(claim_for(103, attested), checkpoint, &headers, testnet()) {
+            Err(HeaderRefused::Broken { at, .. }) => assert_eq!(at, expected),
+            other => panic!("a header padding the depth is verified like any other: {other:?}"),
         }
     }
 
@@ -1950,7 +2089,10 @@ mod tests {
     #[test]
     fn whether_the_median_rule_reached_the_attested_block_is_reported() {
         let checkpoint = easy_checkpoint();
-        let headers = chain_at_times(16, checkpoint.hash, 1_700_000_000, 600, 0);
+        // Twenty, so the deeper of the two heights has eleven headers below it *and*
+        // `CONFIRMATION_DEPTH` above it: at a shallower range H-56 answers `Pending`, which carries
+        // no disclosure to read.
+        let headers = chain_at_times(20, checkpoint.hash, 1_700_000_000, 600, 0);
         let rules = testnet();
         for (height, expected) in [
             (checkpoint.height + 4, false),
@@ -1961,13 +2103,13 @@ mod tests {
                 Err(e) => panic!("the range covers {height}: {e:?}"),
             };
             match confirm_in(claim_for(height, root), checkpoint, &headers, rules) {
-                Ok(confirmed) => assert_eq!(
+                Ok(Confirmation::Confirmed(confirmed)) => assert_eq!(
                     confirmed.checked_against_median_time_past,
                     expected,
                     "at height {height}, with {} headers below it in the range",
                     height - checkpoint.height - 1
                 ),
-                Err(e) => panic!("the block at {height} must confirm: {e:?}"),
+                other => panic!("the block at {height} must confirm: {other:?}"),
             }
         }
     }

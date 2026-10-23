@@ -18,7 +18,9 @@
 
 #![cfg(feature = "ots")]
 
-use certimining_client::bitcoin::{confirm, merkle_root_at, target_from_bits, Checkpoint, Header};
+use certimining_client::bitcoin::{
+    confirm, merkle_root_at, target_from_bits, Checkpoint, Confirmation, Header,
+};
 use certimining_client::{
     day_index, judge_against_confirmation, verify_transferred_promise, BitcoinClaim,
     ReceiptRefused, TransferRefused,
@@ -29,7 +31,7 @@ use certimining_core::{
 use certimining_log::{Batcher, EpochBatcher, SignedPromise};
 
 /// Blocks 967485 to 967489, the window anchor `0001`'s receipt is attested in.
-const HEADERS: &[u8] = include_bytes!("data/mainnet-headers-967485-967489.bin");
+const HEADERS: &[u8] = include_bytes!("data/mainnet-headers-967485-967495.bin");
 /// The checkpoint those headers run from, as `anchor_b_confirmed.rs` commits it.
 const CHECKPOINT_HEIGHT: u32 = 967_484;
 const CHECKPOINT_HASH: &str = "00000000000000000000d89a58cbb4687852251e9753f847d06c1c417b2e80ed";
@@ -154,8 +156,11 @@ fn confirmed() -> certimining_client::bitcoin::Confirmed {
         attested_digest: merkle_root,
     };
     match confirm(claim, checkpoint(), &chain) {
-        Ok(confirmed) => confirmed,
-        Err(e) => panic!("the block at {ATTESTED_HEIGHT} does not confirm: {e:?}"),
+        Ok(Confirmation::Confirmed(confirmed)) => confirmed,
+        // The committed window carries `CONFIRMATION_DEPTH` headers above the attested block since
+        // H-56 (#222), so a `Pending` here means the fixture was shortened rather than that the
+        // rule changed.
+        other => panic!("the block at {ATTESTED_HEIGHT} does not confirm: {other:?}"),
     }
 }
 
