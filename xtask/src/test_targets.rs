@@ -28,6 +28,28 @@
 //!    runs every target the package has; or
 //! 3. **every** `#[test]` in its source carries `#[ignore]`.
 //!
+//! **A library target is covered per feature set, which is H-63 (issue #240).** This read only
+//! `test` and `bin` kinds, so a `lib` — where the `#[cfg(test)] mod tests` of every crate lives —
+//! was outside what it inspected, and `certimining-client`'s seventy-three unit tests reached no
+//! group at all: the whole of `bitcoin.rs`, including the proof-of-work floor of H-57 and the
+//! canonical-difficulty check of H-59. The remedies for filed defects were sitting in a target CI
+//! did not name, and the gate written to find exactly that could not see them.
+//!
+//! The feature dimension is the part that needed deciding. A library is not one body of code:
+//! `#[cfg(feature = "ots")] pub mod bitcoin;` compiles forty more tests, so "the lib target is run"
+//! is not a yes or a no. A gate satisfied by the `--features ots` line would call that package
+//! covered while the build a plain `cargo test` produces went unrun; one satisfied by a plain run
+//! would call it covered while `bitcoin.rs` did. So **each feature set carrying live tests has to be
+//! named by a run that enables it, and the default build by a run that adds no features**, and the
+//! gate prints the sets it requires whether it passes or fails.
+//!
+//! Which sets those are is read from the module tree, not declared here: the walk follows `mod`
+//! declarations from the library root and carries each `#[cfg(feature = "…")]` down, so a feature
+//! added tomorrow is demanded tomorrow. A `cfg` operator it cannot reduce to "these features must be
+//! on" — `any(…)`, `not(…)` — is refused rather than guessed at, and a `mod` that resolves to no
+//! file is reported rather than skipped, because a walk that stops early under-counts and
+//! under-counting is the direction that lets a gate pass.
+//!
 //! **Condition 3 is decided by tokenising**, for the reason `check-suppressions` records: deciding
 //! what Rust means from a line of text failed there four times — a substring, then a match anywhere
 //! on a line, then whitespace between an attribute's tokens, then a raw identifier's rendering.
@@ -46,8 +68,8 @@
 //! workflow step that bypassed the script would be invisible here, and nothing does that today.
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 /// One test or bin target, as cargo reports it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -58,7 +80,17 @@ struct Target {
     src: String,
 }
 
-/// Every `test` and `bin` target of every workspace member.
+/// Every `test`, `bin` and `lib` target of every workspace member.
+///
+/// **`lib` was missing and that is H-63 (issue #240).** A `lib` target carries unit tests too — the
+/// `#[cfg(test)] mod tests` inside `src/` — and this enumerated only `test` and `bin`, so it could
+/// not report a library nobody runs. It found two unreached targets and said nothing about
+/// `certimining-client`'s library, whose sixty-nine unit tests no group ran: the whole of
+/// `bitcoin.rs`, including the proof-of-work floor of H-57 and the canonical-difficulty check of
+/// H-59. The gate's own wording was scoped honestly, so it did not overclaim; it was incomplete.
+///
+/// `test = false` in a `[lib]` block means cargo builds no test harness for it, so there is nothing
+/// to run and nothing to require.
 fn targets(root: &Path) -> Vec<Target> {
     let out = std::process::Command::new("cargo")
         .args(["metadata", "--no-deps", "--format-version", "1"])
@@ -83,10 +115,21 @@ fn targets(root: &Path) -> Vec<Target> {
                 .to_string();
             for kind in target["kind"].as_array().expect("a kind") {
                 let kind = kind.as_str().unwrap_or_default();
-                if kind == "test" || kind == "bin" {
+                // `lib`, `rlib` and `proc-macro` all name the one library target; cargo reports the
+                // crate types, so the kind is matched on what it means rather than on one spelling.
+                let is_lib = matches!(kind, "lib" | "rlib" | "proc-macro");
+                let harness = target["test"].as_bool().unwrap_or(true);
+                if is_lib && !harness {
+                    continue;
+                }
+                if kind == "test" || kind == "bin" || is_lib {
                     found.push(Target {
                         package: package.clone(),
-                        kind: kind.to_string(),
+                        kind: if is_lib {
+                            "lib".to_string()
+                        } else {
+                            kind.to_string()
+                        },
                         name: name.clone(),
                         src: src.clone(),
                     });
@@ -95,6 +138,9 @@ fn targets(root: &Path) -> Vec<Target> {
         }
     }
     found.sort();
+    // A library with several crate types — `certimining-checkpoint` is `cdylib` and `lib` — is
+    // reported once per type and is one target.
+    found.dedup();
     found
 }
 
@@ -103,6 +149,9 @@ fn targets(root: &Path) -> Vec<Target> {
 struct Covered {
     wholesale: BTreeSet<String>,
     named: BTreeSet<String>,
+    /// Every invocation, kept whole because a library's coverage is a question about **which feature
+    /// set** ran it, which the two sets above cannot answer (H-63, issue #240).
+    invocations: Vec<Invocation>,
 }
 
 /// Reads the script's `cargo test` invocations.
@@ -120,6 +169,7 @@ fn covered(script: &str) -> Covered {
         let words: Vec<&str> = line.split_whitespace().collect();
         let mut packages = Vec::new();
         let mut names = Vec::new();
+        let mut call = Invocation::default();
         let mut i = 0;
         while i < words.len() {
             match words[i] {
@@ -135,6 +185,24 @@ fn covered(script: &str) -> Covered {
                     }
                     i += 2;
                 }
+                "--lib" => {
+                    call.lib = true;
+                    i += 1;
+                }
+                "--all-features" => {
+                    call.all_features = true;
+                    i += 1;
+                }
+                "--features" => {
+                    if let Some(list) = words.get(i + 1) {
+                        for f in list.trim_matches('"').split(&[',', ' '][..]) {
+                            if !f.is_empty() {
+                                call.features.insert(f.to_string());
+                            }
+                        }
+                    }
+                    i += 2;
+                }
                 _ => i += 1,
             }
         }
@@ -142,11 +210,14 @@ fn covered(script: &str) -> Covered {
             out.named.insert(n.clone());
         }
         // No target flag means every target of the package, which is what covers a whole crate.
-        if names.is_empty() {
-            for p in packages {
-                out.wholesale.insert(p);
+        if names.is_empty() && !call.lib {
+            for p in &packages {
+                out.wholesale.insert(p.clone());
             }
+            call.every_target = true;
         }
+        call.packages = packages;
+        out.invocations.push(call);
     }
     out
 }
@@ -168,6 +239,48 @@ fn idents(stream: TokenStream, into: &mut BTreeSet<String>) {
     }
 }
 
+/// Whether an attribute run marks a `#[test]`, and whether that test also carries `#[ignore]`.
+///
+/// **The attribute's own name, not an identifier anywhere inside it (H-63, issue #240).** Reading
+/// idents at depth was right for `#[ignore]` and wrong for `#[test]`: `#[cfg(test)]` contains the
+/// ident `test` and marks no test at all — it is the gate on the module every unit test lives in. So
+/// a depth read counted one phantom test per `#[cfg(test)] mod tests`, which is once per source file
+/// in a library. It reported 38 live tests in `certimining-client`'s default build where `cargo test
+/// --lib` runs 33, and one apiece in `certimining-core` and `certimining-log`, which have none.
+///
+/// It never made this gate pass when it should have failed — an inflated count only moves a target
+/// away from the "wholly #[ignore]d" condition — but a figure printed beside a demand is a figure a
+/// reader will check.
+///
+/// `#[ignore]` is still read at depth, because `#[cfg_attr(miri, ignore = "…")]` is how this
+/// repository ignores a test under Miri and that has to keep counting as one.
+fn marks(attrs: &[TokenStream]) -> (bool, bool) {
+    let mut is_test = false;
+    let mut is_ignore = false;
+    for attr in attrs {
+        let name = attr.clone().into_iter().find_map(|tree| match tree {
+            TokenTree::Ident(id) => {
+                let text = id.to_string();
+                Some(text.strip_prefix("r#").unwrap_or(&text).to_string())
+            }
+            _ => None,
+        });
+        match name.as_deref() {
+            Some("test") => is_test = true,
+            Some("ignore") => is_ignore = true,
+            Some("cfg_attr") => {
+                let mut deep = BTreeSet::new();
+                idents(attr.clone(), &mut deep);
+                if deep.contains("ignore") {
+                    is_ignore = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    (is_test, is_ignore)
+}
+
 /// Counts the `#[test]` functions in a source, and how many of them also carry `#[ignore]`.
 fn count(stream: TokenStream, tests: &mut usize, ignored: &mut usize) {
     let trees: Vec<TokenTree> = stream.into_iter().collect();
@@ -175,7 +288,7 @@ fn count(stream: TokenStream, tests: &mut usize, ignored: &mut usize) {
     while i < trees.len() {
         // An attribute run: consecutive `#[…]` or `#![…]` groups, which belong to one item.
         if matches!(&trees[i], TokenTree::Punct(p) if p.as_char() == '#') {
-            let mut names = BTreeSet::new();
+            let mut attrs = Vec::new();
             let mut j = i;
             loop {
                 let hash = matches!(trees.get(j), Some(TokenTree::Punct(p)) if p.as_char() == '#');
@@ -188,16 +301,17 @@ fn count(stream: TokenStream, tests: &mut usize, ignored: &mut usize) {
                 }
                 match trees.get(k) {
                     Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Bracket => {
-                        idents(g.stream(), &mut names);
+                        attrs.push(g.stream());
                         j = k + 1;
                     }
                     _ => break,
                 }
             }
             if j > i {
-                if names.contains("test") {
+                let (is_test, is_ignore) = marks(&attrs);
+                if is_test {
                     *tests += 1;
-                    if names.contains("ignore") {
+                    if is_ignore {
                         *ignored += 1;
                     }
                 }
@@ -227,6 +341,332 @@ fn tests_in(path: &Path) -> (usize, usize) {
     (tests, ignored)
 }
 
+// ------------------------------------------------------- H-63 (issue #240): the library targets
+
+/// Where a module's external submodules live.
+///
+/// Rust's rule: `lib.rs`, `main.rs` and any `mod.rs` own the directory they sit in, and every other
+/// file owns a directory named after itself. Getting this wrong would stop the walk early, and a walk
+/// that stops early reports fewer tests than exist — the direction that makes a gate pass when it
+/// should not. A `mod` that resolves to no file is reported rather than skipped for the same reason.
+fn module_dir(src: &Path) -> PathBuf {
+    let parent = src.parent().unwrap_or(Path::new(".")).to_path_buf();
+    match src.file_stem().and_then(|s| s.to_str()) {
+        Some("lib") | Some("main") | Some("mod") => parent,
+        Some(stem) => parent.join(stem),
+        None => parent,
+    }
+}
+
+/// The features a `#[cfg(…)]` attribute requires, or the operator this gate cannot read.
+///
+/// **It refuses rather than guesses.** `any(…)` and `not(…)` do not reduce to "these features must
+/// be on": collecting their features would demand a CI run nothing needs, and dropping them would let
+/// tests hide behind a cfg the gate had quietly ignored. Neither appears in this workspace, and if one
+/// does this says so instead of being wrong in silence.
+///
+/// `#[cfg(test)]` carries no feature and `#[cfg_attr(…)]` is not a cfg, so both yield nothing.
+fn cfg_features(stream: TokenStream) -> Result<BTreeSet<String>, String> {
+    let trees: Vec<TokenTree> = stream.into_iter().collect();
+    let mut out = BTreeSet::new();
+    let Some(TokenTree::Ident(head)) = trees.first() else {
+        return Ok(out);
+    };
+    if *head != "cfg" {
+        return Ok(out);
+    }
+    let Some(TokenTree::Group(group)) = trees.get(1) else {
+        return Ok(out);
+    };
+    collect_cfg(group.stream(), &mut out)?;
+    Ok(out)
+}
+
+fn collect_cfg(stream: TokenStream, out: &mut BTreeSet<String>) -> Result<(), String> {
+    let trees: Vec<TokenTree> = stream.into_iter().collect();
+    let mut i = 0;
+    while i < trees.len() {
+        if let TokenTree::Ident(id) = &trees[i] {
+            if *id == "any" || *id == "not" {
+                return Err(id.to_string());
+            }
+            if *id == "all" {
+                if let Some(TokenTree::Group(g)) = trees.get(i + 1) {
+                    collect_cfg(g.stream(), out)?;
+                    i += 2;
+                    continue;
+                }
+            }
+            if *id == "feature"
+                && matches!(trees.get(i + 1), Some(TokenTree::Punct(p)) if p.as_char() == '=')
+            {
+                if let Some(TokenTree::Literal(lit)) = trees.get(i + 2) {
+                    let text = lit.to_string();
+                    out.insert(text.trim_matches('"').to_string());
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    Ok(())
+}
+
+/// What a library's `#[test]`s cost to compile: `(tests, ignored)` against the feature set needed.
+///
+/// The empty key is what a plain `cargo test` reaches; `{"ots"}` is what only `--features ots` does.
+/// Keys combine, so a gated module inside a gated module needs both features.
+#[derive(Default)]
+struct LibTests {
+    by_features: BTreeMap<BTreeSet<String>, (usize, usize)>,
+    unreadable: Vec<String>,
+}
+
+fn lib_tests(src: &Path) -> LibTests {
+    let mut found = LibTests::default();
+    walk_file(src, &BTreeSet::new(), &mut found);
+    found
+}
+
+fn walk_file(src: &Path, features: &BTreeSet<String>, found: &mut LibTests) {
+    let text = match std::fs::read_to_string(src) {
+        Ok(text) => text,
+        Err(e) => {
+            found.unreadable.push(format!("{}: {e}", src.display()));
+            return;
+        }
+    };
+    let stream: TokenStream = match text.parse() {
+        Ok(stream) => stream,
+        Err(e) => {
+            found
+                .unreadable
+                .push(format!("{} does not tokenise: {e}", src.display()));
+            return;
+        }
+    };
+    let trees: Vec<TokenTree> = stream.into_iter().collect();
+    let dir = module_dir(src);
+    walk_items(&trees, features, &dir, src, found);
+}
+
+/// The same attribute-run reading `count` does, carrying the cfg features down the module tree.
+fn walk_items(
+    trees: &[TokenTree],
+    features: &BTreeSet<String>,
+    dir: &Path,
+    owner: &Path,
+    found: &mut LibTests,
+) {
+    let mut i = 0;
+    while i < trees.len() {
+        if matches!(trees.get(i), Some(TokenTree::Punct(p)) if p.as_char() == '#') {
+            let mut attrs = Vec::new();
+            let mut gated = features.clone();
+            let mut j = i;
+            loop {
+                let hash = matches!(trees.get(j), Some(TokenTree::Punct(p)) if p.as_char() == '#');
+                if !hash {
+                    break;
+                }
+                let mut k = j + 1;
+                if matches!(trees.get(k), Some(TokenTree::Punct(p)) if p.as_char() == '!') {
+                    k += 1;
+                }
+                match trees.get(k) {
+                    Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Bracket => {
+                        attrs.push(g.stream());
+                        match cfg_features(g.stream()) {
+                            Ok(f) => gated.extend(f),
+                            Err(which) => found.unreadable.push(format!(
+                                "{}: cfg({which}(…)) is an operator this gate does not read",
+                                owner.display()
+                            )),
+                        }
+                        j = k + 1;
+                    }
+                    _ => break,
+                }
+            }
+            if j > i {
+                let (is_test, is_ignore) = marks(&attrs);
+                if is_test {
+                    let entry = found.by_features.entry(gated.clone()).or_insert((0, 0));
+                    entry.0 = entry.0.saturating_add(1);
+                    if is_ignore {
+                        entry.1 = entry.1.saturating_add(1);
+                    }
+                }
+                i = consume_item(trees, j, &gated, dir, owner, found);
+                continue;
+            }
+        }
+        i = consume_item(trees, i, features, dir, owner, found);
+    }
+}
+
+/// Steps over one item, descending into it: a module by file, a module written inline, or any body.
+///
+/// **Visibility is skipped first, and leaving that out was a real defect.** The first version looked
+/// for `mod` immediately after the attribute run, so `#[cfg(feature = "ots")] pub mod bitcoin;` fell
+/// through the module branch entirely: the module was then walked with the *enclosing* feature set
+/// and its thirty-six tests were counted as compiling by default. The gate reported 79 live tests
+/// under `default features` where the build has 33, which is a gate reading more coverage into a
+/// run than the run performs.
+fn consume_item(
+    trees: &[TokenTree],
+    i: usize,
+    features: &BTreeSet<String>,
+    dir: &Path,
+    owner: &Path,
+    found: &mut LibTests,
+) -> usize {
+    // `pub`, `pub(crate)`, `pub(super)` — the keyword and an optional restriction in parentheses.
+    let mut at = i;
+    if matches!(trees.get(at), Some(TokenTree::Ident(id)) if *id == "pub") {
+        at = at.saturating_add(1);
+        if matches!(trees.get(at), Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis)
+        {
+            at = at.saturating_add(1);
+        }
+    }
+    if let (Some(TokenTree::Ident(keyword)), Some(TokenTree::Ident(name))) =
+        (trees.get(at), trees.get(at + 1))
+    {
+        if *keyword == "mod" {
+            match trees.get(at + 2) {
+                Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
+                    let inner: Vec<TokenTree> = g.stream().into_iter().collect();
+                    walk_items(&inner, features, dir, owner, found);
+                    return at.saturating_add(3);
+                }
+                Some(TokenTree::Punct(p)) if p.as_char() == ';' => {
+                    let rendered = name.to_string();
+                    let name = rendered.strip_prefix("r#").unwrap_or(&rendered);
+                    let flat = dir.join(format!("{name}.rs"));
+                    let nested = dir.join(name).join("mod.rs");
+                    if flat.is_file() {
+                        walk_file(&flat, features, found);
+                    } else if nested.is_file() {
+                        walk_file(&nested, features, found);
+                    } else {
+                        found.unreadable.push(format!(
+                            "{}: `mod {name};` resolves to neither {} nor {}",
+                            owner.display(),
+                            flat.display(),
+                            nested.display()
+                        ));
+                    }
+                    return at.saturating_add(3);
+                }
+                _ => {}
+            }
+        }
+    }
+    if let Some(TokenTree::Group(g)) = trees.get(i) {
+        if g.delimiter() == Delimiter::Brace {
+            let inner: Vec<TokenTree> = g.stream().into_iter().collect();
+            walk_items(&inner, features, dir, owner, found);
+        }
+    }
+    i.saturating_add(1)
+}
+
+/// One `cargo test` invocation, as far as a library's coverage needs to read it.
+#[derive(Debug, Clone, Default)]
+struct Invocation {
+    packages: Vec<String>,
+    /// No `--test`, `--bin` or `--lib` flag, so every target of the package runs.
+    every_target: bool,
+    lib: bool,
+    features: BTreeSet<String>,
+    all_features: bool,
+}
+
+impl Invocation {
+    fn runs_lib_of(&self, package: &str) -> bool {
+        self.packages.iter().any(|p| p == package) && (self.every_target || self.lib)
+    }
+
+    fn enables(&self, wanted: &BTreeSet<String>) -> bool {
+        self.all_features || wanted.iter().all(|f| self.features.contains(f))
+    }
+
+    /// Adds no features, which is the build a plain `cargo test` produces.
+    fn baseline(&self) -> bool {
+        !self.all_features && self.features.is_empty()
+    }
+}
+
+/// How a feature set reads in a message: the empty one is the default build.
+fn feature_label(features: &BTreeSet<String>) -> String {
+    if features.is_empty() {
+        "default features".to_string()
+    } else {
+        format!(
+            "--features {}",
+            features.iter().cloned().collect::<Vec<_>>().join(",")
+        )
+    }
+}
+
+/// What a library's coverage requires, and which of those requirements `scripts/ci.sh` does not meet.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct LibCoverage {
+    /// One entry per feature set that compiles live tests, for the gate to state.
+    required: Vec<String>,
+    problems: Vec<String>,
+}
+
+/// **A library is covered per feature set, not once (H-63, issue #240).** Its unit tests are not one
+/// body of code: `#[cfg(feature = "ots")] pub mod bitcoin;` compiles forty more of them, so "the lib
+/// target is run" is not a yes or a no. A gate satisfied by the `--features ots` line would call
+/// `certimining-client` covered while the build a plain `cargo test` produces went unrun, and one
+/// satisfied by a plain run would call it covered while `bitcoin.rs` did.
+///
+/// So each feature set carrying live tests has to be named by a run that enables it, and the default
+/// build has to be named by a run that adds no features at all.
+fn lib_coverage(target: &Target, found: &LibTests, runs: &Covered, root: &Path) -> LibCoverage {
+    let mut out = LibCoverage::default();
+    for why in &found.unreadable {
+        out.problems.push(format!(
+            "  lib {} — this gate could not read its module tree, so it cannot say what runs it: \
+             {why}",
+            target.name
+        ));
+    }
+    let rel = target
+        .src
+        .strip_prefix(&format!("{}/", root.display()))
+        .unwrap_or(&target.src);
+    for (features, (tests, ignored)) in &found.by_features {
+        // Every test ignored is the same answer condition 3 gives a test target: nothing to run.
+        if tests == ignored {
+            continue;
+        }
+        let live = tests.saturating_sub(*ignored);
+        let label = feature_label(features);
+        out.required.push(format!("{label} ({live})"));
+        let satisfied = runs.invocations.iter().any(|call| {
+            call.runs_lib_of(&target.package)
+                && if features.is_empty() {
+                    call.baseline()
+                } else {
+                    call.enables(features)
+                }
+        });
+        if !satisfied {
+            out.problems.push(format!(
+                "  lib {} ({rel}) — {live} live test(s) compile under `{label}` and no cargo test \
+                 line in scripts/ci.sh runs that library at that feature set",
+                target.name
+            ));
+        }
+    }
+    out
+}
+
 pub fn check_test_targets(root: &Path) {
     let script = std::fs::read_to_string(root.join("scripts/ci.sh")).expect("scripts/ci.sh");
     let runs = covered(&script);
@@ -236,7 +676,13 @@ pub fn check_test_targets(root: &Path) {
     let mut by_name = 0usize;
     let mut by_package = 0usize;
     let mut by_ignore = 0usize;
+    // Library targets are a different question — which **feature set** ran them — and are below.
+    let mut libs = Vec::new();
     for target in &all {
+        if target.kind == "lib" {
+            libs.push(target);
+            continue;
+        }
         if runs.named.contains(&target.name) {
             by_name += 1;
             continue;
@@ -260,6 +706,36 @@ pub fn check_test_targets(root: &Path) {
         ));
     }
 
+    // **A library is covered per feature set, not once (H-63, issue #240).** Its unit tests are not
+    // one body of code: `#[cfg(feature = "ots")] pub mod bitcoin;` compiles thirty-six more of them,
+    // so "the lib target is run" is not yes or no. A gate satisfied by the `--features ots` line
+    // would call `certimining-client` covered while the build a plain `cargo test` produces went
+    // unrun, and a gate satisfied by a plain run would call it covered while `bitcoin.rs` did.
+    //
+    // So each feature set that compiles tests of its own has to be named by a run that enables it,
+    // and the default build has to be named by a run that adds no features at all.
+    let mut required: Vec<(String, Vec<String>)> = Vec::new();
+    let mut lib_sets = 0usize;
+    for target in &libs {
+        let found = lib_tests(Path::new(&target.src));
+        let coverage = lib_coverage(target, &found, &runs, root);
+        lib_sets = lib_sets.saturating_add(coverage.required.len());
+        if !coverage.required.is_empty() {
+            required.push((target.package.clone(), coverage.required));
+        }
+        problems.extend(coverage.problems);
+    }
+
+    // **Stated before anything is judged.** A library's coverage depends on which feature sets carry
+    // tests, and that is the part a reader cannot check by looking at `ci.sh` alone — so it is
+    // printed whether the gate passes or fails, and a failure can be read against it.
+    for (package, sets) in &required {
+        println!(
+            "test-targets: {package}'s library needs a run at {} — live test counts in brackets",
+            sets.join(" and ")
+        );
+    }
+
     if !problems.is_empty() {
         eprintln!(
             "test-targets: {} target(s) are run by nothing:",
@@ -271,14 +747,17 @@ pub fn check_test_targets(root: &Path) {
         eprintln!(
             "\nA target reaches a gate by being named in scripts/ci.sh with --test or --bin, by its \
              package being run wholesale with `cargo test -p <package>` and no target flag, or by \
-             every #[test] in it carrying #[ignore]. A test nobody runs is the same thing as no test."
+             every #[test] in it carrying #[ignore]. A library reaches one per feature set: a run \
+             with no --features for the default build, and a run enabling each feature that gates \
+             tests of its own. A test nobody runs is the same thing as no test."
         );
         std::process::exit(1);
     }
 
     println!(
-        "test-targets: {} test and bin target(s) across {} package(s), all run — {} named in \
-         scripts/ci.sh, {} by their package being run wholesale, {} wholly #[ignore]d",
+        "test-targets: {} test, bin and lib target(s) across {} package(s), all run — {} named in \
+         scripts/ci.sh, {} by their package being run wholesale, {} wholly #[ignore]d, and {} \
+         library feature set(s)",
         all.len(),
         all.iter()
             .map(|t| &t.package)
@@ -286,8 +765,10 @@ pub fn check_test_targets(root: &Path) {
             .len(),
         by_name,
         by_package,
-        by_ignore
+        by_ignore,
+        lib_sets
     );
+
     println!(
         "test-targets: enumerated from `cargo metadata`, so an explicit [[test]] block at a crate's \
          root counts as well as a file under tests/. This says every target reaches a group, not \
@@ -413,6 +894,240 @@ mod tests {
         assert!(
             !runs.named.contains("batcher"),
             "a commented-out invocation runs nothing"
+        );
+    }
+
+    // ------------------------------------------------- H-63 (issue #240): the library targets
+
+    /// **`#[cfg(test)]` is not a test**, and reading idents at depth said it was. That attribute
+    /// gates the module every unit test lives in, so a depth read scored one phantom test per source
+    /// file — 38 where the build runs 33, and one apiece in two libraries that have none.
+    #[test]
+    fn cfg_test_is_not_a_test() {
+        assert_eq!(
+            counted("#[cfg(test)] mod tests { #[test] fn a() {} }"),
+            (1, 0),
+            "the module gate is not a test; the function inside it is"
+        );
+        assert_eq!(
+            counted("#[cfg(test)] mod tests { fn helper() {} }"),
+            (0, 0),
+            "a module of helpers holds no tests"
+        );
+    }
+
+    /// And the depth read that was right stays right: this is how the suite ignores under Miri.
+    #[test]
+    fn cfg_attr_miri_ignore_still_reads_as_ignored() {
+        assert_eq!(
+            counted(r#"#[test] #[cfg_attr(miri, ignore = "too slow")] fn a() {}"#),
+            (1, 1)
+        );
+    }
+
+    fn features_of(attr: &str) -> Result<BTreeSet<String>, String> {
+        let stream: TokenStream = attr.parse().expect("tokenises");
+        cfg_features(stream)
+    }
+
+    #[test]
+    fn a_cfg_names_the_features_it_requires() {
+        assert_eq!(
+            features_of(r#"cfg(feature = "ots")"#),
+            Ok(BTreeSet::from(["ots".to_string()]))
+        );
+        assert_eq!(
+            features_of(r#"cfg(all(feature = "ots", feature = "cluster"))"#),
+            Ok(BTreeSet::from(["cluster".to_string(), "ots".to_string()])),
+            "all() requires both"
+        );
+        assert_eq!(features_of("cfg(test)"), Ok(BTreeSet::new()), "no feature");
+        assert_eq!(
+            features_of(r#"cfg_attr(miri, ignore = "slow")"#),
+            Ok(BTreeSet::new()),
+            "cfg_attr is not a cfg"
+        );
+    }
+
+    /// **Refused rather than guessed.** `any(…)` does not reduce to "these features must be on":
+    /// demanding them would ask for a run nothing needs, and dropping them would let tests hide
+    /// behind a cfg the gate had quietly ignored.
+    #[test]
+    fn a_cfg_operator_this_gate_cannot_read_is_refused() {
+        assert_eq!(
+            features_of(r#"cfg(any(feature = "a", feature = "b"))"#),
+            Err("any".to_string())
+        );
+        assert_eq!(
+            features_of(r#"cfg(not(feature = "a"))"#),
+            Err("not".to_string())
+        );
+    }
+
+    /// Rust's own rule. A wrong answer here stops the walk early, and a walk that stops early reports
+    /// fewer tests than exist — the direction that makes a gate pass when it should not.
+    #[test]
+    fn module_dir_follows_rusts_own_rule() {
+        assert_eq!(module_dir(Path::new("/w/src/lib.rs")), Path::new("/w/src"));
+        assert_eq!(
+            module_dir(Path::new("/w/src/a/mod.rs")),
+            Path::new("/w/src/a")
+        );
+        assert_eq!(
+            module_dir(Path::new("/w/src/anchor.rs")),
+            Path::new("/w/src/anchor"),
+            "a plain file owns a directory named after itself"
+        );
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("certimining-h63-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        dir
+    }
+
+    /// **The defect this walk shipped with for one run.** The first version looked for `mod`
+    /// immediately after the attribute, so `#[cfg(feature = "ots")] pub mod bitcoin;` missed the
+    /// module branch: the module was walked with the *enclosing* feature set and its tests were
+    /// counted as compiling by default.
+    #[test]
+    fn visibility_between_the_attribute_and_the_mod_does_not_lose_the_gate() {
+        let dir = scratch("visibility");
+        std::fs::write(
+            dir.join("lib.rs"),
+            "#[cfg(feature = \"ots\")]\npub mod gated;\nmod plain;\n",
+        )
+        .expect("write");
+        std::fs::write(
+            dir.join("gated.rs"),
+            "#[test] fn a() {}\n#[test] fn b() {}\n",
+        )
+        .expect("write");
+        std::fs::write(dir.join("plain.rs"), "#[test] fn c() {}\n").expect("write");
+
+        let found = lib_tests(&dir.join("lib.rs"));
+        assert!(found.unreadable.is_empty(), "{:?}", found.unreadable);
+        assert_eq!(
+            found.by_features.get(&BTreeSet::new()),
+            Some(&(1usize, 0usize)),
+            "only the ungated module compiles by default"
+        );
+        assert_eq!(
+            found.by_features.get(&BTreeSet::from(["ots".to_string()])),
+            Some(&(2usize, 0usize)),
+            "the gated module's tests belong to its feature"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A module that resolves to no file is reported, never skipped: skipping would under-count.
+    #[test]
+    fn a_module_resolving_to_no_file_is_reported() {
+        let dir = scratch("missing");
+        std::fs::write(dir.join("lib.rs"), "mod absent;\n").expect("write");
+        let found = lib_tests(&dir.join("lib.rs"));
+        assert_eq!(found.unreadable.len(), 1, "{:?}", found.unreadable);
+        assert!(found.unreadable[0].contains("absent"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **`--lib` is not a wholesale package run, and reading it as one weakened the gate.** When the
+    /// `client lib` line landed, `covered` saw a `cargo test -p certimining-client` carrying no
+    /// `--test` or `--bin` flag and recorded the whole package as run wholesale — so every test and
+    /// bin target in it counted as covered by a line that runs only the library. Seven targets were
+    /// being credited to it.
+    #[test]
+    fn a_lib_flag_is_not_a_wholesale_package_run() {
+        let runs = covered("  check \"x\" cargo test -p certimining-client --features ots --lib\n");
+        assert!(
+            !runs.wholesale.contains("certimining-client"),
+            "a --lib run covers the library and nothing else"
+        );
+        let call = &runs.invocations[0];
+        assert!(call.lib && !call.every_target);
+        assert!(call.runs_lib_of("certimining-client"));
+        assert!(call.enables(&BTreeSet::from(["ots".to_string()])));
+        assert!(!call.baseline(), "it adds a feature");
+    }
+
+    #[test]
+    fn a_bare_package_run_is_wholesale_and_is_the_baseline() {
+        let runs = covered("  check \"x\" cargo test -p certimining-core\n");
+        assert!(runs.wholesale.contains("certimining-core"));
+        let call = &runs.invocations[0];
+        assert!(call.every_target && call.baseline());
+        assert!(call.runs_lib_of("certimining-core"));
+        assert!(
+            !call.enables(&BTreeSet::from(["solana".to_string()])),
+            "a bare run enables no named feature"
+        );
+    }
+
+    #[test]
+    fn all_features_enables_every_set() {
+        let runs = covered("  check \"x\" cargo test -p certimining-core --all-features\n");
+        let call = &runs.invocations[0];
+        assert!(call.enables(&BTreeSet::from(["solana".to_string()])));
+        assert!(!call.baseline(), "--all-features is not the default build");
+    }
+
+    /// **The acceptance condition issue #240 names.** It asserts the gate *fails* when the line is
+    /// removed, rather than asserting it passes on a tree where the line is present — a gate that
+    /// only ever passes is the defect this repository keeps filing. Both halves run against the
+    /// committed `scripts/ci.sh` and the committed library, not a fixture.
+    #[test]
+    fn removing_the_default_feature_line_makes_the_gate_name_the_library() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask sits beside the workspace root");
+        let script = std::fs::read_to_string(root.join("scripts/ci.sh")).expect("scripts/ci.sh");
+        let src = root.join("crates/certimining-client/src/lib.rs");
+        let target = Target {
+            package: "certimining-client".to_string(),
+            kind: "lib".to_string(),
+            name: "certimining_client".to_string(),
+            src: src.display().to_string(),
+        };
+        let found = lib_tests(&src);
+        assert!(found.unreadable.is_empty(), "{:?}", found.unreadable);
+
+        let whole = lib_coverage(&target, &found, &covered(&script), root);
+        assert!(
+            whole.problems.is_empty(),
+            "as committed, both feature sets are named: {:?}",
+            whole.problems
+        );
+        assert_eq!(
+            whole.required.len(),
+            2,
+            "the default build and --features ots: {:?}",
+            whole.required
+        );
+
+        let without: String = script
+            .lines()
+            .filter(|line| !line.contains("cargo test -p certimining-client --lib"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_ne!(without, script, "the line this removes must exist");
+        let gap = lib_coverage(&target, &found, &covered(&without), root);
+        assert_eq!(
+            gap.problems.len(),
+            1,
+            "exactly the default build goes unrun: {:?}",
+            gap.problems
+        );
+        assert!(
+            gap.problems[0].contains("default features"),
+            "{}",
+            gap.problems[0]
+        );
+        assert!(
+            !gap.problems[0].contains("--features ots"),
+            "the ots line still covers its own set: {}",
+            gap.problems[0]
         );
     }
 }

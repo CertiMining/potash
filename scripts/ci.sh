@@ -161,11 +161,17 @@ vectors() {
   # rather than beside claim-check, because this reads the same documents check-record does and asks
   # a question of the same shape: does the repository still agree with itself.
   cargo xtask check-citations || return 1
-  # **Every test and bin target, against the groups this file runs (H-62, #230).** Two targets were
-  # reached by nothing on 22 October: `confirm-anchor-b`'s own unit tests, because every `cargo test`
-  # line here names `--test` targets and that excludes `--bin` ones, and V-P-12's `program_addresses`,
-  # whose regression test for §2.4's reversed PDA seeds had never run. A target reaches a gate by
-  # being named here, by its package being run wholesale, or by every `#[test]` in it being ignored.
+  # **Every test, bin and lib target, against the groups this file runs (H-62 #230, H-63 #240).** Two
+  # targets were reached by nothing on 22 October: `confirm-anchor-b`'s own unit tests, because every
+  # `cargo test` line here names `--test` targets and that excludes `--bin` ones, and V-P-12's
+  # `program_addresses`, whose regression test for §2.4's reversed PDA seeds had never run. A target
+  # reaches a gate by being named here, by its package being run wholesale, or by every `#[test]` in
+  # it being ignored.
+  #
+  # **Libraries were outside what it inspected, and that is where most unit tests live.** H-63 added
+  # them, and per feature set rather than once: `certimining-client`'s library compiles 33 tests by
+  # default and 73 with `--features ots`, so one line covering the larger set left the default build
+  # unrun. The gate prints the sets it requires whether it passes or fails.
   cargo xtask check-test-targets || return 1
 }
 
@@ -285,13 +291,21 @@ checks() {
   # the two cases above it and was found the same way: by asking what runs this, rather than whether
   # a test exists.
   #
-  # **`xtask check-test-targets` does not see this one (H-62, #230).** It enumerates `cargo
-  # metadata`'s `test` and `bin` kinds, so a `lib` target is outside what it inspects — a coverage
-  # gate blind to the commonest kind of test target. Named here because the line below is the remedy
-  # for today and the gate is the remedy for tomorrow.
+  # **`xtask check-test-targets` sees this one now (H-63, #240).** It enumerated `cargo metadata`'s
+  # `test` and `bin` kinds only, so a `lib` target was outside what it inspected — a coverage gate
+  # blind to the commonest kind of test target, which is why these two lines had to be written by
+  # hand rather than demanded. It now enumerates libraries as well, and per feature set, so removing
+  # either line below fails the gate by name instead of going unnoticed.
   #
   # `--features ots` because `bitcoin` sits behind that feature and is not compiled without it.
-  check "client lib" cargo test -p certimining-client --features ots --lib
+  check "client lib, ots" cargo test -p certimining-client --features ots --lib
+  # **And the same library again at its default features (H-63, #240).** A library is not one body of
+  # code: `#[cfg(feature = "ots")] pub mod bitcoin;` compiles forty more tests, so the line above and
+  # this one build different crates and run different sets — 73 tests there, 33 here. Running only
+  # the larger set would leave the build a plain `cargo test` produces unexercised, which is the
+  # configuration every other package in this workspace is tested at and the one a contributor gets
+  # by default. `xtask check-test-targets` now demands both and says so by name.
+  check "client lib, default features" cargo test -p certimining-client --lib
   # **All seventeen committed receipts** against real mainnet headers (H-12): the three repository
   # anchors and the fourteen epochs with an attached receipt, each swept by its own test. Offline:
   # the headers are committed bytes and each is checked against the target its own `bits` encode, so
