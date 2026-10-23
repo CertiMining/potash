@@ -77,7 +77,10 @@ fn calibration_ms() -> f64 {
         }
         // Returned and checked, so a verifier that did nothing cannot be timed — the defect this
         // file records three variants of.
-        assert_eq!(ok, CALIBRATION_VERIFICATIONS, "the calibration verified nothing");
+        assert_eq!(
+            ok, CALIBRATION_VERIFICATIONS,
+            "the calibration verified nothing"
+        );
         ok
     })
 }
@@ -119,7 +122,10 @@ fn committed() -> (f64, f64, Vec<Class>) {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        if let Some(name) = line.strip_prefix("[class.").and_then(|r| r.strip_suffix(']')) {
+        if let Some(name) = line
+            .strip_prefix("[class.")
+            .and_then(|r| r.strip_suffix(']'))
+        {
             classes.push(Class {
                 name: name.to_string(),
                 calibration_ms: f64::NAN,
