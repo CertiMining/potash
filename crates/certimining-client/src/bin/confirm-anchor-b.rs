@@ -47,7 +47,7 @@
 )]
 
 use certimining_client::bitcoin::{
-    confirm, target_from_bits, Checkpoint, Header, GENESIS, POW_LIMIT,
+    confirm, target_from_bits, Checkpoint, Confirmation, Header, GENESIS, POW_LIMIT,
 };
 use certimining_client::verify_receipt;
 use std::process::ExitCode;
@@ -169,15 +169,38 @@ fn run() -> Result<String, String> {
     let checkpoint = checkpoint()?;
 
     let claim = verify_receipt(&receipt, &stamped).map_err(|e| format!("{e:?}"))?;
-    let confirmed = confirm(claim, checkpoint, &chain).map_err(|e| format!("{e:?}"))?;
+    // **Pending is reported, not treated as a failure and not treated as a confirmation**
+    // (H-56, #222). A window that does not yet carry `CONFIRMATION_DEPTH` headers above the attested
+    // block is early rather than wrong, and this binary's whole job is to say which it is looking at.
+    let confirmed = match confirm(claim, checkpoint, &chain).map_err(|e| format!("{e:?}"))? {
+        Confirmation::Confirmed(confirmed) => confirmed,
+        Confirmation::Pending {
+            height,
+            depth,
+            required,
+        } => {
+            return Err(format!(
+                "pending: the block at height {height} commits the receipt's digest on a chain of \
+                 {} header(s) of real work from the checkpoint at height {}, but carries {depth} \
+                 header(s) above it where {required} are required. This is not a refusal: the \
+                 receipt is early, not wrong.",
+                chain.len(),
+                checkpoint.height
+            ))
+        }
+    };
 
     let mut displayed = confirmed.merkle_root;
     displayed.reverse();
     Ok(format!(
         "confirmed: the receipt's operations reach {}, which is the merkle root of the block at \
-         height {}, on a chain of {} header(s) of real work from the checkpoint at height {}",
+         height {}, buried under {} header(s), on a chain of {} header(s) of real work from the \
+         checkpoint at height {}",
         hex(&displayed),
         confirmed.height,
+        chain.len().saturating_sub(
+            usize::try_from(confirmed.height.saturating_sub(checkpoint.height)).unwrap_or(0)
+        ),
         chain.len(),
         checkpoint.height
     ))

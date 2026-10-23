@@ -36,6 +36,55 @@ use std::time::{Duration, Instant};
 const WARM_UP: usize = 5;
 const SAMPLES: usize = 7;
 
+/// How many Ed25519 verifications the calibration measure performs.
+///
+/// Sized so the figure is milliseconds rather than microseconds: `inclusion_proof_verify` runs in
+/// about 4 µs, where a single timer step is a comparable amount, and that is the measure whose
+/// quantisation noise crossed the band. A discriminator has to be the opposite of that.
+const CALIBRATION_VERIFICATIONS: usize = 32;
+
+/// RFC 8032 §7.1's first secret key, a published value, as `certimining-benches` already uses it.
+const RFC8032_SECRET: [u8; 32] = [
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+    0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
+];
+
+/// **A measure of the machine, which this repository's code cannot move** (H-61, issue #228).
+///
+/// This is what says which runner class a run is on, and it has to be independent of the thing being
+/// gated: using one of the three measures would mean a code regression shifted the class selection
+/// and so chose a baseline that absorbed it — the gate would hide exactly what it exists to find.
+///
+/// So the work is `ed25519-dalek`'s verification, pinned at `=2.2.0`, over a signature made from a
+/// published key. Nothing in `crates/` is on this path. A version bump would move the figure and
+/// every class with it, which is a deliberate change that owes a re-measure; the pin is what makes
+/// that a decision rather than a drift.
+fn calibration_ms() -> f64 {
+    use ed25519_dalek::{Signer as _, SigningKey, Verifier as _};
+    let key = SigningKey::from_bytes(&RFC8032_SECRET);
+    let verifying = key.verifying_key();
+    let message = b"certimining band calibration, a fixed workload";
+    let signature = key.sign(message);
+    verifying
+        .verify(message, &signature)
+        .expect("the calibration's own signature verifies before anything is timed");
+    median_ms(|| {
+        let mut ok = 0usize;
+        for _ in 0..CALIBRATION_VERIFICATIONS {
+            if verifying.verify(message, &signature).is_ok() {
+                ok += 1;
+            }
+        }
+        // Returned and checked, so a verifier that did nothing cannot be timed — the defect this
+        // file records three variants of.
+        assert_eq!(
+            ok, CALIBRATION_VERIFICATIONS,
+            "the calibration verified nothing"
+        );
+        ok
+    })
+}
+
 /// Warm up, then the median of `SAMPLES`. The same instrument `thresholds.rs` uses, for the same reason:
 /// without warm-up this reads 30% high and measures cache state rather than code.
 fn median_ms<T>(mut f: impl FnMut() -> T) -> f64 {
@@ -53,20 +102,35 @@ fn median_ms<T>(mut f: impl FnMut() -> T) -> f64 {
     times[SAMPLES / 2].as_secs_f64() * 1_000.0
 }
 
-/// `band_percent` and the `[measures]` table, read from the committed file rather than restated here.
-fn baseline() -> (f64, Vec<(String, f64)>) {
+/// One runner class: what the calibration reads on it, and what the measures were when it was taken.
+struct Class {
+    name: String,
+    calibration_ms: f64,
+    measures: Vec<(String, f64)>,
+}
+
+/// `band_percent`, `class_tolerance_percent` and one `[class.<name>]` block each, read from the
+/// committed file rather than restated here.
+fn committed() -> (f64, f64, Vec<Class>) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("BASELINE.toml");
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut band = None;
-    let mut measures = Vec::new();
-    let mut in_measures = false;
+    let mut tolerance = None;
+    let mut classes: Vec<Class> = Vec::new();
     for line in text.lines() {
         let line = line.trim();
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        if line == "[measures]" {
-            in_measures = true;
+        if let Some(name) = line
+            .strip_prefix("[class.")
+            .and_then(|r| r.strip_suffix(']'))
+        {
+            classes.push(Class {
+                name: name.to_string(),
+                calibration_ms: f64::NAN,
+                measures: Vec::new(),
+            });
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
@@ -76,23 +140,52 @@ fn baseline() -> (f64, Vec<(String, f64)>) {
         let parsed: f64 = value
             .parse()
             .unwrap_or_else(|_| panic!("{key}: {value} is not a number"));
-        if in_measures {
-            // **A baseline that is not a number switches its row off silently (PR #59, round three).**
-            // Rust's f64 parser accepts `NaN`, `NaN * 1.5` is `NaN`, and `now > NaN` is false, so one
-            // typo turned `epoch_root_256_leaves` into a comparison that could not fail while the test
-            // reported a pass. `band_percent` was already checked for this; the measures were not.
-            assert!(
-                parsed.is_finite() && parsed >= 0.0,
-                "benches/BASELINE.toml: {key} is {value}, which is not a measurable duration. A \
-                 non-finite or negative baseline makes its limit non-finite and the comparison \
-                 vacuous, so the row would pass without being checked."
-            );
-            measures.push((key.to_string(), parsed));
-        } else if key == "band_percent" {
-            band = Some(parsed);
+        // Computed before the mutable borrow below, which cannot coexist with reading the length.
+        let at_top = classes.is_empty();
+        match (classes.last_mut(), key) {
+            (_, "band_percent") if at_top => band = Some(parsed),
+            (_, "class_tolerance_percent") if at_top => tolerance = Some(parsed),
+            (Some(class), "calibration_ms") => {
+                // The figure that selects this class. Non-finite would make every comparison below
+                // match nothing or everything, which is the same defect as a non-finite baseline.
+                assert!(
+                    parsed.is_finite() && parsed > 0.0,
+                    "benches/BASELINE.toml: [class.{}]'s calibration_ms is {value}, which cannot \
+                     identify a machine",
+                    class.name
+                );
+                class.calibration_ms = parsed;
+            }
+            (Some(class), _) => {
+                // **A baseline that is not a number switches its row off silently (PR #59, round
+                // three).** Rust's f64 parser accepts `NaN`, `NaN * 1.5` is `NaN`, and `now > NaN` is
+                // false, so one typo turned `epoch_root_256_leaves` into a comparison that could not
+                // fail while the test reported a pass.
+                assert!(
+                    parsed.is_finite() && parsed >= 0.0,
+                    "benches/BASELINE.toml: [class.{}]'s {key} is {value}, which is not a measurable \
+                     duration. A non-finite or negative baseline makes its limit non-finite and the \
+                     comparison vacuous, so the row would pass without being checked.",
+                    class.name
+                );
+                class.measures.push((key.to_string(), parsed));
+            }
+            (None, _) => {}
         }
     }
-    (band.expect("band_percent"), measures)
+    for class in &classes {
+        assert!(
+            class.calibration_ms.is_finite(),
+            "benches/BASELINE.toml: [class.{}] carries no calibration_ms, so nothing can select it \
+             and its baselines are unreachable",
+            class.name
+        );
+    }
+    (
+        band.expect("band_percent"),
+        tolerance.expect("class_tolerance_percent"),
+        classes,
+    )
 }
 
 #[test]
@@ -107,7 +200,11 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
         );
     }
 
-    let (band, committed) = baseline();
+    let (band, tolerance, classes) = committed();
+    assert!(
+        tolerance.is_finite() && tolerance > 0.0,
+        "benches/BASELINE.toml: class_tolerance_percent is {tolerance}, which cannot select a class"
+    );
     // **A non-finite band disables the gate silently (PR #59, Low 6).** `band_percent = NaN` makes every
     // `limit` NaN, every `now > limit` false, and every row pass. A typo should not be able to switch a
     // gate off, so the band has to be a usable number before anything is compared.
@@ -116,6 +213,43 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
         "benches/BASELINE.toml: band_percent is {band}, which is not a usable percentage. A non-finite \
          or negative band makes every comparison below vacuously true and the gate stops gating."
     );
+
+    // **Two classes whose intervals meet make a gate that cannot pass (H-61, issue #228).** A class
+    // applies when a run's calibration is within `tolerance` of *that class's* figure, so each class
+    // owns `[(1 - t)·c, (1 + t)·c]` and two of them stay distinct only while
+    // `c2 / c1 > (1 + t) / (1 - t)`.
+    //
+    // The first tolerance committed here was 6%, derived before any calibration had been measured,
+    // from `chain_walk` ratios that put the nearest two classes 14% apart. Two of the four classes
+    // since met are 6.275% apart, so at 6% their intervals met: a run on the faster of them matched
+    // both classes, which the ambiguity check below refuses, and that class could never have passed.
+    // Nothing in the file looked wrong — only a run landing in the overlap would have shown it.
+    //
+    // So it is checked here, over the committed figures, before anything is timed. A file that cannot
+    // give an unambiguous answer fails for that reason rather than for whichever machine ran it.
+    assert!(
+        tolerance < 100.0,
+        "benches/BASELINE.toml: class_tolerance_percent is {tolerance}, and at 100% or more every          class matches every calibration, so no class could be selected unambiguously"
+    );
+    let needed = ((1.0 + tolerance / 100.0) / (1.0 - tolerance / 100.0) - 1.0) * 100.0;
+    for (i, a) in classes.iter().enumerate() {
+        for b in classes.iter().skip(i + 1) {
+            let (low, high) = if a.calibration_ms <= b.calibration_ms {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            let apart = (high.calibration_ms / low.calibration_ms - 1.0) * 100.0;
+            assert!(
+                apart > needed,
+                "benches/BASELINE.toml: [class.{}] at {:.4} ms and [class.{}] at {:.4} ms are                  {apart:.3}% apart, and at a tolerance of {tolerance}% two classes need more than                  {needed:.3}% between them or their intervals meet. A calibration inside the overlap                  matches both and is refused as ambiguous, so one of these classes could never pass.                  Separate them or narrow class_tolerance_percent.",
+                low.name,
+                low.calibration_ms,
+                high.name,
+                high.calibration_ms
+            );
+        }
+    }
 
     let unsigned = chain_of(false);
     let from = genesis();
@@ -240,10 +374,58 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
         ),
     ];
 
+    // **Which runner class this is, decided before anything is compared (H-61, issue #228).**
+    //
+    // The band used to hold one baseline, taken from the slowest class the fleet showed. That made a
+    // slower class fail with nothing wrong — four pull requests on 22 October, one of which had the
+    // same commit pass on one runner and fail on another — and it made a *faster* class unable to fail
+    // at all, which 8 of the 30 calibration runs were. Both are the same mistake: comparing a measure
+    // against a machine it was not taken on.
+    let cal = calibration_ms();
+    let matched: Vec<&Class> = classes
+        .iter()
+        .filter(|c| ((cal / c.calibration_ms) - 1.0).abs() * 100.0 <= tolerance)
+        .collect();
+
+    // Printed whenever a class cannot be chosen, so the remedy is to paste rather than to derive.
+    let block = {
+        let mut out = String::from("[class.<a name for this machine>]\n");
+        out.push_str(&format!("calibration_ms = {cal:.4}\n"));
+        for (name, now) in &measured {
+            out.push_str(&format!("{name} = {now:.4}\n"));
+        }
+        out
+    };
+
+    // **An unseen class fails, by design** (owner's ruling, 22 October). A gate that passed on hardware
+    // it has no baseline for would be reporting a comparison it did not make — the same defect as an
+    // absent baseline, which this file has failed on since it was written. The first run on a class
+    // fails once and the block below is committed from its own output, which is how every figure in
+    // `BASELINE.toml` got there.
+    assert!(
+        !matched.is_empty(),
+        "band: no runner class in benches/BASELINE.toml matches this machine. The calibration reads \
+         {cal:.4} ms and no committed class is within {tolerance}% of it, so there is no baseline this \
+         run could be compared against and passing would mean nothing. This is expected the first time \
+         a class appears. Commit this block, from this run's own output:\n\n{block}"
+    );
+    assert!(
+        matched.len() == 1,
+        "band: {} classes in benches/BASELINE.toml match a calibration of {cal:.4} ms within \
+         {tolerance}%, so which baseline applies is ambiguous and the gate would be choosing one \
+         arbitrarily. The classes overlap: widen their separation or narrow class_tolerance_percent.",
+        matched.len()
+    );
+    let class = matched[0];
+    println!(
+        "band: calibration {cal:.4} ms selects [class.{}], whose own is {:.4} ms — within {tolerance}%",
+        class.name, class.calibration_ms
+    );
+
     let mut missing: Vec<String> = Vec::new();
     let mut over: Vec<String> = Vec::new();
     for (name, now) in &measured {
-        match committed.iter().find(|(k, _)| k == name) {
+        match class.measures.iter().find(|(k, _)| k == name) {
             None => missing.push(format!("{name} = {now:.4}")),
             Some((_, was)) => {
                 let limit = was * (1.0 + band / 100.0);
@@ -253,8 +435,10 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
                 // the one the comparison uses.
                 assert!(
                     limit.is_finite(),
-                    "benches/BASELINE.toml: {name}'s baseline {was} with a {band}% band gives a limit \
-                     of {limit}, which nothing can exceed, so the row would pass unchecked"
+                    "benches/BASELINE.toml: [class.{}]'s {name} baseline {was} with a {band}% band \
+                     gives a limit of {limit}, which nothing can exceed, so the row would pass \
+                     unchecked",
+                    class.name
                 );
                 println!("{name}: {now:.4} ms, baseline {was:.4} ms, limit {limit:.4} ms");
                 if now > &limit {
@@ -269,60 +453,36 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
 
     assert!(
         missing.is_empty(),
-        "benches/BASELINE.toml has no figure for {} measure(s) on this machine, so there is nothing to \
-         compare against and this gate would otherwise pass without checking anything. Measured now — \
-         commit these under [measures] if this run is the runner the baseline is for:\n{}",
+        "benches/BASELINE.toml: [class.{}] has no figure for {} measure(s), so there is nothing to \
+         compare against and this gate would otherwise pass without checking anything. Measured now, \
+         to be committed under that class:\n{}",
+        class.name,
         missing.len(),
         missing.join("\n")
     );
-    // **Whether this run could have failed at all (H-47, issue #162).** GitHub's runner fleet is
-    // mixed, and the baseline came from its slowest class. A run on a faster one measures well below
-    // the baseline, so nothing it does can push a measure over the limit: "every measure is inside its
-    // limit" is then a true sentence about a gate that was not exercised. 8 of the 30 calibration runs
-    // were like that, at 0.59 to 0.64 times the baseline.
-    //
-    // The floor is 0.8 because the classes observed sit at about 1.00, 0.88 and 0.61 times the
-    // baseline, so 0.8 separates the slow pair from the fast one. It is a disclosure and not a gate:
-    // a fast runner is not a failure, and a run that cannot fail saying so is the difference between a
-    // pass and a pass that means something.
-    const FASTER_CLASS_FLOOR: f64 = 0.8;
-    let faster: Vec<String> = measured
-        .iter()
-        .filter_map(|(name, now)| {
-            let (_, was) = committed.iter().find(|(k, _)| k == name)?;
-            (now < &(was * FASTER_CLASS_FLOOR))
-                .then(|| format!("{name}: {now:.4} ms against a baseline of {was:.4} ms"))
-        })
-        .collect();
-    if !faster.is_empty() {
-        println!(
-            "band: {} measure(s) came in below {:.0}% of baseline, so this runner is a faster class \
-             than the one the baseline was taken on and the comparison below could not have failed \
-             for them whatever the code did:\n{}",
-            faster.len(),
-            FASTER_CLASS_FLOOR * 100.0,
-            faster.join("\n")
-        );
-    }
 
-    // **The assertion, restored (H-47, issue #162).** It was report-only from 12 October, after a 50%
-    // band derived from one sample flaked on a pull request containing no Rust at all. The owner named
-    // the way back and this is the far end of it: thirty runs collected, the band set to 15% from the
-    // spread they show, the derivation in `BASELINE.toml` beside the number.
+    // **The faster-class disclosure is gone, because the reason for it is (H-61, #228).** It said when a
+    // run came in below 80% of baseline, because such a run could not have failed whatever the code
+    // did — a true sentence about a gate that was not exercised. A class is now compared against its
+    // own baseline, so a fast runner fails on a regression like any other, and there is nothing to
+    // disclose. That is the half of this change that adds gating rather than removing noise.
     //
-    // What the band does not cover is a runner class *slower* than the baseline's, which none of the
-    // thirty was. If one appears, this fails and the answer is to re-measure the baseline on it rather
-    // than to widen the band — and the failure names the measure and both figures, which is what tells
-    // the difference between that and a regression.
+    // **What the band still does not cover**, said rather than discovered: a *change* in a class's own
+    // speed, from a kernel or microcode update on the same hardware. The calibration moves with it, so
+    // the class stops matching and this fails asking for a new block — which is the right failure, and
+    // it reads the same as new hardware because from here it is indistinguishable.
     assert!(
         over.is_empty(),
-        "band: {} measure(s) above the limit. The band is {band}% and is derived from 30 CI runs, in \
-         which no measure exceeded its baseline by more than 2.4% — so this is either a regression or \
-         a runner class slower than the one the baseline was taken on, and the figures below say \
-         which: a regression moves one measure, a slower machine moves all of them \
-         together.\n{}",
+        "band: {} measure(s) above the limit for [class.{}], whose baseline was taken on a machine \
+         this run's calibration matches to within {tolerance}%. So this is a regression rather than a \
+         slower runner — which is what the calibration is for, and what the figures below could not \
+         have told you before it:\n{}",
         over.len(),
+        class.name,
         over.join("\n")
     );
-    println!("band: every measure is inside its limit, which is asserted and not merely reported");
+    println!(
+        "band: every measure is inside its limit for its own runner class, which is asserted and not \
+         merely reported"
+    );
 }
