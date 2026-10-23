@@ -233,3 +233,12 @@ calibration_ms = 0.8541
 chain_walk_hash_chain_only = 7.7545
 epoch_root_256_leaves = 0.2137
 inclusion_proof_verify = 0.0025
+
+# Middle class. First met under the minimum by run 39914234359. Its ratio to its own chain walk is
+# 0.0931, which is the middle family's band exactly — the three families sit at about 0.109, 0.093 and
+# 0.100, and that is what says this is a machine rather than a perturbed reading.
+[class.cal-1052]
+calibration_ms = 1.0523
+chain_walk_hash_chain_only = 11.3053
+epoch_root_256_leaves = 0.3182
+inclusion_proof_verify = 0.0037
