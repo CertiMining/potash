@@ -161,6 +161,12 @@ vectors() {
   # rather than beside claim-check, because this reads the same documents check-record does and asks
   # a question of the same shape: does the repository still agree with itself.
   cargo xtask check-citations || return 1
+  # **Every test and bin target, against the groups this file runs (H-62, #230).** Two targets were
+  # reached by nothing on 22 October: `confirm-anchor-b`'s own unit tests, because every `cargo test`
+  # line here names `--test` targets and that excludes `--bin` ones, and V-P-12's `program_addresses`,
+  # whose regression test for §2.4's reversed PDA seeds had never run. A target reaches a gate by
+  # being named here, by its package being run wholesale, or by every `#[test]` in it being ignored.
+  cargo xtask check-test-targets || return 1
 }
 
 # KAT-02: RFC 8032 §7.1's own vectors, checked by hash before the test reads them (D-45).

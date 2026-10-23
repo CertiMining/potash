@@ -28,6 +28,7 @@ mod record;
 mod spec;
 mod spec_pin;
 mod suppressions;
+mod test_targets;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -149,6 +150,12 @@ fn main() {
         Some("check-suppressions") => {
             suppressions::check_suppressions(&repo_root());
         }
+        // Every test and bin target in the workspace, against the groups `scripts/ci.sh` runs
+        // (H-62, #230). Two targets were reached by nothing on 22 October, one of them V-P-12's
+        // address vector — the regression test for §2.4 printing the PDA seeds the wrong way round.
+        Some("check-test-targets") => {
+            test_targets::check_test_targets(&repo_root());
+        }
         // E-14's demo fixtures (D-126). A separate command: the demo's scenes are not conformance
         // vectors, and regenerating one must not be able to rewrite the other.
         Some("gen-demo") => {
@@ -163,6 +170,7 @@ fn main() {
             eprintln!("       cargo xtask gen-demo [destination directory]");
             eprintln!("       cargo xtask check-live-values");
             eprintln!("       cargo xtask check-record");
+            eprintln!("       cargo xtask check-test-targets");
             if let Some(cmd) = other {
                 eprintln!("unknown command: {cmd}");
             }
