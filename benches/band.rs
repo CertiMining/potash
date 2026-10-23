@@ -214,6 +214,43 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
          or negative band makes every comparison below vacuously true and the gate stops gating."
     );
 
+    // **Two classes whose intervals meet make a gate that cannot pass (H-61, issue #228).** A class
+    // applies when a run's calibration is within `tolerance` of *that class's* figure, so each class
+    // owns `[(1 - t)·c, (1 + t)·c]` and two of them stay distinct only while
+    // `c2 / c1 > (1 + t) / (1 - t)`.
+    //
+    // The first tolerance committed here was 6%, derived before any calibration had been measured,
+    // from `chain_walk` ratios that put the nearest two classes 14% apart. Two of the four classes
+    // since met are 6.275% apart, so at 6% their intervals met: a run on the faster of them matched
+    // both classes, which the ambiguity check below refuses, and that class could never have passed.
+    // Nothing in the file looked wrong — only a run landing in the overlap would have shown it.
+    //
+    // So it is checked here, over the committed figures, before anything is timed. A file that cannot
+    // give an unambiguous answer fails for that reason rather than for whichever machine ran it.
+    assert!(
+        tolerance < 100.0,
+        "benches/BASELINE.toml: class_tolerance_percent is {tolerance}, and at 100% or more every          class matches every calibration, so no class could be selected unambiguously"
+    );
+    let needed = ((1.0 + tolerance / 100.0) / (1.0 - tolerance / 100.0) - 1.0) * 100.0;
+    for (i, a) in classes.iter().enumerate() {
+        for b in classes.iter().skip(i + 1) {
+            let (low, high) = if a.calibration_ms <= b.calibration_ms {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            let apart = (high.calibration_ms / low.calibration_ms - 1.0) * 100.0;
+            assert!(
+                apart > needed,
+                "benches/BASELINE.toml: [class.{}] at {:.4} ms and [class.{}] at {:.4} ms are                  {apart:.3}% apart, and at a tolerance of {tolerance}% two classes need more than                  {needed:.3}% between them or their intervals meet. A calibration inside the overlap                  matches both and is refused as ambiguous, so one of these classes could never pass.                  Separate them or narrow class_tolerance_percent.",
+                low.name,
+                low.calibration_ms,
+                high.name,
+                high.calibration_ms
+            );
+        }
+    }
+
     let unsigned = chain_of(false);
     let from = genesis();
     let full = real_leaves(1 << HEIGHT);
