@@ -1722,7 +1722,7 @@ measures are asserted absolutely in CI and the wall-clock half is the committed 
 **How a threshold fails a build, which is the harder half (agreed by the owner, 30 Sep 2026).** §4.4a mixes two kinds of measure and they cannot be gated the same way.
 
 - **Compute units are deterministic.** The same instruction against the same program costs the same CU on any machine, so `publish_checkpoint` ≤ 15,000 and `attach_anchor_receipt` ≤ 12,000 are asserted absolutely in CI. `scripts/ci.sh kat01-onchain` already does the first.
-- **Wall-clock is not.** A shared runner's timing varies by more than the margins §4.4a states, so an absolute assertion there would either flake or be loose enough to assert nothing. CI compares against a committed baseline and fails on a regression past a band; §4.4a's absolute figures — a 10,000-record chain walk under 5 ms, an epoch root at 256 leaves under 10 ms, an inclusion proof under 1 ms — are asserted on the reference machine and **recorded with the machine named**, which is what §4.4a's own "reference laptop" wording requires.
+- **Wall-clock is not.** A shared runner's timing varies by more than the margins §4.4a states, so an absolute assertion there would either flake or be loose enough to assert nothing. CI compares against a committed baseline and fails on a regression past a band — **at 15% where a runner class matches and 25% where none does, since D-141 (23 Oct 2026)**, because the fleet contains machines between the committed classes and a run on one of those had been failing as though the diff were at fault; §4.4a's absolute figures — a 10,000-record chain walk under 5 ms, an epoch root at 256 leaves under 10 ms, an inclusion proof under 1 ms — are asserted on the reference machine and **recorded with the machine named**, which is what §4.4a's own "reference laptop" wording requires.
 - **The signature path is measured and published with no threshold**, which §4.4a states outright: a bound on it belongs in v0.2, set from real data rather than guessed now.
 
 ## D-133 · P-03 runs its whole domain instead of sampling it
@@ -2055,3 +2055,25 @@ other, by tag and by length.
 **Revisit if** a construction under `CMops` ever crosses a trust boundary a counterparty checks, at
 which point it stops being operational and becomes a `CMv1` tag by amendment, with a version, the way
 `TAG_RCPT` did in v0.2.0.
+
+## D-141 · The regression band has two sensitivities, and which applies depends on the machine
+
+**Date:** 23 Oct 2026 · **Unit:** H-65 (issue #245) · **Class:** cost judgment · **Status:** settled at S0 (owner, 23 Oct 2026)
+
+**Decision (the owner's, five parts).** 15% for a matched class and 25% for a normalised fallback; the fallback uses one fleet-wide ratio per measure with no new centred figures; classes are kept and normalisation applies only to an unmatched machine; §4.4a, D-132 and `BASELINE.toml` state both sensitivities and the specification takes a version; and the ratio check stays as a perturbation guard on the fallback path.
+
+**What it is for.** H-61 gave each runner class its own baseline, selected by a calibration — a fixed count of version-pinned Ed25519 verifications, on nothing this repository's code can move. An unmatched calibration then failed outright, which was right while "unmatched" meant "hardware nobody has measured". It stopped meaning that: a run read 0.8961 and sat +2.80% from one committed class and −3.27% from the other, with a quotient to its own chain walk inside the band every unperturbed run occupies. An ordinary machine in a dead zone between two baselines, reported as a defect in the diff. Narrowing the tolerance moves the dead zones; widening it makes classes overlap, which `band.rs` refuses.
+
+**Why the fallback is weaker, measured rather than asserted.** Dividing a measure by the calibration removes machine speed: the raw measures span 64 to 70% across the fleet and their quotients span 18 to 21%. What it does not remove is the relation between Ed25519 and SHA-256, which is a property of each CPU rather than of how fast it is — two machines inside one class differ by 9.8% after normalising. 25% covers what remains; 15% would fail unchanged code on machines already seen, and the test `fifteen_percent_would_not_cover_the_fleet_which_is_why_the_fallback_is_wider` asserts that rather than leaving it as a claim.
+
+**So a regression under 25% escapes on the fallback path.** That is the cost of covering a machine nothing was measured on, it is stated in §4.4a and beside the number, and it is why classes remain the rule and this the exception.
+
+**The fallback's band is two-sided, where a class's is not.** The calibration is the denominator, so one perturbed upward — reading high because the runner was busy — makes every quotient small, and small clears an upper limit. A one-sided band would be a gate that could not fail on exactly the runs that most need one; the run that found this read 1.6240 ms where that machine's own measures said about 0.85, and its chain walk normalises to 4.89 against a fleet figure of 9.08.
+
+**What below the floor does not say is why.** A machine whose Ed25519-to-SHA-256 relation is genuinely lower than any the fleet has shown lands there too, and the reference laptop is one: about 7.13 against a fleet low of 9.08. The comparison cannot separate that from a perturbed calibration, so it claims neither and says the verdict both share — nothing is concluded about the code.
+
+**The fleet figures are the lowest quotient observed**, over seven readings taken under the minimum instrument, because the upper limit is what catches a regression and the lowest committed figure puts that limit as close to the fleet as the band allows. They are quotients of figures runs printed rather than figures a run printed, which is a weaker provenance than a class block's and is recorded as such beside them.
+
+**Cost.** One wider band on a path that runs only when no class matches, and a regression under 25% missed there. Six tests in `benches/band.rs`, which run in the `bench-band` group.
+
+**Revisit if.** The fleet's quotient spread moves outside 25%, or enough readings accumulate to say whether the fast family is one population or two — issue #245 records what would settle it.

@@ -50,6 +50,10 @@
 # rather than to widen the band: a regression moves one measure and a slower machine moves all three
 # together, which is what tells them apart. And a run on a *faster* class cannot fail at all, so
 # `band.rs` now says when it is on one — 8 of 30 runs reported a pass that the gate had no part in.
+# **This is the band for a run whose calibration matches a committed class (D-141).** A run that
+# matches none is compared against the fleet instead, at `fallback_band_percent` below, which is 25
+# rather than 15. The two numbers are two sensitivities and not one figure with an exception: a
+# regression under 25% escapes on the fallback path, where a matched class catches it at 15%.
 band_percent = 15.0
 
 # **How close a run's calibration must be to a class's for that class to apply (H-61, issue #228).**
@@ -94,6 +98,34 @@ band_percent = 15.0
 # until runs under this instrument say what it should be.
 class_tolerance_percent = 2.5
 
+# **How far a normalised measure may sit from the fleet ratio, on the fallback path (H-65, issue
+# #245, D-141, ruled 23 October 2026).**
+#
+# **Why a fallback exists at all.** A class is a statement about a machine, and the fleet kept
+# producing machines between the classes: a run read 0.8961, which is +2.80% from one committed class
+# and -3.27% from the other, with a quotient to its own chain walk inside the band every unperturbed
+# run occupies. An ordinary machine in a dead zone, reported as a defect in the diff. Narrowing the
+# tolerance moves the dead zones without closing them, and widening it makes classes overlap, which
+# `band.rs` refuses. So a run no class covers is compared against the fleet instead.
+#
+# **Why 25 and not 15.** Dividing a measure by the calibration removes machine speed — the raw
+# measures span 64 to 70% across the fleet and their quotients span 18 to 21%. What it does not
+# remove is the relation between Ed25519 and SHA-256, which is a property of each CPU rather than of
+# how fast it is: two machines inside one class still differ by 9.8% after normalising. 25% covers the
+# 18-21% that remains; 15% would fail unchanged code on machines already seen.
+#
+# **So this path is weaker, and by how much is the point.** A regression under 25% escapes here where
+# a matched class would catch it at 15%. That is the cost of covering a machine nothing was measured
+# on, and it is why this is the fallback and the classes are the rule.
+#
+# **The band is two-sided here, which it is not on the class path.** The calibration is the
+# denominator, so a perturbed one — reading high because the runner was busy — makes every quotient
+# small, and small clears an upper limit. A one-sided band would be a gate that could not fail on
+# exactly the runs that most need one. The run that found this read 1.6240 ms where its own measures
+# said about 0.85; its chain walk normalises to 4.89 against a fleet figure of 9.08, which is 46%
+# below and well outside. Below the floor, nothing is concluded about the code.
+fallback_band_percent = 25.0
+
 # **And it fired on a busy machine, which is H-31 (#72).** Running another test suite alongside it put
 # this machine at 19.73 ms against a 19.27 ms limit, with all three measures marginal — unchanged code,
 # over the limit on load. A measure over its limit on a developer machine means "check what else is
@@ -112,6 +144,14 @@ class_tolerance_percent = 2.5
 # verbatim, and the run that matters is CI's, whose figures are the series the calibration needs. Nothing
 # gates the reference machine either: since D-137, `scripts/ci.sh thresholds` measures §4.4a's figures
 # there and reports them with the machine named.
+#
+# **Since D-141 it fails there for a new reason, and this says which so it is not read as a defect.**
+# The reference laptop's calibration sometimes matches a committed class and sometimes matches none.
+# When it matches none it takes the fallback, and its Ed25519-to-SHA-256 relation is lower than any the
+# fleet has shown — about 7.13 where the fleet's lowest is 9.08 — so `inclusion_proof_verify` lands
+# below the floor and the run reports that nothing can be concluded. That is the correct verdict for
+# this machine and it is the same verdict the paragraph above describes; what changed is only which
+# sentence says it.
 
 # **One block per runner class, since H-61 (#228). The single baseline below it is the record of what
 # this file held before, because it was right about the machine it came from and wrong about every
@@ -259,3 +299,27 @@ calibration_ms = 1.0523
 chain_walk_hash_chain_only = 11.3053
 epoch_root_256_leaves = 0.3182
 inclusion_proof_verify = 0.0037
+
+# **The fleet ratios: each measure divided by the calibration, over every reading taken under the
+# minimum instrument (D-141).** Seven runs, 23 October 2026.
+#
+# **Each is the lowest quotient observed, and that is deliberate.** The upper limit is what catches a
+# regression, so committing the lowest figure puts that limit as close to the fleet as the band
+# allows. The highest quotient seen sits +18.3%, +20.9% and +20.7% from these, all inside 25%:
+#
+#     measure                      committed    from run        highest seen    which is
+#     chain_walk_hash_chain_only   9.078814     39956416735     10.743419       +18.3%
+#     epoch_root_256_leaves        0.250205     39912327567      0.302385       +20.9%
+#     inclusion_proof_verify       0.002913     39956416735      0.003516       +20.7%
+#
+# Six decimal places rather than the four a class block uses: `inclusion_proof_verify` runs in about
+# four microseconds, so its quotient is near 0.0029 and four places would commit two significant
+# figures.
+#
+# These are quotients of figures runs printed, not figures a run printed itself. That is a weaker
+# provenance than a class block's and it is stated rather than glossed: the arithmetic is above, and
+# `band.rs` prints this block when the section is absent so a later one is pasted rather than derived.
+[fallback]
+chain_walk_hash_chain_only = 9.078814
+epoch_root_256_leaves = 0.250205
+inclusion_proof_verify = 0.002913

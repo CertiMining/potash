@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.10 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.11 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -65,6 +65,16 @@ is replaced: the battery v0.2.0 specified is still run and still has to pass. **
 no probe run against this has been caught by the new adversary and missed by the rest of the suite**,
 and D-66 records the probes and that result. H-01, ruled 22 October 2026; three of the five
 strengthenings that issue names remain open and RES-09 says which.*
+
+*v0.2.11 gives §4.4a's regression band two sensitivities instead of one (D-141). The band compares a
+runner against a baseline measured on its own class, and the fleet kept producing machines between the
+classes — a calibration landing +2.80% from one and -3.27% from the other, an ordinary machine reported
+as a defect in the diff. Such a run is now compared against a fleet-wide ratio, each measure divided by
+the calibration, at **25%** where a matched class is held to **15%**. Dividing out machine speed does
+not divide out the relation between Ed25519 and SHA-256, which is a property of each CPU: the quotients
+still span 18 to 21% across the fleet, and two machines inside one class differ by 9.8%. So the
+fallback is the weaker path and the section says so, rather than carrying one number that reads as
+though it applied everywhere. H-65, ruled 23 October 2026.*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -840,7 +850,9 @@ So the description does not determine the figure, and a bound stated against it 
 
 `initialize` and `attach_anchor_receipt` were confirmed against the announced deployment's own transactions across a runtime version gap. `publish_checkpoint` no longer is: it cost 8,810 at bump 255 when that was checked, and v0.2.4's calendar bound added 256 CU. **The announced deployment has not been redeployed, so its transactions still show 8,810** — the chain is running the program as it was before that check, which is the ordinary state of a deployment predating a change.
 
-The wall-clock measures are **reported** with the machine named, and CI's regression band compares its own runner against its own previous figures. **It fails on drift past the band again, corrected in v0.2.6 (H-47).** v0.2.3 recorded that the band reported without failing because it had never been calibrated; 30 CI runs now have calibrated it, the band is 15% rather than the 50% guess that flaked, and the derivation is recorded beside the number. So a wall-clock regression gate exists in this repository, on the runner and only on the runner: the band is derived from the runner's own spread. A run on a faster runner class cannot fail the comparison, and the harness prints when it is on one, because a pass the gate took no part in is not a pass about the code.
+The wall-clock measures are **reported** with the machine named, and CI's regression band compares its own runner against its own previous figures. **It fails on drift past the band again, corrected in v0.2.6 (H-47).** v0.2.3 recorded that the band reported without failing because it had never been calibrated; 30 CI runs now have calibrated it, the band is 15% rather than the 50% guess that flaked, and the derivation is recorded beside the number. So a wall-clock regression gate exists in this repository, on the runner and only on the runner: the band is derived from the runner's own spread.
+
+**The band has two sensitivities, and which one applies depends on the machine (v0.2.11, D-141).** A calibration — a fixed count of version-pinned Ed25519 verifications, on nothing this repository's code can move — selects the baseline a run is compared against. Where it matches a committed runner class, the measures are compared against figures taken on that class at **15%**. Where it matches none, which happens because the fleet contains machines between the committed classes rather than only new ones, each measure is divided by the calibration and compared against a fleet-wide ratio at **25%**. The wider band is not slack: normalising removes machine speed but not the relation between Ed25519 and SHA-256, which is a property of each CPU, so the quotients still span 18 to 21% across the fleet. **A regression smaller than 25% therefore escapes on the fallback path**, which is the cost of covering a machine nothing was measured on, and the reason classes remain the rule. On that path the band is two-sided: the calibration is the denominator, so a perturbed one makes every quotient small and would clear a one-sided limit. Below the floor nothing is concluded about the code — and the section does not claim to know whether the cause was a perturbed calibration or a machine outside the fleet's relation, because this comparison cannot tell them apart.
 
 What else stays enforcing is §1.8's CU limits and the band's structural controls: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
 
