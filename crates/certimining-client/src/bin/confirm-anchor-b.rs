@@ -204,9 +204,11 @@ fn main() -> ExitCode {
 /// is minutes of mining on a laptop, and an independent review on 22 October supplied precisely that
 /// and reached a confirmation (H-57, issue #223).
 ///
-/// The library takes the checkpoint on its caller's word by contract, and says so. This binary is the
-/// one place a checkpoint arrives from outside the process — three environment variables — so the
-/// floor belongs here rather than there.
+/// **This is no longer the only floor, and that is deliberate.** Since H-57 the library enforces the
+/// network's limit inside `verify_chain` too, so a library caller cannot opt out of it either. This
+/// one stays because it refuses *earlier* and says more: it names the environment variable, before a
+/// `Checkpoint` is built at all. Neither is redundant to the other — removing this would lose the
+/// message, and removing the library's would lose every caller that is not this binary.
 fn checkpoint_target(parsed: u32) -> Result<[u8; 32], String> {
     let target = target_from_bits(parsed)
         .ok_or_else(|| format!("{parsed:#010x} is not a target any header can carry"))?;
