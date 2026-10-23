@@ -188,7 +188,7 @@ class_tolerance_percent = 2.5
 # because Ed25519 verification and SHA-256 hashing do not depend on the same silicon. That is exactly
 # why each class carries its own measured baselines instead of a figure derived from its calibration.
 
-# **No class block stands here, and that is the state this change leaves (H-64, issue #243).**
+# **The classes are being met again under this instrument (H-64, issue #243).**
 #
 # Four were committed, measured on 22-23 October, and every one of them was a *median* of seven
 # samples. The calibration now reads the *fastest* of those samples instead, for the reason
@@ -215,3 +215,21 @@ class_tolerance_percent = 2.5
 # ordinary slow-class run 2.78% from its class's committed figure. A later run read 0.8961, which is
 # +2.80% from `cal-0872` and -3.27% from `cal-0926` — a genuine machine in the gap between two
 # classes, which is the subject of its own issue and is not what this change addresses.
+
+# Slow class. First met under the minimum by run 39912334445, which is this pull request's own
+# `pull_request` run. Its median figure was 1.2838, so the minimum reads 0.44% lower.
+[class.cal-1278]
+calibration_ms = 1.2781
+chain_walk_hash_chain_only = 12.7398
+epoch_root_256_leaves = 0.3634
+inclusion_proof_verify = 0.0041
+
+# Fastest class. First met under the minimum by run 39912327567, this pull request's `push` run. Its
+# median figure was 0.8717, so the minimum reads **2.02% lower** — which is why the old blocks could
+# not be kept: against a 2.5% tolerance that run would have matched its own class by 0.48 points, and
+# a class whose median happened to sit higher in its range would not have matched at all.
+[class.cal-0854]
+calibration_ms = 0.8541
+chain_walk_hash_chain_only = 7.7545
+epoch_root_256_leaves = 0.2137
+inclusion_proof_verify = 0.0025
