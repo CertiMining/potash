@@ -1611,7 +1611,8 @@ kBAnwhrQx2kdGAKiPskFhbw6mkGBKbLfyKgYVSsGSu5  account owned by the program supers
 # form was asked for, and no version read the deploy slot. Three of the eight are the announced
 # deployment's.
 0x85507d1c75cfbdeaea1fcc900e2c236b0c376e26c0b8e33e2773477a128850da  the announced deployment's ProgramData address, as bytes
-504783809  last deploy slot of the announced deployment
+514046538  last deploy slot of the announced deployment
+504783809  first deploy slot of the announced deployment, superseded by the in-place upgrade of 22 October 2026. Kept rather than replaced: the account still carries that history, and a value this list drops stops being refused in synthetic artifacts
 HELvWepyztbX9ZkfqPyHxCpReG6dyjVMix4E27btwMF6  ProgramData address of the program superseded 24 September
 0xf126116226b944f9b22e95634e4f7709bc04aee3faaa3e8ae5f67c673b4f76e1  ProgramData address of the program superseded 24 September, as bytes
 503659540  last deploy slot of the program superseded 24 September
