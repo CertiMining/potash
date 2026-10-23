@@ -102,6 +102,7 @@ function publication(count) {
     discriminator: INSTRUCTION_DISCRIMINATOR,
     epoch: FIXED.epoch,
     root: built.root,
+    bump: FIXED.bump,
   });
   return { count, built, account, instruction, buildMs };
 }

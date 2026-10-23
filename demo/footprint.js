@@ -19,8 +19,15 @@
 
 /** §2.4: `CheckpointAccount` is 106 bytes. */
 export const CHECKPOINT_LEN = 106;
-/** §1.8: `publish_checkpoint`'s instruction data is 48 bytes. */
-export const INSTRUCTION_LEN = 48;
+/**
+ * §1.8: `publish_checkpoint`'s instruction data is 49 bytes.
+ *
+ * It was 48 until v0.2.7 moved the checkpoint PDA's bump into the instruction data, so the program
+ * derives the address with one `create_program_address` call instead of searching for the canonical
+ * bump. This page said 48 from then until it was corrected, which is the whole reason the length is
+ * a named constant here and not a number typed into the markup.
+ */
+export const INSTRUCTION_LEN = 49;
 
 /**
  * The account's fields, in the document's order, with the offset each begins at.
@@ -41,11 +48,24 @@ export const ACCOUNT_FIELDS = [
   { name: "reserved", at: 100, len: 6 },
 ];
 
-/** `publish_checkpoint`'s instruction data: the Anchor discriminator, then the two arguments. */
+/**
+ * `publish_checkpoint`'s instruction data: the Anchor discriminator, then the three arguments.
+ *
+ * **`checkpoint_bump` carries no permit, deliberately.** It follows from the epoch and the program
+ * id, and this scene holds the epoch fixed and varies only the record count — so the bump cannot
+ * legitimately move here, and a permit would let a defect that moved it with the count pass as
+ * allowed. The account's own `bump` field does carry one, because §4.4's V-Z-01 names it among the
+ * six; that list is the specification's and is wider than this scene needs.
+ *
+ * The first version of this change did give it a permit, and `demo/test/footprint.test.mjs` refused
+ * it: the permitted set is written out there so that widening it in code fails, which is what §4.3
+ * means by the list being amended in the specification rather than in the code. The test was right.
+ */
 export const INSTRUCTION_FIELDS = [
   { name: "discriminator", at: 0, len: 8 },
   { name: "epoch", at: 8, len: 8, mayDiffer: "the epoch number" },
   { name: "root", at: 16, len: 32, mayDiffer: "a pseudorandom digest" },
+  { name: "checkpoint_bump", at: 48, len: 1 },
 ];
 
 function u16le(view, at, value) {
@@ -82,11 +102,14 @@ export function checkpointAccount({ discriminator, epoch, root, publishedSlot, p
   return out;
 }
 
-export function publishInstruction({ discriminator, epoch, root }) {
+export function publishInstruction({ discriminator, epoch, root, bump }) {
   const out = new Uint8Array(INSTRUCTION_LEN);
   out.set(discriminator, 0);
   u64le(out, 8, epoch);
   out.set(root, 16);
+  // The bump the publisher derived off chain, which is the one the account then stores — so the
+  // same value the account panel shows at offset 99, not a second opinion about it.
+  out[48] = bump;
   return out;
 }
 

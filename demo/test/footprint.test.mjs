@@ -101,11 +101,19 @@ test("every offset in the account belongs to exactly one named field, and the fi
     assert.equal(field.at, cursor, `${field.name} starts at ${field.at}, not ${cursor}`);
     cursor += field.len;
   }
-  assert.equal(cursor, INSTRUCTION_LEN, "§1.8 fixes the instruction data at 48 bytes");
+  // No figure in this message. The assertion compares against `INSTRUCTION_LEN`, so a number here
+  // would be a second place to maintain and the first to go stale — it said 48 after v0.2.7 moved
+  // the instruction to 49, and nothing could have caught that because nothing reads it.
+  assert.equal(
+    cursor,
+    INSTRUCTION_LEN,
+    `the instruction fields do not add up to §1.8's length (${INSTRUCTION_LEN})`,
+  );
 });
 
 test("the fields marked as permitted to differ are exactly §4.4's closed list", () => {
-  // V-Z-01 names six in the account and two arguments in the instruction. Written out here so that
+  // V-Z-01 names six in the account, and two of the instruction's three arguments — `checkpoint_bump`
+  // is the third and carries no permit, because this scene fixes the epoch it follows from. Written out here so that
   // widening the list in `footprint.js` fails this test, which is what §4.3 means by the list being
   // amended in the specification rather than in the code.
   assert.deepEqual(
