@@ -63,6 +63,20 @@ name = "confirm-anchor-b"
 path = "src/bin/confirm-anchor-b.rs"
 required-features = ["ots"]
 
+[[bin]]
+# Refuses a split deployment whose public identities collide or whose host carries another role's
+# private key. It reaches no network, but parses Solana keypairs and therefore needs `cluster`.
+name = "anchoring-preflight"
+path = "src/bin/anchoring-preflight.rs"
+required-features = ["cluster"]
+
+[[bin]]
+# Read-only reconciliation of a signed handoff, upgraded receipt and the checkpoint account written
+# on devnet. It performs no transaction and holds no private key.
+name = "reconcile-anchor-cycle"
+path = "src/bin/reconcile-anchor-cycle.rs"
+required-features = ["cluster", "ots"]
+
 [dependencies]
 # The engine: digests, the tree and the promise types (D-84).
 certimining-core = { path = "../certimining-core", features = ["native"] }

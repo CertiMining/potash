@@ -37,6 +37,7 @@ mod ots;
 mod promise_receipt;
 mod publish;
 mod schedule;
+mod separation;
 mod worker;
 
 pub use anchor::{
@@ -61,4 +62,5 @@ pub use publish::{
     classify, settle, should_retry, Outcome, Settlement, CHECKPOINT_ALREADY_WRITTEN,
 };
 pub use schedule::{build_start, publication_time, Schedule, EPOCH_SECONDS};
+pub use separation::{verify_role_separation, KeyCollision, KeyRole};
 pub use worker::{day_index, next_step, Observed, Refusal, Step};

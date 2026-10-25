@@ -9,13 +9,16 @@
 //!
 //! **It never builds an epoch and never reads `k_master`** (D-139). It publishes a root the batcher
 //! produced, from a signed handoff, and refuses to run without a valid one. RES-03 rests count-hiding
-//! entirely on that key's custody; D-117 makes the checkpoint authority the one key that runs
-//! unattended, and it can be, because compromising it buys a wrong root rather than the retrospective
-//! record count of every epoch the log has published.
+//! entirely on that key's custody; D-117 makes the checkpoint authority the one unattended
+//! authorisation key, and it can be, because compromising it buys a wrong root rather than the
+//! retrospective record count of every epoch the log has published. D-142 adds a separate fee-only
+//! payer, which carries no program authority and must not be the deploy/upgrade key.
 //!
 //! ```text
 //! CERTIMINING_RPC=https://api.devnet.solana.com \
 //! CERTIMINING_BATCHER_KEY=<64 hex characters> \
+//! CERTIMINING_WORKER_PAYER=/path/to/worker-payer.json \
+//! CERTIMINING_CHECKPOINT_AUTHORITY=/path/to/checkpoint-authority.json \
 //! CERTIMINING_HANDOFFS=/path/to/handoffs \
 //!     cargo run -p certimining-client --features cluster,ots --bin anchor-b-worker
 //! ```
@@ -77,11 +80,12 @@ fn hex32(s: &str) -> Result<[u8; 32], String> {
 impl Config {
     fn from_env() -> Result<Self, String> {
         let home = env("HOME")?;
-        let base = PathBuf::from(&home).join(".config/certimining");
         Ok(Self {
             rpc: env("CERTIMINING_RPC")?,
-            authority: base.join("checkpoint-authority.json"),
-            payer: base.join("deploy-keypair.json"),
+            authority: PathBuf::from(env("CERTIMINING_CHECKPOINT_AUTHORITY")?),
+            // D-142: an unattended worker must not hold the deploy/upgrade authority just to pay
+            // transaction fees. There is deliberately no fallback to deploy-keypair.json.
+            payer: PathBuf::from(env("CERTIMINING_WORKER_PAYER")?),
             batcher_key: hex32(&env("CERTIMINING_BATCHER_KEY")?)
                 .map_err(|e| format!("CERTIMINING_BATCHER_KEY: {e}"))?,
             handoffs: PathBuf::from(env("CERTIMINING_HANDOFFS")?),

@@ -194,6 +194,9 @@ kat01_onchain() {
   # INV-ANCH-05's transitions run the real program under LiteSVM, so they need the artefact this
   # group builds (E-10, D-118).
   check "anchor status transitions" cargo test -p certimining-client --test anchor_status
+  # D-142's whole split cycle against the real SBF program: signed handoff, exact receipt-prefix
+  # digest, dual status, and a mutation that tries to skip an epoch.
+  check "devnet anchoring cycle" cargo test -p certimining-client --features cluster,ots --test devnet_anchoring_cycle -- --nocapture
   group_result kat01-onchain
 }
 
@@ -277,6 +280,10 @@ checks() {
   # own logic was a test nobody ran, which is the same thing as no test. `confirm-anchor-b` holds the
   # checkpoint floor of H-57 (#223).
   check "confirm-anchor-b" cargo test -p certimining-client --features ots --bin confirm-anchor-b
+  # D-142's operational binaries have no networked tests here. Naming their harnesses keeps the
+  # target-coverage gate honest; their decisions live in library tests and the LiteSVM cycle above.
+  check "anchoring preflight" cargo test -p certimining-client --features cluster --bin anchoring-preflight
+  check "anchor cycle reconciliation" cargo test -p certimining-client --features cluster,ots --bin reconcile-anchor-cycle
   # **And the library's own unit tests, which no group named either (H-58, #224).** The line above
   # records that explicit `--test` targets exclude `--bin` ones. They exclude the `--lib` target too,
   # and this package is the only one in the workspace where *every* `cargo test` line carries such a
