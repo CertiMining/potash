@@ -24,6 +24,58 @@
 //! write-once (D-112).
 
 use crate::schedule::{publication_time, Schedule, EPOCH_SECONDS};
+use std::time::Duration;
+
+/// Bounded parameters for the unattended production worker.
+///
+/// These are deliberately code-reviewed constants rather than environment-controlled values. A
+/// deployment cannot turn a partition into an unbounded retry loop, extend an RPC call indefinitely,
+/// or silently permit a multi-epoch catch-up by changing process configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkerPolicy {
+    /// Maximum duration of one RPC request.
+    pub rpc_timeout: Duration,
+    /// Longest sleep between fresh observations while the worker is healthy.
+    pub poll_interval: Duration,
+    /// Total transaction submission attempts, including the first one.
+    pub publish_attempts: u32,
+    /// Consecutive transport failures allowed before the worker stops for an operator.
+    pub partition_retry_limit: u32,
+    /// Delay after the first transport failure.
+    pub retry_initial: Duration,
+    /// Maximum exponential-backoff delay.
+    pub retry_max: Duration,
+    /// Number of unpublished UTC epochs the worker may recover without an operator ruling.
+    pub max_epoch_slip: u64,
+}
+
+impl WorkerPolicy {
+    /// Production policy: ordinary one-epoch recovery is automatic; a wider history rewrite is not.
+    pub const PRODUCTION: Self = Self {
+        rpc_timeout: Duration::from_secs(30),
+        poll_interval: Duration::from_secs(300),
+        publish_attempts: 3,
+        partition_retry_limit: 5,
+        retry_initial: Duration::from_secs(1),
+        retry_max: Duration::from_secs(30),
+        max_epoch_slip: 1,
+    };
+
+    /// Exponential partition-recovery delay for a one-based consecutive failure count.
+    ///
+    /// `None` is an explicit stop: zero is not a failure, and a count beyond the reviewed budget is
+    /// not converted into an endless daemon loop.
+    pub fn partition_retry_delay(self, consecutive_failures: u32) -> Option<Duration> {
+        if consecutive_failures == 0 || consecutive_failures > self.partition_retry_limit {
+            return None;
+        }
+        let mut delay = self.retry_initial;
+        for _ in 1..consecutive_failures {
+            delay = delay.saturating_mul(2).min(self.retry_max);
+        }
+        Some(delay)
+    }
+}
 
 /// Everything the worker is allowed to decide from.
 ///
@@ -81,6 +133,29 @@ pub enum Refusal {
     /// The config account reports a `last_epoch` below `start_epoch`, which no sequence this program
     /// writes can produce. The observation is wrong, or the account is not this log's.
     LastBeforeStart { last_epoch: u64, start_epoch: u64 },
+    /// More than the reviewed number of epochs are absent. Recovery must be explicitly bounded by
+    /// an operator rather than letting an unattended worker replay an arbitrary backlog.
+    EpochSlipExceeded {
+        last_epoch: u64,
+        today: u64,
+        max_epoch_slip: u64,
+    },
+    /// Receipt state names an epoch the log has not published.
+    AwaitingAttachOutsideLog {
+        awaiting_attach: u64,
+        start_epoch: u64,
+        last_epoch: u64,
+    },
+    /// The receipt directory claims progress beyond the checkpoint log.
+    SubmissionAheadOfLog {
+        last_submitted: u64,
+        last_epoch: u64,
+    },
+    /// An attachment cannot be pending for an epoch the calendar submission record has not reached.
+    AttachmentAheadOfSubmission {
+        awaiting_attach: u64,
+        last_submitted: Option<u64>,
+    },
     /// An epoch's publication time cannot be represented, so the schedule cannot place it.
     Unschedulable { epoch: u64 },
 }
@@ -91,6 +166,17 @@ pub enum Refusal {
 /// and its receipt is perishable attention, not because it is urgent; submitting comes before
 /// publishing so a published root never sits unstamped while the next day is built.
 pub fn next_step(schedule: Schedule, observed: &Observed) -> Step {
+    next_step_with_policy(schedule, observed, WorkerPolicy::PRODUCTION)
+}
+
+/// The worker's next step under an explicit policy.
+///
+/// Tests use this entry point to prove each production barrier without reading a clock or waiting.
+pub fn next_step_with_policy(
+    schedule: Schedule,
+    observed: &Observed,
+    policy: WorkerPolicy,
+) -> Step {
     let Observed {
         now,
         today,
@@ -114,6 +200,31 @@ pub fn next_step(schedule: Schedule, observed: &Observed) -> Step {
         return Step::Refuse(Refusal::LogAheadOfCalendar { last_epoch, today });
     }
 
+    if let Some(epoch) = awaiting_attach {
+        if epoch < start_epoch || epoch > last_epoch {
+            return Step::Refuse(Refusal::AwaitingAttachOutsideLog {
+                awaiting_attach: epoch,
+                start_epoch,
+                last_epoch,
+            });
+        }
+        if last_submitted.is_none_or(|submitted| epoch > submitted) {
+            return Step::Refuse(Refusal::AttachmentAheadOfSubmission {
+                awaiting_attach: epoch,
+                last_submitted,
+            });
+        }
+    }
+
+    if let Some(submitted) = last_submitted {
+        if submitted > last_epoch {
+            return Step::Refuse(Refusal::SubmissionAheadOfLog {
+                last_submitted: submitted,
+                last_epoch,
+            });
+        }
+    }
+
     // A receipt waiting on Bitcoin is the only thing that can become actionable without the clock
     // moving, so it is asked about first.
     if let Some(epoch) = awaiting_attach {
@@ -126,6 +237,18 @@ pub fn next_step(schedule: Schedule, observed: &Observed) -> Step {
     let submitted_through = last_submitted.unwrap_or(start_epoch.saturating_sub(1));
     if submitted_through < last_epoch {
         return Step::Submit { epoch: last_epoch };
+    }
+
+    // Complete an already-published epoch's Anchor-B work even when the log is far behind. The slip
+    // barrier prevents creating another checkpoint; it must not strand a checkpoint that already
+    // exists in `Single` state.
+    let slip = today.saturating_sub(last_epoch);
+    if slip > policy.max_epoch_slip {
+        return Step::Refuse(Refusal::EpochSlipExceeded {
+            last_epoch,
+            today,
+            max_epoch_slip: policy.max_epoch_slip,
+        });
     }
 
     let Some(candidate) = last_epoch.checked_add(1) else {
@@ -209,9 +332,13 @@ mod tests {
         };
         assert_eq!(
             next_step(S, &o),
-            Step::Publish { epoch: 20_739 },
-            "the sequence is contiguous, so a seven-day gap is paid from its oldest end and never by \
-             skipping to today (INV-ANCH-02, D-106)"
+            Step::Refuse(Refusal::EpochSlipExceeded {
+                last_epoch: 20_738,
+                today: 20_746,
+                max_epoch_slip: 1,
+            }),
+            "an unattended worker may recover the ordinary one-epoch slip, not replay an eight-epoch \
+             backlog without an operator ruling"
         );
     }
 
@@ -352,7 +479,14 @@ mod tests {
         };
         let mut steps = Vec::new();
         for _ in 0..8 {
-            let step = next_step(S, &o);
+            let step = next_step_with_policy(
+                S,
+                &o,
+                WorkerPolicy {
+                    max_epoch_slip: 3,
+                    ..WorkerPolicy::PRODUCTION
+                },
+            );
             steps.push(step);
             match step {
                 Step::Publish { epoch } => o.last_epoch = epoch,
@@ -375,6 +509,80 @@ mod tests {
             ],
             "each published epoch is stamped before the next is published, and the worker stops at \
              the calendar rather than running ahead of it"
+        );
+    }
+
+    #[test]
+    fn impossible_receipt_and_submission_barriers_fail_closed() {
+        let base = caught_up(20_739);
+        assert_eq!(
+            next_step(
+                S,
+                &Observed {
+                    awaiting_attach: Some(20_740),
+                    ..base
+                },
+            ),
+            Step::Refuse(Refusal::AwaitingAttachOutsideLog {
+                awaiting_attach: 20_740,
+                start_epoch: 20_723,
+                last_epoch: 20_739,
+            })
+        );
+        assert_eq!(
+            next_step(
+                S,
+                &Observed {
+                    last_submitted: Some(20_740),
+                    ..base
+                },
+            ),
+            Step::Refuse(Refusal::SubmissionAheadOfLog {
+                last_submitted: 20_740,
+                last_epoch: 20_739,
+            })
+        );
+        assert_eq!(
+            next_step(
+                S,
+                &Observed {
+                    awaiting_attach: Some(20_739),
+                    last_submitted: Some(20_738),
+                    ..base
+                },
+            ),
+            Step::Refuse(Refusal::AttachmentAheadOfSubmission {
+                awaiting_attach: 20_739,
+                last_submitted: Some(20_738),
+            })
+        );
+    }
+
+    #[test]
+    fn partition_backoff_is_bounded_and_stops_after_the_budget() {
+        let policy = WorkerPolicy::PRODUCTION;
+        assert_eq!(policy.partition_retry_delay(0), None);
+        assert_eq!(
+            policy.partition_retry_delay(1),
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(
+            policy.partition_retry_delay(2),
+            Some(Duration::from_secs(2))
+        );
+        assert_eq!(
+            policy.partition_retry_delay(5),
+            Some(Duration::from_secs(16))
+        );
+        assert_eq!(policy.partition_retry_delay(6), None);
+
+        let capped = WorkerPolicy {
+            retry_max: Duration::from_secs(3),
+            ..policy
+        };
+        assert_eq!(
+            capped.partition_retry_delay(5),
+            Some(Duration::from_secs(3))
         );
     }
 }

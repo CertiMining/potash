@@ -19,6 +19,7 @@ use certimining_core::Digest;
 use solana_message::Message;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
+use std::time::Duration;
 
 use crate::anchor::{
     lineage_of, provenance_in, status_of, AnchorRef, AnchorStatus, Lineage, Touched, WhereItLanded,
@@ -35,8 +36,18 @@ pub struct Cluster {
 impl Cluster {
     /// A client at `url`, confirming at the commitment a counterparty would use.
     pub fn new(url: String, program_id: Pubkey) -> Self {
+        Self::new_with_timeout(url, program_id, Duration::from_secs(30))
+    }
+
+    /// A client with an explicit request timeout, used by unattended workers so a partition cannot
+    /// leave the state machine blocked forever between observations.
+    pub fn new_with_timeout(url: String, program_id: Pubkey, timeout: Duration) -> Self {
         Self {
-            rpc: RpcClient::new_with_commitment(url, CommitmentConfig::confirmed()),
+            rpc: RpcClient::new_with_timeout_and_commitment(
+                url,
+                timeout,
+                CommitmentConfig::confirmed(),
+            ),
             program_id,
         }
     }
