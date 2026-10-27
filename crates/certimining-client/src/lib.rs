@@ -30,6 +30,8 @@ mod anchor;
 pub mod bitcoin;
 #[cfg(feature = "cluster")]
 pub mod cluster;
+#[cfg(feature = "cluster")]
+pub mod crypto;
 mod fetch;
 mod handoff;
 mod ots;
