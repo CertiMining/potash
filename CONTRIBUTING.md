@@ -103,8 +103,8 @@ cross-checks the chain walk against the state machine, verifies a proof and pins
 of those failing fails the run. `thresholds` measures §4.4a's wall-clock figures and names the machine;
 `bench` reports the Criterion distributions behind them. §4.4a's wall-clock bounds were removed after two
 machines matching its own description measured 7 ms and 17.6–19.5 ms, so there is nothing left there to
-gate on. `bench-band` is in `all` and reports its drift without failing on it either, which leaves the
-compute figures in `kat01-onchain` and the TypeScript bound in `ts` as the performance assertions.
+gate on. `bench-band` is in `all` and **fails** on drift past its band (H-47), so the performance
+assertions are its comparison, the compute figures in `kat01-onchain` and the TypeScript bound in `ts`.
 `docs/performance.md` says which mechanism covers each of §4.4a's rows.
 
 `fuzz` is not in `all` and has no row above, because it is not part of the push pipeline: §4.5's five
