@@ -28,8 +28,10 @@ What has run is independent review, in rounds, against posted heads:
 
 Every round found defects in the previous round's fixes. That is why they are counted rather than
 called reviewed, and why the longest count is against the privacy tests, which are the release
-blockers. There is no OpenTimestamps worker to review: the daily cycle is run by hand
-(D-117, [#49](https://github.com/CertiMining/potash/issues/49)).
+blockers. The OpenTimestamps worker has no row because no round has been run against it.
+`anchor-b-worker` and `batcher-handoff` were written on 20 and 22 October 2026; nothing schedules
+either of them, and the daily cycle is run by hand with the log paused since epoch 20738
+(D-117, D-139, [#49](https://github.com/CertiMining/potash/issues/49)).
 
 **What is measured.** Numbers this repository produces and checks, not estimates. Each row names the
 implementation that produced it, because the two differ by an order of magnitude. Rust figures are
