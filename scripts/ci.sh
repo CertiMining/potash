@@ -167,6 +167,13 @@ vectors() {
   # a D-142 that main had just taken, and that surfaced as a merge conflict on three branches rather
   # than as a gate on the first. The five on main are listed in the gate with what each one is.
   cargo xtask check-decisions || return 1
+  # **The worker and band status statements, against what the code does (#254).** Nine sentences
+  # across eight files outlived the heads that falsified them: anchor-b-worker was committed on 20
+  # October and the band's failure restored on 22nd, and README.md still denied the worker on a head
+  # where DECISIONS.md recorded that denial as superseded. check-citations cannot see it, because these
+  # cite a decision rather than an invariant, and claim-check cannot, because a status sentence is
+  # neither a banned phrasing nor a concept noun.
+  cargo xtask check-status || return 1
   # **Every test, bin and lib target, against the groups this file runs (H-62 #230, H-63 #240).** Two
   # targets were reached by nothing on 22 October: `confirm-anchor-b`'s own unit tests, because every
   # `cargo test` line here names `--test` targets and that excludes `--bin` ones, and V-P-12's
@@ -441,9 +448,11 @@ deny() {
 # corrupted leaf. An absent entry prints what it measured, because a baseline nobody measured is a gate
 # that cannot fail.
 #
-# **A run on a faster runner class says so**, because it cannot fail the comparison whatever the code
-# does: 8 of those 30 runs came in at 0.59 to 0.64 of the baseline, where a pass is a true sentence
-# about a gate nothing exercised.
+# **A faster runner class fails on a regression like any other (H-61, #228)**, because each class is
+# compared against a baseline taken on it. Before that one baseline served the fleet, 8 of those 30 runs
+# came in at 0.59 to 0.64 of it, and the harness had to disclose that such a pass was a true sentence
+# about a gate nothing exercised. A run matching no class is compared against the fleet instead, at 25%
+# and two-sided (H-65, D-141).
 #
 # `--release` is not optional: a debug build measures the optimiser's absence.
 #
