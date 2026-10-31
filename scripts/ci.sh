@@ -435,9 +435,11 @@ deny() {
 # corrupted leaf. An absent entry prints what it measured, because a baseline nobody measured is a gate
 # that cannot fail.
 #
-# **A run on a faster runner class says so**, because it cannot fail the comparison whatever the code
-# does: 8 of those 30 runs came in at 0.59 to 0.64 of the baseline, where a pass is a true sentence
-# about a gate nothing exercised.
+# **A faster runner class fails on a regression like any other (H-61, #228)**, because each class is
+# compared against a baseline taken on it. Before that one baseline served the fleet, 8 of those 30 runs
+# came in at 0.59 to 0.64 of it, and the harness had to disclose that such a pass was a true sentence
+# about a gate nothing exercised. A run matching no class is compared against the fleet instead, at 25%
+# and two-sided (H-65, D-141).
 #
 # `--release` is not optional: a debug build measures the optimiser's absence.
 #
