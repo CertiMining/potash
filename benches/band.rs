@@ -579,8 +579,9 @@ fn against_its_own_class(class: &Class, measured: &[(&str, f64)], band: f64, tol
     //
     // **What the band still does not cover**, said rather than discovered: a *change* in a class's own
     // speed, from a kernel or microcode update on the same hardware. The calibration moves with it, so
-    // the class stops matching and this fails asking for a new block — which is the right failure, and
-    // it reads the same as new hardware because from here it is indistinguishable.
+    // the class stops matching and the run leaves this path for the fleet fallback at its wider band
+    // (H-65, D-141). It reads the same as new hardware because from here it is indistinguishable, and
+    // the remedy is the same: a class block measured on the new reading, not a wider band.
     assert!(
         over.is_empty(),
         "band: {} measure(s) above the limit for [class.{}], whose baseline was taken on a machine \

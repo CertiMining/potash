@@ -46,10 +46,12 @@
 # quantisation-limited.** It fails a regression of 15% or more while leaving room no run has used.
 #
 # **What it does not cover, said rather than discovered.** A runner class *slower* than the baseline's.
-# None of the thirty was. If one appears this fails, and the answer is to re-measure the baseline on it
-# rather than to widen the band: a regression moves one measure and a slower machine moves all three
-# together, which is what tells them apart. And a run on a *faster* class cannot fail at all, so
-# `band.rs` now says when it is on one — 8 of 30 runs reported a pass that the gate had no part in.
+# None of the thirty was. Such a run matches no committed class, so it is compared against the fleet at
+# `fallback_band_percent` below rather than failing here, and the answer is a class block measured on it
+# rather than a wider band: a regression moves one measure and a slower machine moves all three
+# together, which is what tells them apart. A run on a *faster* class fails on a regression like any
+# other, because a class is compared against a baseline taken on it (H-61, #228). Before that one
+# baseline served the fleet, and 8 of 30 runs reported a pass the gate had no part in.
 # **This is the band for a run whose calibration matches a committed class (D-141).** A run that
 # matches none is compared against the fleet instead, at `fallback_band_percent` below, which is 25
 # rather than 15. The two numbers are two sensitivities and not one figure with an exception: a
