@@ -161,6 +161,12 @@ vectors() {
   # rather than beside claim-check, because this reads the same documents check-record does and asks
   # a question of the same shape: does the repository still agree with itself.
   cargo xtask check-citations || return 1
+  # **Decision identifiers, which have to name one decision each (#256, L-01).** docs/DECISIONS.md
+  # carries four identifiers twice with identical bodies and reserves a fifth before settling it, so a
+  # reference naming one of them names two headings. On 31 October three open pull requests each added
+  # a D-142 that main had just taken, and that surfaced as a merge conflict on three branches rather
+  # than as a gate on the first. The five on main are listed in the gate with what each one is.
+  cargo xtask check-decisions || return 1
   # **Every test, bin and lib target, against the groups this file runs (H-62 #230, H-63 #240).** Two
   # targets were reached by nothing on 22 October: `confirm-anchor-b`'s own unit tests, because every
   # `cargo test` line here names `--test` targets and that excludes `--bin` ones, and V-P-12's
