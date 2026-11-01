@@ -46,63 +46,15 @@ pub struct Duplicate {
     pub identical: bool,
 }
 
-/// A duplicate that exists on `main` and whose resolution is the owner's to rule on.
+/// **There is no allowance for a duplicate any more (#256, H-85).** Five identifiers named two
+/// entries each: four carried the same body twice byte for byte, and D-131 carried a reservation
+/// followed by the decision that settled it. The owner ruled on 1 November 2026 that the second
+/// copy of each and the reservation go, so the list this gate compared against is empty and an
+/// identifier naming two entries is a failure with nothing to weigh it against.
 ///
-/// **Admission matches the recorded shape, not the identifier (H-81, #280).** It used to compare
-/// `id` alone, so a third body under `D-99` \u{2014} a different decision, not the recorded pair \u{2014} was
-/// admitted and the gate went on printing that the identifier was used twice. `kind` was recorded
-/// and never read. An entry here now says how many headings it covers and whether their bodies are
-/// the same text, and anything else under that identifier is a new duplicate.
-struct Known {
-    id: &'static str,
-    /// How many headings this records. A further one is not this duplicate.
-    headings: usize,
-    /// Whether every body under the identifier is the same text.
-    identical: bool,
-    /// What it is, from the inventory #256's first criterion asks for.
-    kind: &'static str,
-}
-
-impl Known {
-    /// Whether an observed duplicate is the one this entry records.
-    fn covers(&self, d: &Duplicate) -> bool {
-        self.id == d.id && self.headings == d.lines.len() && self.identical == d.identical
-    }
-}
-
-const KNOWN: [Known; 5] = [
-    Known {
-        id: "D-99",
-        headings: 2,
-        identical: true,
-        kind: "exact duplicate, both bodies byte-identical",
-    },
-    Known {
-        id: "D-100",
-        headings: 2,
-        identical: true,
-        kind: "exact duplicate, both bodies byte-identical",
-    },
-    Known {
-        id: "D-101",
-        headings: 2,
-        identical: true,
-        kind: "exact duplicate, both bodies byte-identical",
-    },
-    Known {
-        id: "D-103",
-        headings: 2,
-        identical: true,
-        kind: "exact duplicate, both bodies byte-identical",
-    },
-    Known {
-        id: "D-131",
-        headings: 2,
-        identical: false,
-        kind: "reserved, then reused: a reservation block followed by the settled decision",
-    },
-];
-
+/// The list it replaced was admitted on the identifier alone, which is how a third body under D-99
+/// passed (H-81, #280). A list of accepted duplicates is a thing that has to be kept true; none is
+/// the only count that keeps itself true.
 /// Every decision heading in order, with the text under each.
 pub fn parse(text: &str) -> Vec<Entry> {
     let lines: Vec<&str> = text.split('\n').collect();
@@ -269,9 +221,6 @@ pub fn check_decisions(root: &Path) {
     let mut failed = false;
 
     for d in &dups {
-        if KNOWN.iter().any(|k| k.covers(d)) {
-            continue;
-        }
         if !failed {
             eprintln!("decisions: an identifier names more than one decision (#256):");
             failed = true;
@@ -304,33 +253,17 @@ pub fn check_decisions(root: &Path) {
         failed = true;
     }
 
-    for k in &KNOWN {
-        if !dups.iter().any(|d| d.id == k.id) {
-            eprintln!(
-                "decisions: {} is listed as a known duplicate ({}) and is not one any more. \
-                 Remove it from KNOWN in xtask/src/decisions.rs.",
-                k.id, k.kind
-            );
-            failed = true;
-        }
-    }
-
     assert!(!failed, "decisions: the gate above failed");
 
     println!(
-        "decisions: {} decision(s), {} identifier(s) used twice, all {} of them the duplicates #256 \
-         records; {} structured link(s), none dangling",
+        "decisions: {} decision(s), every identifier naming one of them; {} structured link(s), \
+         none dangling",
         entries.len(),
-        dups.len(),
-        KNOWN.len(),
         text.matches("Amends D-").count()
             + text.matches("Superseded by D-").count()
             + text.matches("Supersedes D-").count()
             + text.matches("Amended by D-").count()
     );
-    for k in &KNOWN {
-        println!("decisions:   {} — {}", k.id, k.kind);
-    }
     println!(
         "decisions: this says each identifier names one heading, not that the heading is right, and \
          not that a reference elsewhere points at the decision it means"
@@ -430,15 +363,6 @@ Amends D-404
         assert_eq!(ids, vec!["D-9".to_string(), "D-100".to_string()]);
     }
 
-    /// Every listed entry names a real classification, so the printed inventory cannot be blank.
-    #[test]
-    fn every_known_entry_is_classified() {
-        for k in &KNOWN {
-            assert!(!k.kind.trim().is_empty(), "{} has no classification", k.id);
-            assert!(k.id.starts_with("D-"), "{} is not a decision id", k.id);
-        }
-    }
-
     /// H-80 (#279). The heading `## D-102 and D-119 \u{b7} \u{2026}` named two decisions and the gate saw
     /// one, so the second `## D-119` further down was never a duplicate to it.
     #[test]
@@ -459,28 +383,26 @@ Amends D-404
         assert_eq!(heading_ids("## D-123 \u{b7} a subject"), vec!["D-123"]);
     }
 
-    /// H-81 (#280). A known duplicate is admitted on its recorded shape. A third body under the
-    /// same identifier is a different duplicate and has to be reported.
+    /// #256, H-85. There is no allowance, so any identifier naming two entries is a finding.
     #[test]
-    fn a_third_body_under_a_known_identifier_is_not_the_known_duplicate() {
-        let two = "## D-99 \u{b7} a\nx\n\n## D-99 \u{b7} a\nx\n";
-        let three = "## D-99 \u{b7} a\nx\n\n## D-99 \u{b7} a\nx\n\n## D-99 \u{b7} different\nz\n";
-        let known = KNOWN
-            .iter()
-            .find(|k| k.id == "D-99")
-            .expect("D-99 is listed");
-        let d2 = duplicates(&parse(two))
-            .into_iter()
-            .next()
-            .expect("a duplicate");
-        let d3 = duplicates(&parse(three))
-            .into_iter()
-            .next()
-            .expect("a duplicate");
-        assert!(known.covers(&d2), "the recorded pair is admitted");
+    fn any_duplicate_is_a_finding_now() {
+        let text = "## D-99 \u{b7} a\nx\n\n## D-99 \u{b7} a\nx\n";
+        let dups = duplicates(&parse(text));
+        assert_eq!(dups.len(), 1, "a repeated identifier is reported");
+        assert!(dups[0].identical, "and the report says the bodies match");
+    }
+
+    /// The record itself carries none, which is what the owner's ruling of 1 November 2026 left.
+    #[test]
+    fn the_committed_record_has_no_duplicate_identifier() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let text = std::fs::read_to_string(root.join("docs/DECISIONS.md"))
+            .expect("docs/DECISIONS.md can be read");
+        let dups = duplicates(&parse(&text));
         assert!(
-            !known.covers(&d3),
-            "a third, differing body is not the recorded pair"
+            dups.is_empty(),
+            "identifiers naming two entries: {:?}",
+            dups.iter().map(|d| &d.id).collect::<Vec<_>>()
         );
     }
 
