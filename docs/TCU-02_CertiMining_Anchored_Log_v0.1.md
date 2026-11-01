@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.11 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.12 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -75,6 +75,18 @@ not divide out the relation between Ed25519 and SHA-256, which is a property of 
 still span 18 to 21% across the fleet, and two machines inside one class differ by 9.8%. So the
 fallback is the weaker path and the section says so, rather than carrying one number that reads as
 though it applied everywhere. H-65, ruled 23 October 2026.*
+
+*v0.2.12 withdraws §4.4a's claim that CI holds a wall-clock regression gate, because no CI runner ever
+matched a committed runner class (D-144). The matching tolerance is 2.5%; five sampled CI jobs
+calibrated at 0.9072, 1.0988, 1.1029, 1.3470 and 1.3503 ms, each between 2.96% and 6.22%
+from its nearest class. Every CI run therefore took the fallback v0.2.11 had described as the weaker
+path, and the fallback turns out to be unsound there rather than merely loose: one measure's quotient
+is not monotonic in the calibration, and another's full observed range across the machines that run
+this gate is 71% wide against a band of 67%. A comparison that returns a verdict on a population it
+cannot order is not a gate, and two pull requests were failing it on documentation changes. The
+`bench-band` group leaves `all` and leaves `ci.yml`; it still fails on drift and is run where a class
+is committed. §1.8's compute-unit limits are unaffected and remain asserted absolutely in CI. H-74,
+ruled 1 November 2026.*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -850,11 +862,11 @@ So the description does not determine the figure, and a bound stated against it 
 
 `initialize` and `attach_anchor_receipt` were confirmed against the announced deployment's own transactions across a runtime version gap. `publish_checkpoint` no longer is: it cost 8,810 at bump 255 when that was checked, and v0.2.4's calendar bound added 256 CU. **The announced deployment has not been redeployed, so its transactions still show 8,810** — the chain is running the program as it was before that check, which is the ordinary state of a deployment predating a change.
 
-The wall-clock measures are **reported** with the machine named, and CI's regression band compares its own runner against its own previous figures. **It fails on drift past the band again, corrected in v0.2.6 (H-47).** v0.2.3 recorded that the band reported without failing because it had never been calibrated; 30 CI runs now have calibrated it, the band is 15% rather than the 50% guess that flaked, and the derivation is recorded beside the number. So a wall-clock regression gate exists in this repository, on the runner and only on the runner: the band is derived from the runner's own spread.
+The wall-clock measures are **reported** with the machine named. **CI has no wall-clock regression gate at present, and the reason is that no CI runner ever matched a committed runner class (v0.2.12, D-144).** The `bench-band` comparison held a runner against figures committed for a runner class, and no CI runner ever matched one: five sampled jobs calibrated between 0.9072 and 1.3503 ms against a 2.5% matching tolerance, so every CI run fell to the fleet-wide fallback. That fallback's band is narrower than the population it has to cover, so its verdict tracked which machine the run landed on rather than the code. The comparison still exists and still fails on drift; it is run where a runner class is committed, which CI is not. v0.2.6 recorded that a wall-clock regression gate existed here on the runner and only on the runner, and that is the sentence this amendment withdraws.
 
-**The band has two sensitivities, and which one applies depends on the machine (v0.2.11, D-141).** A calibration — a fixed count of version-pinned Ed25519 verifications, on nothing this repository's code can move — selects the baseline a run is compared against. Where it matches a committed runner class, the measures are compared against figures taken on that class at **15%**. Where it matches none, which happens because the fleet contains machines between the committed classes rather than only new ones, each measure is divided by the calibration and compared against a fleet-wide ratio at **25%**. The wider band is not slack: normalising removes machine speed but not the relation between Ed25519 and SHA-256, which is a property of each CPU, so the quotients still span 18 to 21% across the fleet. **A regression smaller than 25% therefore escapes on the fallback path**, which is the cost of covering a machine nothing was measured on, and the reason classes remain the rule. On that path the band is two-sided: the calibration is the denominator, so a perturbed one makes every quotient small and would clear a one-sided limit. Below the floor nothing is concluded about the code — and the section does not claim to know whether the cause was a perturbed calibration or a machine outside the fleet's relation, because this comparison cannot tell them apart.
+**The band still has two sensitivities, and which applies depends on the machine (v0.2.11, D-141).** A calibration — a fixed count of version-pinned Ed25519 verifications, on nothing this repository's code can move — selects the baseline a run is compared against. Where it matches a committed runner class, the measures are compared against figures taken on that class at **15%**. Where it matches none, each measure is divided by the calibration and compared against a fleet-wide ratio at **25%**, two-sided because the calibration is the denominator and a perturbed one would clear a one-sided limit. **The fallback is the path v0.2.12 found unsound, and not only loose.** Normalising removes machine speed but not the relation between Ed25519 and SHA-256, which is a property of each CPU; across the machines actually observed the quotient for one measure is not even monotonic in the calibration, and the full observed range of another is wider than the band meant to contain it. So the 25% figure covers a machine nothing was measured on only in the sense that it returns a verdict, and D-144 therefore takes the comparison out of CI — where no class ever matched — instead of widening the band again. The fallback itself is unchanged and still runs where the comparison is invoked on a machine no class covers; what stopped is CI invoking it.
 
-What else stays enforcing is §1.8's CU limits and the band's structural controls: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
+What stays enforcing is §1.8's compute-unit limits — deterministic, asserted absolutely in CI, and unchanged by D-144 — and the band's structural controls wherever the comparison is run: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. The TypeScript row keeps its bound because it is asserted on the CI runner rather than against a machine description, which is reproducible in the way the three removed rows were not.
 
 The split matters. Signature verification dominates at scale — the hash-chain figure is achievable only for the hash chain, and a 10,000-record chain with a signature check per record is a different order of cost. E-13 measures both and publishes both numbers; a threshold on the signature path is set in v0.2 once there is real data, not guessed now.
 
