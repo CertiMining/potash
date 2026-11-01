@@ -83,7 +83,7 @@ signature in the set. No generated key and no real key belongs in this repositor
 
 ## Running the checks
 
-`scripts/ci.sh all` is the pipeline CI runs, verbatim. Its groups, and only its groups — `thresholds`, `bench`, `fuzz` and, since D-144, `bench-band` are explained below the table rather than in it, because none of them runs in CI:
+`scripts/ci.sh all` is the pipeline CI runs, verbatim. Its groups, and only its groups — `thresholds`, `bench`, `fuzz` and, since D-144, `bench-band` are explained below the table rather than in it, because none of them is in the push pipeline:
 
 | Group | What it does |
 |---|---|
@@ -115,8 +115,9 @@ drift and runs where a class is committed. **CI's performance assertions are now
 Where it is run, `bench-band` compares §4.4a's wall-clock measures against `benches/BASELINE.toml` and
 fails past the band, which has two sensitivities (D-141): **15%** against figures taken on the run's own
 committed runner class, and **25%** two-sided against a fleet-wide ratio where the calibration matches
-none. D-144 stopped the second from running, because it was unsound on the machines that met it rather
-than merely loose. Its structural controls fail wherever it runs: an absent baseline entry, a non-finite
+none. D-144 stopped CI invoking the comparison at all, because that second path was unsound on the
+machines that met it rather than merely loose; the path itself is unchanged and still runs when the
+comparison is invoked on a machine no class covers. Its structural controls fail wherever it runs: an absent baseline entry, a non-finite
 band or baseline, a fixture of the wrong size, a timed no-op, a verifier accepting a corrupted leaf, and
 two committed classes whose windows overlap. A faster runner class fails on a regression like any other,
 which is what per-class baselines added (H-61). None of this is §4.4a's wall-clock absolutes, which no

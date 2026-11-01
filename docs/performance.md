@@ -70,8 +70,8 @@ divided by the calibration and compared against a fleet-wide ratio at **25%**, t
 band is not slack: normalising removes machine speed but not the relation between Ed25519 and
 SHA-256, which is a property of each CPU, so the quotients still span 18 to 21% across the fleet. **A
 regression under 25% escapes on that path**, which is why classes are the rule and the fallback the
-exception. **D-144 found the fallback unsound rather than merely loose**, which is why it is no longer
-run where no class matches: the full observed range of `inclusion_proof_verify` across the machines
+exception. **D-144 found the fallback unsound rather than merely loose**, which is why CI no longer
+invokes the comparison at all rather than the band being widened: the full observed range of `inclusion_proof_verify` across the machines
 that ran this gate is 71% wide against a band of 67%, and the quotient is not monotonic in the
 calibration, so dividing by it does not order the two machines it is meant to compare.
 
@@ -241,7 +241,7 @@ never matched a class and so never made the comparison this document describes.*
 `all` and out of `ci.yml`, and nothing gates the reference machine either: `scripts/ci.sh thresholds`
 records its figures (D-137).
 
-**The bands are 15% and 25%, and both are derived — and 25% is no longer run (D-144).** 15% came from thirty CI runs whose widest
+**The bands are 15% and 25%, and both are derived — and since D-144 neither is run in CI.** 15% came from thirty CI runs whose widest
 excursion above baseline was 2.4%, so it fails a regression of 15% while leaving room no run has used
 (H-47). 25% came from the quotient spread across the fleet, 18 to 21%, measured over the readings
 taken under the current instrument (D-141). Neither is the 50% that preceded them, which was recorded
