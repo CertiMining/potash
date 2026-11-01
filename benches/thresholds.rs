@@ -15,7 +15,10 @@
 //! against figures taken on its own runner class so a change in the *code* shows up, and it **fails on
 //! that drift** (H-47, 22 Oct 2026). It reported without failing while the band was one sample's guess;
 //! thirty CI runs replaced that with 15% for a matched class and 25% for the fleet fallback (D-141). So
-//! a wall-clock regression gate exists again, beside the compute figures and the TypeScript bound.
+//! that comparison gated CI, beside the compute figures and the TypeScript bound. **It no longer does
+//! (D-144, 1 Nov 2026):** no CI runner matched a class, so `band.rs` is out of `all` and out of
+//! `ci.yml` and runs where a class is committed. In CI the compute figures and the TypeScript bound
+//! are what remain enforcing.
 //!
 //! What this file does now is **measure and report, with the machine named**. It asserts no performance
 //! threshold, so no figure here can fail on a loaded laptop; its correctness controls still can, and do
