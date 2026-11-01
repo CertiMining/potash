@@ -35,6 +35,11 @@ pub mod cluster;
 pub mod crypto;
 mod fetch;
 mod handoff;
+// **The service manager's readiness and watchdog channel (H-95, issue #300).** A module rather than a
+// re-export: `fetch` already exports a `Refused`, and two types of that name at the crate root would
+// have to be renamed at one of the two call sites to no one's benefit. Callers write
+// `notify::Refused`.
+pub mod notify;
 mod ots;
 #[cfg(feature = "ots")]
 mod promise_receipt;
