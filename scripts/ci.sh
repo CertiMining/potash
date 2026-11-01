@@ -593,8 +593,18 @@ run() {
 # them runs and the summary names any that failed.
 #
 # `fuzz` is deliberately not in this list. ci.yml runs on every push and the fuzz group takes tens of
-# minutes, so it has its own nightly workflow; `all` stays the push pipeline verbatim, which is the
-# only reason the list is worth comparing against ci.yml at all. `thresholds` and `bench` are out for a
+# minutes, so it has its own nightly workflow.
+#
+# **`all` is the push pipeline's groups, in its order, and not the workflow verbatim (H-84, #283).**
+# The stronger claim stood here until 1 November 2026 and an audit disproved it. Two differences
+# remain and neither is a group this list omits. The workflow runs `miri-core` and `miri-log` as
+# separate jobs so they run at once; `all` runs the `miri` group, which runs both in turn and
+# reports one status. And every workflow job provisions itself — `install-rust`, `install-agave`,
+# `install-miri`, `install-cargo-deny`, the Node setup — where `all` takes the machine it is run on
+# as it finds it, which is why a laptop missing a toolchain fails differently from CI.
+#
+# What the comparison is still worth: the list below and the workflow's jobs name the same groups in
+# the same order, so a group added to one and not the other is visible by reading them side by side. `thresholds` and `bench` are out for a
 # different reason: the first measures §4.4a's figures and reports them with the machine named, which is a
 # record to be read rather than a verdict, and the second is Criterion, which reports distributions. Both
 # still fail on a correctness control; neither asserts a performance threshold.
