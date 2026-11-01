@@ -1254,9 +1254,11 @@ Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
 
 **Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
 
-## D-102 and D-119 · INV-PRIM-01 is scoped to this system's own digests
+## D-102 · INV-PRIM-01 is scoped to this system's own digests
 
 **Date:** 25 Sep 2026 · **Units:** E-11 (found it), E-10 (met it again) · **Class:** security necessity, as claim accuracy · **Status:** settled at S9 (owner, 25 Sep 2026)
+
+**This entry is D-102, and it also settles what D-119 later records (corrected 1 Nov 2026).** The heading read "D-102 and D-119", which made one number name two decisions: this scoping ruling and the receipt entry that carries D-119 below. The number belongs to that entry. The receipt side of the defect is recorded there; the scoping of INV-PRIM-01 is recorded here, and it governs both. The owner ruled on 1 November 2026 that the heading drops the second number rather than the later entry being renumbered, so no identifier moves and no reference to D-119 changes meaning. H-80 (#279) found it, after `xtask check-decisions` had reported the record clean: the parser reads the first identifier in a heading and stops, so it had never seen the second.
 
 **The defect, found twice from two directions.** INV-PRIM-01 read "One hash family across the system. No Poseidon, no BLS12-381, no SHA-256. ... Any copy claiming otherwise is wrong and blocks submission." Two constructions the architecture cannot avoid require SHA-256. **E-11's independent TypeScript verifier met it first**, from the address side: a Solana program-derived address and an Anchor account discriminator are SHA-256 by construction, so no verifier can fetch a root without it, and INV-IFACE-01 requires a counterparty to fetch one themselves. **E-10 met it from the receipt side**: an OpenTimestamps receipt commits to SHA-256 of the bytes stamped, because that is the OTS format, and the reference client offers no raw-digest option. The second is the harder instance: a Solana address derivation is at least arguably outside "the system", and a receipt for an epoch root plainly is not.
 
@@ -2084,7 +2086,9 @@ which point it stops being operational and becomes a `CMv1` tag by amendment, wi
 
 **Date:** 31 Oct 2026 · **Unit:** H-67 (issue #246's successor) · **Class:** security necessity · **Status:** settled at S0 (owner, 31 Oct 2026)
 
-**Corrected 1 Nov 2026 (H-83, #282), after the Codex audit of main at `062106e`.** Two things, and neither changes a verdict.
+**Corrected 1 Nov 2026, after the Codex audit of main at `062106e`.** Three things, and none of them changes a verdict: a citation that pointed at nothing (H-82, #281), an exception that could be retired, and four statements of evidence that were wrong (H-83, #282).
+
+**The citation.** This entry cited `D-185`'s rule. No such decision exists, and the highest number this record has issued is D-142. The rule meant — that a new advisory is a decision rather than a line quietly added to `deny.toml` — is **D-18**'s, and D-18 states it at line 185 of this file, which is where the number came from: a line reference written as a decision reference. H-82 (#281) found it, after `xtask check-decisions` had reported no dangling links; it matches four structured forms and an ordinary mention is not one of them.
 
 **One exception is retired, so this entry carries fourteen.** RUSTSEC-2026-0410 against `zstd-sys` is gone. This entry said every fix was a semver-major bump that only upstream could take; that is false for `zstd-sys`, whose advisory record patches at `>= 2.1.2` and which `cargo update -p zstd-sys` moves to 2.1.2 as the latest *compatible* version — a two-line lockfile change. `cargo deny check advisories` is clean without the exception, and `cargo check -p certimining-client --features cluster`, the only build that links zstd, is unaffected. The condition this entry set for 0410, retire when the Solana stack takes a fixed `zstd-sys`, was met and not noticed.
 
@@ -2094,7 +2098,7 @@ which point it stops being operational and becomes a `CMv1` tag by amendment, wi
 
 **What happened.** Fifteen advisories landed against four crates between 23 and 31 October: one against `crypto-bigint`, one against `zstd`, twelve against `zstd-safe` and one against `zstd-sys`. Every fix is a semver-major bump — `crypto-bigint` 0.5.5 to 0.7.6, `zstd` 0.13.3 to 0.14.3, `zstd-safe` 7.3.0 to 8.2.0 — and `cargo update` reports "Locking 0 packages" for all three, because `elliptic-curve 0.13.8` and `solana-account-decoder 4.2.2` pin them. Only upstream can take these. Every open pull request and `main` itself failed the `deny` gate meanwhile.
 
-**Why exceptions rather than a patch.** A `[patch]` forward would break semver against the Solana stack for a gate, which trades a real miscompilation risk for a green tick. Waiting leaves a security gate dark for an unbounded time. D-185's rule that a new advisory is a decision rather than a quiet line is what this entry satisfies.
+**Why exceptions rather than a patch.** A `[patch]` forward would break semver against the Solana stack for a gate, which trades a real miscompilation risk for a green tick. Waiting leaves a security gate dark for an unbounded time. D-18's rule that a new advisory is a decision rather than a quiet line is what this entry satisfies.
 
 **The surface, which is one call.** `crypto-bigint` is linked because Solana's syscall surface declares `k256`; nothing in this workspace calls a secp256k1 operation, and a grep for `secp256k1`, `k256` or `ecdsa` over `crates/` and `programs/` returns nothing. The zstd crates arrive through `solana-account-decoder-client-types` under the **`cluster` feature only** — `default = []`, so the verifier build a counterparty runs never compiles them. Within that feature the whole zstd surface is a single call: `UiAccountData::decode` builds a fresh `zstd::stream::read::Decoder` per account and reads it to end.
 
