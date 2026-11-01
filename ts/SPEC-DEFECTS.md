@@ -24,9 +24,30 @@ unrecoverable**, which is why the re-evaluation they need is nineteen fresh read
 diff. Every other pin this repository carries does resolve: `9088099e…` to `ca3d480`, `e4d211fb…` to
 `8050bfc`, `6763b041…` to `e6c5669`.
 
-The entries below are re-evaluated against **v0.2.12**, SHA-256
-`6763b0413cfdcbc72930b1b72ef78882ae7d562c83bf5ceeaeb493348d0e6b2b`, 996 lines, which is the
-specification as committed and is pinned by `cargo xtask check-record`.
+The entries below are re-evaluated against it. The specification as committed today is **v0.2.13**,
+SHA-256 `4761a5855c38c2692816f37079efaf43d3be8cf0746235160818436c6f71c202`, 1007 lines.
+
+**Where the statuses come from (#255, 1 November 2026).** Every entry below carries a **Status**
+line. They are the verdicts of an isolated context: a directory holding this file and the
+specification and nothing else, with no git, no implementation, no decision record and no indication
+of which entries anyone believed resolved. Its prompt and the file list are recorded on issue #255,
+and its verdicts are transcribed here unedited.
+
+It read **v0.2.12**. v0.2.13 changed E-03, E-09 and RES-07 and nothing else, and the only entry that
+turns on any of them is SD-11, whose note says what changed. The verdicts therefore stand against the
+pinned text above. Section references are given rather than line numbers, because lines moved.
+
+It also found that this ledger is wrong about the current specification in nine places — SD-08
+quoting a withdrawn invariant, SD-18 and SD-14 asserting silence where the document now speaks,
+SD-19 saying the package was not extended when v0.2.5 extended it, and others. Those corrections are
+on #255 and are **not** applied here: the entries record what was found when they were written, and
+#255's sixth criterion is that historical reasoning is preserved rather than silently rewritten.
+
+**That sentence is now checked rather than maintained by hand (#255, H-95).** `cargo xtask
+check-record` reads it and fails when it disagrees with the specification, in the same words and
+by the same parser that already checks `ts/README.md`'s pin. The previous pin here went wrong in
+exactly the way a hand-maintained one does, and nothing caught it for the four versions between
+v0.2.0 and v0.2.12.
 
 SD-01 to SD-13 were found against the first text read, SD-14 to SD-16 against the second, SD-17 and
 SD-18 against the third, SD-19 against the current one. **SD-16 and SD-17 are resolved by the current
@@ -42,6 +63,8 @@ The entries are ordered by how much of the verifier they touch.
 ---
 
 ## SD-01 · §2.5, §1.3, INV-DISC-02 — `payload_uri` cannot be compared against the bytes
+
+**Status: Open.** Decided on §1.3 condition (f), INV-ENC-03, INV-DISC-02. the document still never names the field set INV-DISC-02's comparison covers, and `payload_uri` sits outside the 161-byte preimage the signature covers.
 
 **What was needed.** The set of JSON fields that INV-DISC-02's "fails closed on any disagreement
 between JSON fields and the Borsh preimage" covers.
@@ -76,6 +99,8 @@ and leaves `payload_uri` uncompared. README.md lists it under what the verifier 
 
 ## SD-02 · §1.4, D-60 — "ascending order of submission identifier" does not say which order
 
+**Status: Open.** Decided on §1.4 (D-60), §2.3 `SubmissionId` and `BuiltEpoch.assignment`, INV-ENC-02. `SubmissionId` is `[u8; 16]`, an array, so INV-ENC-02's little-endian rule does not reach it and lexicographic versus little-endian-`u128` ordering remains undecided.
+
 **What was needed.** The order in which real submissions are assigned to slots, because the probe
 is first-free-upward and the winner of a contested slot depends on who was placed first. The order
 therefore decides the root.
@@ -105,6 +130,8 @@ recorded. If the document is amended to say "as a little-endian integer", V-P-06
 
 ## SD-03 · INV-DISC-03 — a verifier cannot recompute flags from a disclosure package
 
+**Status: Open.** Decided on INV-DISC-03, INV-STATE-06, INV-DISC-04. INV-DISC-04 confines `chain.segment` to a leaf digest and the head it produces, so a package still carries no category but its own.
+
 **What was needed.** How a package verifier satisfies "A verifier recomputes flags from the chain
 rather than trusting the supplied value, and a mismatch is reported as a discrepancy".
 
@@ -130,6 +157,8 @@ about.
 ---
 
 ## SD-04 · §2.5, §2.1 — no code is defined for a package whose own fields disagree
+
+**Status: Open.** Decided on §2.1 (D-80), INV-DISC-02, INV-DISC-04. neither invariant names a code for a package-level disagreement, and §2.1's codes attach to §1.3's transition conditions.
 
 **Corrected after review.** This entry previously also claimed that `chain.genesis` is reachable only
 at `seq` 1 and is otherwise not checkable from one package. That was wrong, and it was my error
@@ -167,6 +196,8 @@ is still uncheckable from one package is the **walk** from `genesis` to `prev_he
 
 ## SD-05 · §1.3 — the order between 0x08 and 0x06 inside condition (c)
 
+**Status: Open.** Decided on §1.3, §2.1 (D-80), V-N-04, V-N-06. `0x08` is said to be decided before a verification that in the absent-signature case never runs.
+
 **What was needed.** The code for a record that carries an expected QP key different from its
 `qp_key` *and* no signature at all.
 
@@ -186,6 +217,8 @@ order them: "A key mismatch is 0x08, decided first."
 ---
 
 ## SD-06 · §2.3, §1.6 — the order between 0x17 and 0x07 in `verify_promise`
+
+**Status: Open.** Decided on §2.3 `verify_promise`, §1.6, §2.1 (D-80). the both-fail case between `0x17` and `0x07` is still decided only by prose order.
 
 **What was needed.** The code for a promise that is outside §1.6's policy *and* carries a signature
 that does not verify.
@@ -207,6 +240,8 @@ counts, and V-N-14's is too.
 
 ## SD-07 · §1.1 — "Ed25519 (RFC 8032)" does not pin the verification equation
 
+**Status: Open.** Decided on §1.1, INV-PRIM-02, §2.2 `Verifier`. nothing pins cofactored versus cofactorless verification, non-canonical encodings, or small-order key rejection.
+
 **What was needed.** Whether verification is cofactored or cofactorless, whether non-canonical
 point and scalar encodings are rejected, and whether small-order public keys are refused.
 
@@ -227,6 +262,8 @@ the disagreement cases rather than leaving the choice to each implementer.
 ---
 
 ## SD-08 · INV-PRIM-01 against §2.4 — "No SHA-256" forbids what fetching a root requires
+
+**Status: Resolved in v0.2.0.** Decided on INV-PRIM-01 as rescoped, and its two named exceptions. the invariant is scoped to every digest this system computes, and Solana address and discriminator derivation is named as an exception rather than left to be inferred.
 
 **What was needed.** Which primitive derives the checkpoint address and the account discriminator.
 
@@ -251,6 +288,8 @@ output or promise. The invariant should say "no SHA-256 in any log digest".
 
 ## SD-09 · §2.3 — a proof's height is unbounded when no configured height is supplied
 
+**Status: Open.** Decided on §2.3 `InclusionVerifier`, §1.8, F-05. plain `verify` carries no height input and no stated bound, so nothing says what it does with a representable height below 4.
+
 **What was needed.** What `InclusionVerifier::verify` does with a proof claiming height 20 and
 twenty siblings.
 
@@ -269,6 +308,8 @@ against a fixed `height` field and so does not reach this.
 ---
 
 ## SD-10 · §4.1 — KAT-01 and KAT-02 name vectors that are not in the document or the corpus
+
+**Status: Open.** Decided on §4.1 KAT-01 and KAT-02, §4.2. the named vectors are neither carried nor cited to a retrievable source, so an implementer confined to this document cannot obtain the constants.
 
 **What was needed.** The published Keccak-256 answers for the empty input, a one-byte input, and
 the 135, 136 and 137-byte rate-boundary inputs, and the RFC 8032 §7.1 cases.
@@ -304,6 +345,8 @@ rather than in place of them, as the separate properties they always were.
 
 ## SD-11 · §1.2, E-03 — `TAG_CKPT` is defined, required of a writer, and never used
 
+**Status: Superseded in v0.2.2.** Decided on §1.2's retirement block, and the v0.2.2 changelog. the tag no longer exists and nothing replaced it, so the unreachable-tag defect cannot arise. The reviewer noted that E-03 still required a checkpoint writer, which was the same inconsistency in the opposite direction; **v0.2.13 removed it (H-93, #297)**.
+
 **What was needed.** The checkpoint preimage, since §1.2 declares `TAG_CKPT = b"CMv1CKPT"` and E-03
 requires "domain-tagged, length-prefixed writers for asset, leaf, head, checkpoint, padding, SPI".
 
@@ -321,6 +364,8 @@ from.
 ---
 
 ## SD-12 · §2.5 — `anchor` carries provenance that nothing says how to check
+
+**Status: Open.** Decided on §2.5 `anchor`, INV-DISC-02, V-P-13. INV-DISC-02's verifier duties do not mention `solana_tx` or `solana_slot`, and V-P-13 shows placeholders tolerated without saying whether a conforming verifier must check the block.
 
 **What was needed.** Whether a conforming verifier must check `anchor.solana_tx` and
 `anchor.solana_slot`, and against what.
@@ -342,6 +387,8 @@ README.md lists it under what the verifier does not check.
 
 ## SD-13 · §2.3 — `SignedPromise` has no stated wire encoding, and the vectors carry one
 
+**Status: Resolved in v0.2.0.** Decided on §1.6's promise-transfer and receipt paragraphs, INV-ENC-02, INV-ENC-04. §1.6 fixes the artifact at 161 octets and makes it load-bearing, which is the exact sum of §2.3's seven declared field widths, leaving no layout but Borsh over the declared order.
+
 **What was needed.** The byte layout behind V-P-10's and V-N-14's `encoded` field.
 
 **What the document says.** §1.6 fixes the 73-byte SPI preimage. §2.3 declares the `SignedPromise`
@@ -357,6 +404,8 @@ document should still say it.
 ---
 
 ## SD-14 · §1.4, §2.4, INV-ANCH-01 — nothing relates `published_unix` to the epoch it publishes
+
+**Status: Resolved in v0.2.4.** Decided on §2.4's clock paragraph, V-N-27. `publish_checkpoint` refuses an epoch greater than the clock's day index on the same `Clock::get()` that sets `published_unix`, so `epoch ≤ floor(published_unix / 86400)` for any conforming checkpoint.
 
 **New in v0.1.18**, a branch-local number never released; the text it names is in v0.2.0.
 
@@ -391,6 +440,8 @@ check.
 ---
 
 ## SD-15 · §2.4 — what a reader does with a `LogConfig` no conforming `initialize` could have written
+
+**Status: Open.** Decided on §2.4 `initialize`, INV-ANCH-02, INV-TREE-06. every rule about `start_epoch` binds `initialize`, and nothing addresses a reader holding an account that violates it.
 
 **New in v0.1.18**, a branch-local number never released; the text it names is in v0.2.0.
 
@@ -429,6 +480,8 @@ account no conforming `initialize` could write does exist on devnet, it is reada
 verifier has to decide what to do with it.
 
 ## SD-16 · INV-ANCH-02 — the gap a client must surface cannot be the gap the invariant describes
+
+**Status: Resolved in v0.2.0 (D-106).** Decided on INV-ANCH-02 and its corrected client paragraph. the sentence this entry was raised against is quoted and withdrawn in terms: accepting `last_epoch + 1` and nothing else makes the published range contiguous. The reviewer noted the withdrawn word surviving in E-09 and RES-07; **v0.2.13 removed it (H-94, #298)**.
 
 **RESOLVED by the current text, and kept as a record.** §1.4 now answers it in terms: the failure an
 on-chain read can show is **lag**, `last_epoch` falling behind the current day index; an epoch before
@@ -472,6 +525,8 @@ not rule on batcher failure, because that needs a clock the verifier does not ho
 ---
 
 ## SD-17 · §2.4 — the seeds are named and the address derivation is not
+
+**Status: Resolved in v0.2.0.** Decided on §2.4's program-address derivation and its correction note, V-P-12. the derivation is carried in full with the canonical-bump search and the off-curve requirement, and the program id is named beside both the right and the erroneous address.
 
 **RESOLVED by the current text, and kept as a record.** §2.4 now carries a program-address paragraph
 that states the derivation in full: the hash input `SHA-256( seed₀ ‖ … ‖ seedₙ ‖ bump ‖ program_id ‖
@@ -531,6 +586,8 @@ convention it cites the source.
 
 ## SD-18 · §1.4, §2.4 — a sequence published ahead of the calendar is neither forbidden nor detected
 
+**Status: Resolved in v0.2.4.** Decided on §2.4's clock paragraph, `0x0D`, V-N-27. the program now forbids the state this entry says nothing forbade: a log cannot run ahead at all.
+
 **New.**
 
 **What was needed.** What a client does with a log whose `last_epoch` is greater than the current UTC
@@ -565,6 +622,8 @@ to detect it with.
 ---
 
 ## SD-19 · §2.5, INV-DISC-02 — what one package establishes about a record's place in its chain
+
+**Status: Resolved in v0.2.5.** Decided on §0's segment residual, §2.5's package, INV-DISC-04. both amendments this entry named were made: §0 reports an unestablished position rather than refusing, and the segment is a real optional field.
 
 **New.**
 
