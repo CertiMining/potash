@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Read-only reconciliation of one devnet split-anchoring epoch (D-142).
+//! Read-only reconciliation of one devnet split-anchoring epoch (D-143).
 
 #![forbid(unsafe_code)]
 #![deny(
