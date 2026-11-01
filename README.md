@@ -213,7 +213,7 @@ taken by default.
 | `programs/certimining-checkpoint` | the Anchor program: three instructions, and no others ever |
 | `programs/core-harness` | proves the engine's digests match inside the Solana runtime |
 | `vectors/` | the committed test vectors both implementations check themselves against |
-| `benches/` | §4.4a's performance figures: Criterion distributions, the reported wall-clock measures, and the CI regression band, which **fails** on drift past **15%** where the run's calibration matches a committed runner class, and past **25%** two-sided against a fleet-wide ratio where it matches none (D-141). 15% is derived from 30 CI runs, in which no measure exceeded its baseline by more than 2.4% ([`docs/performance.md`](docs/performance.md)) |
+| `benches/` | §4.4a's performance figures: Criterion distributions, the reported wall-clock measures, and the regression band, which **fails** on drift past **15%** where the run's calibration matches a committed runner class (D-141). **CI gates no wall-clock measure since D-144**, because no CI runner ever matched a class and the fleet-wide fallback it fell to was narrower than the population it covered; the band runs where a class is committed ([`docs/performance.md`](docs/performance.md)) |
 | `fuzz/` | §4.5's five fuzz targets. Its own workspace, outside the main one, and nothing in it ships ([`docs/fuzzing.md`](docs/fuzzing.md)) |
 | `ts/` | the independent TypeScript verifier a counterparty runs, with its own gate ([`ts/README.md`](ts/README.md)) |
 | `demo/` | three browser scenes and a read-only status page that reads devnet ([`demo/README.md`](demo/README.md)) |

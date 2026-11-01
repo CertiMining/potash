@@ -77,8 +77,8 @@ const STALE: [Stale; 9] = [
         why: "bench-band fails on drift past its band since H-47, 22 Oct 2026",
     },
     Stale {
-        needle: "no wall-clock regression gate exists",
-        why: "H-47 restored the band's assertion on 22 Oct 2026; §4.4a records it",
+        needle: "regression gate exists",
+        why: "D-144 took bench-band out of all and out of ci.yml on 1 Nov 2026, so CI gates no wall-clock measure; §4.4a records it",
     },
 ];
 
@@ -97,8 +97,8 @@ const EXEMPT: [Exempt; 2] = [
     },
     Exempt {
         path: "docs/TCU-02_CertiMining_Anchored_Log_v0.1.md",
-        needle: "no wall-clock regression gate exists",
-        why: "the v0.2.3 changelog entry describes that version; v0.2.11's entry and §4.4a carry the current account",
+        needle: "regression gate exists",
+        why: "the v0.2.3 changelog entry describes that version, where no gate existed; v0.2.12's entry and §4.4a carry the current account",
     },
 ];
 

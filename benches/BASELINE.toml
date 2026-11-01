@@ -1,5 +1,13 @@
 # §4.4a's wall-clock measures as the CI runner performs them (E-13, D-132).
 #
+# **CI has no wall-clock gate at present, and these figures gate nothing there (D-144, 1 Nov 2026).**
+# `bench-band` is out of `all` and out of `ci.yml`. It held a runner against figures committed for a
+# runner class, and no CI runner ever matched one: five sampled jobs calibrated 0.9072 to 1.3503 ms
+# against a 2.5% tolerance, so every CI run fell to the fallback below, whose band is narrower than the
+# population it covers. The comparison still exists and still fails on drift; it runs where a class is
+# committed. What stays enforcing in CI is §1.8's compute-unit limits and the TypeScript bound. The
+# series below is kept because it is the measured record and because H-77 may compare against it.
+#
 # **This is not a §4.4a threshold and must not be read as one.** §4.4a carries no wall-clock absolutes
 # at all since D-137, and before that they belonged to the reference machine §4.4a names. A shared runner
 # is slower and noisier than that machine by an amount nobody controls, so asserting fixed numbers there
@@ -142,8 +150,9 @@ fallback_band_percent = 25.0
 # **Run off the runner, this comparison proves nothing, and that is worth stating.** These figures are
 # one machine's. The reference machine is about 1.8x faster, so `scripts/ci.sh bench-band` there measures
 # below the baseline and the comparison means nothing — it would not fire on a machine faster than the
-# one it is calibrated to even if it asserted. It is in `all` because `all` mirrors the push pipeline
-# verbatim, and the run that matters is CI's, whose figures are the series the calibration needs. Nothing
+# one it is calibrated to even if it asserted. It was in `all` because `all` mirrored the push pipeline
+# verbatim; D-144 took it out of both, because the run that was supposed to matter — CI's — never matched
+# a class and so never ran the comparison this file is for. Nothing
 # gates the reference machine either: since D-137, `scripts/ci.sh thresholds` measures §4.4a's figures
 # there and reports them with the machine named.
 #
