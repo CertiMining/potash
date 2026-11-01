@@ -89,13 +89,11 @@ struct Exempt {
     why: &'static str,
 }
 
-const EXEMPT: [Exempt; 1] = [
-    Exempt {
-        path: "docs/DECISIONS.md",
-        needle: "no worker exists",
-        why: "D-117's amendment quotes the sentence it superseded, which is how it records the change",
-    },
-];
+const EXEMPT: [Exempt; 1] = [Exempt {
+    path: "docs/DECISIONS.md",
+    needle: "no worker exists",
+    why: "D-117's amendment quotes the sentence it superseded, which is how it records the change",
+}];
 
 /// This module's own path, skipped because the list above has to be written somewhere.
 const OWN_PATH: &str = "xtask/src/status.rs";
