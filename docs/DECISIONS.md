@@ -2,6 +2,15 @@
 
 Build decisions for CertiMining, numbered from D-03. **D-01 and D-02 are recorded in Appendix B of the spec, [TCU-02](TCU-02_CertiMining_Anchored_Log_v0.1.md#appendix-b--decision-log), and the numbering continues from there.** The process that produces these entries is step S0 in [STANDARD-STEPS.md](STANDARD-STEPS.md).
 
+**Five identifiers named two entries each until 1 November 2026, and none does now (#256, H-85).**
+D-99, D-100, D-101 and D-103 each carried the same body twice, byte for byte, so the second copy of
+each is gone and no reference changes meaning. D-131 carried a reservation block followed by the
+decision that settled it; the reservation is gone and the settled decision keeps the number. The
+owner ruled both on 1 November 2026, after `xtask check-decisions` was built for #256 and the Codex
+audit of main at `062106e` found it admitting any body under a recorded identifier (H-81, #280). The
+gate no longer carries a known-duplicate list: an identifier naming two entries is now a failure with
+nothing to compare it against.
+
 Each entry states the decision, its ground and its class. A security necessity names the property that breaks without it, a cost judgment names what it saves, and a preference is convention or taste. A decision that changes a contract amends TCU-02 in the same pull request.
 
 ## D-03 · The S6 asset-identifier rule is proven by a privacy test
@@ -1196,20 +1205,6 @@ Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
 
 **Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
 
-## D-99 · `payload_uri` is an unauthenticated hint, and the document says so
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to the spec-only pull request (D-103)
-
-**The defect (E-11's SD-01).** §1.3's leaf preimage is 161 bytes and does not contain `payload_uri`. §2.5's package carries it, and INV-DISC-02's comparison therefore cannot reach it. **An issuer can release two packages for one record differing only in the pointer to the estimate, and both verify completely.**
-
-**Decision.** §2.5 and INV-DISC-02 say plainly that `payload_uri` is an unauthenticated hint, that `payload_digest` is the authenticated commitment to the payload, and that a counterparty checks fetched content against that digest rather than trusting the URI it was handed. No digest moves and no construction changes.
-
-**Ground.** The content is committed; only the pointer is not. §1.3 already says the engine resolves no URI and checks no host, so nothing in the system was ever relying on it. What was wrong was leaving a reader to infer that, seventeen days from a deadline, from the absence of a field in a table.
-
-**Rejected.** Putting `payload_uri` in the leaf preimage, which changes every committed digest, KAT-03 and both implementations. A second signature over the package, which is a new construction and new vectors.
-
-**Revisit if** a counterparty workflow needs the URI itself attested. That is a v0.2 leaf change, not a patch.
-
 ## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
 
 **Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
@@ -1221,28 +1216,6 @@ Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
 **Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
 
 **Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
-
-## D-100 · "Ascending order of submission identifier" means lexicographic over the bytes as stored
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
-
-**The defect (E-11's SD-02).** §1.4 says real submissions are assigned in ascending order of submission identifier, and the identifier is `[u8; 16]`. The probe is first-free-upward, so the order decides who wins a contested slot and therefore **decides the root**. Two conforming implementations could produce different roots from one set of submissions. `V-P-06` is lexicographic; D-69's "ordinal counter" and INV-ENC-02's little-endian rule both point at numeric.
-
-**Decision.** Lexicographic over the sixteen bytes as stored, matching the committed vectors and both implementations. **The surprising half is written out rather than left for a reader to hit:** over a little-endian counter this is not ascending by count, because it sorts by the least significant byte first.
-
-**Ground.** INV-ENC-02 governs how integers are written into preimages, not how an opaque array sorts. The order only has to be deterministic — `slot_index` is pseudorandom under `k_e` regardless (INV-TREE-03) — so what matters is that both implementations agree, and they do.
-
-**Rejected.** Little-endian `u128`, which would change `V-P-06`'s root and every vector whose assignment depends on ordering. Leaving the vectors as the contract, which is not available: a third implementer reads the document.
-
-## D-101 · Flags are recomputed only by a holder who has the chain
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** security necessity · **Status:** settled (owner, 26 Sep 2026); amendment deferred to D-103's pull request
-
-**The defect (E-11's SD-03).** INV-DISC-03 says a verifier recomputes flags from the chain rather than trusting the supplied value. Bit 0 depends on whether any *earlier* record in the chain carried category 1 or 2; bit 1 on the *previous* record's category. §2.5's package carries one record. The invariant asked for a computation its own inputs make impossible.
-
-**Decision.** A verifier recomputes flags when it holds the chain context the computation needs, reports them as not recomputable when it does not, and **never refuses a package over a flag** either way.
-
-**Rejected.** Adding the two inputs to §2.5's package, which would tell a recipient the category of a record they were not disclosed — an INV-DISC-01 question needing its own analysis rather than a line in this one. Dropping the recomputation requirement entirely, which would make flags metadata nobody checks.
 
 ## D-101 · Flags are recomputed only by a holder who has the chain
 
@@ -1271,16 +1244,6 @@ Both ride in this unit's pull request as **v0.1.16**, per the S0 rule.
 **Corrected 29 Sep 2026: an earlier version of this entry said neither output "enters a preimage of ours", and that is false.** `receipt_digest = Keccak256(TAG_RCPT ‖ len(receipt) ‖ receipt)` hashes the whole receipt, and a receipt contains its own SHA-256 start digest, so that digest is literally inside a Keccak preimage this system computes — `crates/certimining-client/src/ots.rs`, `receipt_digest`, which takes the receipt bytes entire. A review found it.
 
 **What the scoping actually says, restated so it is true.** This system computes no SHA-256 of its own and derives no digest from one. It commits to external artefacts **opaquely**: `receipt_digest` hashes a receipt as bytes, without parsing it, so what is inside those bytes — a start digest, a merkle path, an attestation — is not a field this system reads or reasons about. That is a weaker and accurate statement of the same intent: INV-PRIM-01 exists to stop mixed hash families inside the chain, the tree and the preimages, and hashing an opaque blob does not mix families in the sense that matters. Claiming nothing external ever reaches a preimage was both untrue and stronger than the invariant needs.
-
-## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
-
-**Date:** 26 Sep 2026 · **Unit:** E-11 · **Class:** cost judgment · **Status:** settled (owner, 26 Sep 2026)
-
-**Decision.** D-99, D-100 and D-101 are amended into TCU-02 in a **spec-only pull request after both Codex rounds**, so the commits under review stay the commits under review.
-
-**And branches stop claiming version numbers.** Three branches were amending one document at once and two of them claimed v0.1.18. Each branch's amendment notes now say "on this branch, unmerged", the version line says `0.1.17 plus unmerged amendments on this branch`, and **the spec-only pull request assigns the next linear number to everything merged since, in merge order** — one renumbering pass, done once, rather than a running collision nobody owns.
-
-**Ground.** A version number is a claim about a document's identity, and a claim two siblings both make is worth nothing to a reader. The numbering is linear because the merged history is; the branches are not, so they do not get to number.
 
 ## D-103 · The amendments land in one spec-only pull request, which also assigns the version numbers
 
@@ -1690,10 +1653,6 @@ bringing it at the time was the obligation, and a review had to surface it inste
 **Where it landed.** `demo/fixtures/README.md`, which `demo/fixtures/MANIFEST.sha256` covers, and the demo's footer and Scene 3. D-127 carries the reason. Run `node --test "demo/test/*.test.mjs"` — the manifest test covers the sidecar as a fourth file.
 
 **And the process finding the owner attached to it.** *The right call was made; the miss was not bringing the collision at the time.* The collision was found while building and resolved without putting it to him, and a review surfaced it instead. D-127's amendment records that.
-
-## D-131 · This entry is reserved
-
-**Date:** 30 Sep 2026 · **Status:** reserved so that D-131 and D-132, put to the owner at E-12's S0, land on their own numbers rather than on numbers this file has already used.
 
 ## D-131 · Fuzzing is cargo-fuzz on the toolchain Miri already pins
 
