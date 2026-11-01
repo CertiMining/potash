@@ -2084,7 +2084,7 @@ which point it stops being operational and becomes a `CMv1` tag by amendment, wi
 
 **Date:** 31 Oct 2026 · **Unit:** H-67 (issue #246's successor) · **Class:** security necessity · **Status:** settled at S0 (owner, 31 Oct 2026)
 
-**Corrected, 1 Nov 2026.** This entry cited "D-185's rule". There is no D-185 and the numbering has never passed D-144. The rule meant — that a new advisory is a decision rather than a line quietly added to `deny.toml` — is **D-18**'s, and D-18 states it at line 185 of this file, which is where the number came from: a line reference written as a decision reference. H-82 (#281) found it, after `xtask check-decisions` had reported no dangling links; it matches four structured forms and an ordinary mention is not one of them.
+**Corrected, 1 Nov 2026.** This entry cited `D-185`'s rule. No such decision exists, and the highest number this record has issued is D-142. The rule meant — that a new advisory is a decision rather than a line quietly added to `deny.toml` — is **D-18**'s, and D-18 states it at line 185 of this file, which is where the number came from: a line reference written as a decision reference. H-82 (#281) found it, after `xtask check-decisions` had reported no dangling links; it matches four structured forms and an ordinary mention is not one of them.
 
 **Decision (the owner's).** One exception per advisory ID in `deny.toml`, each carrying the dependency path, whether the vulnerable code is reached in our use with the evidence for that answer, an expiry of 31 December 2026, and the condition that retires it.
 
