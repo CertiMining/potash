@@ -11,7 +11,10 @@
 //! on a pull request containing no Rust at all, and the owner made it report-only and named the way
 //! back — twenty CI runs, the band set from the measured spread, the derivation recorded, the
 //! assertion restored. Thirty runs were collected on 22 October and `BASELINE.toml` carries what they
-//! show. **So a wall-clock regression gate exists in this repository again**, at 15% rather than 50%.
+//! show, at 15% rather than 50%. **That gate left CI on 1 November 2026 (D-144), and this comparison
+//! now runs only where a runner class is committed.** No CI runner ever matched one, so every CI run
+//! took the fallback below, whose band is narrower than the population it covers. It still fails on
+//! drift where it runs; CI's wall-clock half is simply not gated.
 //!
 //! **A pass on a fast runner means nothing, and this says so.** GitHub's fleet is mixed: 8 of those 30
 //! runs came in at 0.59 to 0.64 times the baseline, where no code change could have pushed a measure
