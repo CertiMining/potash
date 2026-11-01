@@ -528,18 +528,18 @@ fn wall_clock_measures_are_compared_against_the_baseline() {
     }
 }
 
-/// The matched path: a baseline measured on this machine's own class, at the tighter band.
-fn against_its_own_class(class: &Class, measured: &[(&str, f64)], band: f64, tolerance: f64) {
-    println!(
-        "band: calibration selects [class.{}], whose own is {:.4} ms — within {tolerance}%",
-        class.name, class.calibration_ms
-    );
-
-    let mut missing: Vec<String> = Vec::new();
-    let mut over: Vec<String> = Vec::new();
+/// The matched path's verdict, kept apart from its assertions for the reason `fleet_verdict` gives
+/// (H-68, issue #249): a conclusion reachable only through a panic cannot be tested, and this path's
+/// sensitivity is the thing the issue asks to be demonstrated rather than asserted.
+///
+/// `under` is always empty here. The class band is one-sided: a measure below its class's baseline is
+/// the machine being quick, and the baseline was taken on that machine's own class, so there is no
+/// second cause to separate out as there is on the fleet path.
+fn class_verdict(class: &Class, measured: &[(&str, f64)], band: f64, report: bool) -> Verdict {
+    let mut out = Verdict::default();
     for (name, now) in measured {
         match class.measures.iter().find(|(k, _)| k == name) {
-            None => missing.push(format!("{name} = {now:.4}")),
+            None => out.missing.push(format!("{name} = {now:.4}")),
             Some((_, was)) => {
                 let limit = was * (1.0 + band / 100.0);
                 // **Finite was necessary and not sufficient (PR #59, round four).** `f64::MAX` passes
@@ -553,9 +553,11 @@ fn against_its_own_class(class: &Class, measured: &[(&str, f64)], band: f64, tol
                      unchecked",
                     class.name
                 );
-                println!("{name}: {now:.4} ms, baseline {was:.4} ms, limit {limit:.4} ms");
+                if report {
+                    println!("{name}: {now:.4} ms, baseline {was:.4} ms, limit {limit:.4} ms");
+                }
                 if now > &limit {
-                    over.push(format!(
+                    out.over.push(format!(
                         "{name}: {now:.4} ms against a baseline of {was:.4} ms, which is more than \
                          {band}% above it"
                     ));
@@ -563,6 +565,21 @@ fn against_its_own_class(class: &Class, measured: &[(&str, f64)], band: f64, tol
             }
         }
     }
+    out
+}
+
+/// The matched path: a baseline measured on this machine's own class, at the tighter band.
+fn against_its_own_class(class: &Class, measured: &[(&str, f64)], band: f64, tolerance: f64) {
+    println!(
+        "band: calibration selects [class.{}], whose own is {:.4} ms — within {tolerance}%",
+        class.name, class.calibration_ms
+    );
+
+    let Verdict {
+        missing,
+        over,
+        under: _,
+    } = class_verdict(class, measured, band, true);
 
     assert!(
         missing.is_empty(),
@@ -906,4 +923,183 @@ fn a_machine_below_the_fleets_ratio_range_reads_the_same_as_a_perturbation() {
         !v.under.is_empty(),
         "a machine outside the fleet's relation lands below the floor: {v:?}"
     );
+}
+
+// ------------------------------------ H-68 (issue #249): the fleet, measured rather than asserted
+
+/// **The run that left the fleet range on `main`**, run 40042151956, kept apart from
+/// `FLEET_READINGS` because the committed ratios were derived before it and do not cover it.
+///
+/// Its raw measures are ordinary — the chain walk sits inside the 7.75 to 12.76 ms the fleet has
+/// shown and the epoch root inside 0.2137 to 0.3640 — so this is not a regression. What is unusual is
+/// the calibration at 1.1028 ms, low relative to them: a machine whose Ed25519 is fast relative to
+/// its hashing, which is the opposite end of the same axis as the reference laptop.
+#[cfg(test)]
+const UNCOVERED_READING: (f64, f64, f64, f64) = (1.1028, 12.5292, 0.3549, 0.0040);
+
+/// A class block, for the tests that exercise the matched path without a wall clock.
+#[cfg(test)]
+fn class_of(name: &str, calibration_ms: f64, measures: &[(&str, f64)]) -> Class {
+    Class {
+        name: name.to_string(),
+        calibration_ms,
+        measures: measures
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), *v))
+            .collect(),
+    }
+}
+
+/// **What the gate does with the run that turned `main` red, asserted so it is a fact and not a
+/// memory.** Two of the three measures leave the 25% range and one does not. This test records the
+/// open condition rather than papering over it, and it has to change when #249's remedy lands —
+/// which is the point of writing it down.
+#[test]
+fn the_reading_that_turned_main_red_is_recorded_with_what_the_gate_says_of_it() {
+    let (cal, measured) = reading(UNCOVERED_READING);
+    let v = fleet_verdict(cal, &measured, 25.0, &fleet(), false);
+    assert!(
+        v.missing.is_empty() && v.under.is_empty(),
+        "nothing is missing and nothing is below the floor: {v:?}"
+    );
+    assert_eq!(v.over.len(), 2, "two measures leave the range: {v:?}");
+    assert!(v.over[0].contains("chain_walk_hash_chain_only"));
+    assert!(v.over[1].contains("epoch_root_256_leaves"));
+}
+
+/// And by how much, because "it failed" and "it failed by a tenth of a percent" are different facts
+/// and only the second says whether the population or the band is wrong.
+#[test]
+fn the_uncovered_reading_leaves_the_range_by_margins_worth_naming() {
+    let (cal, measured) = reading(UNCOVERED_READING);
+    let margins: Vec<(String, f64)> = measured
+        .iter()
+        .map(|(name, now)| {
+            let ratio = fleet()
+                .into_iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, r)| r)
+                .unwrap_or(f64::NAN);
+            ((*name).to_string(), (now / cal) / (ratio * 1.25) - 1.0)
+        })
+        .collect();
+    // chain_walk is barely over, epoch_root is the one genuinely outside, inclusion is inside.
+    assert!(
+        margins[0].1 > 0.0 && margins[0].1 < 0.005,
+        "chain_walk over by under half a percent: {margins:?}"
+    );
+    assert!(
+        margins[1].1 > 0.02 && margins[1].1 < 0.04,
+        "epoch_root over by two to four percent: {margins:?}"
+    );
+    assert!(margins[2].1 < 0.0, "inclusion is inside: {margins:?}");
+}
+
+/// **The matched path's sensitivity, seeded on both sides of its own band.** A measure 15% above its
+/// class's baseline is the most that passes; past that it is reported.
+#[test]
+fn the_matched_path_rejects_at_fifteen_percent_and_not_before() {
+    let class = class_of("under-test", 1.0, &[("chain_walk_hash_chain_only", 10.0)]);
+    let just_inside = vec![("chain_walk_hash_chain_only", 10.0 * 1.1499)];
+    let just_outside = vec![("chain_walk_hash_chain_only", 10.0 * 1.1501)];
+    assert!(
+        class_verdict(&class, &just_inside, 15.0, false)
+            .over
+            .is_empty(),
+        "14.99% above the baseline is inside the band"
+    );
+    assert_eq!(
+        class_verdict(&class, &just_outside, 15.0, false).over.len(),
+        1,
+        "15.01% above the baseline is a regression"
+    );
+}
+
+/// **The fallback path's sensitivity, seeded the same way**, at its own wider band.
+#[test]
+fn the_fallback_path_rejects_at_twenty_five_percent_and_not_before() {
+    let ratio = fleet()
+        .into_iter()
+        .find(|(k, _)| k == "chain_walk_hash_chain_only")
+        .map(|(_, r)| r)
+        .unwrap_or(f64::NAN);
+    let cal = 1.0;
+    let just_inside = vec![("chain_walk_hash_chain_only", ratio * 1.2499)];
+    let just_outside = vec![("chain_walk_hash_chain_only", ratio * 1.2501)];
+    assert!(
+        fleet_verdict(cal, &just_inside, 25.0, &fleet(), false)
+            .over
+            .is_empty(),
+        "24.99% above the fleet ratio is inside the band"
+    );
+    assert_eq!(
+        fleet_verdict(cal, &just_outside, 25.0, &fleet(), false)
+            .over
+            .len(),
+        1,
+        "25.01% above the fleet ratio is a regression"
+    );
+}
+
+/// A class baseline the file does not carry is reported, never skipped: a skipped row passes
+/// unchecked, which is the defect this file has failed on since it was written.
+#[test]
+fn a_class_with_no_baseline_for_a_measure_reports_it() {
+    let class = class_of("under-test", 1.0, &[("chain_walk_hash_chain_only", 10.0)]);
+    let measured = vec![
+        ("chain_walk_hash_chain_only", 10.0),
+        ("epoch_root_256_leaves", 0.3),
+    ];
+    let v = class_verdict(&class, &measured, 15.0, false);
+    assert_eq!(v.missing.len(), 1, "{v:?}");
+    assert!(v.missing[0].contains("epoch_root_256_leaves"));
+}
+
+/// **A degenerate calibration cannot be divided by, and the fleet path says so rather than producing
+/// an infinity that clears every limit.** Zero is the case that matters: `x / 0.0` is infinity in
+/// floating point, not a panic, and infinity is above any upper bound — so it would read as a
+/// regression rather than as an unusable observation, which is the wrong answer loudly.
+#[test]
+fn a_zero_calibration_does_not_silently_become_an_infinite_quotient() {
+    let measured = vec![("chain_walk_hash_chain_only", 10.0)];
+    let v = fleet_verdict(0.0, &measured, 25.0, &fleet(), false);
+    assert_eq!(
+        v.over.len(),
+        1,
+        "an infinite quotient is reported, not passed: {v:?}"
+    );
+    assert!(v.under.is_empty());
+}
+
+/// **The fixture constants the rows name, checked without timing anything.** `HEIGHT` is a benchmark
+/// constant and a review once changed it from 8 to 4, leaving the band timing a 16-leaf build under a
+/// row called `epoch_root_256_leaves`. The walk asserts these before it times anything; this asserts
+/// them without timing at all, so the check survives a run that never reaches the measurement.
+#[test]
+fn the_fixture_constants_are_the_ones_the_rows_name() {
+    assert_eq!(HEIGHT, 8, "§4.4a's figures are at the deployed height");
+    assert_eq!(RECORDS, 10_000, "the chain-walk row is over 10,000 records");
+    assert_eq!(1usize << HEIGHT, 256, "the epoch row names 256 leaves");
+}
+
+/// **Every profile the fleet has shown, in one place, with which band each needs.** The first seven
+/// are inside 25%; the eighth is not, and that is the subject of #249. A reader checking whether the
+/// population has been characterised should not have to assemble this from run logs.
+#[test]
+fn the_observed_population_is_recorded_in_full() {
+    let mut inside = 0;
+    let mut outside = 0;
+    for r in FLEET_READINGS.into_iter().chain([UNCOVERED_READING]) {
+        let (cal, measured) = reading(r);
+        if fleet_verdict(cal, &measured, 25.0, &fleet(), false)
+            .over
+            .is_empty()
+        {
+            inside += 1;
+        } else {
+            outside += 1;
+        }
+    }
+    assert_eq!(inside, 7, "the seven the ratios were derived from");
+    assert_eq!(outside, 1, "the one that turned main red, still outside");
 }
