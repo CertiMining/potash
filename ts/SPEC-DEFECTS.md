@@ -11,8 +11,22 @@ document says, the readings available, and which vector or invariant forced the 
 **Which text.** The version label on `spec/TCU-02_CertiMining_Anchored_Log_v0.1.md` has moved between
 rounds (0.1.16, then 0.1.18 — both **branch-local numbers, never released, superseded by v0.2.0**),
 so the document
-is identified here by content: every entry below was last checked against the file whose SHA-256 is
-`3e59f5ace0d70616df88d51f7bd7f39f78636c76b08c9b93027997c0e8bb90b7`, 754 lines.
+is identified here by content.
+
+**Re-pinned 1 November 2026 to the current specification, because the previous pin named a file that
+does not exist (#255, H-92).** This paragraph read: *last checked against the file whose SHA-256 is
+`3e59f5ace0d70616df88d51f7bd7f39f78636c76b08c9b93027997c0e8bb90b7`, 754 lines*. That digest matches no
+revision of `docs/TCU-02_CertiMining_Anchored_Log_v0.1.md` in this repository's history, it appears in
+no blob in the object graph at all, and no revision of that path was ever 754 lines — the counts run
+527 to 996, with the nearest neighbours at 744 and 736. No other path has ever held a TCU-02
+specification, so it is not a rename. **The bytes the entries below were checked against are therefore
+unrecoverable**, which is why the re-evaluation they need is nineteen fresh readings rather than a
+diff. Every other pin this repository carries does resolve: `9088099e…` to `ca3d480`, `e4d211fb…` to
+`8050bfc`, `6763b041…` to `e6c5669`.
+
+The entries below are re-evaluated against **v0.2.12**, SHA-256
+`6763b0413cfdcbc72930b1b72ef78882ae7d562c83bf5ceeaeb493348d0e6b2b`, 996 lines, which is the
+specification as committed and is pinned by `cargo xtask check-record`.
 
 SD-01 to SD-13 were found against the first text read, SD-14 to SD-16 against the second, SD-17 and
 SD-18 against the third, SD-19 against the current one. **SD-16 and SD-17 are resolved by the current
