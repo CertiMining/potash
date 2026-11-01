@@ -2,7 +2,7 @@
 //! Status statements about the worker and the regression band, against what the code does (#254).
 //!
 //! **What happened.** Nine sentences across eight files said the OpenTimestamps worker did not exist,
-//! or that `bench-band` reported drift without failing on it. Each was true when written and false by
+//! or that `bench-band` reported drift "without failing on it". Each was true when written and false
 //! 23 October 2026: `anchor-b-worker` was committed on 20 October, `batcher-handoff` on 22 October,
 //! and H-47 restored the band's failure on the same day. They were found by reading files one at a
 //! time, which is why five survived the first pass — `README.md` denied the worker on a head where
@@ -83,9 +83,16 @@ const STALE: [Stale; 9] = [
 ];
 
 /// An occurrence that is correct where it stands.
+///
+/// **It records how many, because covering "every occurrence" fails open (H-79, #278).** The
+/// exemption used to be keyed on path and needle alone, so a *new* false sentence added to an
+/// exempt file inherited the exemption and the gate stayed green. A count turns the exemption into
+/// a statement about a known text rather than a licence for that file.
 struct Exempt {
     path: &'static str,
     needle: &'static str,
+    /// Bare occurrences this records. One more is a new claim, not this one.
+    occurrences: usize,
     why: &'static str,
 }
 
@@ -93,17 +100,56 @@ const EXEMPT: [Exempt; 2] = [
     Exempt {
         path: "docs/DECISIONS.md",
         needle: "no worker exists",
+        occurrences: 1,
         why: "D-117's amendment quotes the sentence it superseded, which is how it records the change",
     },
     Exempt {
         path: "docs/TCU-02_CertiMining_Anchored_Log_v0.1.md",
         needle: "regression gate exists",
+        occurrences: 1,
         why: "the v0.2.3 changelog entry describes that version, where no gate existed; v0.2.12's entry and §4.4a carry the current account",
     },
 ];
 
-/// This module's own path, skipped because the list above has to be written somewhere.
+/// This module's own path. Only the two lists above are skipped in it, not the whole file.
+///
+/// **Skipping the file hid anything written in it (H-78, #277).** The lists have to be written
+/// somewhere and a needle quoted in a list is indistinguishable from a needle used in prose, which
+/// is the whole of the reason; it is not a reason to stop reading the other three hundred lines. An
+/// ordinary refactor that moved documentation into this file used to inherit the exclusion.
 const OWN_PATH: &str = "xtask/src/status.rs";
+
+/// Whether a line of this module's own source is inside one of the two lists.
+fn inside_a_list(path: &str, text: &str, number: usize) -> bool {
+    if path != OWN_PATH {
+        return false;
+    }
+    let mut depth = 0usize;
+    for (at, line) in text.lines().enumerate() {
+        if line.starts_with("const STALE:") || line.starts_with("const EXEMPT:") {
+            depth = 1;
+        } else if depth > 0 && line.starts_with("];") {
+            if at == number {
+                return true;
+            }
+            depth = 0;
+        }
+        if at == number {
+            return depth > 0;
+        }
+    }
+    false
+}
+
+/// Whether the match at `at` sits inside a quoted or backticked span on its line.
+///
+/// **A needle named is not a needle used (H-79, #278).** `The sentence "no worker exists" became
+/// false on 20 October 2026` is true, and the gate used to condemn it. Prose that means the claim
+/// writes it bare, which is what every real occurrence in this repository does.
+fn is_named_not_used(line: &str, at: usize) -> bool {
+    let before = &line[..at];
+    before.matches('"').count() % 2 == 1 || before.matches('`').count() % 2 == 1
+}
 
 /// Every file a reader could meet: tracked, plus untracked and not ignored.
 ///
@@ -147,66 +193,83 @@ fn exempted(path: &str, needle: &str) -> Option<&'static Exempt> {
 /// What the gate found: lines no exemption covers, and exemptions that matched nothing.
 fn findings(root: &Path) -> (Vec<String>, Vec<String>, usize) {
     let mut unrecorded = Vec::new();
-    let mut used = vec![false; EXEMPT.len()];
+    let mut problems = Vec::new();
+    let mut seen = vec![0usize; EXEMPT.len()];
     let mut covered = 0usize;
 
     for path in surface(root) {
-        if path == OWN_PATH {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(root.join(&path)) else {
-            // Not UTF-8, so it carries no sentence a reader reads.
-            continue;
+        // **A file that cannot be read is reported, not skipped (H-78, #277).** Every read error
+        // used to take the same branch as success, so a sentence in a submodule, behind a
+        // permission, or in a file holding one non-UTF-8 byte was indistinguishable from no
+        // sentence at all. Bytes are decoded lossily, which costs nothing on text and means a
+        // binary file is scanned and finds nothing rather than being waved through.
+        let bytes = match std::fs::read(root.join(&path)) {
+            Ok(b) => b,
+            Err(err) => {
+                problems.push(format!(
+                    "{path} could not be read, so nothing is known about it: {err}"
+                ));
+                continue;
+            }
         };
+        let text = String::from_utf8_lossy(&bytes);
         let lower = text.to_lowercase();
         for stale in &STALE {
             if !lower.contains(stale.needle) {
                 continue;
             }
             for (number, line) in text.lines().enumerate() {
-                if !line.to_lowercase().contains(stale.needle) {
+                if inside_a_list(&path, &text, number) {
                     continue;
                 }
-                match exempted(&path, stale.needle) {
-                    Some(e) => {
-                        let at = EXEMPT
-                            .iter()
-                            .position(|x| std::ptr::eq(x, e))
-                            .expect("in EXEMPT");
-                        used[at] = true;
-                        covered += 1;
+                let lowered = line.to_lowercase();
+                let mut from = 0;
+                while let Some(found) = lowered[from..].find(stale.needle) {
+                    let at = from + found;
+                    from = at + stale.needle.len();
+                    if is_named_not_used(line, at) {
+                        continue;
                     }
-                    None => unrecorded.push(format!(
-                        "{path}:{} says \"{}\", and {}\n             {}",
-                        number + 1,
-                        stale.needle,
-                        stale.why,
-                        line.trim()
-                    )),
+                    match exempted(&path, stale.needle) {
+                        Some(e) => {
+                            let index = EXEMPT
+                                .iter()
+                                .position(|x| std::ptr::eq(x, e))
+                                .expect("in EXEMPT");
+                            seen[index] += 1;
+                            covered += 1;
+                        }
+                        None => unrecorded.push(format!(
+                            "{path}:{} says \"{}\", and {}\n             {}",
+                            number + 1,
+                            stale.needle,
+                            stale.why,
+                            line.trim()
+                        )),
+                    }
                 }
             }
         }
     }
 
-    let stale_exemptions = used
-        .iter()
-        .enumerate()
-        .filter(|(_, hit)| !**hit)
-        .map(|(at, _)| {
-            let e = &EXEMPT[at];
-            format!(
-                "{} no longer says \"{}\", so this exemption records nothing: {}",
-                e.path, e.needle, e.why
-            )
-        })
-        .collect();
+    // An exemption states how many bare occurrences it covers. Fewer means it records nothing;
+    // more means a sentence arrived that nobody looked at (H-79, #278).
+    for (at, e) in EXEMPT.iter().enumerate() {
+        if seen[at] == e.occurrences {
+            continue;
+        }
+        problems.push(format!(
+            "{} has {} bare occurrence(s) of \"{}\" and this exemption records {}: {}",
+            e.path, seen[at], e.needle, e.occurrences, e.why
+        ));
+    }
 
-    (unrecorded, stale_exemptions, covered)
+    (unrecorded, problems, covered)
 }
 
 /// The gate. Fails on an unrecorded occurrence and on an exemption that matched nothing.
 pub fn check_status(root: &Path) {
-    let (unrecorded, stale_exemptions, covered) = findings(root);
+    let (unrecorded, problems, covered) = findings(root);
     let mut failed = false;
 
     if !unrecorded.is_empty() {
@@ -223,9 +286,9 @@ pub fn check_status(root: &Path) {
         failed = true;
     }
 
-    if !stale_exemptions.is_empty() {
-        eprintln!("status: {} stale exemption(s):", stale_exemptions.len());
-        for line in &stale_exemptions {
+    if !problems.is_empty() {
+        eprintln!("status: {} exemption or read problem(s):", problems.len());
+        for line in &problems {
             eprintln!("  {line}");
         }
         failed = true;
@@ -312,6 +375,66 @@ mod tests {
         }
         for e in &EXEMPT {
             assert!(!e.why.trim().is_empty(), "{} has no reason", e.path);
+        }
+    }
+
+    /// H-79 (#278). A sentence that names a needle in order to say it became false is true, and
+    /// the gate used to condemn it.
+    #[test]
+    fn a_needle_named_in_quotes_or_backticks_is_not_a_claim() {
+        let line = r#"The sentence "no worker exists" became false on 20 October 2026."#;
+        let at = line.find("no worker exists").expect("present");
+        assert!(is_named_not_used(line, at));
+
+        let span = "The needle `no worker exists` is in the list.";
+        let at = span.find("no worker exists").expect("present");
+        assert!(is_named_not_used(span, at));
+    }
+
+    /// The same needle written bare is the claim itself, and still fails.
+    #[test]
+    fn a_needle_used_bare_is_a_claim() {
+        let line = "No worker exists in this repository.";
+        let at = line
+            .to_lowercase()
+            .find("no worker exists")
+            .expect("present");
+        assert!(!is_named_not_used(line, at));
+    }
+
+    /// H-78 (#277). Only the two lists are skipped in this module, not every line of it. The old
+    /// exclusion was the whole file, so anything written here was invisible.
+    #[test]
+    fn only_the_two_lists_are_skipped_in_this_module() {
+        let text = "a\nconst STALE: [Stale; 1] = [\n    needle,\n];\nb\n";
+        assert!(
+            !inside_a_list(OWN_PATH, text, 0),
+            "line above the list is read"
+        );
+        assert!(
+            inside_a_list(OWN_PATH, text, 2),
+            "a line in the list is skipped"
+        );
+        assert!(
+            !inside_a_list(OWN_PATH, text, 4),
+            "line below the list is read"
+        );
+        assert!(
+            !inside_a_list("docs/performance.md", text, 2),
+            "no other file has lists to skip"
+        );
+    }
+
+    /// H-79 (#278). An exemption that records nothing cannot fail open on a count of zero.
+    #[test]
+    fn every_exemption_records_how_many_it_covers() {
+        for e in &EXEMPT {
+            assert!(
+                e.occurrences > 0,
+                "{} records no occurrence of {:?}",
+                e.path,
+                e.needle
+            );
         }
     }
 }
