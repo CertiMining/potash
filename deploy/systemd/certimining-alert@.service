@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# What OnFailure= reaches when a supervised unit stops being restarted (H-95, issue #300).
+#
+# This is the `RepeatedRefusal` emitter. `certimining-anchor-b-worker.service` names it as
+# `certimining-alert@%n.service`, so `%i` here is the failed unit's full name — `%n` expands to the
+# name including its suffix, which is why the instance is used directly and not suffixed again.
+#
+# **It is reached once, not per refusal.** With Restart=on-failure the worker's unit goes to
+# `auto-restart` between attempts and only enters `failed` when StartLimitBurst is reached, which is
+# three refusals inside StartLimitIntervalSec. That is the threshold `Thresholds::DEPLOYED` carries as
+# `consecutive_refusals: 3`.
+#
+# **Replace ExecStart with your pager.** What ships here writes the failed unit's state and its last
+# refusal into the journal under its own identifier, so the condition is recorded on a host with no
+# paging configured rather than silently dropped. It is deliberately not a page: this repository does
+# not own anyone's on-call integration, and committing a webhook or a mail command would put a
+# deployment's own configuration into a public repository (R1).
+#
+# A refusal is not transient. `docs/RUNBOOK-WORKER-RECOVERY.md` names what each one means; the worker
+# stops rather than acting on a state it must not act on, so the log is intact and waiting, not
+# damaged.
+
+[Unit]
+Description=CertiMining alert for %i
+# Without this a failure of the alert itself would try to alert about the alert.
+OnFailure=
+
+[Service]
+Type=oneshot
+
+# **Deliberately one command with no shell.** An `ExecStart` that fails to parse leaves this unit
+# never running, and `OnFailure=` reaching a unit that does nothing is the failure this whole issue
+# was about — an instrument that passes by looking at nothing. A pipeline through `/bin/sh -c` with
+# quoting and line continuations is the kind of line that breaks silently, so it is not used here.
+# `systemd-cat` runs the program and tags its output, which puts one legible error-level entry in the
+# journal under its own identifier.
+#
+# The refusal itself is already in the journal: the worker prints it before exiting, and
+# `journalctl -u %i -n 40` shows it. The runbook says to read that, so this does not duplicate it.
+ExecStart=/usr/bin/systemd-cat -t certimining-alert -p err /usr/bin/printf '%%s\n' "RepeatedRefusal: %i reached its start limit and is no longer being restarted. Read its last refusal with: journalctl -u %i -n 40. See RUNBOOK-WORKER-RECOVERY.md."
+
+# No [Install]: this is reached by the worker unit's OnFailure= and is not enabled on its own. A
+# template instance has nothing to install.

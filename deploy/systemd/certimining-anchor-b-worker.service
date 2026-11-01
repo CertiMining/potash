@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# The anchor-B worker, supervised (H-95, issue #300).
+#
+# Two of the five conditions `certimining_client::alert::Alert` names are facts about this process
+# rather than about the log, and cannot honestly be raised from inside it: a live process cannot
+# report its own silence, and a process that exits on its first refusal cannot count three in a row.
+# This unit is where those two are raised. The worker raises the other three itself, on the journal.
+#
+#   ProcessSilent    <- WatchdogSec below, fed by the worker's sd_notify each cycle
+#   RepeatedRefusal  <- Restart=on-failure with StartLimitBurst, then OnFailure
+#   PublicationMissed, SequenceLag, ReceiptUnconfirmed  <- the worker, "ALERT …" on stderr
+#
+# `docs/RUNBOOK-WORKER-RECOVERY.md` maps each of the five to where it is raised and what to do.
+#
+# Devnet and local staging only. Nothing here deploys or upgrades a program, and the worker neither
+# builds epoch trees nor reads k_master (D-139).
+
+[Unit]
+Description=CertiMining anchor-B worker (devnet)
+Documentation=file:/usr/share/doc/certimining/RUNBOOK-WORKER-RECOVERY.md
+After=network-online.target
+Wants=network-online.target
+
+# **RepeatedRefusal, and the reason this is a burst rather than a per-failure hook.** A refusal makes
+# `run` return and the process exit non-zero. With Restart=on-failure the unit then goes to
+# `auto-restart` and not to `failed`, so OnFailure does *not* fire on each refusal — it fires when
+# restarting stops, which is when the start limit is reached. Three failures inside the interval is
+# therefore exactly the `consecutive_refusals: 3` threshold `Thresholds::DEPLOYED` carries, raised by
+# the one component that outlives a worker exit.
+#
+# StartLimitIntervalSec and StartLimitBurst belong in [Unit], not [Service]; they were moved there in
+# systemd 229 and a copy left in [Service] is silently ignored.
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+OnFailure=certimining-alert@%n.service
+
+[Service]
+Type=notify
+# Only the main process may notify, which is what the worker is. Anything else writing to
+# NOTIFY_SOCKET would be feeding this unit's watchdog on the worker's behalf.
+NotifyAccess=main
+
+# **ProcessSilent.** The worker sends WATCHDOG=1 after each successful observation of the chain, never
+# at the top of its loop: a keepalive sent before the work of a cycle reports only that the process
+# was scheduled, and a worker spinning on a retry path it cannot leave would feed the watchdog
+# indefinitely while making no progress.
+#
+# The number has to exceed the longest gap between two feeds, which is one poll interval of sleep
+# (WorkerPolicy::PRODUCTION, 300s) plus one full observation. An observation walks every epoch
+# carrying a receipt and makes one status call each at a 30s timeout, so its duration grows with the
+# backlog and no fixed value covers an arbitrarily large one. 1800s carries a comfortable margin for
+# a log that is keeping up; a worker that cannot feed inside half an hour is one that is not, and
+# failing then is the correct outcome rather than a false alarm. The worker prints both numbers at
+# start so this line can be read against them.
+WatchdogSec=1800
+
+Restart=on-failure
+RestartSec=60
+
+ExecStart=/usr/local/lib/certimining/anchor-b-worker
+
+# Custody and endpoints. Every private key named here lives outside the repository at mode 0600 and
+# the worker refuses to start on anything else (D-117). The worker payer is the only key this unit
+# needs that signs transactions, and it pays fees only (D-139).
+EnvironmentFile=/etc/certimining/worker.env
+
+User=certimining
+Group=certimining
+
+# The receipt and handoff directories are the only state the worker writes. Keys are read-only to it.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=/var/lib/certimining
+ReadOnlyPaths=/secure
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -31,10 +31,11 @@
 )]
 
 use certimining_client::{
+    alerts,
     cluster::{AttachRefused, Cluster},
-    day_index, next_step_with_policy, refuse_a_readable_key, sequence_lag, AnchorB, AnchorStatus,
-    Handoff, Observed, PendingReceipt, PublishFailed, ReferenceClient, Refusal, Schedule, Step,
-    WorkerPolicy,
+    day_index, next_step_with_policy, notify, refuse_a_readable_key, sequence_lag, AnchorB,
+    AnchorStatus, Handoff, Observed, PendingReceipt, PublishFailed, ReferenceClient, Refusal,
+    Schedule, Step, Supervision, Thresholds, WorkerPolicy,
 };
 use certimining_core::{DalekVerifier, Digest};
 use solana_keypair::Keypair;
@@ -182,6 +183,23 @@ fn observe(
     })
 }
 
+/// When the pending receipt was lodged with the calendars, from the file this worker wrote.
+///
+/// Its modification time is the only record of the submission instant there is: the calendars are
+/// asked again on every cycle and answer about the receipt, not about when it was handed over. A
+/// missing or unreadable receipt gives `None`, which makes `ReceiptUnconfirmed` unraisable rather
+/// than raisable against a time of zero — an unknown age must not read as an infinite one.
+///
+/// The split of the five conditions between this process and the service manager lives in
+/// `Supervision::from_worker`, with the test that pins it.
+fn receipt_submitted_at(anchor_b: &ReferenceClient, observed: &Observed) -> Option<i64> {
+    let epoch = observed.awaiting_attach?;
+    let path = anchor_b.receipt_path(epoch);
+    let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?;
+    let since = modified.duration_since(UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_secs()).ok()
+}
+
 /// Why the worker stopped, in the terms the record uses.
 fn why(refusal: Refusal) -> String {
     match refusal {
@@ -298,6 +316,43 @@ fn run() -> Result<(), String> {
             .collect::<String>()
     );
 
+    // **Readiness, after the checks that would refuse to start and not before (H-95, issue #300).**
+    // `Type=notify` holds the unit in `activating` until this arrives, so a process that announced
+    // readiness and then exited on a custody fault would have reported itself healthy for the
+    // interval in between. Everything above this line is a refusal that must happen first.
+    //
+    // An unset `NOTIFY_SOCKET` is the ordinary state of a worker run by hand and is not a failure. It
+    // is printed either way, because a worker that silently skipped its watchdog would look exactly
+    // like one whose watchdog works.
+    match notify::ready("starting the anchor-B cycle") {
+        Ok(()) => println!("anchor-b-worker: notified the service manager that it is ready"),
+        Err(e) => println!("anchor-b-worker: no readiness notification sent — {e}"),
+    }
+
+    // **Whether the configured watchdog can be satisfied by this worker's own cadence.** A
+    // `WatchdogSec` shorter than one poll interval plus one RPC timeout kills a healthy worker on
+    // schedule, and that is a watchdog configured without reference to the thing it watches. The
+    // numbers are printed rather than assumed sound, so the unit file can be read against them.
+    let cadence = policy.poll_interval.saturating_add(policy.rpc_timeout);
+    match notify::watchdog_interval() {
+        Some(interval) if interval <= cadence => println!(
+            "anchor-b-worker: WARNING WatchdogSec is {}s and one cycle can take {}s (poll {} plus \
+             rpc timeout {}). A healthy worker will be killed on schedule; raise WatchdogSec.",
+            interval.as_secs(),
+            cadence.as_secs(),
+            policy.poll_interval.as_secs(),
+            policy.rpc_timeout.as_secs()
+        ),
+        Some(interval) => println!(
+            "anchor-b-worker: watchdog {}s, one cycle at most {}s",
+            interval.as_secs(),
+            cadence.as_secs()
+        ),
+        None => println!(
+            "anchor-b-worker: no WATCHDOG_USEC, so ProcessSilent is raised by nothing for this run"
+        ),
+    }
+
     let mut consecutive_failures = 0u32;
     loop {
         let seconds = SystemTime::now()
@@ -322,6 +377,34 @@ fn run() -> Result<(), String> {
                 continue;
             }
         };
+
+        // **The three supervision conditions this process can see (H-95, issue #300).** Before this,
+        // `alerts()` was called by nothing outside its own test module: it computed five conditions
+        // against committed thresholds, passed eleven tests, and no operator could ever have been
+        // told any of them. `RUNBOOK-WORKER-RECOVERY.md` was keyed on alerts nothing raised.
+        let supervision = Supervision::from_worker(now, receipt_submitted_at(&anchor_b, &observed));
+        for alert in alerts(
+            Schedule::DEPLOYED,
+            &observed,
+            &supervision,
+            Thresholds::DEPLOYED,
+        ) {
+            eprintln!("anchor-b-worker: ALERT {alert}");
+        }
+
+        // **The watchdog is fed here and not at the top of the loop.** A keepalive sent before the
+        // work of a cycle reports only that the process was scheduled. Feeding it where the chain was
+        // read means a worker that cannot see the chain stops feeding and `WatchdogSec` fires, which
+        // is what `ProcessSilent` is for. The observation failure above continues without feeding,
+        // deliberately.
+        if let Err(e) = notify::alive(&format!(
+            "epoch {} published, day {}",
+            observed.last_epoch, observed.today
+        )) {
+            if !matches!(e, notify::Refused::NotSupervised) {
+                eprintln!("anchor-b-worker: watchdog not fed — {e}");
+            }
+        }
 
         match next_step_with_policy(Schedule::DEPLOYED, &observed, policy) {
             Step::Refuse(r) => return Err(why(r)),
