@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT OR Apache-2.0
-# D-142's bounded operator entry point for staging rehearsal and the devnet split cycle.
+# D-143's bounded operator entry point for staging rehearsal and the devnet split cycle.
 
 set -euo pipefail
 

@@ -10,15 +10,72 @@ yanked = "deny"
 # defaults to "all"; it is stated so the policy rests on no implicit scope.
 unmaintained = "all"
 unsound = "all"
-# Exactly these five, and only because the test runtime alone reaches them (D-18). Vulnerability,
-# unsound and yanked advisories take no exceptions, and any advisory not listed here fails CI.
-# Adding a line here is a decision in docs/DECISIONS.md, never a quiet edit.
+# **Two kinds of exception now, and the second is dated (D-142, owner's ruling of 31 October 2026).**
+# The first five are unmaintained advisories the test runtime alone reaches (D-18). The five below
+# them are vulnerability and unsound advisories in the Solana dependency stack, which this repository
+# cannot move: each fix is a semver-major bump that only upstream can take, so `cargo update` reports
+# "Locking 0 packages" for all three crates. Yanked advisories still take no exceptions.
+#
+# **Every dated entry carries four things**, which is what makes it a decision rather than a silence:
+# the dependency path, whether the vulnerable code is reached in our use and the evidence for that
+# answer, an expiry, and the condition that retires it. D-142 holds the long form. Adding a line here
+# is a decision in docs/DECISIONS.md, never a quiet edit.
 ignore = [
   { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
   { id = "RUSTSEC-2025-0161", reason = "libsecp256k1 is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
   { id = "RUSTSEC-2021-0139", reason = "ansi_term is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
   { id = "RUSTSEC-2024-0388", reason = "derivative is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
   { id = "RUSTSEC-2025-0141", reason = "bincode is unmaintained; reached only through litesvm, the test runtime, never shipped (D-18)" },
+
+  # ---------------------------------------------------------------------------------------------
+  # **crypto-bigint 0.5.5** — fixed in 0.7.6, which elliptic-curve 0.13.8 cannot take.
+  #   PATH     crypto-bigint <- elliptic-curve 0.13.8 <- ecdsa 0.16.9 / k256 0.13.4 <- the Solana
+  #            stack <- certimining-checkpoint, certimining-client, core-harness.
+  #   REACHED  No. The fault is in secp256k1 field arithmetic reached through k256, and nothing in
+  #            this workspace calls a secp256k1 operation: `grep -rE '\bsecp256k1\b|\bk256\b|\becdsa\b'`
+  #            over crates/ and programs/ returns nothing. The crate is linked because Solana's
+  #            syscall surface declares it. This repository signs with Ed25519 and hashes with
+  #            Keccak-256.
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 timing variability. PATH elliptic-curve<-k256<-Solana<-our three crates. NOT REACHED: no secp256k1 call anywhere in crates/ or programs/. EXPIRES 2026-12-31. RETIRE when the Solana stack takes crypto-bigint >= 0.7.6 (D-142)" },
+
+  # ---------------------------------------------------------------------------------------------
+  # **zstd 0.13.3 and zstd-safe 7.3.0** — ten advisories, fixed in zstd 0.14.3 and zstd-safe 8.2.0,
+  # neither of which solana-account-decoder 4.2.2 can take.
+  #
+  #   PATH     zstd / zstd-safe <- solana-account-decoder-client-types 4.2.2 <- solana-rpc-client
+  #            4.2.2 <- certimining-client, **under the `cluster` feature only**. `default = []`, so
+  #            the verifier build a counterparty runs never compiles any of it.
+  #
+  #   THE ONE PATH THAT IS REACHED, stated so the rest can be read against it. The typed blocking
+  #   client hardcodes `UiAccountEncoding::Base64Zstd` in `get_account_with_commitment` and
+  #   `get_multiple_accounts_with_commitment`, and exposes neither a config-taking variant nor a
+  #   generic `send`, so the request cannot be changed without leaving it. The response is decoded by
+  #   `UiAccountData::decode` in solana-account-decoder-client-types 4.2.2, which builds a **fresh**
+  #   `zstd::stream::read::Decoder` per response and reads it to end. That single call is the whole
+  #   of this workspace's zstd surface. `legacy` and `zdict_builder` are compiled in, by those
+  #   crates' defaults; compiled is not called.
+  #
+  #   Each line below says why that surface does not meet the advisory's precondition.
+  { id = "RUSTSEC-2026-0391", reason = "zstd 0.13.3, data from an abandoned stream leaking on a REUSED CONTEXT. NOT REACHED: a fresh read::Decoder is built per response and read to end; no context is reused across streams. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd >= 0.14.3 (D-142)" },
+  { id = "RUSTSEC-2026-0395", reason = "zstd-safe 7.3.0, use-after-free with CParameter::StableInBuffer. NOT REACHED: a compression parameter on a decompression path, and zstd 0.13.3 sets only CParameter::CompressionLevel. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0396", reason = "zstd-safe 7.3.0, Seekable reads a NULL or out-of-bounds seek table. NOT REACHED: `Seekable` appears nowhere in zstd 0.13.3's source. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0397", reason = "zstd-safe 7.3.0, OutBuffer::around_pos exposes uninitialised memory. NOT REACHED: `around_pos` appears nowhere in zstd 0.13.3's source. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7.3.0, Seekable::decompress sets a Vec length beyond capacity. NOT REACHED: `Seekable` appears nowhere in zstd 0.13.3's source. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0399", reason = "zstd-safe 7.3.0, use-after-free through init_using_cdict and init_using_ddict. NOT REACHED: read::Decoder::new takes no dictionary; it calls DCtx::in_size and with_buffer only. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0400", reason = "zstd-safe 7.3.0, use-after-free of a DICTIONARY after a one-shot call on a context with an open stream. NOT REACHED: no dictionary is ever loaded on this path. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0401", reason = "zstd-safe 7.3.0, out-of-bounds read in train_from_buffer. NOT REACHED: dictionary training; zdict_builder is compiled in by a dependency default but nothing here calls it. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0402", reason = "zstd-safe 7.3.0, heap buffer overflow in CCtx::try_clone on a multithreaded context. NOT REACHED: a compression context on a decompression path, never cloned. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  # The one that needed reading rather than reasoning: legacy support IS compiled in and this
+  # workspace does stream decompression of remote data, so the precondition looked met. The advisory
+  # states outright that `zstd::stream::read::Decoder`, `zstd::decode_all` and the bulk API are not
+  # affected — only `stream::write::Decoder` is, and nothing here uses it.
+  { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.3.0, uninitialised memory when streaming decompression of a LEGACY frame fails. NOT REACHED: the advisory excludes stream::read::Decoder, which is the only decoder on this path; the fault is in stream::write::Decoder. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0404", reason = "zstd-safe 7.3.0, double free in DCtx::try_clone. NOT REACHED: neither try_clone nor InBuffer::new appears in zstd 0.13.3's read module; a decoder is created and dropped, never cloned. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0405", reason = "zstd-safe 7.3.0, out-of-bounds read with an out-of-range InBuffer::pos. NOT REACHED: nothing here constructs an InBuffer; read::Decoder owns its buffers and sets pos itself. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0406", reason = "zstd-safe 7.3.0, use-after-free when changing a MULTITHREADED context with an unfinished frame. NOT REACHED: a multithreaded compression context on a single-shot decompression path. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  # wasm32 only, and this repository builds the host, thumbv7em-none-eabihf and SBF. No wasm target
+  # appears in scripts/ci.sh at all.
+  { id = "RUSTSEC-2026-0410", reason = "zstd-sys, WebAssembly allocator shim corrupts memory on allocation failure. NOT REACHED: the fault is on wasm32 and nothing here targets wasm32 (host, thumbv7em-none-eabihf and SBF only). EXPIRES 2026-12-31. RETIRE when the Solana stack takes a fixed zstd-sys (D-142)" },
 ]
 
 [licenses]

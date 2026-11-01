@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Offline staging rehearsal for D-142's split anchoring cycle.
+//! Offline staging rehearsal for D-143's split anchoring cycle.
 //!
 //! LiteSVM executes the real SBF program. The receipt is deliberately synthetic: this test proves
 //! handoff/root/sequence/prefix reconciliation, not OpenTimestamps or Bitcoin consensus. Committed

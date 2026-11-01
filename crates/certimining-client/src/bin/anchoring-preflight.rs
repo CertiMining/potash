@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Offline preflight for the split anchoring hosts (D-142).
+//! Offline preflight for the split anchoring hosts (D-143).
 //!
 //! Every host receives the same public identity manifest and only its own private keys. This command
 //! proves the public roles are distinct, proves locally held keys match the manifest, rejects secret

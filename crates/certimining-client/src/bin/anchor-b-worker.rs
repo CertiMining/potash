@@ -11,7 +11,7 @@
 //! produced, from a signed handoff, and refuses to run without a valid one. RES-03 rests count-hiding
 //! entirely on that key's custody; D-117 makes the checkpoint authority the one unattended
 //! authorisation key, and it can be, because compromising it buys a wrong root rather than the
-//! retrospective record count of every epoch the log has published. D-142 adds a separate fee-only
+//! retrospective record count of every epoch the log has published. D-143 adds a separate fee-only
 //! payer, which carries no program authority and must not be the deploy/upgrade key.
 //!
 //! ```text
@@ -83,7 +83,7 @@ impl Config {
         Ok(Self {
             rpc: env("CERTIMINING_RPC")?,
             authority: PathBuf::from(env("CERTIMINING_CHECKPOINT_AUTHORITY")?),
-            // D-142: an unattended worker must not hold the deploy/upgrade authority just to pay
+            // D-143: an unattended worker must not hold the deploy/upgrade authority just to pay
             // transaction fees. There is deliberately no fallback to deploy-keypair.json.
             payer: PathBuf::from(env("CERTIMINING_WORKER_PAYER")?),
             batcher_key: hex32(&env("CERTIMINING_BATCHER_KEY")?)

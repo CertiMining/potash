@@ -1490,7 +1490,7 @@ default build and every test above them stay free of a key and of a network:
 
 * **`anchor-b-worker`** reads the checkpoint authority and a distinct fee-only payer at start and
   refuses either at any mode but `0600`, which is the startup path the 28 September amendment said
-  did not exist. D-142 removed the old deploy/upgrade-key fallback. It holds neither `k_master` nor
+  did not exist. D-143 removed the old deploy/upgrade-key fallback. It holds neither `k_master` nor
   the batcher signing key, and it refuses to run without a handoff it can verify — so what it
   publishes is a root it was given and not one it chose.
 * **`batcher-handoff`** builds the epoch and signs the handoff. It holds `k_master`, from which every
@@ -2079,7 +2079,31 @@ which point it stops being operational and becomes a `CMv1` tag by amendment, wi
 
 **Revisit if.** The fleet's quotient spread moves outside 25%, or enough readings accumulate to say whether the fast family is one population or two — issue #245 records what would settle it.
 
-## D-142 · Devnet anchoring is a split-host cycle with a distinct worker payer
+## D-142 · Fifteen dated advisory exceptions, because the Solana stack cannot move yet
+
+**Date:** 31 Oct 2026 · **Unit:** H-67 (issue #246's successor) · **Class:** security necessity · **Status:** settled at S0 (owner, 31 Oct 2026)
+
+**Decision (the owner's).** One exception per advisory ID in `deny.toml`, each carrying the dependency path, whether the vulnerable code is reached in our use with the evidence for that answer, an expiry of 31 December 2026, and the condition that retires it.
+
+**What happened.** Fifteen advisories landed against three crates between 23 and 31 October: one against `crypto-bigint`, one against `zstd`, twelve against `zstd-safe` and one against `zstd-sys`. Every fix is a semver-major bump — `crypto-bigint` 0.5.5 to 0.7.6, `zstd` 0.13.3 to 0.14.3, `zstd-safe` 7.3.0 to 8.2.0 — and `cargo update` reports "Locking 0 packages" for all three, because `elliptic-curve 0.13.8` and `solana-account-decoder 4.2.2` pin them. Only upstream can take these. Every open pull request and `main` itself failed the `deny` gate meanwhile.
+
+**Why exceptions rather than a patch.** A `[patch]` forward would break semver against the Solana stack for a gate, which trades a real miscompilation risk for a green tick. Waiting leaves a security gate dark for an unbounded time. D-185's rule that a new advisory is a decision rather than a quiet line is what this entry satisfies.
+
+**The surface, which is one call.** `crypto-bigint` is linked because Solana's syscall surface declares `k256`; nothing in this workspace calls a secp256k1 operation, and a grep for `secp256k1`, `k256` or `ecdsa` over `crates/` and `programs/` returns nothing. The zstd crates arrive through `solana-account-decoder-client-types` under the **`cluster` feature only** — `default = []`, so the verifier build a counterparty runs never compiles them. Within that feature the whole zstd surface is a single call: `UiAccountData::decode` builds a fresh `zstd::stream::read::Decoder` per response and reads it to end.
+
+**That call is not optional, and finding out took reading the dependency rather than our own code.** `get_account_with_commitment` and `get_multiple_accounts_with_commitment` in `solana-rpc-client 4.2.2` hardcode `UiAccountEncoding::Base64Zstd`. The owner asked whether the client could request plain base64 instead; it cannot. The blocking typed client exposes no config-taking variant of either method and no generic `send`, and does not expose its inner non-blocking client, which is the only place a generic `send` exists. Requesting base64 would mean leaving the typed client for the non-blocking one plus a runtime, or hand-rolled JSON-RPC. Neither is warranted by what the evidence below shows.
+
+**Why each advisory does not reach that surface.** Eleven name an API the path does not touch: `Seekable` and `OutBuffer::around_pos` appear nowhere in `zstd 0.13.3`; `CParameter::StableInBuffer`, `CCtx::try_clone` and the multithreaded-context faults are compression-side while this decompresses; `init_using_cdict`, `init_using_ddict` and the dictionary one-shot need a dictionary, and `read::Decoder::new` loads none; `train_from_buffer` is dictionary training nothing calls; `DCtx::try_clone` and `InBuffer::pos` are not reached because the decoder owns its buffers and is never cloned. One is about a reused context, and a fresh decoder is built per response. One is wasm32-only, and this repository builds the host, `thumbv7em-none-eabihf` and SBF.
+
+**One of them had to be read rather than reasoned about, and it is worth recording why.** RUSTSEC-2026-0403 is uninitialised memory exposed when streaming decompression of a legacy frame fails. Legacy support **is** compiled in, by a dependency's defaults, and this workspace does stream decompression of remote data — so the precondition appeared to be met, and the honest answer looked like "reached". The advisory states outright that `zstd::stream::read::Decoder`, `zstd::decode_all` and the bulk API are unaffected; the fault is in `stream::write::Decoder`, which nothing here uses. Compiled is not called, and the distinction decided this entry.
+
+**What is not claimed.** That these crates are safe, or that a later advisory against them will also miss this path. Each line is an assertion about one fault against one call, and it expires.
+
+**Cost.** Fifteen lines in `deny.toml` that read as a policy change rather than a silence, and a gate that is green on a dependency set carrying known faults. The comment above them says so.
+
+**Revisit if.** Any of the three moves to a fixed version, in which case the matching lines come out. Any new advisory against the same crates, which fails CI and takes its own decision. 31 December 2026 regardless, at which point every line is re-argued or removed.
+
+## D-143 · Devnet anchoring is a split-host cycle with a distinct worker payer
 
 **Date:** 24 Oct 2026 · **Unit:** release-readiness item 5 · **Class:** security necessity · **Status:** implemented, pending owner review
 

@@ -1,6 +1,6 @@
 # Devnet split-anchoring runbook
 
-This runbook operates the two-process cycle defined by D-139 and bounded by D-142. It is for local
+This runbook operates the two-process cycle defined by D-139 and bounded by D-143. It is for local
 staging and Solana **devnet only**. It neither deploys to mainnet nor proves that an OpenTimestamps
 Bitcoin claim is true without the separate header-confirmation step.
 
