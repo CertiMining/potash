@@ -409,16 +409,35 @@ next round found the next instance.
 cannot answer the question, the honest output is a refusal naming what collapsed. It is never the value
 that means "the property holds", however convenient the arithmetic makes that substitution look.
 
-## Run before submission, because nothing else will
+## Release qualification
 
-Two checks are `#[ignore]`d on purpose and will not run themselves. An ignored test that nobody is told
-to run is an ignored test that never runs, so both belong on the submission checklist rather than in a
-comment:
+Run one command from a clean commit:
 
 ```sh
-cargo test --release -p certimining-log -- --ignored   # V-Z-04's full 10,000-epoch run
-scripts/ci.sh thresholds                               # §4.4a's wall-clock figures, to be read and recorded
+scripts/release-qualify.sh
 ```
+
+The command refuses a dirty working tree, records the exact commit before any check runs, and then runs
+the push pipeline (`scripts/ci.sh all`), V-Z-04's full 10,000-epoch privacy test, §4.4a's reported
+threshold metrics, the Criterion distributions behind them, all five fuzz targets at §4.5's fixed
+iteration counts, the release client-binary build, and the pinned SBF build. It continues after an
+independent step fails so the evidence records every attempted gate; any failed command, missing
+artefact, uncomputable hash, changed commit, or changed working tree makes the final status
+`FAILED_OR_UNRESOLVED`, never qualified.
+
+The bundle is written under `target/release-qualification/<UTC>-<commit>/`. It contains the commit and
+branch, start and end times, operating-system and machine identity, Rust/Node/build-tool versions, one
+stdout/stderr transcript per command, a tab-separated command/exit-code index, and SHA-256 plus byte
+length for `certimining_checkpoint.so`, the SBF test harness, `anchor-b-worker`, `batcher-handoff`, and
+`confirm-anchor-b`. `target/` is ignored, so creating the bundle does not alter the commit being
+qualified.
+
+This is an offline execution gate, not a deployment command. It forces `CERTIMINING_DEVNET=0`, removes
+cluster endpoints and key-path variables from every child command, and never invokes
+`deploy-devnet.sh`, `upgrade-devnet.sh`, the TypeScript `test:net` target, or an ignored cluster-writing
+test. Dependency/advisory resolution may use the network; no Solana or Bitcoin transaction is produced.
+Use `scripts/release-qualify.sh --print-plan` to inspect the exact command set without running it; that
+mode prints an explicit no-verdict statement and creates no evidence bundle.
 
 The second **asserts no performance threshold** (D-137): §4.4a's wall-clock bounds were removed after two
 machines matching its own description measured 7 ms and 17.6–19.5 ms. Its correctness controls still fail
