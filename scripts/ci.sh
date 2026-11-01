@@ -210,6 +210,12 @@ kat01_onchain() {
   # D-143's whole split cycle against the real SBF program: signed handoff, exact receipt-prefix
   # digest, dual status, and a mutation that tries to skip an epoch.
   check "devnet anchoring cycle" cargo test -p certimining-client --features cluster,ots --test devnet_anchoring_cycle -- --nocapture
+  # The consensus-signer boundary runs the real program under LiteSVM too, so it needs the artefact
+  # this group builds: a checkpoint signed by the mock HSM authority is accepted, a substituted
+  # provider key is refused at connection, and a provider failure is a typed signer error. The
+  # test was committed with no group naming it, which `xtask check-test-targets` reports as a
+  # target nobody runs.
+  check "hsm signer boundary" cargo test -p certimining-client --features cluster --test hsm_signer
   group_result kat01-onchain
 }
 

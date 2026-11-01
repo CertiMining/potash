@@ -13,11 +13,13 @@
     clippy::arithmetic_side_effects
 )]
 
+use certimining_client::crypto::verify_consensus_signature;
 use certimining_client::{refuse_a_readable_key, verify_role_separation, KeyCollision, KeyRole};
 use ed25519_dalek::SigningKey;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
+use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
 use std::str::FromStr;
@@ -48,6 +50,24 @@ fn hex32(text: &str) -> Result<[u8; 32], String> {
         let pair = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
         let byte = u8::from_str_radix(pair, 16).map_err(|e| format!("{pair:?}: {e}"))?;
         let slot = out.get_mut(index).ok_or("more than 32 bytes")?;
+        *slot = byte;
+    }
+    Ok(out)
+}
+
+fn hex64(text: &str) -> Result<[u8; 64], String> {
+    let text = text.trim();
+    if text.len() != 128 {
+        return Err(format!(
+            "expected 128 hexadecimal characters, found {}",
+            text.len()
+        ));
+    }
+    let mut out = [0u8; 64];
+    for (index, pair) in text.as_bytes().chunks_exact(2).enumerate() {
+        let pair = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
+        let byte = u8::from_str_radix(pair, 16).map_err(|e| format!("{pair:?}: {e}"))?;
+        let slot = out.get_mut(index).ok_or("more than 64 bytes")?;
         *slot = byte;
     }
     Ok(out)
@@ -128,10 +148,69 @@ fn collision(error: KeyCollision) -> String {
     }
 }
 
+fn verify_hardware_possession(authority: &[u8; 32]) -> Result<(), String> {
+    const MAX_CHALLENGE_BYTES: u64 = 4_096;
+    let challenge_path = env("CERTIMINING_HSM_CHALLENGE")?;
+    let challenge_path = Path::new(&challenge_path);
+    let challenge_file = std::fs::File::open(challenge_path)
+        .map_err(|e| format!("{}: {e}", challenge_path.display()))?;
+    let metadata = challenge_file
+        .metadata()
+        .map_err(|e| format!("{}: {e}", challenge_path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "{}: HSM challenge is not a regular file",
+            challenge_path.display()
+        ));
+    }
+    if metadata.len() == 0 || metadata.len() > MAX_CHALLENGE_BYTES {
+        return Err(format!(
+            "{}: HSM challenge length must be 1..={MAX_CHALLENGE_BYTES} bytes",
+            challenge_path.display()
+        ));
+    }
+    let mut challenge = Vec::new();
+    challenge_file
+        .take(MAX_CHALLENGE_BYTES.saturating_add(1))
+        .read_to_end(&mut challenge)
+        .map_err(|e| format!("{}: {e}", challenge_path.display()))?;
+    if challenge.len() > usize::try_from(MAX_CHALLENGE_BYTES).unwrap_or(usize::MAX) {
+        return Err(format!(
+            "{}: HSM challenge length must be 1..={MAX_CHALLENGE_BYTES} bytes",
+            challenge_path.display()
+        ));
+    }
+
+    let signature_path = env("CERTIMINING_HSM_SIGNATURE")?;
+    let signature_path = Path::new(&signature_path);
+    let signature_file = std::fs::File::open(signature_path)
+        .map_err(|e| format!("{}: {e}", signature_path.display()))?;
+    let signature_metadata = signature_file
+        .metadata()
+        .map_err(|e| format!("{}: {e}", signature_path.display()))?;
+    if !signature_metadata.is_file() || signature_metadata.len() > 129 {
+        return Err(format!(
+            "{}: HSM signature must be a regular file of at most 129 bytes",
+            signature_path.display()
+        ));
+    }
+    let mut signature_bytes = Vec::new();
+    signature_file
+        .take(130)
+        .read_to_end(&mut signature_bytes)
+        .map_err(|e| format!("{}: {e}", signature_path.display()))?;
+    let signature_text = std::str::from_utf8(&signature_bytes)
+        .map_err(|e| format!("{}: {e}", signature_path.display()))?;
+    let signature =
+        hex64(signature_text).map_err(|e| format!("{}: {e}", signature_path.display()))?;
+    verify_consensus_signature(authority, &challenge, &signature)
+        .map_err(|error| format!("HSM possession challenge failed: {error}"))
+}
+
 fn run() -> Result<String, String> {
     let role = std::env::args()
         .nth(1)
-        .ok_or("usage: anchoring-preflight deployment|batcher|worker")?;
+        .ok_or("usage: anchoring-preflight deployment|batcher|worker|worker-hsm")?;
     let program = public_id("CERTIMINING_PROGRAM_ID")?;
     require_match(
         "CERTIMINING_PROGRAM_ID",
@@ -199,9 +278,20 @@ fn run() -> Result<String, String> {
             secrets.push((KeyRole::WorkerPayer, worker_seed));
             secrets.push((KeyRole::CheckpointAuthority, authority_seed));
         }
+        "worker-hsm" => {
+            forbid_except(&["CERTIMINING_WORKER_PAYER"])?;
+            let (worker_key, worker_seed) = read_keypair("CERTIMINING_WORKER_PAYER")?;
+            require_match(
+                "CERTIMINING_WORKER_PAYER",
+                worker_key.pubkey().to_bytes(),
+                worker,
+            )?;
+            verify_hardware_possession(&authority)?;
+            secrets.push((KeyRole::WorkerPayer, worker_seed));
+        }
         _ => {
             return Err(format!(
-                "unknown role {role:?}; use deployment, batcher, or worker"
+                "unknown role {role:?}; use deployment, batcher, worker, or worker-hsm"
             ))
         }
     }

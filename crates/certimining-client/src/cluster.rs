@@ -76,7 +76,8 @@ impl Cluster {
         loop {
             let outcome = match self.send_publish(epoch, root, payer, authority) {
                 Ok(signature) => return self.reference(epoch, signature),
-                Err(code) => classify(code),
+                Err(SendPublishFailed::Signing) => return Err(PublishFailed::SigningFailed),
+                Err(SendPublishFailed::Submission(code)) => classify(code),
             };
             match outcome {
                 Outcome::AlreadyPublished => return self.settle_against_chain(epoch, &root),
@@ -166,7 +167,9 @@ impl Cluster {
             .get_latest_blockhash()
             .map_err(|e| AttachRefused::Cluster(e.to_string()))?;
         let message = Message::new(&[ix], Some(&payer.pubkey()));
-        let tx = Transaction::new(&[payer, authority], message, blockhash);
+        let mut tx = Transaction::new_unsigned(message);
+        tx.try_sign(&[payer, authority], blockhash)
+            .map_err(|_| AttachRefused::SigningFailed)?;
         self.rpc()
             .send_and_confirm_transaction(&tx)
             .map_err(|e| AttachRefused::Cluster(e.to_string()))?;
@@ -180,7 +183,7 @@ impl Cluster {
         root: Digest,
         payer: &dyn Signer,
         authority: &dyn Signer,
-    ) -> Result<String, Option<u32>> {
+    ) -> Result<String, SendPublishFailed> {
         let program = solana_pubkey::Pubkey::from(self.program_id.to_bytes());
         let checkpoint = crate::checkpoint_address(&self.program_id, epoch);
         let config = crate::config_address(&self.program_id);
@@ -214,12 +217,19 @@ impl Cluster {
             .data(),
         };
         // A fresh blockhash per attempt, fetched here rather than promised in a comment.
-        let blockhash = self.rpc.get_latest_blockhash().map_err(|_| None)?;
+        let blockhash = self
+            .rpc
+            .get_latest_blockhash()
+            .map_err(|_| SendPublishFailed::Submission(None))?;
         let message = Message::new(&[ix], Some(&payer.pubkey()));
-        let tx = Transaction::new(&[payer, authority], message, blockhash);
+        let mut tx = Transaction::new_unsigned(message);
+        tx.try_sign(&[payer, authority], blockhash)
+            .map_err(|_| SendPublishFailed::Signing)?;
         match self.rpc.send_and_confirm_transaction(&tx) {
             Ok(signature) => Ok(signature.to_string()),
-            Err(e) => Err(program_error_code(&e.to_string())),
+            Err(e) => Err(SendPublishFailed::Submission(program_error_code(
+                &e.to_string(),
+            ))),
         }
     }
 
@@ -475,6 +485,13 @@ pub enum PublishFailed {
     Unreachable(Unreachable),
     /// Every attempt was a submission that never reached the program.
     OutOfAttempts,
+    /// A local signer refused or returned an invalid signature; no transaction was submitted.
+    SigningFailed,
+}
+
+enum SendPublishFailed {
+    Signing,
+    Submission(Option<u32>),
 }
 
 /// The program's own error code, dug out of the RPC's rendering of a failed transaction.
@@ -506,4 +523,6 @@ pub enum AttachRefused {
     NotPublished(String),
     /// The cluster refused or could not be reached.
     Cluster(String),
+    /// A local signer refused or returned an invalid signature; no transaction was submitted.
+    SigningFailed,
 }
