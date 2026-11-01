@@ -22,6 +22,7 @@
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
 mod citations;
+mod decisions;
 mod demo;
 mod live_values;
 mod record;
@@ -126,6 +127,12 @@ fn main() {
         // The deployment record against the files it describes (H-36). Separate from the live-values
         // check because that one reads values and this one reads the prose and tables around them.
         // Documents that cite an invariant, against the specification's text for it (H-46, #143).
+        // Decision identifiers, which have to name one decision each (#256, L-01). Three open pull
+        // requests each added a D-142 that main had just taken, and the collision surfaced as a merge
+        // conflict on three branches at once rather than as a gate on the first of them.
+        Some("check-decisions") => {
+            decisions::check_decisions(&repo_root());
+        }
         Some("check-citations") => {
             citations::check_citations(&repo_root());
         }

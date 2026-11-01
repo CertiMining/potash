@@ -161,6 +161,12 @@ vectors() {
   # rather than beside claim-check, because this reads the same documents check-record does and asks
   # a question of the same shape: does the repository still agree with itself.
   cargo xtask check-citations || return 1
+  # **Decision identifiers, which have to name one decision each (#256, L-01).** docs/DECISIONS.md
+  # carries four identifiers twice with identical bodies and reserves a fifth before settling it, so a
+  # reference naming one of them names two headings. On 31 October three open pull requests each added
+  # a D-142 that main had just taken, and that surfaced as a merge conflict on three branches rather
+  # than as a gate on the first. The five on main are listed in the gate with what each one is.
+  cargo xtask check-decisions || return 1
   # **The worker and band status statements, against what the code does (#254).** Nine sentences
   # across eight files outlived the heads that falsified them: anchor-b-worker was committed on 20
   # October and the band's failure restored on 22nd, and README.md still denied the worker on a head
