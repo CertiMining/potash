@@ -450,6 +450,47 @@ this checklist exists: on a machine with a committed class it is yours to run.
 `docs/performance.md` says
 which mechanism covers each of §4.4a's rows, and `scripts/ci.sh fuzz` is the third thing CI does not
 run on a push, for a different reason: it has its own nightly workflow.
+## What these commands were last run under, and what they printed
+
+**This records one run on one machine, which is the whole of its claim (#254, criterion 6).** A command
+that behaves differently elsewhere is a defect in the command, not in this list; the list exists so that
+difference can be seen rather than guessed at. Every version string below is what the tool printed, copied
+rather than read off a release page.
+
+| tool | version, as printed | where it is pinned |
+|---|---|---|
+| `rustc` | `rustc 1.95.0 (59807616e 2026-04-14)` | `rust-toolchain.toml`, channel `1.95.0` (D-11) |
+| `cargo` | `cargo 1.95.0 (f2d3ce0bd 2026-03-21)` | with the toolchain above |
+| `rustup` | `rustup 1.29.1 (d95a37b6a 2026-08-13)` | not pinned |
+| `miri` | `miri 0.1.0 (01dfd79246 2026-06-15)` | `MIRI_TOOLCHAIN=nightly-2026-06-16` in `scripts/ci.sh` (D-11) |
+| `cargo-fuzz` | `cargo-fuzz 0.13.2` | `CARGO_FUZZ_VERSION` in `scripts/ci.sh`, which the group checks before running |
+| `cargo-deny` | `cargo-deny 0.20.2` | not pinned |
+| `node` | `v24.21.0` | the `ts` group |
+| `npm` | `11.19.0` | with node |
+| `solana` | `solana-cli 3.1.10 (src:7bc9c805; feat:1620780344, client:Agave)` | on-chain builds go through `scripts/build-sbf.sh` on platform-tools v1.54 (D-15) |
+| `anchor` | `anchor-cli 1.2.0` | — |
+| `git` | `git version 2.52.0` | — |
+
+The bare-metal target `thumbv7em-none-eabihf` is installed by the toolchain file, so `no_std` is proved by
+the toolchain rather than by a step of its own (D-14).
+
+**What each command printed.**
+
+| command | result |
+|---|---|
+| `scripts/ci.sh all` | eight groups, each exit 0: `kat01-offchain`, `kat01-onchain`, `kat02`, `vectors`, `checks`, `miri`, `deny`, `ts`. `checks` ran 87 test binaries with no rustfmt diff and no clippy error; `miri` ran 56 tests, the longest 2000.61 s |
+| `scripts/ci.sh thresholds` | exit 0. Chain walk, 10,000 records: best 8.46 ms, median 11.94 ms, worst 15.29 ms. Epoch root, 256 leaves: median 0.253 ms. Inclusion proof: median 0.0026 ms. Full verification with per-record Ed25519: median 892.3 ms. Machine unlabelled — set `CERTIMINING_MACHINE` to name it in the record |
+| `scripts/ci.sh bench` | exit 0. `epoch_root_256_leaves` 251.86 µs, `inclusion_proof_verify` 2.5619 µs |
+| `scripts/ci.sh fuzz` | exit 0. Four targets at 1,000,000 runs each and `fuzz_tree_build` at 25,000 |
+| `cargo test --release -p certimining-log -- --ignored` | exit 0. One test: `v_z_04_position_carries_no_meaning_over_ten_thousand_epochs`, passed in 4.09 s, over `EPOCHS_VZ04_FULL = 10_000` against `CORRELATION_BOUND_FULL = 0.02`, both pinned by compile-time assertions in `tests/privacy.rs` |
+
+Four of the six test binaries in that last run report "0 tests"; they are the binaries holding no
+`#[ignore]`, and `tests/privacy.rs` holds the one that matters. A run that printed only the zeroes would
+look identical to a run that did nothing, which is why the count is written down here.
+
+**`scripts/anchor-repo.sh` was not run.** `ots` is absent from this machine, and the script stamps the
+repository head against public calendars, which is a publication rather than a check.
+
 ## The OpenTimestamps client is pinned by its sources
 
 `ReferenceClient::check_version` asks `ots --version` and compares the bytes it prints. That check took
