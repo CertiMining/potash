@@ -97,14 +97,17 @@ fn version_of(spec: &str) -> Result<String, String> {
 }
 
 /// Adds a problem for every way the pin and the specification disagree.
+/// Every file that pins the specification by content.
+///
+/// **`ts/SPEC-DEFECTS.md` joined this list in #255 (H-95), and it is why the list exists.** Its pin
+/// named SHA-256 `3e59f5ac…` at 754 lines — a digest matching no revision of the specification in
+/// this repository's history, absent from the object graph entirely, and a line count no revision
+/// ever had. It was wrong across the four versions from v0.2.0 to v0.2.12 and nothing caught it,
+/// because only `ts/README.md` was checked. A pin maintained by hand goes wrong the way this one
+/// did; a pin checked by construction cannot.
+const PINNED_BY: [&str; 2] = ["ts/README.md", "ts/SPEC-DEFECTS.md"];
+
 pub fn check_spec_pin(root: &Path, problems: &mut Vec<String>) {
-    let readme = match std::fs::read_to_string(root.join("ts/README.md")) {
-        Ok(text) => text,
-        Err(e) => {
-            problems.push(format!("ts/README.md: {e}"));
-            return;
-        }
-    };
     let spec = match std::fs::read_to_string(root.join(SPEC)) {
         Ok(text) => text,
         Err(e) => {
@@ -112,38 +115,51 @@ pub fn check_spec_pin(root: &Path, problems: &mut Vec<String>) {
             return;
         }
     };
-
-    let pin = match pin_from(&readme) {
-        Ok(pin) => pin,
-        Err(e) => {
-            problems.push(e);
-            return;
-        }
-    };
-
     let actual_sha = format!("{:x}", Sha256::digest(spec.as_bytes()));
-    if pin.sha256 != actual_sha {
-        problems.push(format!(
-            "ts/README.md pins SHA-256 {} and {SPEC} hashes to {actual_sha}",
-            pin.sha256
-        ));
-    }
-
     let actual_lines = spec.lines().count();
-    if pin.lines != actual_lines {
-        problems.push(format!(
-            "ts/README.md pins {} lines and {SPEC} has {actual_lines}",
-            pin.lines
-        ));
-    }
+    let actual_version = version_of(&spec);
 
-    match version_of(&spec) {
-        Ok(actual) if actual != pin.version => problems.push(format!(
-            "ts/README.md pins {} and {SPEC} says {actual}",
-            pin.version
-        )),
-        Ok(_) => {}
-        Err(e) => problems.push(format!("{SPEC}: {e}")),
+    for file in PINNED_BY {
+        let text = match std::fs::read_to_string(root.join(file)) {
+            Ok(text) => text,
+            Err(e) => {
+                problems.push(format!("{file}: {e}"));
+                continue;
+            }
+        };
+
+        // A pin that cannot be read is a failure, not a file with no pin: rewording the sentence
+        // would otherwise disable the check and report success.
+        let pin = match pin_from(&text) {
+            Ok(pin) => pin,
+            Err(e) => {
+                problems.push(format!("{file}: {e}"));
+                continue;
+            }
+        };
+
+        if pin.sha256 != actual_sha {
+            problems.push(format!(
+                "{file} pins SHA-256 {} and {SPEC} hashes to {actual_sha}",
+                pin.sha256
+            ));
+        }
+
+        if pin.lines != actual_lines {
+            problems.push(format!(
+                "{file} pins {} lines and {SPEC} has {actual_lines}",
+                pin.lines
+            ));
+        }
+
+        match &actual_version {
+            Ok(actual) if *actual != pin.version => problems.push(format!(
+                "{file} pins {} and {SPEC} says {actual}",
+                pin.version
+            )),
+            Ok(_) => {}
+            Err(e) => problems.push(format!("{SPEC}: {e}")),
+        }
     }
 }
 
@@ -212,6 +228,60 @@ mod tests {
             "8b83556f",
         );
         assert!(pin_from(&short).is_err(), "a short hash is not a hash");
+    }
+
+    /// #255, H-95. A stale hash in either pinning file fails the gate.
+    ///
+    /// Built in a temporary root rather than by mutating the repository, because a test that edits
+    /// a committed file and relies on restoring it reports a clean run when it crashes halfway.
+    #[test]
+    fn a_stale_hash_in_either_file_fails_the_gate() {
+        for stale in PINNED_BY {
+            let root = std::env::temp_dir().join(format!(
+                "potash-spec-pin-{}-{}",
+                stale.replace('/', "-"),
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+            let spec_body =
+                "# TCU-02\n\n**Version 0.2.13 \u{b7} Supersedes TCU-01 in full**\n\nbody\n";
+            let real = format!("{:x}", Sha256::digest(spec_body.as_bytes()));
+            let lines = spec_body.lines().count();
+
+            let write = |rel: &str, body: &str| {
+                let at = root.join(rel);
+                if let Some(dir) = at.parent() {
+                    std::fs::create_dir_all(dir).expect("a temporary directory can be made");
+                }
+                std::fs::write(at, body).expect("a temporary file can be written");
+            };
+            write(SPEC, spec_body);
+
+            let fresh = format!("{ANCHOR}**v0.2.13**, SHA-256 `{real}`,\n{lines} lines.");
+            // One hex digit different: the shape of a pin nobody recomputed after an amendment.
+            let mut wrong = real.clone();
+            wrong.replace_range(0..1, if real.starts_with('a') { "b" } else { "a" });
+            let stale_pin = format!("{ANCHOR}**v0.2.13**, SHA-256 `{wrong}`,\n{lines} lines.");
+            for file in PINNED_BY {
+                write(file, if file == stale { &stale_pin } else { &fresh });
+            }
+
+            let mut problems = Vec::new();
+            check_spec_pin(&root, &mut problems);
+            let _ = std::fs::remove_dir_all(&root);
+
+            assert!(
+                problems
+                    .iter()
+                    .any(|p| p.starts_with(stale) && p.contains("SHA-256")),
+                "a stale hash in {stale} did not fail the gate: {problems:?}"
+            );
+            assert_eq!(
+                problems.len(),
+                1,
+                "only the stale file should be reported: {problems:?}"
+            );
+        }
     }
 
     #[test]

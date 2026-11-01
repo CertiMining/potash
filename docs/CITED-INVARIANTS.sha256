@@ -7,11 +7,11 @@ ae50a95c50ba800f6bd2e7df8f4c449c5f7f2000cea97d2b1404da44c257ba8a  INV-ANCH-05  d
 d17a46a2e25fb4a36f0f7f57c244b3c7fd498adf29568913133a3cb0507fcea9  INV-DISC-01  demo/fixtures/README.md ts/README.md
 597e9cfe313abfc2e4de97580d74405a6770d948e235f8314eb943f459716eec  INV-DISC-02  ts/README.md ts/SPEC-DEFECTS.md
 ac69ef0571dc783c606d52260fc8adee7964efd1a3e1e1bd4c2b3ae53c8a6f6f  INV-DISC-03  ts/README.md ts/SPEC-DEFECTS.md
-167b2341a2ccebabba4295e24b9a3daf321f9f82e6e7499f8e7916ee4facbd35  INV-DISC-04  ts/README.md
+167b2341a2ccebabba4295e24b9a3daf321f9f82e6e7499f8e7916ee4facbd35  INV-DISC-04  ts/README.md ts/SPEC-DEFECTS.md
 1e3bc656d0840c56494f56424ff13b5268ac9e9d1a9cf856ba926f26112cd61c  INV-ENC-01  docs/performance.md docs/preimage.md
 0857c538b0d0409de80cbf086df2188e2214e2153dcb59b41d46b5e91b8bd310  INV-ENC-02  docs/epoch-tree.md docs/preimage.md ts/SPEC-DEFECTS.md
-726fcf9072bef8ed96e9d4b97ebc23126a2cf8551e566120afe68ce09937abfe  INV-ENC-03  docs/preimage.md ts/README.md
-78a040692297cfc2a85d2bc4380c80afd6b9045d17fef2aec68ebcc9c15f700a  INV-ENC-04  docs/epoch-tree.md docs/preimage.md
+726fcf9072bef8ed96e9d4b97ebc23126a2cf8551e566120afe68ce09937abfe  INV-ENC-03  docs/preimage.md ts/README.md ts/SPEC-DEFECTS.md
+78a040692297cfc2a85d2bc4380c80afd6b9045d17fef2aec68ebcc9c15f700a  INV-ENC-04  docs/epoch-tree.md docs/preimage.md ts/SPEC-DEFECTS.md
 0591f62b66ccbf4873e79e95034ab02055b80d614dc6d9eb59854364ffd30dc0  INV-ERR-01  docs/STANDARD-STEPS.md
 8f92c2e6fa4935b9b8197dce0647fba37e54aa2ac6b7b0d1d30aa33a96a2e37e  INV-FWD-01  docs/STANDARD-STEPS.md docs/canonicalization.md docs/state-machine.md
 6b540a6210ff2265140f94e83145269bf1c3bdfc95fa1b36bd413508adba812d  INV-GOV-01  docs/anchoring.md

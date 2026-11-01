@@ -550,8 +550,8 @@ pub fn check_record(root: &Path) {
         println!(
             "record: {} committed receipts, {} epoch rows ({dual} dual), every digest recomputed from \
              the committed bytes; the README's count matches the table, both documents' cadence \
-             claims match the publication timestamps, and ts/README.md's specification pin matches \
-             the specification",
+             claims match the publication timestamps, and every file that pins the specification \
+             by content agrees with it",
             committed.len(),
             epoch_rows.len()
         );
