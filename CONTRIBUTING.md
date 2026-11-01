@@ -2,19 +2,21 @@
 
 ## Vectors are generated, never edited
 
-Everything under `vectors/` is output. It is produced by
+Everything under `vectors/` is output. To replace a committed set, generate into a new directory and
+copy the result across:
 
 ```sh
-cargo xtask gen-vectors
+out="$(mktemp -d)/out" && cargo xtask gen-vectors "$out" && rm -rf vectors && cp -R "$out" vectors
 ```
 
-**The generator never deletes.** It writes into a directory it creates, and refuses one that already
-holds files. To replace a committed set you remove it yourself first, which keeps the deletion a
-deliberate act:
+**The generator never deletes**, so it refuses a directory that already holds files: `cargo xtask
+gen-vectors` with no argument exits 2 on a fresh clone and prints the route above. **And `vectors/`
+has to still be there when it starts.** `check_recorded_short_values` reads every path in
+`LIVE-VALUES.txt`'s recorded block, three of which name `vectors/V-P-12.json`, so deleting the
+directory first makes the command panic rather than regenerate (H-44, [#135](https://github.com/CertiMining/potash/issues/135)).
 
-```sh
-rm -rf vectors && cargo xtask gen-vectors
-```
+This file used to document `rm -rf vectors && cargo xtask gen-vectors`. H-44 removed that line from
+the tool's own message and left it here, where it stayed until #254's clean-clone pass ran it.
 
 Then commit what it wrote, including `vectors/MANIFEST.sha256`. Each manifest line carries the
 SHA-256, the file mode and the name, so a vector that was edited and one that became executable or
