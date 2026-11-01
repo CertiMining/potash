@@ -126,6 +126,7 @@ impl Log {
             }
             .data(),
             false,
+            true,
         );
         assert!(ok, "initialization succeeds");
         log
@@ -136,6 +137,7 @@ impl Log {
         accounts: Vec<anchor_lang::prelude::AccountMeta>,
         data: Vec<u8>,
         authority: bool,
+        deliver: bool,
     ) -> bool {
         let message = Message::new(
             &[Instruction {
@@ -151,12 +153,15 @@ impl Log {
         } else {
             Transaction::new(&[&self.payer], message, blockhash)
         };
+        if !deliver {
+            return false;
+        }
         self.runtime.svm.send_transaction(transaction).is_ok()
     }
 
-    fn publish(&mut self, epoch: u64, root: [u8; 32]) -> bool {
+    fn publish_at(&mut self, epoch: u64, observed_day: u64, root: [u8; 32], deliver: bool) -> bool {
         let mut clock: anchor_lang::prelude::Clock = self.runtime.svm.get_sysvar();
-        clock.unix_timestamp = (epoch * certimining_checkpoint::SECONDS_PER_DAY) as i64;
+        clock.unix_timestamp = (observed_day * certimining_checkpoint::SECONDS_PER_DAY) as i64;
         self.runtime.svm.set_sysvar(&clock);
         self.send(
             certimining_checkpoint::accounts::Publish {
@@ -178,7 +183,12 @@ impl Log {
             }
             .data(),
             true,
+            deliver,
         )
+    }
+
+    fn publish(&mut self, epoch: u64, root: [u8; 32]) -> bool {
+        self.publish_at(epoch, epoch, root, true)
     }
 
     fn attach(&mut self, epoch: u64, digest: [u8; 32]) -> bool {
@@ -195,6 +205,7 @@ impl Log {
                 kind: 1,
             }
             .data(),
+            true,
             true,
         )
     }
@@ -312,4 +323,112 @@ fn negative_mutations_are_observed_by_load_bearing_controls() {
         !log.publish(EPOCH + 2, [0x22; 32]),
         "the program must reject a missed epoch instead of silently skipping it"
     );
+}
+
+#[test]
+fn anchor_a_dropout_and_restart_leave_no_partial_checkpoint() {
+    let root = [0xa1; 32];
+    let mut log = Log::new();
+    assert_eq!(
+        root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH),
+        Ok(Fetched::Absent),
+        "before Anchor-A acts, the checkpoint is absent"
+    );
+
+    assert!(
+        !log.publish_at(EPOCH, EPOCH, root, false),
+        "a signed transaction dropped before delivery cannot create a partial publication"
+    );
+    assert_eq!(
+        root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH),
+        Ok(Fetched::Absent),
+        "a failed transaction leaves no checkpoint account to mistake for progress"
+    );
+
+    assert!(
+        log.publish(EPOCH, root),
+        "a restarted worker can publish once"
+    );
+    let recovered = root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH)
+        .expect("read restarted publication");
+    match recovered {
+        Fetched::Placed(checkpoint) => {
+            assert_eq!(checkpoint.root, root);
+            assert_eq!(checkpoint.receipt_digest, [0; 32]);
+            assert_eq!(checkpoint.anchor_kind, 0);
+        }
+        other => panic!("expected the restarted Anchor-A publication, found {other:?}"),
+    }
+}
+
+#[test]
+fn delayed_anchor_b_after_dropout_transitions_single_to_dual_without_changing_root() {
+    let root = [0xb2; 32];
+    let receipt = b"deterministic delayed anchor-b receipt";
+    let digest = receipt_digest::<NativeKeccak>(receipt).expect("short receipt");
+    let mut log = Log::new();
+    assert!(log.publish(EPOCH, root));
+
+    let before = root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH)
+        .expect("single-anchor checkpoint");
+    assert_eq!(status_of(&before), AnchorStatus::Single);
+    let before_root = match before {
+        Fetched::Placed(checkpoint) => checkpoint.root,
+        other => panic!("expected a placed checkpoint, found {other:?}"),
+    };
+
+    // Anchor-B is disconnected here: no attachment transaction is submitted. A later fresh cycle
+    // attaches the verified digest to the already-published epoch.
+    assert!(log.attach(EPOCH, digest));
+    let recovered = root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH)
+        .expect("dual-anchor checkpoint");
+    let checkpoint = match recovered {
+        Fetched::Placed(checkpoint) => checkpoint,
+        other => panic!("expected a placed checkpoint, found {other:?}"),
+    };
+    assert_eq!(
+        checkpoint.root, before_root,
+        "Anchor-B cannot rewrite Anchor-A"
+    );
+    assert_eq!(checkpoint.receipt_digest, digest);
+    assert_eq!(checkpoint.anchor_kind, 1);
+    assert!(
+        !log.attach(EPOCH, [0xff; 32]),
+        "the write-once barrier rejects a second, Byzantine receipt transition"
+    );
+    let after_rejected = root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH)
+        .expect("checkpoint after rejected transition");
+    assert_eq!(status_of(&after_rejected), AnchorStatus::Dual);
+    match after_rejected {
+        Fetched::Placed(found) => {
+            assert_eq!(found.root, root);
+            assert_eq!(found.receipt_digest, digest);
+        }
+        other => panic!("expected an unchanged checkpoint, found {other:?}"),
+    }
+}
+
+#[test]
+fn delayed_and_byzantine_epoch_transitions_preserve_the_contiguous_barrier() {
+    let mut log = Log::new();
+    let first = [0xc3; 32];
+    assert!(
+        log.publish_at(EPOCH, EPOCH + 1, first, true),
+        "a delayed but still contiguous checkpoint is recoverable"
+    );
+    assert!(
+        !log.publish_at(EPOCH + 2, EPOCH + 2, [0xd4; 32], true),
+        "a Byzantine worker cannot skip the epoch barrier"
+    );
+    assert_eq!(
+        root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH + 1),
+        Ok(Fetched::Absent),
+        "the rejected jump creates no partial intermediate account"
+    );
+    let original = root_for_epoch(&log.runtime, &certimining_checkpoint::ID, EPOCH)
+        .expect("original checkpoint remains readable");
+    match original {
+        Fetched::Placed(checkpoint) => assert_eq!(checkpoint.root, first),
+        other => panic!("expected the original checkpoint, found {other:?}"),
+    }
 }

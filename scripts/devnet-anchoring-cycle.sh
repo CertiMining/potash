@@ -12,6 +12,7 @@ usage() {
 usage: scripts/devnet-anchoring-cycle.sh COMMAND [ARG]
 
   simulate                 Build SBF and run the offline LiteSVM split-cycle rehearsal
+  faults                   Run deterministic worker/partition/dropout fault injection
   preflight ROLE           Validate deployment, batcher, or worker separation offline
   batch EPOCH              Preflight the batcher and write its signed handoff
   worker                   Preflight and start the transaction-writing devnet worker
@@ -43,6 +44,9 @@ case "$command" in
   simulate)
     scripts/build-sbf.sh
     cargo test -p certimining-client --features cluster,ots --test devnet_anchoring_cycle -- --nocapture
+    ;;
+  faults)
+    scripts/cluster-fault-injection.sh
     ;;
   preflight)
     require_devnet

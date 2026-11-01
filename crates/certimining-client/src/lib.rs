@@ -63,4 +63,6 @@ pub use publish::{
 };
 pub use schedule::{build_start, publication_time, Schedule, EPOCH_SECONDS};
 pub use separation::{verify_role_separation, KeyCollision, KeyRole};
-pub use worker::{day_index, next_step, Observed, Refusal, Step};
+pub use worker::{
+    day_index, next_step, next_step_with_policy, Observed, Refusal, Step, WorkerPolicy,
+};

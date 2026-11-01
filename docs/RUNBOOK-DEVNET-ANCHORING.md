@@ -36,6 +36,34 @@ The local receipt bytes are intentionally synthetic. This command does **not** e
 OpenTimestamps calendar or Bitcoin proof-of-work. The repository's committed receipt/header tests and
 the final `confirm-anchor-b` command cover those boundaries.
 
+Run the production-policy and dropout controls independently with:
+
+```bash
+scripts/devnet-anchoring-cycle.sh faults
+```
+
+The harness injects an Anchor-A authorization dropout, an Anchor-B disconnect between publication
+and attachment, a delayed contiguous publication, and a Byzantine skipped-epoch transition. Each
+failed transition is followed by a state read proving that no partial checkpoint, changed root, or
+intermediate epoch was written.
+
+### Reviewed production parameters
+
+The unattended worker uses `WorkerPolicy::PRODUCTION`; these values are compiled and code-reviewed,
+not environment overrides:
+
+| Control | Production value | Failure behavior |
+| --- | ---: | --- |
+| RPC timeout | 30 seconds | request fails; retry requires a fresh observation |
+| Poll interval | at most 300 seconds | worker re-reads state instead of acting on a cached view |
+| Publish attempts | 3 total | exhaustion enters partition recovery, never advances the epoch |
+| Partition retries | 5 | exponential 1, 2, 4, 8, 16 second waits, then stop |
+| Automatic epoch slip | 1 epoch | a wider backlog stops for reconciliation and operator ruling |
+
+Receipt state outside the published range, a submitted epoch ahead of the log, or an attachment
+ahead of the submission record is an explicit refusal. A partition retry never reuses an observation:
+the loop returns to `sequence_lag` and status reads before choosing another action.
+
 ## 2. Configure the public manifest
 
 Install the same non-secret values on all three hosts:
@@ -147,7 +175,9 @@ claim alone.
    reason to advance the epoch.
 4. Starting at the first missing epoch, have the batcher reproduce or deliver its signed handoff.
    Process one epoch at a time in ascending order. Never jump to a later day: the program rejects a
-   gap and the staging mutation test proves that guard is observed.
+   gap and the staging mutation test proves that guard is observed. The production worker recovers
+   one slipped epoch automatically; a wider backlog intentionally requires a reviewed recovery build
+   or an operator-driven transaction procedure rather than a runtime configuration override.
 5. Restart the worker. It derives its next action from on-chain state plus receipt files, so it will
    publish, submit, or attach whichever step is incomplete.
 6. Reconcile every recovered epoch before declaring the backlog clear.

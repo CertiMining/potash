@@ -31,20 +31,16 @@
 )]
 
 use certimining_client::{
-    cluster::Cluster, day_index, next_step, refuse_a_readable_key, sequence_lag, AnchorB,
-    AnchorStatus, Handoff, Observed, PendingReceipt, ReferenceClient, Refusal, Schedule, Step,
+    cluster::{AttachRefused, Cluster},
+    day_index, next_step_with_policy, refuse_a_readable_key, sequence_lag, AnchorB, AnchorStatus,
+    Handoff, Observed, PendingReceipt, PublishFailed, ReferenceClient, Refusal, Schedule, Step,
+    WorkerPolicy,
 };
 use certimining_core::{DalekVerifier, Digest};
 use solana_keypair::Keypair;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-/// The longest the worker sleeps before looking at the world again.
-///
-/// A step may say to wait until tomorrow; waking sooner costs one account read and means stopping
-/// the process does not take a day to be noticed.
-const MAX_SLEEP: Duration = Duration::from_secs(300);
 
 /// Everything the worker is configured with, read once at start so a half-configured run refuses
 /// before it touches a cluster rather than in the middle of a cycle.
@@ -206,11 +202,66 @@ fn why(refusal: Refusal) -> String {
         Refusal::Unschedulable { epoch } => {
             format!("epoch {epoch} has no publication time the schedule can represent.")
         }
+        Refusal::EpochSlipExceeded {
+            last_epoch,
+            today,
+            max_epoch_slip,
+        } => format!(
+            "the log's last epoch is {last_epoch} and today is {today}, beyond the unattended \
+             recovery limit of {max_epoch_slip}. Reconcile the first missing epoch and obtain an \
+             operator ruling before replaying a wider backlog."
+        ),
+        Refusal::AwaitingAttachOutsideLog {
+            awaiting_attach,
+            start_epoch,
+            last_epoch,
+        } => format!(
+            "the receipt state awaits epoch {awaiting_attach}, outside the published log range \
+             {start_epoch}..={last_epoch}."
+        ),
+        Refusal::SubmissionAheadOfLog {
+            last_submitted,
+            last_epoch,
+        } => format!(
+            "the receipt state claims submission through epoch {last_submitted}, ahead of the log's \
+             last epoch {last_epoch}."
+        ),
+        Refusal::AttachmentAheadOfSubmission {
+            awaiting_attach,
+            last_submitted,
+        } => format!(
+            "epoch {awaiting_attach} awaits attachment but the submission record ends at \
+             {last_submitted:?}."
+        ),
     }
+}
+
+fn retry_partition(
+    policy: WorkerPolicy,
+    consecutive_failures: &mut u32,
+    operation: &str,
+    error: &str,
+) -> Result<(), String> {
+    *consecutive_failures = consecutive_failures.saturating_add(1);
+    let Some(delay) = policy.partition_retry_delay(*consecutive_failures) else {
+        return Err(format!(
+            "{operation}: {error}; partition retry budget of {} exhausted",
+            policy.partition_retry_limit
+        ));
+    };
+    eprintln!(
+        "anchor-b-worker: {operation}: {error}; re-observing after {}s ({}/{})",
+        delay.as_secs(),
+        *consecutive_failures,
+        policy.partition_retry_limit
+    );
+    std::thread::sleep(delay);
+    Ok(())
 }
 
 fn run() -> Result<(), String> {
     let config = Config::from_env()?;
+    let policy = WorkerPolicy::PRODUCTION;
 
     // **Before anything reaches a cluster or a calendar.** D-117: the worker refuses to start on a
     // key it should not read. Both keys, because a readable payer is the same disclosure as a
@@ -229,7 +280,11 @@ fn run() -> Result<(), String> {
     // prints the right bytes and shells out elsewhere passes the line above and fails this one.
     let pinned = anchor_b.check_fingerprint()?;
 
-    let cluster = Cluster::new(config.rpc.clone(), certimining_checkpoint::ID);
+    let cluster = Cluster::new_with_timeout(
+        config.rpc.clone(),
+        certimining_checkpoint::ID,
+        policy.rpc_timeout,
+    );
     println!("anchor-b-worker: program  {}", cluster.program_id());
     println!("anchor-b-worker: ots      {version}, {pinned} sources matching OTS-CLIENT.sha256");
     println!("anchor-b-worker: handoffs {}", config.handoffs.display());
@@ -243,6 +298,7 @@ fn run() -> Result<(), String> {
             .collect::<String>()
     );
 
+    let mut consecutive_failures = 0u32;
     loop {
         let seconds = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -251,23 +307,56 @@ fn run() -> Result<(), String> {
         let now = i64::try_from(seconds).map_err(|e| format!("a clock beyond i64: {e}"))?;
         let today = day_index(now).ok_or("a clock before 1970 has no day index")?;
 
-        let observed = observe(&cluster, &anchor_b, now, today)?;
+        let observed = match observe(&cluster, &anchor_b, now, today) {
+            Ok(observed) => {
+                consecutive_failures = 0;
+                observed
+            }
+            Err(error) => {
+                retry_partition(
+                    policy,
+                    &mut consecutive_failures,
+                    "fresh state observation failed",
+                    &error,
+                )?;
+                continue;
+            }
+        };
 
-        match next_step(Schedule::DEPLOYED, &observed) {
+        match next_step_with_policy(Schedule::DEPLOYED, &observed, policy) {
             Step::Refuse(r) => return Err(why(r)),
 
             Step::Wait { until } => {
                 let ahead = until.saturating_sub(now).max(0);
-                let nap = Duration::from_secs(u64::try_from(ahead).unwrap_or(0)).min(MAX_SLEEP);
+                consecutive_failures = 0;
+                let nap = Duration::from_secs(u64::try_from(ahead).unwrap_or(0))
+                    .min(policy.poll_interval);
                 println!("anchor-b-worker: nothing due, {ahead}s until the next publication time");
                 std::thread::sleep(nap);
             }
 
             Step::Publish { epoch } => {
                 let root = root_for(&config, epoch)?;
-                let anchored = cluster
-                    .publish(epoch, root, &payer, &authority, 3)
-                    .map_err(|e| format!("epoch {epoch}: {e:?}"))?;
+                let anchored = match cluster.publish(
+                    epoch,
+                    root,
+                    &payer,
+                    &authority,
+                    policy.publish_attempts.saturating_sub(1),
+                ) {
+                    Ok(anchored) => anchored,
+                    Err(PublishFailed::OutOfAttempts | PublishFailed::Unreachable(_)) => {
+                        retry_partition(
+                            policy,
+                            &mut consecutive_failures,
+                            "checkpoint publication did not settle",
+                            &format!("epoch {epoch}"),
+                        )?;
+                        continue;
+                    }
+                    Err(error) => return Err(format!("epoch {epoch}: {error:?}")),
+                };
+                consecutive_failures = 0;
                 println!(
                     "anchor-b-worker: published epoch {epoch}, slot {}, signature {}",
                     anchored.published_slot, anchored.signature
@@ -276,9 +365,19 @@ fn run() -> Result<(), String> {
 
             Step::Submit { epoch } => {
                 let root = root_for(&config, epoch)?;
-                let pending = anchor_b
-                    .submit(epoch, &root)
-                    .map_err(|e| format!("epoch {epoch}: {e}"))?;
+                let pending = match anchor_b.submit(epoch, &root) {
+                    Ok(pending) => pending,
+                    Err(error) => {
+                        retry_partition(
+                            policy,
+                            &mut consecutive_failures,
+                            "calendar submission failed",
+                            &format!("epoch {epoch}: {error}"),
+                        )?;
+                        continue;
+                    }
+                };
+                consecutive_failures = 0;
                 println!(
                     "anchor-b-worker: stamped epoch {epoch}, receipt at {}",
                     pending.path.display()
@@ -300,14 +399,27 @@ fn run() -> Result<(), String> {
                         println!(
                             "anchor-b-worker: epoch {epoch} is single; Bitcoin has not confirmed yet"
                         );
-                        std::thread::sleep(MAX_SLEEP);
+                        consecutive_failures = 0;
+                        std::thread::sleep(policy.poll_interval);
                     }
                     Ok(Some(_)) => {
                         let receipt = std::fs::read(&pending.path)
                             .map_err(|e| format!("{}: {e}", pending.path.display()))?;
-                        let (digest, claim) = cluster
-                            .attach(epoch, &receipt, &payer, &authority)
-                            .map_err(|e| format!("epoch {epoch}: {e:?}"))?;
+                        let (digest, claim) =
+                            match cluster.attach(epoch, &receipt, &payer, &authority) {
+                                Ok(attached) => attached,
+                                Err(AttachRefused::Cluster(error)) => {
+                                    retry_partition(
+                                        policy,
+                                        &mut consecutive_failures,
+                                        "receipt attachment did not settle",
+                                        &format!("epoch {epoch}: {error}"),
+                                    )?;
+                                    continue;
+                                }
+                                Err(error) => return Err(format!("epoch {epoch}: {error:?}")),
+                            };
+                        consecutive_failures = 0;
                         println!(
                             "anchor-b-worker: attached epoch {epoch}, block {}, digest {}",
                             claim.height,
@@ -317,7 +429,15 @@ fn run() -> Result<(), String> {
                                 .collect::<String>()
                         );
                     }
-                    Err(e) => return Err(format!("epoch {epoch}: {e}")),
+                    Err(error) => {
+                        retry_partition(
+                            policy,
+                            &mut consecutive_failures,
+                            "receipt upgrade failed",
+                            &format!("epoch {epoch}: {error}"),
+                        )?;
+                        continue;
+                    }
                 }
             }
         }
