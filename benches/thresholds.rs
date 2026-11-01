@@ -12,10 +12,13 @@
 //! description that does not determine the figure is not a property of this system. What holds the line
 //! instead is what can: the compute-unit figures, which are deterministic and confirmed against the
 //! announced deployment's own transactions, asserted absolutely in CI. `band.rs` compares one runner
-//! against its own previous numbers so a change in the *code* shows up, but it **reports that drift and
-//! does not fail on it** while the band is uncalibrated (H-37, H-31) — so the compute figures and the
-//! TypeScript bound are the performance assertions, and no wall-clock regression gate exists until
-//! calibration restores the band's.
+//! against figures taken on its own runner class so a change in the *code* shows up, and it **fails on
+//! that drift** (H-47, 22 Oct 2026). It reported without failing while the band was one sample's guess;
+//! thirty CI runs replaced that with 15% for a matched class and 25% for the fleet fallback (D-141). So
+//! that comparison gated CI, beside the compute figures and the TypeScript bound. **It no longer does
+//! (D-144, 1 Nov 2026):** no CI runner matched a class, so `band.rs` is out of `all` and out of
+//! `ci.yml` and runs where a class is committed. In CI the compute figures and the TypeScript bound
+//! are what remain enforcing.
 //!
 //! What this file does now is **measure and report, with the machine named**. It asserts no performance
 //! threshold, so no figure here can fail on a loaded laptop; its correctness controls still can, and do

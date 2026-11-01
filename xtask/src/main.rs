@@ -22,11 +22,13 @@
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
 mod citations;
+mod decisions;
 mod demo;
 mod live_values;
 mod record;
 mod spec;
 mod spec_pin;
+mod status;
 mod suppressions;
 mod test_targets;
 
@@ -125,6 +127,12 @@ fn main() {
         // The deployment record against the files it describes (H-36). Separate from the live-values
         // check because that one reads values and this one reads the prose and tables around them.
         // Documents that cite an invariant, against the specification's text for it (H-46, #143).
+        // Decision identifiers, which have to name one decision each (#256, L-01). Three open pull
+        // requests each added a D-142 that main had just taken, and the collision surfaced as a merge
+        // conflict on three branches at once rather than as a gate on the first of them.
+        Some("check-decisions") => {
+            decisions::check_decisions(&repo_root());
+        }
         Some("check-citations") => {
             citations::check_citations(&repo_root());
         }
@@ -147,6 +155,12 @@ fn main() {
         // Lint suppressions, counted by tokenising every tracked `.rs` file (M-02). This lived in
         // `scripts/ci.sh` as a pattern over single lines, and Rust admits comments and newlines
         // between an attribute's tokens, so the pattern was avoidable by spelling.
+        // The worker and band status statements, against what the code does (#254). Nine sentences
+        // across eight files outlived the heads that falsified them, and D-117's own amendment
+        // recorded the contradiction for nine days while README.md kept the sentence it contradicted.
+        Some("check-status") => {
+            status::check_status(&repo_root());
+        }
         Some("check-suppressions") => {
             suppressions::check_suppressions(&repo_root());
         }

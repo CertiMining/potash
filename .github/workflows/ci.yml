@@ -133,18 +133,12 @@ jobs:
       - run: scripts/ci.sh install-cargo-deny
       - run: scripts/ci.sh deny
 
-  # §4.4a's wall-clock half (D-132): this runner against its own committed baseline, with a band. This is
-  # the only wall-clock gate left — D-137 removed §4.4a's absolutes, which are now measured and reported
-  # with the machine named by `scripts/ci.sh thresholds`, run before submission rather than here.
-  bench-band:
-    needs: [kat01-offchain, kat01-onchain]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: scripts/ci.sh install-rust
-      - run: scripts/ci.sh bench-band
+  # **§4.4a has no wall-clock gate in CI, since 1 November 2026 (D-144).** The `bench-band` job stood
+  # here and compared this runner against a baseline committed for a runner class. No CI runner ever
+  # matched one, so every run took the fleet-wide fallback, whose band is narrower than the population it
+  # covers; the verdict tracked which machine GitHub assigned. The group still exists and still fails on
+  # drift, and it runs where a class is committed. What stays enforcing here is §1.8's compute-unit
+  # limits, asserted absolutely in `kat01-onchain`, and the TypeScript bound in `ts`.
 
   # The TypeScript verifier of E-11. It shares no code with the Rust side and needs no Rust
   # toolchain, so it depends on the KAT gate only, like every other job.
