@@ -48,10 +48,15 @@ ignore = [
   #
   #   THE ONE PATH THAT IS REACHED, stated so the rest can be read against it. The typed blocking
   #   client hardcodes `UiAccountEncoding::Base64Zstd` in `get_account_with_commitment` and
-  #   `get_multiple_accounts_with_commitment`, and exposes neither a config-taking variant nor a
-  #   generic `send`, so the request cannot be changed without leaving it. The response is decoded by
-  #   `UiAccountData::decode` in solana-account-decoder-client-types 4.2.2, which builds a **fresh**
-  #   `zstd::stream::read::Decoder` per response and reads it to end. That single call is the whole
+  #   `get_multiple_accounts_with_commitment`, which is why this workspace meets zstd at all.
+  #   **Corrected 1 Nov 2026 (H-83, #282): it does expose a way round, and this comment said it did
+  #   not.** `send<T>` is public at `rpc_client.rs:1008`, and two methods take an
+  #   `RpcAccountInfoConfig` at `rpc_client.rs:3183` and `:3337`. Requesting plain base64 is possible;
+  #   what it costs is leaving the two commitment helpers this workspace calls, which is a cost
+  #   judgment and not an impossibility. The response is decoded by `UiAccountData::decode` in
+  #   solana-account-decoder-client-types 4.2.2, which builds a **fresh**
+  #   `zstd::stream::read::Decoder` **per account** and reads it to end — `getMultipleAccounts`
+  #   decodes each account it returns, so it is per account and not per response.
   #   of this workspace's zstd surface. `legacy` and `zdict_builder` are compiled in, by those
   #   crates' defaults; compiled is not called.
   #
@@ -75,7 +80,6 @@ ignore = [
   { id = "RUSTSEC-2026-0406", reason = "zstd-safe 7.3.0, use-after-free when changing a MULTITHREADED context with an unfinished frame. NOT REACHED: a multithreaded compression context on a single-shot decompression path. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
   # wasm32 only, and this repository builds the host, thumbv7em-none-eabihf and SBF. No wasm target
   # appears in scripts/ci.sh at all.
-  { id = "RUSTSEC-2026-0410", reason = "zstd-sys, WebAssembly allocator shim corrupts memory on allocation failure. NOT REACHED: the fault is on wasm32 and nothing here targets wasm32 (host, thumbv7em-none-eabihf and SBF only). EXPIRES 2026-12-31. RETIRE when the Solana stack takes a fixed zstd-sys (D-142)" },
 ]
 
 [licenses]
