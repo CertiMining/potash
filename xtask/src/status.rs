@@ -82,6 +82,11 @@ const STALE: [Stale; 9] = [
     },
 ];
 
+/// **A fixture in this module may not spell a needle bare (H-87).** The gate reads its own source
+/// outside the two lists, so a test string stating a needle is a statement in a scanned file. Tests
+/// needing a bare needle build it with `concat!`, which costs nothing at runtime and keeps the file
+/// honest. That is the price of not excluding the whole file, and it is the cheaper side.
+///
 /// An occurrence that is correct where it stands.
 ///
 /// **It records how many, because covering "every occurrence" fails open (H-79, #278).** The
@@ -141,14 +146,24 @@ fn inside_a_list(path: &str, text: &str, number: usize) -> bool {
     false
 }
 
-/// Whether the match at `at` sits inside a quoted or backticked span on its line.
+/// Whether the match at `at` is delimited by a quote or a backtick on both sides.
 ///
 /// **A needle named is not a needle used (H-79, #278).** `The sentence "no worker exists" became
 /// false on 20 October 2026` is true, and the gate used to condemn it. Prose that means the claim
 /// writes it bare, which is what every real occurrence in this repository does.
-fn is_named_not_used(line: &str, at: usize) -> bool {
-    let before = &line[..at];
-    before.matches('"').count() % 2 == 1 || before.matches('`').count() % 2 == 1
+///
+/// **It tests the two characters around the match, not a count of quotes on the line (H-87).** The
+/// first version counted quotes before the match and called the needle named when the count was
+/// odd. A Rust raw string opens with `r#"`, so that quote made the count even and a genuinely
+/// quoted needle read as a bare claim — which is how a test added in #286 turned `main` red. A
+/// phrase in quotes is delimited by them, and asking that directly has no parity to get wrong.
+fn is_named_not_used(line: &str, at: usize, needle_len: usize) -> bool {
+    let opened = line[..at].chars().next_back();
+    let closed = line[at + needle_len..].chars().next();
+    matches!(
+        (opened, closed),
+        (Some('"'), Some('"')) | (Some('`'), Some('`'))
+    )
 }
 
 /// Every file a reader could meet: tracked, plus untracked and not ignored.
@@ -227,7 +242,7 @@ fn findings(root: &Path) -> (Vec<String>, Vec<String>, usize) {
                 while let Some(found) = lowered[from..].find(stale.needle) {
                     let at = from + found;
                     from = at + stale.needle.len();
-                    if is_named_not_used(line, at) {
+                    if is_named_not_used(line, at, stale.needle.len()) {
                         continue;
                     }
                     match exempted(&path, stale.needle) {
@@ -384,22 +399,34 @@ mod tests {
     fn a_needle_named_in_quotes_or_backticks_is_not_a_claim() {
         let line = r#"The sentence "no worker exists" became false on 20 October 2026."#;
         let at = line.find("no worker exists").expect("present");
-        assert!(is_named_not_used(line, at));
+        assert!(is_named_not_used(line, at, "no worker exists".len()));
 
         let span = "The needle `no worker exists` is in the list.";
         let at = span.find("no worker exists").expect("present");
-        assert!(is_named_not_used(span, at));
+        assert!(is_named_not_used(span, at, "no worker exists".len()));
     }
 
     /// The same needle written bare is the claim itself, and still fails.
     #[test]
     fn a_needle_used_bare_is_a_claim() {
-        let line = "No worker exists in this repository.";
+        // Spelled in two pieces so this module's own source does not state the claim: the
+        // gate reads its own file now, and a fixture spelling a needle bare is a sentence
+        // in a scanned file.
+        let line = concat!("No worker ", "exists in this repository.");
         let at = line
             .to_lowercase()
             .find("no worker exists")
             .expect("present");
-        assert!(!is_named_not_used(line, at));
+        assert!(!is_named_not_used(line, at, "no worker exists".len()));
+    }
+
+    /// H-87. A Rust raw string opens with `r#"`, which made the old quote count even and a quoted
+    /// needle read as a bare claim. That is how a test added in #286 turned `main` red.
+    #[test]
+    fn a_needle_quoted_inside_a_raw_string_is_still_named() {
+        let line = r##"        let line = r#"The sentence "no worker exists" became false."#;"##;
+        let at = line.find("no worker exists").expect("present");
+        assert!(is_named_not_used(line, at, "no worker exists".len()));
     }
 
     /// H-78 (#277). Only the two lists are skipped in this module, not every line of it. The old
