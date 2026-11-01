@@ -22,6 +22,14 @@
 //! produce; it is refused by name instead of being treated as a successful send. A watchdog fed by a
 //! call that silently did nothing is the defect class this module was written under.
 //!
+//! **Unix only, and unconditionally so.** There is no `cfg(not(unix))` fallback, because
+//! `cargo metadata`'s own coverage gate refuses a `cfg` operator it cannot reduce to a feature set
+//! and fails closed rather than under-count the tests behind it — which it did to the first version
+//! of this module, correctly. Nothing builds this crate for a non-Unix target: the bare-metal target
+//! is `certimining-core`, the deployment is Linux and the development hosts are macOS, so a second
+//! implementation would be unreachable code kept honest by nobody. A port would add the `cfg` back
+//! deliberately and teach the gate the operator in the same change.
+//!
 //! **An unset `NOTIFY_SOCKET` is not an error and is not success either.** It means the worker is not
 //! running under a service manager, which is the ordinary case for a developer running it by hand.
 //! `Refused::NotSupervised` says so, and the caller is expected to print it once, because a worker
@@ -86,7 +94,6 @@ fn socket_from(raw: &str) -> Result<PathBuf, Refused> {
 /// Separate from the environment so that the test below is a real round trip against a real socket
 /// rather than an assertion about a predicate. That distinction is the whole of H-95: `alert.rs`
 /// passed eleven tests while nothing called it.
-#[cfg(unix)]
 pub fn send_to(socket: &Path, message: &str) -> Result<(), Refused> {
     use std::os::unix::net::UnixDatagram;
 
@@ -101,17 +108,6 @@ pub fn send_to(socket: &Path, message: &str) -> Result<(), Refused> {
             error: e.to_string(),
         })?;
     Ok(())
-}
-
-/// On a target with no Unix sockets there is no `sd_notify` to speak, and saying so is the honest
-/// form. The deployment is Linux and the development hosts are Unix, so this arm exists to keep the
-/// crate from becoming Unix-only by accident rather than by decision.
-#[cfg(not(unix))]
-pub fn send_to(socket: &Path, _message: &str) -> Result<(), Refused> {
-    Err(Refused::Unwritable {
-        path: socket.display().to_string(),
-        error: "this target has no Unix domain sockets, so sd_notify cannot be spoken".to_owned(),
-    })
 }
 
 /// Sends `lines` to whatever `NOTIFY_SOCKET` names.
@@ -200,7 +196,6 @@ mod tests {
     /// Under `/tmp` rather than `std::env::temp_dir()` because a `sockaddr_un` path is capped near
     /// 104 bytes and macOS puts the temporary directory under a long `/var/folders/…` prefix. A test
     /// that skipped itself on a long path would be the thing this module exists to stop.
-    #[cfg(unix)]
     #[test]
     fn a_notification_arrives_at_the_socket_it_names() {
         use std::os::unix::net::UnixDatagram;
@@ -239,7 +234,6 @@ mod tests {
 
     /// A socket nothing is listening on is a failure the caller reports, not a panic and not a
     /// silent success.
-    #[cfg(unix)]
     #[test]
     fn a_socket_that_does_not_exist_is_unwritable_rather_than_fine() {
         let missing = PathBuf::from(format!(
