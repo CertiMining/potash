@@ -442,8 +442,10 @@ deny() {
 # **This group fails on drift past the band again (H-47).** It was report-only from 12 October, when a
 # 50% band derived from one sample flaked on a pull request containing no Rust at all. Thirty CI runs
 # were collected on 22 October, the band is 15% and `benches/BASELINE.toml` carries the derivation
-# beside the number — so a wall-clock regression gate exists in this repository again, which is the one
-# §4.4a describes. What also fails here is structural: an absent baseline entry, a non-finite band or
+# beside the number. **That gate is no longer CI's, since D-144 (1 Nov 2026):** this group is out of
+# `all` and out of `ci.yml`, because no CI runner ever matched a committed class and the fallback it
+# fell to every time is narrower than the population it covers. It still fails on drift where a class
+# is committed. What also fails here is structural: an absent baseline entry, a non-finite band or
 # baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a
 # corrupted leaf. An absent entry prints what it measured, because a baseline nobody measured is a gate
 # that cannot fail.
@@ -596,9 +598,15 @@ run() {
 # different reason: the first measures §4.4a's figures and reports them with the machine named, which is a
 # record to be read rather than a verdict, and the second is Criterion, which reports distributions. Both
 # still fail on a correctness control; neither asserts a performance threshold.
+#
+# **`bench-band` came out of this list, and out of ci.yml, on 1 November 2026 (D-144).** It compares a
+# wall-clock measure against a baseline committed for a runner class, and no CI runner has ever matched
+# one: five sampled jobs calibrated 0.9072 to 1.3503 ms against a 2.5% tolerance, so every CI run took
+# the fleet-wide fallback, whose band is narrower than the population it has to cover. The group still
+# exists and still fails on drift; it runs where a class is committed, which CI is not.
 all() {
   local failed=0 summary="" group code log
-  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts bench-band; do
+  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts; do
     log="$(mktemp)"
     echo "===== $group"
     run "$group" 2>&1 | tee "$log"
