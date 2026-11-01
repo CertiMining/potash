@@ -180,8 +180,8 @@ mod tests {
 
     /// A healthy deployment: caught up, heartbeat fresh, nothing pending.
     fn healthy() -> (Observed, Supervision) {
-        let last = 20_745;
-        let now = at(last) + 60;
+        let last: u64 = 20_745;
+        let now = at(last).saturating_add(60);
         (
             Observed {
                 now,
@@ -192,7 +192,7 @@ mod tests {
                 last_submitted: Some(last),
             },
             Supervision {
-                last_heartbeat: now - 60,
+                last_heartbeat: now.saturating_sub(60),
                 receipt_submitted_at: None,
                 consecutive_refusals: 0,
                 last_refusal: None,
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn a_silent_process_is_reported() {
         let (o, mut s) = healthy();
-        s.last_heartbeat = o.now - T.heartbeat_grace - 1;
+        s.last_heartbeat = o.now.saturating_sub(T.heartbeat_grace).saturating_sub(1);
         assert!(matches!(
             alerts(S, &o, &s, T).as_slice(),
             [Alert::ProcessSilent { .. }]
@@ -220,8 +220,10 @@ mod tests {
     /// publishing, and only the clock against the log says so.
     #[test]
     fn a_missed_publication_is_reported_even_though_the_process_is_healthy() {
-        let last = 20_745;
-        let now = at(last + 1) + T.publication_grace + 1;
+        let last: u64 = 20_745;
+        let now = at(last.saturating_add(1))
+            .saturating_add(T.publication_grace)
+            .saturating_add(1);
         let o = Observed {
             now,
             today: day(now),
@@ -231,7 +233,7 @@ mod tests {
             last_submitted: Some(last),
         };
         let s = Supervision {
-            last_heartbeat: now - 60,
+            last_heartbeat: now.saturating_sub(60),
             receipt_submitted_at: None,
             consecutive_refusals: 0,
             last_refusal: None,
@@ -240,7 +242,7 @@ mod tests {
         assert!(
             raised
                 .iter()
-                .any(|a| matches!(a, Alert::PublicationMissed { epoch, .. } if *epoch == last + 1)),
+                .any(|a| matches!(a, Alert::PublicationMissed { epoch, .. } if *epoch == last.saturating_add(1))),
             "the epoch that is owed is named: {raised:?}"
         );
     }
@@ -248,8 +250,10 @@ mod tests {
     /// And a publication merely inside its grace is not news.
     #[test]
     fn a_publication_inside_its_grace_is_not_reported() {
-        let last = 20_745;
-        let now = at(last + 1) + T.publication_grace - 1;
+        let last: u64 = 20_745;
+        let now = at(last.saturating_add(1))
+            .saturating_add(T.publication_grace)
+            .saturating_sub(1);
         let o = Observed {
             now,
             today: day(now),
@@ -259,7 +263,7 @@ mod tests {
             last_submitted: Some(last),
         };
         let s = Supervision {
-            last_heartbeat: now - 60,
+            last_heartbeat: now.saturating_sub(60),
             receipt_submitted_at: None,
             consecutive_refusals: 0,
             last_refusal: None,
@@ -271,8 +275,8 @@ mod tests {
 
     #[test]
     fn a_log_behind_the_newest_publishable_epoch_is_reported() {
-        let last = 20_740;
-        let now = at(20_745) + 60;
+        let last: u64 = 20_740;
+        let now = at(20_745).saturating_add(60);
         let o = Observed {
             now,
             today: day(now),
@@ -282,7 +286,7 @@ mod tests {
             last_submitted: Some(last),
         };
         let s = Supervision {
-            last_heartbeat: now - 60,
+            last_heartbeat: now.saturating_sub(60),
             receipt_submitted_at: None,
             consecutive_refusals: 0,
             last_refusal: None,
@@ -296,7 +300,7 @@ mod tests {
     fn a_receipt_past_its_budget_is_reported() {
         let (mut o, mut s) = healthy();
         o.awaiting_attach = Some(20_745);
-        s.receipt_submitted_at = Some(o.now - T.receipt_budget - 1);
+        s.receipt_submitted_at = Some(o.now.saturating_sub(T.receipt_budget).saturating_sub(1));
         assert!(alerts(S, &o, &s, T)
             .iter()
             .any(|a| matches!(a, Alert::ReceiptUnconfirmed { epoch, .. } if *epoch == 20_745)));
@@ -327,9 +331,9 @@ mod tests {
     #[test]
     fn conditions_are_reported_together_rather_than_one_at_a_time() {
         let (mut o, mut s) = healthy();
-        s.last_heartbeat = o.now - T.heartbeat_grace - 1;
+        s.last_heartbeat = o.now.saturating_sub(T.heartbeat_grace).saturating_sub(1);
         o.awaiting_attach = Some(20_745);
-        s.receipt_submitted_at = Some(o.now - T.receipt_budget - 1);
+        s.receipt_submitted_at = Some(o.now.saturating_sub(T.receipt_budget).saturating_sub(1));
         let raised = alerts(S, &o, &s, T);
         assert!(raised
             .iter()
