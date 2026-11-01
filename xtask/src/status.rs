@@ -77,7 +77,7 @@ const STALE: [Stale; 9] = [
         why: "bench-band fails on drift past its band since H-47, 22 Oct 2026",
     },
     Stale {
-        needle: "regression gate exists in this repository",
+        needle: "regression gate exists",
         why: "D-144 took bench-band out of all and out of ci.yml on 1 Nov 2026, so CI gates no wall-clock measure; §4.4a records it",
     },
 ];
@@ -89,11 +89,16 @@ struct Exempt {
     why: &'static str,
 }
 
-const EXEMPT: [Exempt; 1] = [
+const EXEMPT: [Exempt; 2] = [
     Exempt {
         path: "docs/DECISIONS.md",
         needle: "no worker exists",
         why: "D-117's amendment quotes the sentence it superseded, which is how it records the change",
+    },
+    Exempt {
+        path: "docs/TCU-02_CertiMining_Anchored_Log_v0.1.md",
+        needle: "regression gate exists",
+        why: "the v0.2.3 changelog entry describes that version, where no gate existed; v0.2.12's entry and §4.4a carry the current account",
     },
 ];
 
