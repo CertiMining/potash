@@ -8,7 +8,7 @@ turned out not to be reproducible.
 |---|---|---|---|
 | `publish_checkpoint` compute | ≤ 15,000 CU, **exceeded by two of five recorded rows** | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **9,071 to 25,575 CU by epoch**, five rows recorded exactly; the chain shows 8,810 — see below |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly; the same on chain |
-| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`; `benches/band.rs` **fails** past a 15% band on the CI runner (H-47) | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
+| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`; **not gated in CI** since D-144 — `benches/band.rs` still fails past 15% against a matched runner class, and runs where one is committed, which CI is not | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
 | Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
 | Inclusion proof verification | **none** (D-137) | the same two | 0.0023–0.0043 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
@@ -49,16 +49,40 @@ stated against it is not a property of this system, and the rows lost their thre
 tracking the slowest machine anyone tried (D-136, then D-137).
 
 What still asserts absolutely is what can: the compute figures, which are deterministic. The band
-compares one runner against its own previous numbers and **fails on drift past 15%** — restored on
-22 October 2026 from a series of 30 CI runs, in which no measure exceeded its baseline by more than
-2.4% (H-47). Its first run after restoration passed on the middle of three runner classes, at 0.87 to
-0.90 of baseline, so the comparison had room to fail and did not. So a wall-clock regression gate exists here, on the runner and only on the runner: the
-band is derived from the runner's spread and is tight for nothing else.
+**fails on drift**, restored on 22 October 2026 from a series of 30 CI runs in which no measure
+exceeded its baseline by more than 2.4% (H-47).
+
+**CI gates no wall-clock measure at present, since D-144 on 1 November 2026.** The band held a runner
+against figures committed for a runner class, and no CI runner ever matched one: five sampled jobs
+calibrated at 0.9072, 1.0988, 1.1029, 1.3470 and 1.3503 ms, each 2.96% to 6.22% from its nearest class
+against a 2.5% tolerance. Every CI run fell to the fallback described below, whose band is narrower
+than the population it covers, so the verdict tracked which machine the run landed on. `bench-band` is
+out of `all` and out of `ci.yml`; it still fails on drift and runs where a class is committed. **What
+this costs, plainly: a real wall-clock regression merges.** What remains enforcing in CI is §1.8's
+compute-unit limits, asserted absolutely, and the TypeScript bound. H-77 (#271) records the successor
+the ruling declined to build now.
+
+**Where it does run it has two sensitivities, and which applies depends on the machine (H-61, H-64, H-65, D-141).** A
+calibration — a fixed count of version-pinned Ed25519 verifications, on nothing this repository's code
+can move — selects what a run is compared against. Where it matches a committed runner class, the
+measures are held to figures taken on that class at **15%**. Where it matches none, each measure is
+divided by the calibration and compared against a fleet-wide ratio at **25%**, two-sided. The wider
+band is not slack: normalising removes machine speed but not the relation between Ed25519 and
+SHA-256, which is a property of each CPU, so the quotients still span 18 to 21% across the fleet. **A
+regression under 25% escapes on that path**, which is why classes are the rule and the fallback the
+exception. **D-144 found the fallback unsound rather than merely loose**, which is why CI no longer
+invokes the comparison at all rather than the band being widened: the full observed range of `inclusion_proof_verify` across the machines
+that ran this gate is 71% wide against a band of 67%, and the quotient is not monotonic in the
+calibration, so dividing by it does not order the two machines it is meant to compare.
+
+**A faster runner can fail now, and that is the half of this that added gating.** It could not before
+H-61: one baseline was held for the whole fleet, so 8 of those 30 runs came in at 0.59 to 0.64 of it
+where no code change could have pushed a measure over the limit, and the harness had to disclose that
+a pass was not a pass about the code. A class is compared against its own baseline, so there is
+nothing left to disclose.
 
 `scripts/ci.sh thresholds` still reports §4.4a's figures with the machine named rather than asserting
-them, and that record still has to be read. So does the band's own output, for a reason the gate cannot
-cover: a run on a faster runner class cannot fail the comparison at all, and 8 of those 30 runs were
-on one. The harness prints when it is, so a green tick is read for what it is.
+them, and that record still has to be read.
 
 ## Two kinds of number, and why they are gated differently (D-132)
 
@@ -191,31 +215,37 @@ machine, and D-137 then removed the absolute half outright, which leaves:
   full 10,000-epoch run is. It asserts no performance threshold. Its correctness controls still fail: the
   chain walk is cross-checked against the state machine, the proof is verified, and the workload is
   pinned to the sizes its rows name.
-- **In CI**, the runner is held to its own previous figures: `benches/band.rs` reads
-  `benches/BASELINE.toml` and compares each measure against its baseline plus `band_percent`.
-  **It reports drift and does not fail on it** (owner, 12 Oct 2026, H-37, H-31): the band is one
-  sample's 50% guess, it failed a pull request containing no Rust by 0.9% of the limit, and a gate
-  whose failures read as noise takes a real one down with them. Timings from at least twenty CI runs
-  will set the band from measured spread, the derivation recorded, and it becomes a failing gate
-  again. Its other assertions still fail — a missing baseline row, a non-finite band or baseline, a
-  fixture that is not the size its label claims, a timed no-op, a verifier accepting a corrupted
-  leaf. **So there is currently no wall-clock gate in the repository**, which D-137 had already left
-  as the only one.
+- **In CI**, the runner is held to figures taken on its own kind of machine: `benches/band.rs` reads
+  `benches/BASELINE.toml`, selects a runner class by calibration, and compares each measure against
+  that class's baseline plus `band_percent`. **It fails on drift** (H-47, 22 Oct 2026). It reported
+  without failing between 12 October and that date, because the band was then one sample's 50% guess
+  which had flaked on a pull request containing no Rust, and a gate whose failures read as noise
+  takes a real one down with it; the owner named the way back — twenty runs, the band derived from
+  the measured spread, the derivation recorded — and thirty runs took it. Where no class matches, the
+  comparison is against a fleet-wide ratio at 25% instead (D-141). Its other assertions fail as they
+  always did: a missing baseline row, a non-finite band or baseline, a fixture that is not the size
+  its label claims, a timed no-op, a verifier accepting a corrupted leaf.
 
 An absent baseline entry **fails** and prints what it measured. A baseline nobody measured would be a
 gate that cannot fail, and this repository has filed that defect more than once.
 
-**Run anywhere but the runner, `bench-band`'s comparison means nothing**, and that is true twice over
-now. The baseline is one machine's figures and the reference machine is about 1.8× faster, so locally the
-measures come in below the baseline and the comparison would not fire even if it asserted; and since it
-reports rather than asserts, it does not fire anywhere. It sits in `all` because `all` mirrors the push
-pipeline verbatim; the run that matters is CI's, where its figures are the series the calibration needs.
-Nothing gates the reference machine either: `scripts/ci.sh thresholds` records its figures (D-137).
+**Run anywhere but the runner, `bench-band`'s comparison still means nothing**, and it now says so by
+failing rather than by passing quietly. The reference machine's calibration has landed both inside and
+outside a committed class on different runs, which is itself the point: when it matches none it takes
+the fallback, and its Ed25519-to-SHA-256 relation is lower than any the fleet has shown — about 7.13
+where the fleet's lowest is 9.08 — which puts `inclusion_proof_verify` below the floor. The run then
+reports that nothing can be concluded. That is the correct verdict for this machine; what changed is only which
+sentence delivers it. `bench-band` sat in `all` because `all` mirrors the push pipeline verbatim, and
+the run that was supposed to matter was CI's — **which is exactly what D-144 withdrew, because CI's run
+never matched a class and so never made the comparison this document describes.** The group is out of
+`all` and out of `ci.yml`, and nothing gates the reference machine either: `scripts/ci.sh thresholds`
+records its figures (D-137).
 
-The band itself is **50%, and that is a guess**. How much these measures vary between runs on a shared
-runner has not been observed, so the number is not derived from anything; it is wide because a band that
-flakes gets disabled and a disabled gate is worse than a loose one. It is set from observed spread once a
-few runs exist. Until then a measure above its limit is reported, not failed, and means "look".
+**The bands are 15% and 25%, and both are derived — and since D-144 neither is run in CI.** 15% came from thirty CI runs whose widest
+excursion above baseline was 2.4%, so it fails a regression of 15% while leaving room no run has used
+(H-47). 25% came from the quotient spread across the fleet, 18 to 21%, measured over the readings
+taken under the current instrument (D-141). Neither is the 50% that preceded them, which was recorded
+as a guess at the time and flaked on a pull request containing no Rust.
 
 ## The reference machine
 
@@ -224,7 +254,8 @@ few runs exist. Until then a measure above its limit is reported, not failed, an
 ```sh
 scripts/ci.sh thresholds   # §4.4a's wall-clock figures, measured and reported
 scripts/ci.sh bench        # the Criterion distributions behind them
-scripts/ci.sh bench-band   # what CI runs: this machine against the committed baseline, reported
+scripts/ci.sh bench-band   # what CI runs. On this machine no class matches, so it takes the
+                           # fallback and reports that nothing can be concluded — see above.
 ```
 
 ## What "hash recomputation only" measures
@@ -287,10 +318,18 @@ as much as they measure code. Criterion warms up for seconds before recording an
 figure describes steady state, so these have to as well. An instrument that disagrees with the figure it
 is checking is not checking it.
 
-The reported figure, and the one `band.rs` compares, is the **median** of seven: the best of N reports
-only the moments the operating system left alone, the worst only the moments it did not. All three are
-printed, because a figure without its spread is the single-sample problem D-132 rejected — and the
-spread is what made D-137 visible.
+The reported figure, and the one `band.rs` compares for the three measures, is the **median** of
+seven: the best of N reports only the moments the operating system left alone, the worst only the
+moments it did not. All three are printed, because a figure without its spread is the single-sample
+problem D-132 rejected — and the spread is what made D-137 visible.
+
+**The calibration is the exception, and takes the fastest of the seven (H-64, D-141).** It is not
+being reported; it is identifying a machine, and interference can only make a sample slower, so the
+smallest is the closest any of them came to the machine's own speed. It is also the shortest thing
+this file times — 0.87 ms on the fastest class against a 7.9 ms chain walk — which made a median of
+it the noisiest number in the file while being the one that chose the baseline for the rest. One
+commit passed `bench-band` on its `push` run and failed on its `pull_request` run with chain walks
+1.8% apart and calibrations 90% apart, which is what prompted the change.
 
 ## Two implementations, measured separately
 

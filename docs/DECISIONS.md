@@ -1709,6 +1709,8 @@ bringing it at the time was the obligation, and a review had to surface it inste
 
 **Date:** 30 Sep 2026 · **Unit:** E-13 · **Class:** cost judgment · **Status:** settled at S0 (owner, 30 Sep 2026)
 
+**Superseded in part, 1 Nov 2026.** D-144 takes `bench-band` out of `all` and out of `ci.yml`, so the wall-clock half of the split this entry draws is no longer gated in CI at all. The compute-unit half is untouched and still asserted absolutely. The split itself stands; what changed is that only one side of it now reaches a merge gate.
+
 **Superseded in part, 4 Oct 2026.** D-137 removes §4.4a's wall-clock absolutes entirely, so the figures
 this entry names for the reference machine — a chain walk under 5 ms, an epoch root under 10 ms, a proof
 under 1 ms — are no longer asserted anywhere; `thresholds.rs` measures and reports them with the machine
@@ -1722,7 +1724,7 @@ measures are asserted absolutely in CI and the wall-clock half is the committed 
 **How a threshold fails a build, which is the harder half (agreed by the owner, 30 Sep 2026).** §4.4a mixes two kinds of measure and they cannot be gated the same way.
 
 - **Compute units are deterministic.** The same instruction against the same program costs the same CU on any machine, so `publish_checkpoint` ≤ 15,000 and `attach_anchor_receipt` ≤ 12,000 are asserted absolutely in CI. `scripts/ci.sh kat01-onchain` already does the first.
-- **Wall-clock is not.** A shared runner's timing varies by more than the margins §4.4a states, so an absolute assertion there would either flake or be loose enough to assert nothing. CI compares against a committed baseline and fails on a regression past a band — **at 15% where a runner class matches and 25% where none does, since D-141 (23 Oct 2026)**, because the fleet contains machines between the committed classes and a run on one of those had been failing as though the diff were at fault; §4.4a's absolute figures — a 10,000-record chain walk under 5 ms, an epoch root at 256 leaves under 10 ms, an inclusion proof under 1 ms — are asserted on the reference machine and **recorded with the machine named**, which is what §4.4a's own "reference laptop" wording requires.
+- **Wall-clock is not.** A shared runner's timing varies by more than the margins §4.4a states, so an absolute assertion there would either flake or be loose enough to assert nothing. **CI no longer compares at all, since D-144 (1 Nov 2026):** it compared against a baseline committed for a runner class, no CI runner ever matched one, and the fallback it fell to every time is narrower than the population it covers. Where a class is committed the comparison still runs and still fails — **at 15% where a runner class matches and 25% where none does, since D-141 (23 Oct 2026)**, because the fleet contains machines between the committed classes and a run on one of those had been failing as though the diff were at fault; §4.4a's absolute figures — a 10,000-record chain walk under 5 ms, an epoch root at 256 leaves under 10 ms, an inclusion proof under 1 ms — are asserted on the reference machine and **recorded with the machine named**, which is what §4.4a's own "reference laptop" wording requires.
 - **The signature path is measured and published with no threshold**, which §4.4a states outright: a bound on it belongs in v0.2, set from real data rather than guessed now.
 
 ## D-133 · P-03 runs its whole domain instead of sampling it
@@ -2101,3 +2103,21 @@ which point it stops being operational and becomes a `CMv1` tag by amendment, wi
 **Cost.** Fifteen lines in `deny.toml` that read as a policy change rather than a silence, and a gate that is green on a dependency set carrying known faults. The comment above them says so.
 
 **Revisit if.** Any of the three moves to a fixed version, in which case the matching lines come out. Any new advisory against the same crates, which fails CI and takes its own decision. 31 December 2026 regardless, at which point every line is re-argued or removed.
+
+## D-144 · `bench-band` leaves CI, because no CI runner ever matched a class
+
+**Date:** 1 Nov 2026 · **Unit:** H-74 (issue #268) · **Class:** cost judgment · **Status:** settled at S0 (owner, 1 Nov 2026)
+
+**Decision (the owner's).** `bench-band` comes out of `scripts/ci.sh`'s `all` list and out of `.github/workflows/ci.yml`. The group is kept and still fails on drift; it is run where a runner class is committed. §4.4a, this record, `benches/BASELINE.toml`, `CONTRIBUTING.md`, `docs/performance.md` and `README.md` say that CI has no wall-clock gate at present and that §1.8's compute-unit limits remain enforcing. The specification goes to v0.2.12.
+
+**What was found.** The gate's reference population excludes the machines that run it, at both ends. Five CI jobs printed their figures: calibrations of 0.9072, 1.0988, 1.1029, 1.3470 and 1.3503 ms, each 2.96% to 6.22% from its nearest committed class against a 2.5% matching tolerance. **No CI run has ever taken the matched-class path.** The 15% comparison that §4.4a and both reader documents describe first has never executed in CI; only the 25% fallback has.
+
+**Why the fallback cannot be widened instead.** It is unsound on this population rather than merely loose. For `epoch_root_256_leaves` the CI readings alone span 29.3% and the highest sat 2.57% past a limit set at 25% above the fleet figure. Taking H-74's original local readings for `inclusion_proof_verify` — 0.002107 to 0.002151 over 29 runs, 26% to 28% below the committed fleet figure — the full observed range of that one measure is 0.002107 to 0.003604, **71% wide against a band 67% wide**. No width centred on that figure holds both ends. And the normalisation the fallback rests on does not hold: `BASELINE.toml` says dividing by the calibration removes machine speed, yet the highest quotient came from calibration 1.1029 while 1.3503 gave less and 0.9072 less again. The quotient is not monotonic in the calibration, which the file's own note that the two "do not scale together across machines" already predicted.
+
+**Why removal rather than a per-class CI baseline.** Pinning CI to a fixed runner size would make the documented design true, and a fixed size is a paid product; that is a cost the project is not taking now. Re-deriving the fleet figures over every reading would produce a band wide enough to cover 71%, which catches only regressions larger than that and is a gate in name.
+
+**What this costs, stated plainly.** No wall-clock regression on any measure is caught by CI from this date. A real 30% slowdown in the chain walk would merge. That is the cost of the alternative being a verdict that tracked which machine GitHub assigned: two pull requests, #257 and #261, were failing this gate on documentation changes that touched no measured code, and a gate that fails at random teaches a reader to ignore red, which is worse than a gate honestly absent.
+
+**What stays enforcing.** §1.8's compute-unit limits, deterministic and asserted absolutely in `kat01-onchain`. The TypeScript bound in `ts`, asserted on the runner rather than against a machine description. The band's structural controls wherever the comparison is run: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. And `scripts/ci.sh thresholds`, which measures §4.4a's figures and reports them with the machine named, run before submission.
+
+**Revisit if** a CI runner is pinned and a class committed for it, or when H-77 lands a comparison against recent history on `main`, which is the option this decision declined to build now rather than rejected. Either returns a wall-clock gate to CI, and either is a change to this entry.

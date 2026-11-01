@@ -11,7 +11,10 @@
 //! on a pull request containing no Rust at all, and the owner made it report-only and named the way
 //! back — twenty CI runs, the band set from the measured spread, the derivation recorded, the
 //! assertion restored. Thirty runs were collected on 22 October and `BASELINE.toml` carries what they
-//! show. **So a wall-clock regression gate exists in this repository again**, at 15% rather than 50%.
+//! show, at 15% rather than 50%. **That gate left CI on 1 November 2026 (D-144), and this comparison
+//! now runs only where a runner class is committed.** No CI runner ever matched one, so every CI run
+//! took the fallback below, whose band is narrower than the population it covers. It still fails on
+//! drift where it runs; CI's wall-clock half is simply not gated.
 //!
 //! **A pass on a fast runner means nothing, and this says so.** GitHub's fleet is mixed: 8 of those 30
 //! runs came in at 0.59 to 0.64 times the baseline, where no code change could have pushed a measure
@@ -596,8 +599,9 @@ fn against_its_own_class(class: &Class, measured: &[(&str, f64)], band: f64, tol
     //
     // **What the band still does not cover**, said rather than discovered: a *change* in a class's own
     // speed, from a kernel or microcode update on the same hardware. The calibration moves with it, so
-    // the class stops matching and this fails asking for a new block — which is the right failure, and
-    // it reads the same as new hardware because from here it is indistinguishable.
+    // the class stops matching and the run leaves this path for the fleet fallback at its wider band
+    // (H-65, D-141). It reads the same as new hardware because from here it is indistinguishable, and
+    // the remedy is the same: a class block measured on the new reading, not a wider band.
     assert!(
         over.is_empty(),
         "band: {} measure(s) above the limit for [class.{}], whose baseline was taken on a machine \
