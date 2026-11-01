@@ -1,6 +1,6 @@
 # TCU-02 — CertiMining Anchored Log (Plan C)
 
-**Version 0.2.12 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
+**Version 0.2.13 · Supersedes TCU-01 in full · Target: Colosseum Crypto World's Fair, submissions due 12 Oct 2026**
 
 *v0.2.0 consolidates all amendments merged since v0.1.14; branch-local numbers 0.1.15 to 0.1.19 were never released.*
 
@@ -87,6 +87,17 @@ cannot order is not a gate, and two pull requests were failing it on documentati
 `bench-band` group leaves `all` and leaves `ci.yml`; it still fails on drift and is run where a class
 is committed. §1.8's compute-unit limits are unaffected and remain asserted absolutely in CI. H-74,
 ruled 1 November 2026.*
+
+*v0.2.13 removes two requirements this document had already made unsatisfiable, both found by the
+isolated re-evaluation of the TypeScript defect ledger against v0.2.12 (issue #255). E-03 asked for a
+domain-tagged checkpoint preimage writer; v0.2.2 retired `TAG_CKPT` and §1.2 states that its preimage
+was never defined and that a conforming implementation does not define the tag, so the writer had
+nothing to write. E-09 and RES-07 asked for gap detection; v0.2.0's correction to INV-ANCH-02 says in
+terms that there is no such gap, because accepting `last_epoch + 1` and nothing else makes the
+published range contiguous by construction. Both now name what the document provides, which for the
+second is the lag surface INV-ANCH-02 defines. **Neither changes a requirement on an implementation:**
+one asked for something impossible and the other named a detector for an unreachable condition, which
+is the shape D-80 calls a defect for error codes. H-93 and H-94, ruled 1 November 2026.*
 
 **Program:** `certimining_checkpoint` (Solana / Anchor) · **Engine:** `certimining-core` + `certimining-log` (runtime-agnostic)
 
@@ -734,7 +745,7 @@ Twenty-six days to the deadline. The engine is the submission; the ordering belo
 
 **E-02 · Canonicalization + commitment (days 1–2).** NFKD → ASCII uppercase → filter to A–Z and 0–9 → bounds (§1.3). Property test: idempotent, total, never panics on invalid UTF-8.
 
-**E-03 · Preimage writers (days 2–3).** Domain-tagged, length-prefixed writers for asset, leaf, head, checkpoint, padding, SPI. No string formatting anywhere in the path.
+**E-03 · Preimage writers (days 2–3).** Domain-tagged, length-prefixed writers for asset, leaf, head, padding, SPI. No string formatting anywhere in the path. **The checkpoint writer left this list in v0.2.13 (H-93).** v0.2.2 retired `TAG_CKPT`, and §1.2 records that its preimage was never defined and that a conforming implementation does not define the tag — so this unit asked for a writer with nothing to write and no tag to write it under.
 
 **E-04 · State machine (days 3–5).** `ChainState::apply` with all six conditions, checked arithmetic, pure unit tests, no Solana types in scope. Includes flag computation per INV-STATE-06/06a — flags computed, recorded, excluded from the leaf preimage, never a rejection path.
 
@@ -746,7 +757,7 @@ Twenty-six days to the deadline. The engine is the submission; the ordering belo
 
 **E-08 · Anchor program (days 10–11).** `initialize`, `publish_checkpoint`, `attach_anchor_receipt`. Monotone epochs, write-once fields, error offset mapping. Small surface; budget most of the time for the negative tests.
 
-**E-09 · Solana anchor client (days 11–12).** Publish path, root fetch by epoch, confirmation handling, gap detection surfaced to the client.
+**E-09 · Solana anchor client (days 11–12).** Publish path, root fetch by epoch, confirmation handling, lag surfaced to the client as INV-ANCH-02 defines it. **This read “gap detection” until v0.2.13 (H-94),** a construction v0.2.0 had already withdrawn: accepting `last_epoch + 1` and nothing else makes the published range contiguous, so there is no gap to detect and what a client surfaces is lag.
 
 **E-10 · OTS worker (days 12–14).** Root → OpenTimestamps → receipt storage → `attach_anchor_receipt`. `anchorStatus` reporting per INV-ANCH-05.
 
@@ -953,7 +964,7 @@ certifies compliance
 - **RES-04 · The QP key is not credentialed.** Binding a key to a live professional registration is a Layer 6 problem this TCU does not solve.
 - **RES-05 · The log proves submission, not existence.** A record never submitted leaves no trace. No construction inside this architecture closes that; only an obligation to submit, external to the system, does.
 - **RES-06 · Canonicalization is the real identity attack surface.** Two spellings of one tenure produce two commitments. Published rules and a registry-code namespace narrow it; they do not close it. Letters with no compatibility decomposition, such as œ, æ and ß, are removed rather than transliterated, so spellings that differ only in them still produce different commitments.
-- **RES-07 · Batcher liveness.** A stalled batcher stalls the integrity claim for everyone in the batch. Gap detection makes the stall visible; it does not prevent it.
+- **RES-07 · Batcher liveness.** A stalled batcher stalls the integrity claim for everyone in the batch. The lag INV-ANCH-02 has a client surface makes the stall visible; it does not prevent it. **This read “Gap detection” until v0.2.13 (H-94).** v0.2.0 withdrew the gap, and the risk is unchanged by the correction: a stalled batcher is visible as lag exactly as it was said to be visible as a gap.
 - **RES-08 · The physical-digital boundary.** Sampling fraud, grade misrepresentation at the point of measurement, and sample substitution sit entirely outside what any of this can reach.
 - **RES-10 · The SPI construction carries no version.** It is fixed for this deployment, and changing it once promises exist outside this repository would need a mechanism §1.6 does not have, where the record chain has `schema_version`. *Narrowed in v0.2.8 (H-02).* This item also held that a promise establishes acceptance only to the party that observed it, and that half is closed: §1.6 now judges a transferred promise against a receipt over the promise's own encoding, so a holder who observed nothing has something to check. What that receipt does not fix is stated in §1.6 — it bounds existence from above only, and the epoch it establishes is a calendar epoch rather than a sequence one.
 - **RES-09 · Count-hiding is computational, not information-theoretic.** Padding leaves are PRF outputs under `k_e`, so indistinguishability holds against an adversary who cannot recover that key and fails against one who can. §4.4's V-Z-02 bounds a named battery of statistics, which is evidence that the construction carries no obvious tell; it is not a proof that no distinguisher exists. The claim to make outside this document is that an outside observer cannot tell how many records an epoch holds, never that nobody can. *Widened, not closed, in v0.2.10 (H-01).* The battery now includes a cross-epoch adversary and an occupancy estimator, so the evidence covers the count directly and covers structure no single epoch can show. Three of the five strengthenings H-01 names remain open: a learned distinguisher trained under a known key and tested under an unknown one, conditioning on the slot index, and a joint statistic over the leaf set with power against a small constant bias rather than a large one.
