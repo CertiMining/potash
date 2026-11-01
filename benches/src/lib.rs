@@ -2,8 +2,8 @@
 //! The fixtures §4.4a's measures are taken over, in one place.
 //!
 //! Criterion reports distributions (`chain.rs`, `epoch.rs`), `thresholds.rs` measures §4.4a's figures
-//! and reports them with the machine named (D-137), and `band.rs` compares the CI runner against its own
-//! previous numbers and reports the drift without failing on it (H-37, H-31). All three measure the same
+//! and reports them with the machine named (D-137), and `band.rs` compares the CI runner against figures
+//! taken on its own class and **fails** on the drift (H-47, D-141). All three measure the same
 //! thing, which is only true if they build the same inputs, so the inputs live here rather than in four
 //! copies.
 //!
