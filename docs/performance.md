@@ -8,7 +8,7 @@ turned out not to be reproducible.
 |---|---|---|---|
 | `publish_checkpoint` compute | ≤ 15,000 CU, **exceeded by two of five recorded rows** | `programs/certimining-checkpoint/tests/compute.rs`, in `kat01-onchain` | **9,071 to 25,575 CU by epoch**, five rows recorded exactly; the chain shows 8,810 — see below |
 | `attach_anchor_receipt` compute | ≤ 12,000 CU | the same test | **5,687 CU**, recorded exactly; the same on chain |
-| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`; `benches/band.rs` **fails** past 15% against the runner's own class, or past 25% against the fleet where no class matches (H-47, H-61, H-65) | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
+| Chain walk, 10,000 records, hash recomputation only | **none** (D-137) | reported by `benches/thresholds.rs`; **not gated in CI** since D-144 — `benches/band.rs` still fails past 15% against a matched runner class, and runs where one is committed, which CI is not | 7 ms idle, 13.8 ms loaded, 17.6–19.5 ms on another conforming M2 |
 | Epoch root, 256 leaves | **none** (D-137) | the same two | 0.20–0.38 ms |
 | Inclusion proof verification | **none** (D-137) | the same two | 0.0023–0.0043 ms |
 | TS verifier, 1,000-record chain, hash recomputation only | < 50 ms | `ts/test/perf.test.ts`, in the `ts` group (E-11) | in CI, every push |
@@ -50,9 +50,19 @@ tracking the slowest machine anyone tried (D-136, then D-137).
 
 What still asserts absolutely is what can: the compute figures, which are deterministic. The band
 **fails on drift**, restored on 22 October 2026 from a series of 30 CI runs in which no measure
-exceeded its baseline by more than 2.4% (H-47). So a wall-clock regression gate exists here.
+exceeded its baseline by more than 2.4% (H-47).
 
-**It has two sensitivities, and which applies depends on the machine (H-61, H-64, H-65, D-141).** A
+**CI gates no wall-clock measure at present, since D-144 on 1 November 2026.** The band held a runner
+against figures committed for a runner class, and no CI runner ever matched one: five sampled jobs
+calibrated at 0.9072, 1.0988, 1.1029, 1.3470 and 1.3503 ms, each 2.96% to 6.22% from its nearest class
+against a 2.5% tolerance. Every CI run fell to the fallback described below, whose band is narrower
+than the population it covers, so the verdict tracked which machine the run landed on. `bench-band` is
+out of `all` and out of `ci.yml`; it still fails on drift and runs where a class is committed. **What
+this costs, plainly: a real wall-clock regression merges.** What remains enforcing in CI is §1.8's
+compute-unit limits, asserted absolutely, and the TypeScript bound. H-77 (#271) records the successor
+the ruling declined to build now.
+
+**Where it does run it has two sensitivities, and which applies depends on the machine (H-61, H-64, H-65, D-141).** A
 calibration — a fixed count of version-pinned Ed25519 verifications, on nothing this repository's code
 can move — selects what a run is compared against. Where it matches a committed runner class, the
 measures are held to figures taken on that class at **15%**. Where it matches none, each measure is
@@ -60,7 +70,10 @@ divided by the calibration and compared against a fleet-wide ratio at **25%**, t
 band is not slack: normalising removes machine speed but not the relation between Ed25519 and
 SHA-256, which is a property of each CPU, so the quotients still span 18 to 21% across the fleet. **A
 regression under 25% escapes on that path**, which is why classes are the rule and the fallback the
-exception.
+exception. **D-144 found the fallback unsound rather than merely loose**, which is why it is no longer
+run where no class matches: the full observed range of `inclusion_proof_verify` across the machines
+that ran this gate is 71% wide against a band of 67%, and the quotient is not monotonic in the
+calibration, so dividing by it does not order the two machines it is meant to compare.
 
 **A faster runner can fail now, and that is the half of this that added gating.** It could not before
 H-61: one baseline was held for the whole fleet, so 8 of those 30 runs came in at 0.59 to 0.64 of it
@@ -222,11 +235,13 @@ outside a committed class on different runs, which is itself the point: when it 
 the fallback, and its Ed25519-to-SHA-256 relation is lower than any the fleet has shown — about 7.13
 where the fleet's lowest is 9.08 — which puts `inclusion_proof_verify` below the floor. The run then
 reports that nothing can be concluded. That is the correct verdict for this machine; what changed is only which
-sentence delivers it. `bench-band` sits in `all` because `all` mirrors the push pipeline verbatim; the
-run that matters is CI's. Nothing gates the reference machine either: `scripts/ci.sh thresholds`
+sentence delivers it. `bench-band` sat in `all` because `all` mirrors the push pipeline verbatim, and
+the run that was supposed to matter was CI's — **which is exactly what D-144 withdrew, because CI's run
+never matched a class and so never made the comparison this document describes.** The group is out of
+`all` and out of `ci.yml`, and nothing gates the reference machine either: `scripts/ci.sh thresholds`
 records its figures (D-137).
 
-**The bands are 15% and 25%, and both are derived.** 15% came from thirty CI runs whose widest
+**The bands are 15% and 25%, and both are derived — and 25% is no longer run (D-144).** 15% came from thirty CI runs whose widest
 excursion above baseline was 2.4%, so it fails a regression of 15% while leaving room no run has used
 (H-47). 25% came from the quotient spread across the fleet, 18 to 21%, measured over the readings
 taken under the current instrument (D-141). Neither is the 50% that preceded them, which was recorded
