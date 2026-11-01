@@ -1,44 +1,55 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
-# What OnFailure= reaches when a supervised unit stops being restarted (H-95, issue #300).
+# What OnFailure= reaches when a supervised unit fails (H-95, issue #300).
 #
 # This is the `RepeatedRefusal` emitter. `certimining-anchor-b-worker.service` names it as
 # `certimining-alert@%n.service`, so `%i` here is the failed unit's full name — `%n` expands to the
-# name including its suffix, which is why the instance is used directly and not suffixed again.
+# name including its `.service` suffix, which is why the instance is used directly and not suffixed
+# again.
 #
-# **It is reached once, not per refusal.** With Restart=on-failure the worker's unit goes to
-# `auto-restart` between attempts and only enters `failed` when StartLimitBurst is reached, which is
-# three refusals inside StartLimitIntervalSec. That is the threshold `Thresholds::DEPLOYED` carries as
-# `consecutive_refusals: 3`.
+# **It asks systemd what happened rather than trusting when it was called, and that is the whole
+# design of this unit.** `Thresholds::DEPLOYED` carries `consecutive_refusals: 3`, so this must page
+# on the third refusal and not the first. The obvious reading of the documentation is that it does:
+# `systemd.unit(5)` says OnFailure= "activates units when this unit enters the failed state", and a
+# unit with Restart= set is documented to reach `failed` only once its start limit is hit.
 #
-# **Replace ExecStart with your pager.** What ships here writes the failed unit's state and its last
-# refusal into the journal under its own identifier, so the condition is recorded on a host with no
-# paging configured rather than silently dropped. It is deliberately not a page: this repository does
-# not own anyone's on-call integration, and committing a webhook or a mail command would put a
-# deployment's own configuration into a public repository (R1).
+# That is not reliable, and it was checked rather than assumed. systemd's own issue tracker reports
+# OnFailure= firing on every auto-restart instead of once at the limit — systemd/systemd#8398 on
+# v237, systemd/systemd#27594, and systemd/systemd#33710 reporting once-only on v249 and
+# every-restart on v255. `RestartMode=normal`, the default, is documented as restarting "by going
+# through a failed/inactive state", which is the mechanism behind those reports. So on at least some
+# versions, a unit configured the obvious way pages on the first refusal while claiming to page on
+# the third — a threshold of three enforced by nothing, which is the defect class this issue was
+# filed under, reappearing one layer out.
 #
-# A refusal is not transient. `docs/RUNBOOK-WORKER-RECOVERY.md` names what each one means; the worker
-# stops rather than acting on a state it must not act on, so the log is intact and waiting, not
-# damaged.
+# ExecCondition= below therefore reads `Result` from systemd and pages only on `start-limit-hit`.
+# That holds whether OnFailure= fires once or on every restart, so the behaviour does not depend on
+# the version. A condition that exits non-zero makes this unit skip without being considered failed,
+# which is what ExecCondition= is for.
+#
+# **Still to be confirmed on the target host.** The machine this was written on has no systemd, so
+# none of it has been loaded. #251 carries the first load: `systemd-analyze verify` on both units,
+# then a deliberate three-refusal run to see how many times this unit is entered and how many pages
+# it emits. Until that is recorded, treat the count as designed rather than demonstrated.
 
 [Unit]
 Description=CertiMining alert for %i
-# Without this a failure of the alert itself would try to alert about the alert.
+# Without this, a failure of the alert would try to alert about the alert.
 OnFailure=
 
 [Service]
 Type=oneshot
 
-# **Deliberately one command with no shell.** An `ExecStart` that fails to parse leaves this unit
-# never running, and `OnFailure=` reaching a unit that does nothing is the failure this whole issue
-# was about — an instrument that passes by looking at nothing. A pipeline through `/bin/sh -c` with
-# quoting and line continuations is the kind of line that breaks silently, so it is not used here.
-# `systemd-cat` runs the program and tags its output, which puts one legible error-level entry in the
-# journal under its own identifier.
-#
-# The refusal itself is already in the journal: the worker prints it before exiting, and
-# `journalctl -u %i -n 40` shows it. The runbook says to read that, so this does not duplicate it.
+# `-P Result` needs systemd 246 or newer for the shorthand; the deployment target is Ubuntu 24.04,
+# which carries 255. `grep -qx` so that a Result merely containing the word does not match.
+ExecCondition=/bin/sh -c 'systemctl show -P Result %i | grep -qx start-limit-hit'
+
+# **One command and no shell.** An ExecStart that fails to parse leaves this unit never running, and
+# OnFailure= reaching a unit that does nothing is precisely the failure this issue was about.
+# `systemd-cat` runs the program and tags its output, putting one legible error-level entry in the
+# journal under its own identifier. The refusal itself is already there — the worker prints it before
+# exiting — so this does not duplicate it, it says where to look.
 ExecStart=/usr/bin/systemd-cat -t certimining-alert -p err /usr/bin/printf '%%s\n' "RepeatedRefusal: %i reached its start limit and is no longer being restarted. Read its last refusal with: journalctl -u %i -n 40. See RUNBOOK-WORKER-RECOVERY.md."
 
-# No [Install]: this is reached by the worker unit's OnFailure= and is not enabled on its own. A
+# No [Install]: this is reached by the worker unit's OnFailure= and is never enabled on its own. A
 # template instance has nothing to install.

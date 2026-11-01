@@ -22,15 +22,22 @@ Documentation=file:/usr/share/doc/certimining/RUNBOOK-WORKER-RECOVERY.md
 After=network-online.target
 Wants=network-online.target
 
-# **RepeatedRefusal, and the reason this is a burst rather than a per-failure hook.** A refusal makes
-# `run` return and the process exit non-zero. With Restart=on-failure the unit then goes to
-# `auto-restart` and not to `failed`, so OnFailure does *not* fire on each refusal — it fires when
-# restarting stops, which is when the start limit is reached. Three failures inside the interval is
-# therefore exactly the `consecutive_refusals: 3` threshold `Thresholds::DEPLOYED` carries, raised by
-# the one component that outlives a worker exit.
+# **RepeatedRefusal.** A refusal makes `run` return and the process exit non-zero. Three failures
+# inside StartLimitIntervalSec exhaust StartLimitBurst, the unit stops being restarted, and
+# OnFailure= reaches the alert unit. That is the `consecutive_refusals: 3` threshold
+# `Thresholds::DEPLOYED` carries, enforced by the one component that outlives a worker exit.
 #
-# StartLimitIntervalSec and StartLimitBurst belong in [Unit], not [Service]; they were moved there in
-# systemd 229 and a copy left in [Service] is silently ignored.
+# **How many times OnFailure= fires is version-dependent, so the alert unit does not rely on it.**
+# The documented behaviour is once, when the unit enters `failed`. systemd's own issue tracker
+# reports it firing on every auto-restart instead — systemd/systemd#8398, #27594, and #33710, the
+# last reporting once-only on v249 and every-restart on v255 — and `RestartMode=normal`, the default,
+# is documented as restarting "by going through a failed/inactive state", which is the mechanism
+# behind that. `certimining-alert@.service` therefore gates on `Result=start-limit-hit` read back
+# from systemd, so it pages on the third refusal on either behaviour. The comment there carries the
+# detail and what #251 still has to confirm on the target host.
+#
+# StartLimitIntervalSec and StartLimitBurst are [Unit] options, added in systemd 229. A copy left in
+# [Service] is not read.
 StartLimitIntervalSec=3600
 StartLimitBurst=3
 OnFailure=certimining-alert@%n.service

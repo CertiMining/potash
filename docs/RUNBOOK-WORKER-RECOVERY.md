@@ -25,7 +25,7 @@ silence, and a process that exits on its first refusal cannot count three in a r
 | alert | raised by | how it reaches you |
 |---|---|---|
 | `ProcessSilent` | systemd `WatchdogSec=1800` in the worker's unit, fed by `sd_notify` after each successful observation | the unit fails its watchdog and is restarted; the journal carries the gap |
-| `RepeatedRefusal` | systemd `Restart=on-failure` with `StartLimitBurst=3`, then `OnFailure=certimining-alert@%n.service` | once the start limit is reached, not once per refusal — a restart leaves the unit in `auto-restart`, and only the burst puts it in `failed` |
+| `RepeatedRefusal` | systemd `Restart=on-failure` with `StartLimitBurst=3`, then `OnFailure=certimining-alert@%n.service` | on the third refusal. How often `OnFailure=` itself fires is version-dependent, so the alert unit gates on `Result=start-limit-hit` read back from systemd rather than on being called |
 | `PublicationMissed` | the worker, each cycle | `anchor-b-worker: ALERT PublicationMissed: …` on stderr, so the journal |
 | `SequenceLag` | the worker, each cycle | the same |
 | `ReceiptUnconfirmed` | the worker, each cycle | the same |
@@ -151,7 +151,9 @@ second submission for the same epoch produces a second receipt and the attach fi
 
 ## `RepeatedRefusal`
 
-**Raised by** systemd, not the worker: `Restart=on-failure` with `StartLimitBurst=3`, then `OnFailure=certimining-alert@%n.service`. It arrives **once the start limit is reached, not once per refusal** — a unit being restarted sits in `auto-restart`, and only the burst puts it in `failed`. The worker exits on its first refusal, so it cannot count three.
+**Raised by** systemd, not the worker: `Restart=on-failure` with `StartLimitBurst=3`, then `OnFailure=certimining-alert@%n.service`. The worker exits on its first refusal, so it cannot count three itself.
+
+It arrives **on the third refusal**, and the unit works for that rather than assuming it. How often `OnFailure=` fires is version-dependent: documented as once, when the unit enters `failed`, but reported on every auto-restart on some versions (systemd/systemd#8398, #27594, and #33710, the last reporting once-only on v249 and every-restart on v255). `certimining-alert@.service` therefore gates on `Result=start-limit-hit`, read back from systemd, so it pages on the third either way. **If you are paged on a first refusal, that gate is not working** — check it before concluding the worker refused three times.
 
 **It means** the worker has refused the same way repeatedly, so the state is one it must not act on
 and no amount of restarting changes that. The refusal names which.
