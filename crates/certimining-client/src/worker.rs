@@ -130,8 +130,14 @@ pub enum Refusal {
     /// `last_epoch` is already ahead of the calendar, so the log is in the state D-88 cost an earlier
     /// deployment. Publishing more would deepen it; the worker stops and a human rules.
     LogAheadOfCalendar { last_epoch: u64, today: u64 },
-    /// The config account reports a `last_epoch` below `start_epoch`, which no sequence this program
-    /// writes can produce. The observation is wrong, or the account is not this log's.
+    /// The config account reports a `last_epoch` more than one below `start_epoch`, which no
+    /// sequence this program writes can produce. The observation is wrong, or the account is not
+    /// this log's.
+    ///
+    /// **Exactly one below is the initialised state and is accepted (H-89, #292).** `initialize`
+    /// writes `start_epoch - 1` so the first publication is `last + 1` like every other. This
+    /// comment used to say any value below `start_epoch` was impossible, which is what let the
+    /// barrier reject every new log without anyone noticing.
     LastBeforeStart { last_epoch: u64, start_epoch: u64 },
     /// More than the reviewed number of epochs are absent. Recovery must be explicitly bounded by
     /// an operator rather than letting an unattended worker replay an arbitrary backlog.
@@ -186,7 +192,13 @@ pub fn next_step_with_policy(
         last_submitted,
     } = *observed;
 
-    if last_epoch < start_epoch {
+    // **`start_epoch - 1` is the initialised state, not an impossible one (H-89, #292).** The
+    // barrier used to refuse `last_epoch < start_epoch`, and `initialize` writes
+    // `config.last_epoch = start_epoch - 1` so that the first publication is `last + 1` like every
+    // other. The worker therefore refused every new log and could not publish its first epoch; the
+    // deployed log was brought up by hand, which is why nothing met it. What remains impossible is
+    // a `last_epoch` more than one below `start_epoch`.
+    if last_epoch.saturating_add(1) < start_epoch {
         return Step::Refuse(Refusal::LastBeforeStart {
             last_epoch,
             start_epoch,
@@ -242,7 +254,14 @@ pub fn next_step_with_policy(
     // Complete an already-published epoch's Anchor-B work even when the log is far behind. The slip
     // barrier prevents creating another checkpoint; it must not strand a checkpoint that already
     // exists in `Single` state.
-    let slip = today.saturating_sub(last_epoch);
+    // **The slip is counted from the newest publishable epoch, not from today (H-90, #293).** An
+    // epoch publishes an hour after it ends, so epoch `N`'s publication instant falls in day
+    // `N + 1` and the newest epoch that can be published at any `now` is `today - 1`. Counting
+    // `today - last_epoch` made a caught-up log two behind at the very instant it was due, so with
+    // `max_epoch_slip` of one the worker waited for the publication time and then refused it —
+    // every epoch, with no value of `N` behaving differently. Nothing met it because nothing
+    // schedules the worker and the cycle is run by hand (D-117, D-139).
+    let slip = today.saturating_sub(1).saturating_sub(last_epoch);
     if slip > policy.max_epoch_slip {
         return Step::Refuse(Refusal::EpochSlipExceeded {
             last_epoch,
@@ -291,6 +310,14 @@ mod tests {
 
     /// Publication time for an epoch, so a test states "an hour after 20739 ended" rather than a
     /// number nobody can check.
+    /// The UTC day a Unix time falls in, stated the way the tests mean it.
+    fn day(now: i64) -> u64 {
+        match day_index(now) {
+            Some(d) => d,
+            None => panic!("{now} is before 1970, so the test states nothing"),
+        }
+    }
+
     fn at(epoch: u64) -> i64 {
         match publication_time(S, epoch) {
             Some(t) => t,
@@ -435,21 +462,23 @@ mod tests {
 
     #[test]
     fn a_log_that_has_published_nothing_publishes_its_start_epoch() {
+        // **This test's name was right and its body was not (H-89, #292; H-90, #293).** It asserted
+        // `LastBeforeStart` on the state `initialize` writes, so the name said publish and the
+        // assertion said refuse. Both barriers were off by one against the schedule.
+        let start = 20_723;
+        let now = at(start);
         let o = Observed {
-            now: at(20_746),
-            today: 20_746,
-            start_epoch: 20_723,
-            last_epoch: 20_722,
+            now,
+            today: day(now),
+            start_epoch: start,
+            last_epoch: start - 1,
             awaiting_attach: None,
             last_submitted: None,
         };
         assert_eq!(
             next_step(S, &o),
-            Step::Refuse(Refusal::LastBeforeStart {
-                last_epoch: 20_722,
-                start_epoch: 20_723
-            }),
-            "a log before its own start_epoch is an observation this program cannot have produced"
+            Step::Publish { epoch: start },
+            "a freshly initialised log publishes its start epoch"
         );
     }
 
@@ -584,5 +613,81 @@ mod tests {
             capped.partition_retry_delay(5),
             Some(Duration::from_secs(3))
         );
+    }
+
+    /// H-89 (#292). `initialize` writes `last_epoch = start_epoch - 1`, and the barrier refused
+    /// exactly that, so the worker could never publish a new log's first epoch.
+    #[test]
+    fn a_freshly_initialised_log_publishes_its_first_epoch() {
+        let start = 20_700;
+        let now = at(start);
+        let observed = Observed {
+            now,
+            today: day(now),
+            start_epoch: start,
+            last_epoch: start - 1,
+            awaiting_attach: None,
+            last_submitted: None,
+        };
+        assert_eq!(next_step(S, &observed), Step::Publish { epoch: start });
+    }
+
+    /// And the state that really is impossible is still refused.
+    #[test]
+    fn a_last_epoch_more_than_one_below_start_is_still_refused() {
+        let start = 20_700;
+        let now = at(start);
+        let observed = Observed {
+            now,
+            today: day(now),
+            start_epoch: start,
+            last_epoch: start - 2,
+            awaiting_attach: None,
+            last_submitted: None,
+        };
+        assert!(matches!(
+            next_step(S, &observed),
+            Step::Refuse(Refusal::LastBeforeStart { .. })
+        ));
+    }
+
+    /// H-90 (#293). A caught-up log publishes at the instant it waited for, instead of refusing it.
+    #[test]
+    fn a_caught_up_log_publishes_at_the_publication_time_it_waited_for() {
+        let last = 20_745;
+        let wake = at(last + 1);
+        let observed = Observed {
+            now: wake,
+            today: day(wake),
+            start_epoch: 20_700,
+            last_epoch: last,
+            awaiting_attach: None,
+            last_submitted: Some(last),
+        };
+        assert_eq!(
+            observed.today,
+            last + 2,
+            "the publication instant falls in the day after the epoch ends, which is the trap"
+        );
+        assert_eq!(next_step(S, &observed), Step::Publish { epoch: last + 1 });
+    }
+
+    /// And a log genuinely further behind than the policy allows is still refused.
+    #[test]
+    fn a_log_past_the_slip_allowance_is_still_refused() {
+        let last = 20_740;
+        let wake = at(20_745);
+        let observed = Observed {
+            now: wake,
+            today: day(wake),
+            start_epoch: 20_700,
+            last_epoch: last,
+            awaiting_attach: None,
+            last_submitted: Some(last),
+        };
+        assert!(matches!(
+            next_step(S, &observed),
+            Step::Refuse(Refusal::EpochSlipExceeded { .. })
+        ));
     }
 }

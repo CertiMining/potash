@@ -282,6 +282,10 @@ checks() {
   # kat01-onchain instead, because `checks` installs no Agave toolchain and builds no artefact — CI
   # found that by failing where a local run had passed against a stale target directory.
   check "test client" cargo test -p certimining-client --test fetch --test schedule
+  # The worker's recovery behaviour from state alone (#252). No key, no network, no clock: a
+  # restart is re-deriving `Observed`, so the harness tests the real recovery path. It found
+  # H-89 (#292) and H-90 (#293) on its first run.
+  check "worker recovery" cargo test -p certimining-client --test worker_recovery
   # **V-P-12, which no group named (H-62, #230).** `program_addresses` holds two offline tests and
   # neither was run by anything. One of them is `v_p_12_the_order_the_specification_first_printed_is_
   # not_what_this_derives` — the regression test for §2.4 having printed the PDA seeds in the wrong
