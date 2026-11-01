@@ -161,6 +161,13 @@ vectors() {
   # rather than beside claim-check, because this reads the same documents check-record does and asks
   # a question of the same shape: does the repository still agree with itself.
   cargo xtask check-citations || return 1
+  # **The worker and band status statements, against what the code does (#254).** Nine sentences
+  # across eight files outlived the heads that falsified them: anchor-b-worker was committed on 20
+  # October and the band's failure restored on 22nd, and README.md still denied the worker on a head
+  # where DECISIONS.md recorded that denial as superseded. check-citations cannot see it, because these
+  # cite a decision rather than an invariant, and claim-check cannot, because a status sentence is
+  # neither a banned phrasing nor a concept noun.
+  cargo xtask check-status || return 1
   # **Every test, bin and lib target, against the groups this file runs (H-62 #230, H-63 #240).** Two
   # targets were reached by nothing on 22 October: `confirm-anchor-b`'s own unit tests, because every
   # `cargo test` line here names `--test` targets and that excludes `--bin` ones, and V-P-12's

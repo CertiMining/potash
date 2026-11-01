@@ -27,6 +27,7 @@ mod live_values;
 mod record;
 mod spec;
 mod spec_pin;
+mod status;
 mod suppressions;
 mod test_targets;
 
@@ -147,6 +148,12 @@ fn main() {
         // Lint suppressions, counted by tokenising every tracked `.rs` file (M-02). This lived in
         // `scripts/ci.sh` as a pattern over single lines, and Rust admits comments and newlines
         // between an attribute's tokens, so the pattern was avoidable by spelling.
+        // The worker and band status statements, against what the code does (#254). Nine sentences
+        // across eight files outlived the heads that falsified them, and D-117's own amendment
+        // recorded the contradiction for nine days while README.md kept the sentence it contradicted.
+        Some("check-status") => {
+            status::check_status(&repo_root());
+        }
         Some("check-suppressions") => {
             suppressions::check_suppressions(&repo_root());
         }
