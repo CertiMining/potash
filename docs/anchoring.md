@@ -423,10 +423,13 @@ back. Epochs 20726 and 20727 share a Bitcoin block because they were stamped min
 calendars aggregated them into the same one.
 
 **The five misses above happened under a hand-run cycle, and this paragraph used to say no worker
-existed.** One does, as of 22 October 2026: `anchor-b-worker` reads the checkpoint authority at start,
-refuses any mode but `0600`, and refuses to run at all without a handoff it can verify — so what it
-publishes is a root it was given and not one it chose (D-117, D-139,
-[#49](https://github.com/CertiMining/potash/issues/49)).
+existed.** One does, as of 22 October 2026: `anchor-b-worker` reads the checkpoint authority and its
+distinct fee payer at start, refuses either at any mode but `0600`, and refuses to run at all without
+a handoff it can verify — so what it publishes is a root it was given and not one it chose. The fee
+payer is not the deploy/upgrade authority; D-143's preflight enforces that public-identity separation
+before the devnet orchestration starts (D-117, D-139, D-143,
+[#49](https://github.com/CertiMining/potash/issues/49)). The operator procedure is
+[`RUNBOOK-DEVNET-ANCHORING.md`](RUNBOOK-DEVNET-ANCHORING.md).
 
 **What has not happened is a timer**, which is why the misses are still the right explanation of the
 table above and not an account of something that could not recur. The log has been paused by decision

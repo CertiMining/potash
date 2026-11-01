@@ -1453,8 +1453,9 @@ The future tense above was right when it was written and is not now. D-139 divid
 two and both halves are binaries in `certimining-client`, behind the `cluster,ots` features so the
 default build and every test above them stay free of a key and of a network:
 
-* **`anchor-b-worker`** reads the checkpoint authority at start and refuses any mode but `0600`, which
-  is the startup path the 28 September amendment said did not exist. It holds neither `k_master` nor
+* **`anchor-b-worker`** reads the checkpoint authority and a distinct fee-only payer at start and
+  refuses either at any mode but `0600`, which is the startup path the 28 September amendment said
+  did not exist. D-143 removed the old deploy/upgrade-key fallback. It holds neither `k_master` nor
   the batcher signing key, and it refuses to run without a handoff it can verify — so what it
   publishes is a root it was given and not one it chose.
 * **`batcher-handoff`** builds the epoch and signs the handoff. It holds `k_master`, from which every
@@ -2072,6 +2073,37 @@ which point it stops being operational and becomes a `CMv1` tag by amendment, wi
 **Cost.** Fourteen lines in `deny.toml` that read as a policy change rather than a silence, and a gate that is green on a dependency set carrying known faults. The comment above them says so.
 
 **Revisit if.** Any of the three moves to a fixed version, in which case the matching lines come out. Any new advisory against the same crates, which fails CI and takes its own decision. 31 December 2026 regardless, at which point every line is re-argued or removed.
+
+## D-143 · Devnet anchoring is a split-host cycle with a distinct worker payer
+
+**Date:** 24 Oct 2026 · **Unit:** release-readiness item 5 · **Class:** security necessity · **Status:** implemented, pending owner review
+
+**Decision.** Devnet operations use three custody roles: a deployment host holds the program-address
+and deploy/upgrade keys; a batcher holds `k_master` and the batcher signing key; and an Anchor-B worker
+holds only a dedicated fee payer and the checkpoint authority. All five public identities are distinct.
+The worker payer is not the deploy/upgrade authority. Every host checks one shared public manifest,
+opens only its own `0600` private files, and refuses configuration naming another role's private file.
+
+**Why this was necessary.** `anchor-b-worker` defaulted its payer to `deploy-keypair.json`. The
+transaction API already accepts payer and authority separately, so the worker acquired upgrade power
+only as a shortcut for paying fees. That contradicted D-117's statement that the checkpoint authority
+was the one unattended key and made a worker compromise larger than the architecture claimed.
+
+**The operational boundary.** `scripts/devnet-anchoring-cycle.sh` admits only the exact devnet profile
+and endpoint for live commands. Its simulation is offline; its reconciliation is read-only; and its
+worker command requires an explicit acknowledgement before any transaction is attempted. It does not
+deploy a program, create production transactions, schedule a daemon, or confirm a Bitcoin claim.
+
+**What the staging rehearsal establishes.** LiteSVM loads the real SBF program, then observes a signed
+batcher handoff, root publication, the exact `TAG_RCPT || u16_le(len) || receipt` digest, attachment,
+`Dual` status and contiguous epoch state. Negative mutations alter the signed root, collapse key
+identities, replace the receipt prefix and skip an epoch. The receipt bytes are synthetic, so the
+rehearsal claims nothing about OpenTimestamps or Bitcoin consensus; those remain separate committed
+receipt/header tests and the `confirm-anchor-b` operator step.
+
+**Revisit if** a role boundary changes, a staging network other than Solana devnet is supported, or
+the worker becomes a managed timer. Any of those changes the custody or transaction boundary and must
+be decided rather than inferred from this helper.
 
 ## D-144 · `bench-band` leaves CI, because no CI runner ever matched a class
 
