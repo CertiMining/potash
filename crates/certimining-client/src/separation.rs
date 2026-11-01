@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Pure identity-separation checks for the split anchoring deployment (D-142).
+//! Pure identity-separation checks for the split anchoring deployment (D-143).
 //!
 //! The deployment preflight reads keys, but the decision is kept here so negative tests can prove
 //! each collision is rejected without opening a key file or reaching a network.
