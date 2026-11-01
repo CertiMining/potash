@@ -161,6 +161,19 @@ vectors() {
   # rather than beside claim-check, because this reads the same documents check-record does and asks
   # a question of the same shape: does the repository still agree with itself.
   cargo xtask check-citations || return 1
+  # **Decision identifiers, which have to name one decision each (#256, L-01).** docs/DECISIONS.md
+  # carries four identifiers twice with identical bodies and reserves a fifth before settling it, so a
+  # reference naming one of them names two headings. On 31 October three open pull requests each added
+  # a D-142 that main had just taken, and that surfaced as a merge conflict on three branches rather
+  # than as a gate on the first. The five on main are listed in the gate with what each one is.
+  cargo xtask check-decisions || return 1
+  # **The worker and band status statements, against what the code does (#254).** Nine sentences
+  # across eight files outlived the heads that falsified them: anchor-b-worker was committed on 20
+  # October and the band's failure restored on 22nd, and README.md still denied the worker on a head
+  # where DECISIONS.md recorded that denial as superseded. check-citations cannot see it, because these
+  # cite a decision rather than an invariant, and claim-check cannot, because a status sentence is
+  # neither a banned phrasing nor a concept noun.
+  cargo xtask check-status || return 1
   # **Every test, bin and lib target, against the groups this file runs (H-62 #230, H-63 #240).** Two
   # targets were reached by nothing on 22 October: `confirm-anchor-b`'s own unit tests, because every
   # `cargo test` line here names `--test` targets and that excludes `--bin` ones, and V-P-12's
@@ -436,15 +449,19 @@ deny() {
 # **This group fails on drift past the band again (H-47).** It was report-only from 12 October, when a
 # 50% band derived from one sample flaked on a pull request containing no Rust at all. Thirty CI runs
 # were collected on 22 October, the band is 15% and `benches/BASELINE.toml` carries the derivation
-# beside the number — so a wall-clock regression gate exists in this repository again, which is the one
-# §4.4a describes. What also fails here is structural: an absent baseline entry, a non-finite band or
+# beside the number. **That gate is no longer CI's, since D-144 (1 Nov 2026):** this group is out of
+# `all` and out of `ci.yml`, because no CI runner ever matched a committed class and the fallback it
+# fell to every time is narrower than the population it covers. It still fails on drift where a class
+# is committed. What also fails here is structural: an absent baseline entry, a non-finite band or
 # baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a
 # corrupted leaf. An absent entry prints what it measured, because a baseline nobody measured is a gate
 # that cannot fail.
 #
-# **A run on a faster runner class says so**, because it cannot fail the comparison whatever the code
-# does: 8 of those 30 runs came in at 0.59 to 0.64 of the baseline, where a pass is a true sentence
-# about a gate nothing exercised.
+# **A faster runner class fails on a regression like any other (H-61, #228)**, because each class is
+# compared against a baseline taken on it. Before that one baseline served the fleet, 8 of those 30 runs
+# came in at 0.59 to 0.64 of it, and the harness had to disclose that such a pass was a true sentence
+# about a gate nothing exercised. A run matching no class is compared against the fleet instead, at 25%
+# and two-sided (H-65, D-141).
 #
 # `--release` is not optional: a debug build measures the optimiser's absence.
 #
@@ -588,9 +605,15 @@ run() {
 # different reason: the first measures §4.4a's figures and reports them with the machine named, which is a
 # record to be read rather than a verdict, and the second is Criterion, which reports distributions. Both
 # still fail on a correctness control; neither asserts a performance threshold.
+#
+# **`bench-band` came out of this list, and out of ci.yml, on 1 November 2026 (D-144).** It compares a
+# wall-clock measure against a baseline committed for a runner class, and no CI runner has ever matched
+# one: five sampled jobs calibrated 0.9072 to 1.3503 ms against a 2.5% tolerance, so every CI run took
+# the fleet-wide fallback, whose band is narrower than the population it has to cover. The group still
+# exists and still fails on drift; it runs where a class is committed, which CI is not.
 all() {
   local failed=0 summary="" group code log
-  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts bench-band; do
+  for group in kat01-offchain kat01-onchain kat02 vectors checks miri deny ts; do
     log="$(mktemp)"
     echo "===== $group"
     run "$group" 2>&1 | tee "$log"
