@@ -25,6 +25,7 @@
     clippy::arithmetic_side_effects
 )]
 
+pub mod alert;
 mod anchor;
 #[cfg(feature = "ots")]
 pub mod bitcoin;
@@ -42,6 +43,7 @@ mod schedule;
 mod separation;
 mod worker;
 
+pub use alert::{alerts, Alert, Supervision, Thresholds};
 pub use anchor::{
     lineage_of, provenance_in, status_of, AnchorRef, AnchorStatus, Lineage, Touched, WhereItLanded,
 };

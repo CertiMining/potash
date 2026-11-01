@@ -1,7 +1,7 @@
 bc6be9e11540ab0b8d318a4690729f82198f5ef4337f3da9302dafc1f5b02182  INV-ANCH-01  README.md docs/anchoring.md docs/promises.md ts/README.md ts/SPEC-DEFECTS.md
 6bc0020284c904af9fea2b090afbc0bdf169a31b04b24840db5a772088454573  INV-ANCH-02  docs/anchoring.md docs/promises.md ts/README.md ts/SPEC-DEFECTS.md
 1396da7d84acef11b351d66af3e5346b169e1643ba6fe329598469c8e4006223  INV-ANCH-03  docs/anchoring.md
-9bd9f10964d5f3a1e1d1ad1d63a262c620dcc53defed69ab1dc741e428cf9270  INV-ANCH-04  docs/anchoring.md
+9bd9f10964d5f3a1e1d1ad1d63a262c620dcc53defed69ab1dc741e428cf9270  INV-ANCH-04  docs/RUNBOOK-WORKER-RECOVERY.md docs/anchoring.md
 ae50a95c50ba800f6bd2e7df8f4c449c5f7f2000cea97d2b1404da44c257ba8a  INV-ANCH-05  docs/anchoring.md ts/SPEC-DEFECTS.md
 0dd054aea9154be4f8d9284873737aeb2247d703ad3300465c7cf52b0878f13b  INV-ANCH-06  docs/anchoring.md
 d17a46a2e25fb4a36f0f7f57c244b3c7fd498adf29568913133a3cb0507fcea9  INV-DISC-01  demo/fixtures/README.md ts/README.md
