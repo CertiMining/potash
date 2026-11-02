@@ -44,7 +44,9 @@
     clippy::arithmetic_side_effects
 )]
 
-use certimining_client::{day_index, refuse_a_readable_key, refuse_to_write, Handoff, HANDOFF_LEN};
+use certimining_client::{
+    day_index, refuse_a_readable_key, refuse_to_write, Handoff, Schedule, HANDOFF_LEN,
+};
 use certimining_core::{
     Digest, HandoffPreimage, NativeKeccak, Preimage, PreimageBuf, SubmissionId,
 };
@@ -193,13 +195,23 @@ fn run() -> Result<String, String> {
     let signing_path = PathBuf::from(env("CERTIMINING_BATCHER_SIGNING_KEY")?);
     refuse_the_authoritys_key(&signing_path)?;
 
-    // **The day index this process believes it is, from its own clock.** `publish_checkpoint` reads
-    // the chain's, and v0.2.4 refuses an epoch ahead of it; refusing here costs nothing instead.
+    // **This process's own clock.** `publish_checkpoint` reads the chain's, and v0.2.4 refuses an
+    // epoch ahead of it; refusing here costs nothing instead.
+    //
+    // The seconds are passed on as they are. `refuse_to_write` derives the day index itself, so this
+    // no longer computes one and hands both along — the caller passing a clock and a day it claimed
+    // to have derived from it, with nothing checking they agreed, is the conflation M-04 of the
+    // 1 November audit names in `Observed` (H-100, issue #309).
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| format!("the clock is before the unix epoch: {e}"))?;
     let seconds = i64::try_from(now.as_secs()).map_err(|e| format!("the clock: {e}"))?;
-    let today = day_index(seconds).ok_or_else(|| "the clock has no day index".to_string())?;
+    // Refused here as well as there, because this happens before any key is read.
+    if day_index(seconds).is_none() {
+        return Err(format!(
+            "the clock reads {seconds}, which has no UTC day index"
+        ));
+    }
 
     let records = submissions(
         std::env::var("CERTIMINING_SUBMISSIONS")
@@ -235,8 +247,14 @@ fn run() -> Result<String, String> {
 
     let destination = handoffs.join(format!("{epoch}.handoff"));
     let existing = std::fs::read(&destination).ok();
-    refuse_to_write(epoch, today, existing.as_deref(), &bytes)
-        .map_err(|e| format!("{}: {e:?}", destination.display()))?;
+    refuse_to_write(
+        Schedule::DEPLOYED,
+        epoch,
+        seconds,
+        existing.as_deref(),
+        &bytes,
+    )
+    .map_err(|e| format!("{}: {e:?}", destination.display()))?;
     std::fs::create_dir_all(&handoffs).map_err(|e| format!("{}: {e}", handoffs.display()))?;
     std::fs::write(&destination, bytes).map_err(|e| format!("{}: {e}", destination.display()))?;
 
