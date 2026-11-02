@@ -96,22 +96,34 @@ const STALE: [Stale; 9] = [
 struct Exempt {
     path: &'static str,
     needle: &'static str,
-    /// Bare occurrences this records. One more is a new claim, not this one.
-    occurrences: usize,
+    /// The normalized sentence this records, which is what makes the exemption non-fungible.
+    ///
+    /// **It used to be a count, and a count is substitutable (H-102, issue #311).** An exemption
+    /// named `(path, needle)` and how many bare occurrences it expected, so replacing an exempt
+    /// historical occurrence with a live false one left the count intact and the gate green. Naming
+    /// the sentence means a different occurrence is a different exemption, and editing the sentence
+    /// retires the one that covered it — which is the review the exemption stands in for.
+    sentence: &'static str,
     why: &'static str,
 }
 
-const EXEMPT: [Exempt; 2] = [
+const EXEMPT: [Exempt; 3] = [
     Exempt {
         path: "docs/DECISIONS.md",
         needle: "no worker exists",
-        occurrences: 1,
-        why: "D-117's amendment quotes the sentence it superseded, which is how it records the change",
+        sentence: "present tense while the amendment below said no worker exists; the amendment was correct and this sentence was not",
+        why: "D-117's amendment records the sentence it superseded, which is how it records the change",
+    },
+    Exempt {
+        path: "docs/TCU-02_CertiMining_Anchored_Log_v0.1.md",
+        needle: "does not fail on it",
+        sentence: "it records and reports drift and does not fail on it, so no wall-clock regression gate exists",
+        why: "the same v0.2.3 changelog entry as below, describing that version. **Invisible to this gate until H-102 (#311)**: the source wraps the phrase across a line break, so it appeared zero times in any single line and the prefilter never saw it — a live occurrence hidden by the defect, not a mutation",
     },
     Exempt {
         path: "docs/TCU-02_CertiMining_Anchored_Log_v0.1.md",
         needle: "regression gate exists",
-        occurrences: 1,
+        sentence: "fail on it, so no wall-clock regression gate exists until calibration restores the assertion",
         why: "the v0.2.3 changelog entry describes that version, where no gate existed; v0.2.12's entry and §4.4a carry the current account",
     },
 ];
@@ -124,10 +136,26 @@ const EXEMPT: [Exempt; 2] = [
 /// ordinary refactor that moved documentation into this file used to inherit the exclusion.
 const OWN_PATH: &str = "xtask/src/status.rs";
 
-/// Whether a line of this module's own source is inside one of the two lists.
+/// Whether a line of this module's own source is inside one of the two lists, or its test module.
+///
+/// **The test module is excluded as of H-102 (issue #311), and narrowly.** The adversarial fixtures
+/// that gate exists for have to contain the banned phrases — a test that a wrapped claim is caught
+/// must write a wrapped claim — and a needle in a fixture is not a sentence a reader meets. This is
+/// the same reasoning as the two lists above it, and the same limit: one block of one file, not the
+/// file. H-78 (#277) is the cost of the broad version, where an ordinary refactor that moved
+/// documentation into this file inherited the exclusion.
 fn inside_a_list(path: &str, text: &str, number: usize) -> bool {
     if path != OWN_PATH {
         return false;
+    }
+    // Everything from `#[cfg(test)]` to the end of the file is fixtures.
+    if let Some(tests_at) = text
+        .lines()
+        .position(|line| line.trim_start().starts_with("#[cfg(test)]"))
+    {
+        if number >= tests_at {
+            return true;
+        }
     }
     let mut depth = 0usize;
     for (at, line) in text.lines().enumerate() {
@@ -200,9 +228,71 @@ fn surface(root: &Path) -> Vec<String> {
     out
 }
 
-/// Whether an exemption covers an occurrence of `needle` in `path`.
-fn exempted(path: &str, needle: &str) -> Option<&'static Exempt> {
-    EXEMPT.iter().find(|e| e.path == path && e.needle == needle)
+/// Whether an exemption covers this occurrence of `needle` in `path`.
+///
+/// Matched on the sentence the occurrence sits in, not on the file it sits in. A substring match
+/// rather than equality, so the recorded sentence may be the clause a reader would quote rather than
+/// the whole paragraph; it still has to be *this* clause.
+fn exempted(path: &str, needle: &str, context: &str) -> Option<&'static Exempt> {
+    EXEMPT
+        .iter()
+        .find(|e| e.path == path && e.needle == needle && context.contains(e.sentence))
+}
+
+/// One paragraph of a file: the line it starts on, and its text as a reader meets it.
+///
+/// **This is the bypass M-01 of the 1 November audit found, and it was in the prefilter rather than
+/// the scan.** `check-status` lowercased the whole file to decide whether a needle was present at
+/// all, and that text still carries its newlines — so `no worker\nexists`, which is ordinary
+/// Markdown wrapping and renders as one sentence, failed the prefilter and the per-line scan below it
+/// never ran. The audit put exactly that into a copy of `README.md` and the gate exited 0, still
+/// reporting "0 unrecorded".
+///
+/// Inline markup is stripped for the same reason: `**no** worker exists` and `[no worker
+/// exists](x)` are the sentence a reader reads, and a gate that matches the source characters reads
+/// something nobody wrote.
+fn paragraphs(text: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    for (index, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            if !current.is_empty() {
+                out.push((start, normalize(&current.join(" "))));
+                current.clear();
+            }
+            continue;
+        }
+        if current.is_empty() {
+            start = index;
+        }
+        current.push(line);
+    }
+    if !current.is_empty() {
+        out.push((start, normalize(&current.join(" "))));
+    }
+    out
+}
+
+/// Markdown inline markup removed, and runs of whitespace collapsed.
+///
+/// Emphasis and link syntax only. A code span keeps its backticks, because `is_named_not_used` below
+/// reads them to tell a needle named from a needle used, and dropping them here would take that
+/// distinction away from it.
+fn normalize(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            // `**bold**` and `*emphasis*` and `_emphasis_`: the markers, not the words.
+            '*' | '_' => {}
+            // `[text](url)` keeps the text. The target is left where it is: it cannot create a
+            // match that the prose does not contain, and it cannot break one, so removing it would
+            // be more parsing for no gain.
+            '[' | ']' => {}
+            _ => out.push(c),
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// What the gate found: lines no exemption covers, and exemptions that matched nothing.
@@ -228,12 +318,39 @@ fn findings(root: &Path) -> (Vec<String>, Vec<String>, usize) {
             }
         };
         let text = String::from_utf8_lossy(&bytes);
-        let lower = text.to_lowercase();
+        // **Paragraphs, not physical lines, for Markdown (H-102, issue #311).** Both the prefilter
+        // and the scan used raw file text, so a needle broken across a line break — ordinary
+        // Markdown wrapping, one sentence to a reader — matched neither.
+        //
+        // **Markdown only, and the reason is not convenience.** Normalizing joins wrapped lines and
+        // strips emphasis, which is what a renderer does to Markdown and is nothing a Rust or shell
+        // file does. Applied to source it would mangle code — `paras[0].1` reads as `paras0.1` —
+        // and, worse, removing characters can join text that the file does not actually put
+        // together, which is a gate inventing a sentence rather than finding one. Source files keep
+        // the line scan.
+        //
+        // **What that leaves, said rather than discovered later:** a banned claim wrapped across two
+        // lines of a comment in a `.rs` or `.sh` file is still invisible here. The audit's finding
+        // was Markdown and the gate's own subject is the reader-facing surface, so this closes that
+        // and does not pretend to close the other.
+        let units: Vec<(usize, String)> = if path.ends_with(".md") {
+            paragraphs(&text)
+        } else {
+            text.lines()
+                .enumerate()
+                .map(|(n, l)| (n, l.to_string()))
+                .collect()
+        };
+        let lower = units
+            .iter()
+            .map(|(_, p)| p.to_lowercase())
+            .collect::<Vec<_>>()
+            .join("\n");
         for stale in &STALE {
             if !lower.contains(stale.needle) {
                 continue;
             }
-            for (number, line) in text.lines().enumerate() {
+            for (number, line) in units.iter().map(|(n, p)| (*n, p.as_str())) {
                 if inside_a_list(&path, &text, number) {
                     continue;
                 }
@@ -245,7 +362,7 @@ fn findings(root: &Path) -> (Vec<String>, Vec<String>, usize) {
                     if is_named_not_used(line, at, stale.needle.len()) {
                         continue;
                     }
-                    match exempted(&path, stale.needle) {
+                    match exempted(&path, stale.needle, line) {
                         Some(e) => {
                             let index = EXEMPT
                                 .iter()
@@ -267,15 +384,19 @@ fn findings(root: &Path) -> (Vec<String>, Vec<String>, usize) {
         }
     }
 
-    // An exemption states how many bare occurrences it covers. Fewer means it records nothing;
-    // more means a sentence arrived that nobody looked at (H-79, #278).
+    // **An exemption that matches nothing is stale (H-79, #278; identity narrowed in H-102, #311).**
+    // It used to state a count, and a count is substitutable: a live false claim could take an
+    // exempt occurrence's place with the number intact. The exemption now names its sentence, so
+    // matching nothing means that sentence is gone and the exemption with it. Matching more than
+    // once is no longer a problem by itself — one sentence cannot arrive twice without being the
+    // same sentence, which is what was reviewed.
     for (at, e) in EXEMPT.iter().enumerate() {
-        if seen[at] == e.occurrences {
+        if seen[at] > 0 {
             continue;
         }
         problems.push(format!(
-            "{} has {} bare occurrence(s) of \"{}\" and this exemption records {}: {}",
-            e.path, seen[at], e.needle, e.occurrences, e.why
+            "{} no longer carries the sentence this exemption records, so the exemption is stale: \"{}\" — {}",
+            e.path, e.sentence, e.why
         ));
     }
 
@@ -452,16 +573,185 @@ mod tests {
         );
     }
 
-    /// H-79 (#278). An exemption that records nothing cannot fail open on a count of zero.
+    /// H-79 (#278), as the identity it has now. An exemption that records nothing cannot fail open.
+    ///
+    /// The count this used to assert was the thing H-102 (#311) removed: a count is substitutable,
+    /// and a non-empty sentence is not. `every_exemption_records_a_sentence_containing_its_needle`
+    /// below carries the other half, that the sentence and the needle agree.
     #[test]
-    fn every_exemption_records_how_many_it_covers() {
+    fn every_exemption_records_a_sentence() {
         for e in &EXEMPT {
             assert!(
-                e.occurrences > 0,
-                "{} records no occurrence of {:?}",
+                !e.sentence.trim().is_empty(),
+                "{} records no sentence for {:?}, so it would cover every occurrence",
                 e.path,
                 e.needle
             );
         }
+    }
+
+    /// **The bypass, as the audit wrote it (H-102, issue #311).**
+    ///
+    /// Ordinary Markdown wrapping. The rendered sentence restores a banned claim, and the old gate
+    /// saw nothing: its prefilter searched raw file text, where the phrase does not occur, so the
+    /// per-line scan under it never ran.
+    #[test]
+    fn a_claim_wrapped_across_a_line_break_is_one_sentence() {
+        let doc = "Current status: no worker\nexists in this repository.\n";
+        assert!(
+            !doc.to_lowercase().contains("no worker exists"),
+            "the raw text does not contain it, which is why the old prefilter passed"
+        );
+        let paras = paragraphs(doc);
+        assert_eq!(paras.len(), 1);
+        assert!(
+            paras[0].1.to_lowercase().contains("no worker exists"),
+            "normalized, it is the sentence a reader meets: {:?}",
+            paras[0].1
+        );
+    }
+
+    /// Inline markup is the same bypass with different characters.
+    #[test]
+    fn emphasis_and_link_markup_do_not_hide_a_claim() {
+        for doc in [
+            "**no** worker exists here.\n",
+            "_no worker exists_ here.\n",
+            "[no worker exists](https://example.invalid/x) here.\n",
+            "*no worker\nexists* here.\n",
+        ] {
+            let paras = paragraphs(doc);
+            assert!(
+                paras[0].1.to_lowercase().contains("no worker exists"),
+                "markup must not hide it: {doc:?} normalized to {:?}",
+                paras[0].1
+            );
+        }
+    }
+
+    /// A blank line ends a paragraph, so two sentences are not spliced into one claim that neither
+    /// of them makes. The gate must not invent a match either.
+    #[test]
+    fn a_blank_line_separates_paragraphs_so_no_claim_is_invented() {
+        let doc = "Something about no worker\n\nexists in this repository.\n";
+        let paras = paragraphs(doc);
+        assert_eq!(paras.len(), 2, "a blank line ends the paragraph");
+        assert!(
+            !paras
+                .iter()
+                .any(|(_, p)| p.to_lowercase().contains("no worker exists")),
+            "nothing here says it, so nothing may be reported: {paras:?}"
+        );
+    }
+
+    /// The line a finding reports is the paragraph's first, not the file's.
+    #[test]
+    fn a_paragraph_reports_the_line_it_starts_on() {
+        let doc = "one\n\ntwo\nthree\n\nfour\n";
+        assert_eq!(
+            paragraphs(doc).iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+            vec![0, 2, 5]
+        );
+    }
+
+    /// **An exemption is no longer substitutable (H-102, issue #311).**
+    ///
+    /// It named `(path, needle)` and a count, so a live false claim could take an exempt historical
+    /// occurrence's place with the number intact and the gate stayed green. It names the sentence
+    /// now, so a different occurrence is not covered.
+    #[test]
+    fn an_exemption_covers_its_own_sentence_and_no_other() {
+        let e = &EXEMPT[1];
+        assert!(
+            exempted(e.path, e.needle, e.sentence).is_some(),
+            "the sentence it records is covered"
+        );
+        assert!(
+            exempted(
+                e.path,
+                e.needle,
+                "Current status: no wall-clock regression gate exists."
+            )
+            .is_none(),
+            "a different sentence using the same needle in the same file is not covered"
+        );
+        assert!(
+            exempted("README.md", e.needle, e.sentence).is_none(),
+            "and the same sentence in another file is not covered either"
+        );
+    }
+
+    /// Every exemption records a sentence that actually contains its needle.
+    ///
+    /// Without this the pair could drift into an exemption that can never match, which the stale
+    /// check would report — but only after someone edited the document. This catches it at the list.
+    #[test]
+    fn every_exemption_records_a_sentence_containing_its_needle() {
+        for e in &EXEMPT {
+            assert!(
+                e.sentence.to_lowercase().contains(e.needle),
+                "exemption for {:?} records a sentence that does not contain it: {:?}",
+                e.needle,
+                e.sentence
+            );
+        }
+    }
+
+    /// **The weakness this change does not close, named rather than left to be discovered.**
+    ///
+    /// `is_named_not_used` skips a needle wrapped in quotation marks, so `Current status: "no worker
+    /// exists".` passes. That heuristic is H-79's remedy and it is right about its own case — `The
+    /// sentence "no worker exists" became false` is true and should not be condemned — so removing
+    /// the quote arm reverses an adopted decision and is the owner's to make. The test records what
+    /// the gate does today so the next reader does not take the silence for soundness.
+    #[test]
+    fn an_exactly_quoted_needle_is_still_skipped_which_is_an_open_decision() {
+        let line = "Current status: \"no worker exists\".";
+        let at = line.find("no worker exists").expect("present");
+        assert!(
+            is_named_not_used(line, at, "no worker exists".len()),
+            "today this is skipped from the delimiters alone, independent of what the sentence does"
+        );
+    }
+
+    /// **The test-module exclusion is narrow, which is the whole of H-78's lesson (#277).**
+    ///
+    /// Skipping the file hid anything written anywhere in it. This skips the fixtures and the two
+    /// lists; the prose above them is read like any other file's, so documentation moved into this
+    /// module does not inherit an exclusion.
+    #[test]
+    fn the_exclusion_covers_the_fixtures_and_the_lists_and_nothing_else() {
+        let own = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/status.rs");
+        let text = match std::fs::read_to_string(&own) {
+            Ok(text) => text,
+            Err(e) => panic!("{}: {e}", own.display()),
+        };
+        let lines: Vec<&str> = text.lines().collect();
+
+        let tests_at = lines
+            .iter()
+            .position(|l| l.trim_start().starts_with("#[cfg(test)]"))
+            .expect("this module has a test block");
+        assert!(
+            inside_a_list(OWN_PATH, &text, tests_at),
+            "the fixtures are excluded"
+        );
+        assert!(
+            inside_a_list(OWN_PATH, &text, lines.len().saturating_sub(1)),
+            "to the end of the file"
+        );
+
+        let doc_line = lines
+            .iter()
+            .position(|l| l.starts_with("//! "))
+            .expect("this module has module documentation");
+        assert!(
+            !inside_a_list(OWN_PATH, &text, doc_line),
+            "but the module's own documentation is read, so a claim written there is caught"
+        );
+        assert!(
+            !inside_a_list("README.md", &text, tests_at),
+            "and no other file is excluded at any line"
+        );
     }
 }
