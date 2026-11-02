@@ -114,8 +114,9 @@ else
   fail "a target does not compile"
   # Name what did not build. The case this is for is a binary nobody ran, so "it failed" is not
   # enough to act on.
+  # One pass: `^error(\[|:)` already matches "error: could not compile", so a second grep for it
+  # printed every line twice.
   grep -E "^error(\[|:)" "$compile_log" | head -20 | sed 's/^/        /' >&2
-  grep -E "^error: could not compile" "$compile_log" | sed 's/^/        /' >&2
 fi
 rm -f "$compile_log"
 
