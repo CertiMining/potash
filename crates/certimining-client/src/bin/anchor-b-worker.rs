@@ -339,21 +339,31 @@ fn run() -> Result<(), String> {
     }
 
     // **Whether the configured watchdog can be satisfied by this worker's own cadence.** A
-    // `WatchdogSec` shorter than one poll interval plus one RPC timeout kills a healthy worker on
-    // schedule, and that is a watchdog configured without reference to the thing it watches. The
-    // numbers are printed rather than assumed sound, so the unit file can be read against them.
-    let cadence = policy.poll_interval.saturating_add(policy.rpc_timeout);
+    // `WatchdogSec` shorter than the longest the worker can go without feeding it kills a healthy
+    // worker on schedule, and that is a watchdog configured without reference to the thing it
+    // watches. The numbers are printed rather than assumed sound, so the unit file can be read
+    // against them.
+    //
+    // **This used to be `poll_interval + rpc_timeout` and that bound was wrong (H-98, issue #305).**
+    // The watchdog is fed after a *successful* observation, so a worker spending its partition retry
+    // budget and then recovering goes unfed across all of it: 511s against the 330s that expression
+    // gives. `WorkerPolicy::longest_quiet_cycle` is the real span, and
+    // `tests/supervision_units.rs` asserts the committed `WatchdogSec` exceeds the same expression,
+    // so this warning and that test cannot drift apart.
+    let cadence = policy.longest_quiet_cycle();
     match notify::watchdog_interval() {
         Some(interval) if interval <= cadence => println!(
-            "anchor-b-worker: WARNING WatchdogSec is {}s and one cycle can take {}s (poll {} plus \
-             rpc timeout {}). A healthy worker will be killed on schedule; raise WatchdogSec.",
+            "anchor-b-worker: WARNING WatchdogSec is {}s and this worker can go {}s without feeding \
+             it (poll {}, {} retries at a {}s timeout, and the backoff between them). A worker \
+             recovering as designed will be killed on schedule; raise WatchdogSec.",
             interval.as_secs(),
             cadence.as_secs(),
             policy.poll_interval.as_secs(),
+            policy.partition_retry_limit,
             policy.rpc_timeout.as_secs()
         ),
         Some(interval) => println!(
-            "anchor-b-worker: watchdog {}s, one cycle at most {}s",
+            "anchor-b-worker: watchdog {}s, longest quiet span {}s",
             interval.as_secs(),
             cadence.as_secs()
         ),
