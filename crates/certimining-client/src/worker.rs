@@ -925,7 +925,11 @@ mod tests {
             awaiting_attach: None,
             last_submitted: Some(last_epoch),
         };
-        assert_eq!(o.newest_publishable(), Some(last_epoch), "the log is caught up to the frontier");
+        assert_eq!(
+            o.newest_publishable(),
+            Some(last_epoch),
+            "the log is caught up to the frontier"
+        );
         assert_eq!(
             next_step(S, &o),
             Step::Refuse(Refusal::Unschedulable { epoch: today }),
