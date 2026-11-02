@@ -33,9 +33,9 @@
 use certimining_client::{
     alerts,
     cluster::{AttachRefused, Cluster},
-    day_index, next_step_with_policy, notify, refuse_a_readable_key, sequence_lag, AnchorB,
-    AnchorStatus, Handoff, Observed, PendingReceipt, PublishFailed, ReferenceClient, Refusal,
-    Schedule, Step, Supervision, Thresholds, WorkerPolicy,
+    day_index, next_step_with_policy, notify, receipt_pending_since, refuse_a_readable_key,
+    sequence_lag, AnchorB, AnchorStatus, Handoff, Observed, PendingReceipt, PublishFailed,
+    ReferenceClient, Refusal, Schedule, Step, Supervision, Thresholds, WorkerPolicy,
 };
 use certimining_core::{DalekVerifier, Digest};
 use solana_keypair::Keypair;
@@ -183,21 +183,30 @@ fn observe(
     })
 }
 
-/// When the pending receipt was lodged with the calendars, from the file this worker wrote.
+/// When the pending receipt was lodged with the calendars, if one is pending.
 ///
-/// Its modification time is the only record of the submission instant there is: the calendars are
-/// asked again on every cycle and answer about the receipt, not about when it was handed over. A
-/// missing or unreadable receipt gives `None`, which makes `ReceiptUnconfirmed` unraisable rather
-/// than raisable against a time of zero — an unknown age must not read as an infinite one.
+/// `None` now means one thing: the log reports nothing awaiting attachment, so there is nothing for
+/// `ReceiptUnconfirmed` to be about.
+///
+/// **It used to mean two things, and that was H-97 (issue #304).** This returned `None` for an
+/// unreadable receipt as well, on the reasoning that an unknown age must not read as an infinite one.
+/// The concern is sound and it ruled out the wrong candidate: `alerts()` guards the arm on this value
+/// being present, so `None` silenced the condition outright for a receipt the log said was pending
+/// and whose file had gone. The age was never unknown — a receipt reaches the calendars after its
+/// epoch is published, so publication time bounds it from below — and
+/// `alert::receipt_pending_since` uses that bound, which is why the dating now lives in the library
+/// where a test reaches it. What stays here is the one thing only the binary knows: where the receipt
+/// for an epoch lives.
 ///
 /// The split of the five conditions between this process and the service manager lives in
 /// `Supervision::from_worker`, with the test that pins it.
 fn receipt_submitted_at(anchor_b: &ReferenceClient, observed: &Observed) -> Option<i64> {
     let epoch = observed.awaiting_attach?;
-    let path = anchor_b.receipt_path(epoch);
-    let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?;
-    let since = modified.duration_since(UNIX_EPOCH).ok()?;
-    i64::try_from(since.as_secs()).ok()
+    Some(receipt_pending_since(
+        Schedule::DEPLOYED,
+        epoch,
+        &anchor_b.receipt_path(epoch),
+    ))
 }
 
 /// Why the worker stopped, in the terms the record uses.

@@ -48,7 +48,7 @@ mod schedule;
 mod separation;
 mod worker;
 
-pub use alert::{alerts, Alert, Supervision, Thresholds};
+pub use alert::{alerts, receipt_pending_since, Alert, Supervision, Thresholds};
 pub use anchor::{
     lineage_of, provenance_in, status_of, AnchorRef, AnchorStatus, Lineage, Touched, WhereItLanded,
 };

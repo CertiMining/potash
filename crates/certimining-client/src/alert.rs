@@ -91,6 +91,41 @@ impl Supervision {
     }
 }
 
+/// When the receipt for `epoch` is to be treated as having been submitted, in Unix seconds.
+///
+/// **A read that fails must not become "no receipt is pending" (H-97, issue #304).** The first
+/// version of this lived in `anchor-b-worker.rs` and returned `Option<i64>`, giving `None` both when
+/// nothing was awaiting attachment and when the receipt's own file could not be read. `alerts()`
+/// guards `ReceiptUnconfirmed` on that value being present, so a receipt the log said was pending
+/// whose file had been deleted — or whose directory had become unreadable — read as healthy. That is
+/// the defect H-95 (#300) was filed for, reappearing inside the fix for H-95: a failed observation
+/// mapped onto the value the predicate rewards.
+///
+/// So this returns a time in every case. A receipt reaches the calendars after its checkpoint is
+/// published and never before, which makes [`publication_time`] a true lower bound on its age and the
+/// honest fallback when the file cannot be dated. Under the budget that bound raises nothing, because
+/// no reading of the file could put the receipt over it either; over the budget the alert is warranted
+/// whatever the file would have said.
+///
+/// The bound itself fails to compute only for an epoch some 2^63 seconds out, which
+/// `Refusal::LogAheadOfCalendar` stops the worker reaching. 0 is the fallback there rather than
+/// `now`, because it makes the reported age absurd and the alert loud, where `now` would make it zero
+/// and silence the arm a second time.
+#[must_use]
+pub fn receipt_pending_since(schedule: Schedule, epoch: u64, receipt: &std::path::Path) -> i64 {
+    let dated = std::fs::metadata(receipt)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| i64::try_from(d.as_secs()).ok());
+    match dated {
+        Some(at) => at,
+        // `unwrap_or(0)` and not `unwrap_or_default()`: the zero is the decision this function makes
+        // when it can date the receipt by nothing at all, so it is written where it is made.
+        None => publication_time(schedule, epoch).unwrap_or(0),
+    }
+}
+
 /// What each condition says to an operator reading the journal, in the recovery runbook's own terms.
 ///
 /// **In the library rather than in the binary, because that is where a test can reach it
@@ -558,5 +593,102 @@ mod tests {
         });
         assert!(repeated.contains("StartLimitBurst"), "{repeated}");
         assert!(repeated.contains("defect"), "{repeated}");
+    }
+
+    /// Real file, real modification time. Without this the fallback below could be returned in
+    /// every case and the arm would fire on a receipt that had just been lodged.
+    #[test]
+    fn a_readable_receipt_is_dated_by_its_own_modification_time() {
+        let dir = std::env::temp_dir().join(format!("certimining-h97-{}", std::process::id()));
+        match std::fs::create_dir_all(&dir) {
+            Ok(()) => {}
+            Err(e) => panic!("{}: {e}", dir.display()),
+        }
+        let receipt = dir.join("20745.ots");
+        match std::fs::write(
+            &receipt,
+            b"not a real receipt, only a file with a timestamp",
+        ) {
+            Ok(()) => {}
+            Err(e) => panic!("{}: {e}", receipt.display()),
+        }
+
+        let dated = receipt_pending_since(S, 20_745, &receipt);
+        let real_now = match std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| i64::try_from(d.as_secs()))
+        {
+            Ok(Ok(secs)) => secs,
+            _ => panic!("the host clock is before 1970, so the test states nothing"),
+        };
+
+        assert!(
+            dated >= real_now.saturating_sub(120),
+            "a file written just now should be dated just now: {dated} against {real_now}"
+        );
+        assert!(
+            dated > at(20_745).saturating_add(86_400),
+            "the file was readable, so its own time must be used and not the lower bound: \
+             {dated} against a bound of {}",
+            at(20_745)
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **The defect H-97 (issue #304) was filed for, at the point the claim is made.**
+    ///
+    /// The log reports epoch 20745 awaiting attachment and its receipt is three days and a minute
+    /// old, which is past `receipt_budget`. The file is gone. An operator has to hear about that,
+    /// and the first assertion is what used to happen instead: the binary gave `None` for a receipt
+    /// it could not read, `alerts()` guards the arm on that value being present, and the condition
+    /// was silenced outright.
+    #[test]
+    fn a_pending_receipt_whose_file_is_absent_still_raises_receipt_unconfirmed() {
+        let pending: u64 = 20_745;
+        let now = at(pending)
+            .saturating_add(T.receipt_budget)
+            .saturating_add(60);
+        let today = day(now);
+        let observed = Observed {
+            now,
+            today,
+            start_epoch: 20_700,
+            // Caught up, so nothing but the receipt is wrong and the assertions name one alert.
+            last_epoch: today.saturating_sub(1),
+            awaiting_attach: Some(pending),
+            last_submitted: Some(pending),
+        };
+
+        let silenced = Supervision::from_worker(now, None);
+        assert_eq!(
+            alerts(S, &observed, &silenced, T),
+            Vec::new(),
+            "this is the defect: an undatable receipt reported as no receipt raises nothing"
+        );
+
+        let absent = std::env::temp_dir().join(format!(
+            "certimining-h97-absent-{}/{pending}.ots",
+            std::process::id()
+        ));
+        assert!(!absent.exists(), "the test needs a path that is not there");
+
+        let dated = receipt_pending_since(S, pending, &absent);
+        assert_eq!(
+            dated,
+            at(pending),
+            "an undatable receipt is dated by the lower bound its epoch's publication gives"
+        );
+
+        let raised = alerts(S, &observed, &Supervision::from_worker(now, Some(dated)), T);
+        assert_eq!(
+            raised,
+            vec![Alert::ReceiptUnconfirmed {
+                epoch: pending,
+                waiting: T.receipt_budget.saturating_add(60),
+                budget: T.receipt_budget,
+            }],
+            "a receipt pending past the budget is reported whether or not its file can be read"
+        );
     }
 }
