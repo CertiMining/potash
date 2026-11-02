@@ -97,7 +97,23 @@ pub fn parse(text: &str) -> Vec<Entry> {
 /// and the old code did not check: `## D-123 ` with nothing after it was accepted as a heading with
 /// no decision under it. All 145 headings on `main` carry it.
 fn heading_ids(line: &str) -> Vec<String> {
-    let Some(rest) = line.strip_prefix("## D-") else {
+    // **CommonMark allows up to three spaces before an ATX heading (H-103, issue #312).** This
+    // accepted only column zero, so ` ## D-119 \u{b7} \u{2026}` with one leading space rendered as an
+    // ordinary H2, duplicated a decision that already existed, and was invisible here — before the
+    // uniqueness check and the dangling-reference check ran at all. The 1 November audit added
+    // exactly that line to a copy of the record and this gate still exited 0, still reporting 142
+    // distinct decisions.
+    //
+    // Four spaces or more is an indented code block and not a heading, so it is still refused. A
+    // leading tab is four columns of indentation under CommonMark and is refused by the same rule:
+    // the prefix test below sees the tab and does not match.
+    let indent = line
+        .len()
+        .saturating_sub(line.trim_start_matches(' ').len());
+    if indent > 3 {
+        return Vec::new();
+    }
+    let Some(rest) = line.trim_start_matches(' ').strip_prefix("## D-") else {
         return Vec::new();
     };
     let Some((label, _)) = rest.split_once('\u{b7}') else {
@@ -381,6 +397,79 @@ Amends D-404
         assert!(heading_ids("## D-123 ").is_empty());
         assert!(heading_ids("## D-123").is_empty());
         assert_eq!(heading_ids("## D-123 \u{b7} a subject"), vec!["D-123"]);
+    }
+
+    /// **The indentation CommonMark allows, at every width (H-103, issue #312).**
+    ///
+    /// Zero to three spaces is a heading; four is an indented code block. The gate accepted only
+    /// zero, so a one-space heading rendered as an H2 and was never parsed — which is upstream of
+    /// every other check in this file.
+    #[test]
+    fn a_heading_indented_within_commonmarks_allowance_is_still_a_heading() {
+        for indent in 0..=3 {
+            let line = format!("{}## D-119 \u{b7} a subject", " ".repeat(indent));
+            assert_eq!(
+                heading_ids(&line),
+                vec!["D-119"],
+                "{indent} space(s) is a heading under CommonMark"
+            );
+        }
+        assert!(
+            heading_ids("    ## D-119 \u{b7} a subject").is_empty(),
+            "four spaces is an indented code block, not a heading"
+        );
+        assert!(
+            heading_ids("\t## D-119 \u{b7} a subject").is_empty(),
+            "a leading tab is four columns of indentation, so not a heading either"
+        );
+    }
+
+    /// And the indentation does not loosen anything else: a multi-identifier heading still yields
+    /// both, and a heading without its separator is still not a decision.
+    #[test]
+    fn indentation_does_not_loosen_the_rest_of_the_grammar() {
+        assert_eq!(
+            heading_ids("  ## D-102 and D-119 \u{b7} one body, two identifiers"),
+            vec!["D-102", "D-119"]
+        );
+        assert!(
+            heading_ids("  ## D-123 ").is_empty(),
+            "no separator, no decision"
+        );
+        assert!(heading_ids("  ## D-123").is_empty());
+        assert!(
+            heading_ids("  ### D-123 \u{b7} a subject").is_empty(),
+            "H3 is not a decision"
+        );
+    }
+
+    /// **The audit's own mutation, end to end.** A one-space duplicate heading must now reach the
+    /// uniqueness check and fail it. Before this it reached nothing: `check-decisions` exited 0 and
+    /// reported 142 distinct decisions with a 143rd rendered on the page.
+    #[test]
+    fn an_indented_duplicate_is_caught_by_the_uniqueness_check() {
+        let record = "\
+## D-118 \u{b7} the first
+body one
+
+## D-119 \u{b7} the second
+body two
+
+ ## D-119 \u{b7} a shadow decision rendered as an ordinary Markdown H2
+body three
+";
+        let entries = parse(record);
+        assert_eq!(
+            entries.len(),
+            3,
+            "the indented heading is parsed: {entries:?}"
+        );
+        let dups: Vec<String> = duplicates(&entries).into_iter().map(|d| d.id).collect();
+        assert_eq!(
+            dups,
+            vec!["D-119".to_string()],
+            "and it collides with the heading above it"
+        );
     }
 
     /// #256, H-85. There is no allowance, so any identifier naming two entries is a finding.
