@@ -61,6 +61,24 @@ impl WorkerPolicy {
         max_epoch_slip: 1,
     };
 
+    /// The last UTC day on which the worker can still select `epoch` for publication.
+    ///
+    /// **One expression, used by the slip barrier below and by the batcher's bound (M-08, issue
+    /// #333; owner's ruling of 2 November 2026).** The batcher carried its own arithmetic,
+    /// `epoch + 1 + max_epoch_slip`, which is one day looser than this. The allowance is counted
+    /// from the publishable frontier, and the frontier is already a day behind the calendar, so that
+    /// `+ 1` was applied twice. An audit probed the two components against each other and found day
+    /// `epoch + 2` writable by the batcher and refused by the worker: an immutable signed handoff
+    /// nothing could publish.
+    ///
+    /// The owner's #309 ruling asked for a bound "derived from the worker's committed value, not set
+    /// separately". It named the looser formula, and this is that instruction taken literally
+    /// instead: the quantity exists once and both components read it, so they cannot drift again.
+    #[must_use]
+    pub fn last_publishable_day(self, epoch: u64) -> u64 {
+        epoch.saturating_add(self.max_epoch_slip)
+    }
+
     /// Exponential partition-recovery delay for a one-based consecutive failure count.
     ///
     /// `None` is an explicit stop: zero is not a failure, and a count beyond the reviewed budget is
@@ -260,11 +278,18 @@ pub fn next_step_with_policy(
         last_submitted,
     } = *observed;
 
-    // The frontier, derived from `now`. A clock with no day index refuses rather than being waved
+    // The calendar, derived from `now`. A clock with no day index refuses rather than being waved
     // through, and so does day zero: `newest_publishable` is `today - 1`, so it is `None` in both
-    // cases and asking for it alone refuses exactly the same states. The day itself was bound here
-    // too until H-107 (issue #328), for the one barrier below that compared against it.
-    let Some(newest_publishable) = observed.newest_publishable() else {
+    // cases and either being `None` refuses exactly the same states.
+    //
+    // **The day is bound again (M-08, issue #333).** H-107 (#328) dropped it when the one barrier
+    // comparing against it turned out to be unreachable. The slip barrier now reads
+    // `WorkerPolicy::last_publishable_day`, which the batcher reads too, and that function speaks in
+    // days — so the day has a consumer again. Deriving it here instead of writing
+    // `newest_publishable + 1` further down is the point of H-101 (#310): the quantity is computed
+    // once from `now`, not restated.
+    let (Some(today), Some(newest_publishable)) = (observed.today(), observed.newest_publishable())
+    else {
         return Step::Refuse(Refusal::UndatableClock { now });
     };
 
@@ -349,21 +374,27 @@ pub fn next_step_with_policy(
     // while the barrier above was comparing against `today`. The refusal reports the frontier it
     // compared against rather than the day, so an operator does not have to subtract one to see the
     // backlog the number describes (H-101, issue #310).
-    let slip = newest_publishable.saturating_sub(last_epoch);
-    if slip > policy.max_epoch_slip {
-        return Step::Refuse(Refusal::EpochSlipExceeded {
-            last_epoch,
-            newest_publishable,
-            max_epoch_slip: policy.max_epoch_slip,
-        });
-    }
-
+    //
+    // **And the comparison itself is now one function the batcher also calls (M-08, issue #333).**
+    // It read `newest_publishable - last_epoch > max_epoch_slip`, which is the same statement as
+    // `today > last_publishable_day(candidate)` and was the second place the quantity was written.
+    // The batcher's copy of it was a day out and nothing compared the two. The candidate is computed
+    // first so the barrier can name the epoch it is about; an overflowing `last_epoch` took this
+    // refusal before and takes it still, since the slip of a log at `u64::MAX` is zero either way.
     let Some(candidate) = last_epoch.checked_add(1) else {
         return Step::Refuse(Refusal::LogAheadOfCalendar {
             last_epoch,
             newest_publishable,
         });
     };
+
+    if today > policy.last_publishable_day(candidate) {
+        return Step::Refuse(Refusal::EpochSlipExceeded {
+            last_epoch,
+            newest_publishable,
+            max_epoch_slip: policy.max_epoch_slip,
+        });
+    }
 
     // **One match, where there were two (H-107, issue #328; owner's ruling of 2 November 2026).** An
     // `if candidate > today` block stood here and answered the caught-up case itself. H-101 (#310)
