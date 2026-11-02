@@ -235,7 +235,14 @@ pub fn alerts(
 
     // The newest epoch that can be published at `now`: an epoch publishes an hour after it ends, so
     // it is `today - 1` and never `today` (H-90, #293).
-    let newest_publishable = observed.today.saturating_sub(1);
+    // **The one expression, shared with `next_step_with_policy` (H-101, issue #310).** This was
+    // `observed.today.saturating_sub(1)` here and `today` there, so the two barriers differed by a
+    // day and only this one was right.
+    let Some(newest_publishable) = observed.newest_publishable() else {
+        // A clock with no day index cannot be judged against the calendar. `next_step_with_policy`
+        // refuses it; here there is nothing to report but the absence of a verdict.
+        return out;
+    };
     let owed = observed.last_epoch.saturating_add(1);
     if owed <= newest_publishable {
         if let Some(due) = publication_time(schedule, owed) {
@@ -310,7 +317,6 @@ mod tests {
         (
             Observed {
                 now,
-                today: day(now),
                 start_epoch: 20_700,
                 last_epoch: last,
                 awaiting_attach: None,
@@ -351,7 +357,6 @@ mod tests {
             .saturating_add(1);
         let o = Observed {
             now,
-            today: day(now),
             start_epoch: 20_700,
             last_epoch: last,
             awaiting_attach: None,
@@ -381,7 +386,6 @@ mod tests {
             .saturating_sub(1);
         let o = Observed {
             now,
-            today: day(now),
             start_epoch: 20_700,
             last_epoch: last,
             awaiting_attach: None,
@@ -404,7 +408,6 @@ mod tests {
         let now = at(20_745).saturating_add(60);
         let o = Observed {
             now,
-            today: day(now),
             start_epoch: 20_700,
             last_epoch: last,
             awaiting_attach: None,
@@ -437,7 +440,7 @@ mod tests {
         let (o, mut s) = healthy();
         s.last_refusal = Some(Refusal::LogAheadOfCalendar {
             last_epoch: 20_745,
-            today: 20_740,
+            newest_publishable: 20_740,
         });
 
         s.consecutive_refusals = 1;
@@ -489,7 +492,6 @@ mod tests {
             .saturating_add(1);
         let observed = Observed {
             now,
-            today: day(now),
             start_epoch: 20_690,
             last_epoch: last,
             awaiting_attach: Some(last),
@@ -587,7 +589,7 @@ mod tests {
         let repeated = rendered(&Alert::RepeatedRefusal {
             refusal: Refusal::LogAheadOfCalendar {
                 last_epoch: 20_800,
-                today: 20_745,
+                newest_publishable: 20_745,
             },
             consecutive: 3,
         });
@@ -652,7 +654,6 @@ mod tests {
         let today = day(now);
         let observed = Observed {
             now,
-            today,
             start_epoch: 20_700,
             // Caught up, so nothing but the receipt is wrong and the assertions name one alert.
             last_epoch: today.saturating_sub(1),

@@ -175,7 +175,6 @@ fn observe(
 
     Ok(Observed {
         now,
-        today,
         start_epoch: lag.start_epoch,
         last_epoch: lag.last_published,
         awaiting_attach,
@@ -212,11 +211,20 @@ fn receipt_submitted_at(anchor_b: &ReferenceClient, observed: &Observed) -> Opti
 /// Why the worker stopped, in the terms the record uses.
 fn why(refusal: Refusal) -> String {
     match refusal {
-        Refusal::LogAheadOfCalendar { last_epoch, today } => format!(
-            "the log's last epoch is {last_epoch} and today is day {today}. An epoch is a UTC day \
-             index, so a log ahead of the calendar is not early, it is wrong, and the next \
+        Refusal::LogAheadOfCalendar {
+            last_epoch,
+            newest_publishable,
+        } => format!(
+            "the log's last epoch is {last_epoch} and the newest epoch that could have been \
+             published by now is {newest_publishable}. An epoch is a UTC day index and publishes an \
+             hour after it ends, so a log past that frontier is not early, it is wrong, and the next \
              publication could only deepen it. This is the state that cost an earlier deployment \
              209 days (D-88)."
+        ),
+        Refusal::UndatableClock { now } => format!(
+            "the host clock reads {now}, which has no UTC day index. Every barrier here is against \
+             the calendar, so none of them can be evaluated and none may be assumed satisfied. Fix \
+             the clock; nothing about the log is known to be wrong."
         ),
         Refusal::LastBeforeStart {
             last_epoch,
@@ -231,12 +239,12 @@ fn why(refusal: Refusal) -> String {
         }
         Refusal::EpochSlipExceeded {
             last_epoch,
-            today,
+            newest_publishable,
             max_epoch_slip,
         } => format!(
-            "the log's last epoch is {last_epoch} and today is {today}, beyond the unattended \
-             recovery limit of {max_epoch_slip}. Reconcile the first missing epoch and obtain an \
-             operator ruling before replaying a wider backlog."
+            "the log's last epoch is {last_epoch} and {newest_publishable} could have been \
+             published by now, beyond the unattended recovery limit of {max_epoch_slip}. Reconcile \
+             the first missing epoch and obtain an operator ruling before replaying a wider backlog."
         ),
         Refusal::AwaitingAttachOutsideLog {
             awaiting_attach,
@@ -418,7 +426,7 @@ fn run() -> Result<(), String> {
         // deliberately.
         if let Err(e) = notify::alive(&format!(
             "epoch {} published, day {}",
-            observed.last_epoch, observed.today
+            observed.last_epoch, today
         )) {
             if !matches!(e, notify::Refused::NotSupervised) {
                 eprintln!("anchor-b-worker: watchdog not fed — {e}");
