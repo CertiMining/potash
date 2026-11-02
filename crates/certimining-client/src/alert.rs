@@ -61,6 +61,96 @@ pub struct Supervision {
     pub last_refusal: Option<Refusal>,
 }
 
+impl Supervision {
+    /// What the worker process itself can honestly report (H-95, issue #300).
+    ///
+    /// **Three of the five conditions are reachable from this and two are not, by construction, and
+    /// that is the point of having it here rather than inline in the binary.** `last_heartbeat` is
+    /// `now` because the process filling this in is the one running, so `silent_for` is zero and
+    /// `ProcessSilent` cannot arise — a live process cannot report its own silence.
+    /// `consecutive_refusals` is zero and `last_refusal` is `None` because a refusal returns from the
+    /// worker's `run` and ends the process, so a counter held inside it reaches one at most and
+    /// `RepeatedRefusal` cannot arise either.
+    ///
+    /// Those two are raised by the service manager instead, per the owner's ruling of 1 November
+    /// 2026: `WatchdogSec` fed by `sd_notify` for the first, and `Restart=on-failure` with
+    /// `StartLimitBurst=3` and `OnFailure=` for the second. `deploy/systemd/` carries the units and
+    /// `docs/RUNBOOK-WORKER-RECOVERY.md` maps each of the five to where it is raised.
+    ///
+    /// The two unreachable arms are left in `alerts()` rather than routed around, so that one
+    /// predicate serves both emitters and a supervisor built later needs no second copy of the
+    /// thresholds. `only_three_of_five_can_be_raised_by_the_worker_itself` below pins which three.
+    #[must_use]
+    pub fn from_worker(now: i64, receipt_submitted_at: Option<i64>) -> Self {
+        Self {
+            last_heartbeat: now,
+            receipt_submitted_at,
+            consecutive_refusals: 0,
+            last_refusal: None,
+        }
+    }
+}
+
+/// What each condition says to an operator reading the journal, in the recovery runbook's own terms.
+///
+/// **In the library rather than in the binary, because that is where a test can reach it
+/// (H-95, issue #300).** The first version of this fix rendered these lines inside
+/// `anchor-b-worker.rs`, which has no test target CI names, so the text an operator is woken by would
+/// have been the one part of the remedy nothing checked — the same shape as the defect being fixed.
+/// The binary now holds one `eprintln!` and one watchdog call, and both the predicate and its
+/// rendering are exercised here.
+///
+/// The last two arms name their real emitter. `Supervision::from_worker` cannot produce either, so
+/// reaching one of them from the worker's call site is a defect, and the text says so rather than
+/// printing something that reads like a normal alert.
+impl std::fmt::Display for Alert {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PublicationMissed { epoch, due, now } => write!(
+                f,
+                "PublicationMissed: epoch {epoch} was due at {due} and it is {now}. The log is \
+                 behind its own cadence by more than the grace. RUNBOOK-WORKER-RECOVERY.md names \
+                 the steps."
+            ),
+            Self::SequenceLag {
+                last_epoch,
+                newest_publishable,
+                limit,
+            } => write!(
+                f,
+                "SequenceLag: the log's last epoch is {last_epoch} and {newest_publishable} could \
+                 be published, which is further behind than the limit of {limit}. Reconcile the \
+                 first missing epoch before replaying a backlog."
+            ),
+            Self::ReceiptUnconfirmed {
+                epoch,
+                waiting,
+                budget,
+            } => write!(
+                f,
+                "ReceiptUnconfirmed: epoch {epoch}'s receipt has been pending {waiting}s against a \
+                 budget of {budget}s. INV-ANCH-04 budgets hours for Bitcoin, so this is a calendar \
+                 or a receipt question and not a reason to attach anything."
+            ),
+            Self::ProcessSilent { since, grace } => write!(
+                f,
+                "ProcessSilent: last report at {since}, grace {grace}s. The worker cannot raise \
+                 this about itself; systemd's WatchdogSec does. Reaching it from the worker is a \
+                 defect."
+            ),
+            Self::RepeatedRefusal {
+                refusal,
+                consecutive,
+            } => write!(
+                f,
+                "RepeatedRefusal: {consecutive} in a row, last {refusal:?}. The worker exits on its \
+                 first refusal, so systemd's StartLimitBurst raises this. Reaching it from the \
+                 worker is a defect."
+            ),
+        }
+    }
+}
+
 /// A condition worth telling an operator about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Alert {
@@ -341,5 +431,132 @@ mod tests {
         assert!(raised
             .iter()
             .any(|a| matches!(a, Alert::ReceiptUnconfirmed { .. })));
+    }
+
+    /// **The architecture, pinned (H-95, issue #300).** Until 1 November 2026 this module was called
+    /// by nothing outside this test file: it computed five conditions, passed eleven tests, and no
+    /// operator could ever have been told any of them. The remedy splits the five by who can honestly
+    /// raise each, and this test is what stops that split from being a sentence in a comment.
+    ///
+    /// Three are facts about the log and the worker raises them each cycle. Two are facts about the
+    /// process and **cannot** come from a `Supervision` the worker built, whatever the log is doing —
+    /// so they are given to systemd. If this test ever fails, either `from_worker` started claiming
+    /// something the process cannot know, or a condition moved between the two groups and the unit
+    /// files and runbook no longer describe where alerts come from.
+    #[test]
+    fn only_three_of_five_can_be_raised_by_the_worker_itself() {
+        // A log in the worst state this type can describe: far behind, an epoch long overdue, and a
+        // receipt well past its budget. If the two process conditions cannot fire here, they cannot
+        // fire from this call site at all.
+        let last: u64 = 20_700;
+        let now = at(20_745)
+            .saturating_add(T.receipt_budget)
+            .saturating_add(1);
+        let observed = Observed {
+            now,
+            today: day(now),
+            start_epoch: 20_690,
+            last_epoch: last,
+            awaiting_attach: Some(last),
+            last_submitted: Some(last),
+        };
+        let supervision = Supervision::from_worker(now, Some(0));
+
+        let raised = alerts(S, &observed, &supervision, T);
+        assert!(
+            !raised.is_empty(),
+            "a log this far behind must raise something, or the test proves nothing"
+        );
+        for alert in &raised {
+            assert!(
+                !matches!(
+                    alert,
+                    Alert::ProcessSilent { .. } | Alert::RepeatedRefusal { .. }
+                ),
+                "the worker cannot raise this about itself; systemd does: {alert:?}"
+            );
+        }
+        assert!(
+            raised
+                .iter()
+                .any(|a| matches!(a, Alert::PublicationMissed { .. })),
+            "an overdue epoch is the worker's to report: {raised:?}"
+        );
+        assert!(
+            raised
+                .iter()
+                .any(|a| matches!(a, Alert::SequenceLag { .. })),
+            "a backlog is the worker's to report: {raised:?}"
+        );
+        assert!(
+            raised
+                .iter()
+                .any(|a| matches!(a, Alert::ReceiptUnconfirmed { .. })),
+            "a receipt past its budget is the worker's to report: {raised:?}"
+        );
+    }
+
+    /// `from_worker` says the process is alive at the instant it asks, which is the one thing it can
+    /// be sure of and the reason `ProcessSilent` is somebody else's job.
+    #[test]
+    fn from_worker_reports_itself_alive_now_and_refusing_nothing() {
+        let s = Supervision::from_worker(1_792_000_000, None);
+        assert_eq!(s.last_heartbeat, 1_792_000_000);
+        assert_eq!(s.consecutive_refusals, 0);
+        assert_eq!(s.last_refusal, None);
+    }
+
+    /// **The text an operator is woken by.** Rendered in the library so this test can reach it; in
+    /// the binary it was the one part of the remedy nothing checked.
+    #[test]
+    fn each_alert_names_itself_and_the_two_process_conditions_name_their_emitter() {
+        let rendered = |a: &Alert| a.to_string();
+
+        let missed = rendered(&Alert::PublicationMissed {
+            epoch: 20_746,
+            due: at(20_746),
+            now: at(20_746)
+                .saturating_add(T.publication_grace)
+                .saturating_add(1),
+        });
+        assert!(missed.starts_with("PublicationMissed:"), "{missed}");
+        assert!(
+            missed.contains("20746"),
+            "the epoch has to be in it: {missed}"
+        );
+
+        let lag = rendered(&Alert::SequenceLag {
+            last_epoch: 20_700,
+            newest_publishable: 20_745,
+            limit: 1,
+        });
+        assert!(lag.starts_with("SequenceLag:"), "{lag}");
+        assert!(lag.contains("20700") && lag.contains("20745"), "{lag}");
+
+        let receipt = rendered(&Alert::ReceiptUnconfirmed {
+            epoch: 20_745,
+            waiting: 300_000,
+            budget: T.receipt_budget,
+        });
+        assert!(receipt.starts_with("ReceiptUnconfirmed:"), "{receipt}");
+
+        // The two the worker cannot raise must say who does, so that a line reaching the journal
+        // from the wrong place is legible as a defect rather than read as a normal alert.
+        let silent = rendered(&Alert::ProcessSilent {
+            since: 0,
+            grace: T.heartbeat_grace,
+        });
+        assert!(silent.contains("WatchdogSec"), "{silent}");
+        assert!(silent.contains("defect"), "{silent}");
+
+        let repeated = rendered(&Alert::RepeatedRefusal {
+            refusal: Refusal::LogAheadOfCalendar {
+                last_epoch: 20_800,
+                today: 20_745,
+            },
+            consecutive: 3,
+        });
+        assert!(repeated.contains("StartLimitBurst"), "{repeated}");
+        assert!(repeated.contains("defect"), "{repeated}");
     }
 }

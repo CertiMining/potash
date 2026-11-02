@@ -12,7 +12,30 @@ the alert that woke you.
 ## How to use it
 
 Each section is one alert from `certimining_client::alert::Alert` (#252, criterion 5). Find the one
-you were paged on and work down it. Every section has the same four parts:
+you were paged on and work down it.
+
+**The service manager assumed is systemd, and the units are committed** at
+[`deploy/systemd/`](../deploy/systemd/): `certimining-anchor-b-worker.service` and the
+`certimining-alert@.service` its `OnFailure=` reaches. Nothing here requires systemd to *diagnose* an
+incident — every command below is the worker's own tooling — but which component raises which alert
+does depend on it, and until 1 November 2026 this document named five alerts that nothing raised at
+all (H-95, #300). Two of them cannot be raised by the worker: a live process cannot report its own
+silence, and a process that exits on its first refusal cannot count three in a row.
+
+| alert | raised by | how it reaches you |
+|---|---|---|
+| `ProcessSilent` | systemd `WatchdogSec=1800` in the worker's unit, fed by `sd_notify` after each successful observation | the unit fails its watchdog and is restarted; the journal carries the gap |
+| `RepeatedRefusal` | systemd `Restart=on-failure` with `StartLimitBurst=3`, then `OnFailure=certimining-alert@%n.service` | on the third refusal. How often `OnFailure=` itself fires is version-dependent, so the alert unit gates on `Result=start-limit-hit` read back from systemd rather than on being called |
+| `PublicationMissed` | the worker, each cycle | `anchor-b-worker: ALERT PublicationMissed: …` on stderr, so the journal |
+| `SequenceLag` | the worker, each cycle | the same |
+| `ReceiptUnconfirmed` | the worker, each cycle | the same |
+
+On a host with no service manager — a worker run by hand — the worker says so at start
+(`no readiness notification sent`, `no WATCHDOG_USEC`) and the first two rows are raised by nothing.
+That is a supported way to run it and an unsupervised one; the worker states which you have rather
+than leaving the two indistinguishable.
+
+Every section has the same four parts:
 
 - **It means** — what the condition establishes, and what it does not.
 - **Diagnose** — exact commands. Read their output; do not infer from the fact that they ran.
@@ -25,6 +48,8 @@ state it recovered from cannot be reviewed, and three of the five conditions bel
 from each other after a restart.
 
 ## `ProcessSilent`
+
+**Raised by** systemd, not the worker: `WatchdogSec=1800` in `deploy/systemd/certimining-anchor-b-worker.service`, fed by `sd_notify` after each successful observation of the chain. A live process cannot report its own silence. If the host has no service manager, nothing raises this.
 
 **It means** the worker has not reported inside its grace. It does not mean the log is behind: a
 process can die immediately after a successful publication and nothing is owed.
@@ -49,6 +74,8 @@ acquires an authority it should not hold.
 failure. A process that is alive and publishing nothing is `PublicationMissed`, not this.
 
 ## `PublicationMissed`
+
+**Raised by** the worker, each cycle, as `anchor-b-worker: ALERT PublicationMissed: …` on stderr and so in the journal.
 
 **It means** an epoch's publication time has passed by more than the grace and the log has not
 reached it. **The worker may be entirely healthy.** This is the condition H-90 (#293) needed: the
@@ -76,6 +103,8 @@ works; the following one is.
 
 ## `SequenceLag`
 
+**Raised by** the worker, each cycle, as `anchor-b-worker: ALERT SequenceLag: …`.
+
 **It means** the log is further behind the newest publishable epoch than the policy allows. The
 worker will refuse rather than replay an unbounded backlog, which is deliberate (`EpochSlipExceeded`).
 
@@ -98,6 +127,8 @@ in order, and the worker then waits rather than refuses.
 
 ## `ReceiptUnconfirmed`
 
+**Raised by** the worker, each cycle, as `anchor-b-worker: ALERT ReceiptUnconfirmed: …`. It needs the pending receipt's modification time; an unreadable receipt makes the age unknown and this alert unraisable rather than raisable against a time of zero.
+
 **It means** a submitted receipt has gone past its budget without Bitcoin confirming it. INV-ANCH-04
 budgets this wait; the alert fires when the wait itself is the news. **An unconfirmed receipt is not
 a failure** and must not be deleted or resubmitted.
@@ -119,6 +150,10 @@ receipt confirms, which is what makes the retry free.
 second submission for the same epoch produces a second receipt and the attach field is write-once.
 
 ## `RepeatedRefusal`
+
+**Raised by** systemd, not the worker: `Restart=on-failure` with `StartLimitBurst=3`, then `OnFailure=certimining-alert@%n.service`. The worker exits on its first refusal, so it cannot count three itself.
+
+It arrives **on the third refusal**, and the unit works for that rather than assuming it. How often `OnFailure=` fires is version-dependent: documented as once, when the unit enters `failed`, but reported on every auto-restart on some versions (systemd/systemd#8398, #27594, and #33710, the last reporting once-only on v249 and every-restart on v255). `certimining-alert@.service` therefore gates on `Result=start-limit-hit`, read back from systemd, so it pages on the third either way. **If you are paged on a first refusal, that gate is not working** — check it before concluding the worker refused three times.
 
 **It means** the worker has refused the same way repeatedly, so the state is one it must not act on
 and no amount of restarting changes that. The refusal names which.
