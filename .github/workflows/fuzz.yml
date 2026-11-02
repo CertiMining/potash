@@ -1,7 +1,8 @@
 # §4.5's fuzz targets at the iteration counts §4.6 gates on (D-131). Separate from ci.yml because that
 # workflow runs on every push and these runs take minutes rather than seconds. The counts and the
-# limits live in scripts/ci.sh, so `scripts/ci.sh fuzz` on a laptop is this job verbatim, the same way
-# every ci.yml job calls that script. Actions are pinned to full commit SHAs (D-12).
+# limits live in scripts/ci.sh, so `scripts/ci.sh fuzz` on a laptop runs the same five targets at the
+# same counts — not this job verbatim, since the job provisions its own toolchain and a laptop is
+# taken as it is found. Every ci.yml job calls that script the same way. Actions are pinned to full commit SHAs (D-12).
 name: fuzz
 
 on:

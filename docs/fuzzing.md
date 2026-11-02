@@ -17,7 +17,7 @@ scripts/ci.sh fuzz          # all five at the counts §4.6 gates on
 cargo +nightly-2026-06-16 fuzz run fuzz_apply -- -runs=20000
 ```
 
-The group is not in `scripts/ci.sh all`, which is the push pipeline verbatim. It runs nightly in
+The group is not in `scripts/ci.sh all`, which runs the push pipeline's groups in its order. It runs nightly in
 `.github/workflows/fuzz.yml`: the group takes roughly twenty minutes, which is not a cost worth paying on every
 push.
 

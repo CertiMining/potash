@@ -83,7 +83,7 @@ signature in the set. No generated key and no real key belongs in this repositor
 
 ## Running the checks
 
-`scripts/ci.sh all` is the pipeline CI runs, verbatim. Its groups, and only its groups — `thresholds`, `bench`, `fuzz` and, since D-144, `bench-band` are explained below the table rather than in it, because none of them is in the push pipeline:
+`scripts/ci.sh all` runs the groups CI runs, in CI's order. It is not the workflow verbatim: CI splits Miri into two jobs that run at once where `all` runs one group in turn, and every workflow job provisions its own toolchain where `all` takes the machine as it finds it. So a green `all` is the same checks, not the same run. Its groups, and only its groups — `thresholds`, `bench`, `fuzz` and, since D-144, `bench-band` are explained below the table rather than in it, because none of them is in the push pipeline:
 
 | Group | What it does |
 |---|---|
@@ -125,7 +125,7 @@ longer exist (D-137).
 `docs/performance.md` says which mechanism covers each of §4.4a's rows.
 
 `fuzz` is not in `all` and has no row above, because it is not part of the push pipeline: §4.5's five
-targets run nightly in `.github/workflows/fuzz.yml`, and `scripts/ci.sh fuzz` is that job verbatim.
+targets run nightly in `.github/workflows/fuzz.yml`, and `scripts/ci.sh fuzz` runs the same five targets that job runs, with the same provisioning difference as `all`.
 `docs/fuzzing.md` says what each target establishes and what its iteration count cost.
 
 **Never change the working tree under a running verification, and that includes switching branches.**

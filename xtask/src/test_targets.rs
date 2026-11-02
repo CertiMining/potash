@@ -64,7 +64,7 @@
 //! an identifier, and it is not counted. That is the same distinction `check-suppressions` needed.
 //!
 //! **What it does not do.** It reads `scripts/ci.sh` and not the workflows, because every job there
-//! calls this script and `scripts/ci.sh all` is the pipeline verbatim (D-09). A target run only by a
+//! calls this script and `all` runs the same groups those jobs do (D-09). A target run only by a
 //! workflow step that bypassed the script would be invisible here, and nothing does that today.
 //!
 //! **A test written in shell is not a cargo target, which is H-96 (issue #301).** Enumeration from
