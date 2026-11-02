@@ -125,8 +125,6 @@ pub struct Observed {
     /// issue #45, which is where the check belongs. Until then this is the same client-side guard the
     /// by-hand harness carries, in a place that is tested.
     pub now: i64,
-    /// The UTC day index `now` falls in, which is what §1.4 makes an epoch.
-    pub today: u64,
     /// The log's first publishable epoch, from its config account.
     pub start_epoch: u64,
     /// The highest epoch the log has published, from its config account.
@@ -135,6 +133,37 @@ pub struct Observed {
     pub awaiting_attach: Option<u64>,
     /// The highest epoch whose root has been submitted to the calendars, if any.
     pub last_submitted: Option<u64>,
+}
+
+impl Observed {
+    /// The UTC day index `now` falls in, which is what §1.4 makes an epoch.
+    ///
+    /// **Derived rather than carried, which is M-04 of the 1 November audit (H-101, issue #310).**
+    /// This was a `pub` field beside `now` and nothing checked that the two agreed. The production
+    /// loop happened to compute them together, so the invariant held there by construction and
+    /// nowhere else — and the unit fixtures broke it: `caught_up(today)` set `now` to
+    /// `publication_time(today)`, an hour into day `today + 1`, while labelling the day `today`. Every
+    /// test built on it described a legal state under an illegal state's name, which is why the
+    /// frontier defect below went unnoticed for as long as it did.
+    ///
+    /// A field that can disagree with `now` cannot be fixed by checking it at one call site. Deleting
+    /// it is what makes the disagreement unrepresentable.
+    #[must_use]
+    pub fn today(&self) -> Option<u64> {
+        day_index(self.now)
+    }
+
+    /// The newest epoch that can be published at `now` (H-90, #293).
+    ///
+    /// An epoch publishes an hour after it ends, so the newest publishable one is `today - 1` and
+    /// never `today`. **One expression for the whole crate.** `alert.rs` computed this correctly and
+    /// `next_step_with_policy` compared against `today` instead, one day looser, so a log that had
+    /// already published the current day read as healthy — two places stating one number with nothing
+    /// comparing them, which is H-98's (#305) class. Both call it now.
+    #[must_use]
+    pub fn newest_publishable(&self) -> Option<u64> {
+        self.today()?.checked_sub(1)
+    }
 }
 
 /// The one thing the worker does next.
@@ -161,7 +190,15 @@ pub enum Step {
 pub enum Refusal {
     /// `last_epoch` is already ahead of the calendar, so the log is in the state D-88 cost an earlier
     /// deployment. Publishing more would deepen it; the worker stops and a human rules.
-    LogAheadOfCalendar { last_epoch: u64, today: u64 },
+    LogAheadOfCalendar {
+        last_epoch: u64,
+        newest_publishable: u64,
+    },
+    /// `now` has no UTC day index, so no calendar barrier can be applied to it.
+    ///
+    /// Refused rather than passed over: a barrier that cannot be evaluated must not read as
+    /// satisfied. Matches `HandoffWriteRefused::UndatableClock` on the batcher's side.
+    UndatableClock { now: i64 },
     /// The config account reports a `last_epoch` more than one below `start_epoch`, which no
     /// sequence this program writes can produce. The observation is wrong, or the account is not
     /// this log's.
@@ -175,7 +212,7 @@ pub enum Refusal {
     /// an operator rather than letting an unattended worker replay an arbitrary backlog.
     EpochSlipExceeded {
         last_epoch: u64,
-        today: u64,
+        newest_publishable: u64,
         max_epoch_slip: u64,
     },
     /// Receipt state names an epoch the log has not published.
@@ -217,12 +254,18 @@ pub fn next_step_with_policy(
 ) -> Step {
     let Observed {
         now,
-        today,
         start_epoch,
         last_epoch,
         awaiting_attach,
         last_submitted,
     } = *observed;
+
+    // The calendar, derived from `now` once and used for both barriers below. A clock with no day
+    // index refuses rather than being waved through.
+    let (Some(today), Some(newest_publishable)) = (observed.today(), observed.newest_publishable())
+    else {
+        return Step::Refuse(Refusal::UndatableClock { now });
+    };
 
     // **`start_epoch - 1` is the initialised state, not an impossible one (H-89, #292).** The
     // barrier used to refuse `last_epoch < start_epoch`, and `initialize` writes
@@ -237,11 +280,18 @@ pub fn next_step_with_policy(
         });
     }
 
-    // **The refusal #49 asks for.** An epoch is a UTC day index, so a log whose last published epoch
-    // is in the future is not ahead of schedule, it is wrong. Every further publication would be too,
-    // since the next one can only be `last_epoch + 1`.
-    if last_epoch > today {
-        return Step::Refuse(Refusal::LogAheadOfCalendar { last_epoch, today });
+    // **The refusal #49 asks for, against the frontier rather than the day (H-101, issue #310).** An
+    // epoch is a UTC day index and publishes an hour after it ends, so the newest epoch that *can*
+    // have been published at `now` is `today - 1`. This compared against `today`, one day looser, so
+    // a log whose last epoch was the current day — already ahead of its own schedule, and not
+    // walkable back because publication is monotone — returned `Wait` and read as healthy. `alert.rs`
+    // had the frontier right the whole time; `Observed::newest_publishable` is now the one expression
+    // both use.
+    if last_epoch > newest_publishable {
+        return Step::Refuse(Refusal::LogAheadOfCalendar {
+            last_epoch,
+            newest_publishable,
+        });
     }
 
     if let Some(epoch) = awaiting_attach {
@@ -293,17 +343,25 @@ pub fn next_step_with_policy(
     // `max_epoch_slip` of one the worker waited for the publication time and then refused it —
     // every epoch, with no value of `N` behaving differently. Nothing met it because nothing
     // schedules the worker and the cycle is run by hand (D-117, D-139).
-    let slip = today.saturating_sub(1).saturating_sub(last_epoch);
+    // **The third copy of the frontier, now the same expression as the other two.** This read
+    // `today.saturating_sub(1)`, which is `newest_publishable` written out again — correct here,
+    // while the barrier above was comparing against `today`. The refusal reports the frontier it
+    // compared against rather than the day, so an operator does not have to subtract one to see the
+    // backlog the number describes (H-101, issue #310).
+    let slip = newest_publishable.saturating_sub(last_epoch);
     if slip > policy.max_epoch_slip {
         return Step::Refuse(Refusal::EpochSlipExceeded {
             last_epoch,
-            today,
+            newest_publishable,
             max_epoch_slip: policy.max_epoch_slip,
         });
     }
 
     let Some(candidate) = last_epoch.checked_add(1) else {
-        return Step::Refuse(Refusal::LogAheadOfCalendar { last_epoch, today });
+        return Step::Refuse(Refusal::LogAheadOfCalendar {
+            last_epoch,
+            newest_publishable,
+        });
     };
 
     // Nothing is owed today: the log has published through the current day index. Wait for the next
@@ -340,16 +398,6 @@ mod tests {
 
     const S: Schedule = Schedule::DEPLOYED;
 
-    /// Publication time for an epoch, so a test states "an hour after 20739 ended" rather than a
-    /// number nobody can check.
-    /// The UTC day a Unix time falls in, stated the way the tests mean it.
-    fn day(now: i64) -> u64 {
-        match day_index(now) {
-            Some(d) => d,
-            None => panic!("{now} is before 1970, so the test states nothing"),
-        }
-    }
-
     fn at(epoch: u64) -> i64 {
         match publication_time(S, epoch) {
             Some(t) => t,
@@ -360,7 +408,6 @@ mod tests {
     fn caught_up(today: u64) -> Observed {
         Observed {
             now: at(today),
-            today,
             start_epoch: 20_723,
             last_epoch: today,
             awaiting_attach: None,
@@ -383,7 +430,6 @@ mod tests {
     fn a_long_gap_is_paid_one_epoch_at_a_time_from_the_oldest() {
         let o = Observed {
             now: at(20_746),
-            today: 20_746,
             start_epoch: 20_723,
             last_epoch: 20_738,
             awaiting_attach: None,
@@ -393,7 +439,7 @@ mod tests {
             next_step(S, &o),
             Step::Refuse(Refusal::EpochSlipExceeded {
                 last_epoch: 20_738,
-                today: 20_746,
+                newest_publishable: 20_746,
                 max_epoch_slip: 1,
             }),
             "an unattended worker may recover the ordinary one-epoch slip, not replay an eight-epoch \
@@ -414,7 +460,6 @@ mod tests {
     fn a_tree_ready_early_waits_rather_than_publishing_early() {
         let o = Observed {
             now: at(20_739) - 1,
-            today: 20_739,
             last_epoch: 20_738,
             last_submitted: Some(20_738),
             ..caught_up(20_739)
@@ -431,7 +476,6 @@ mod tests {
     fn one_second_later_it_publishes() {
         let o = Observed {
             now: at(20_739),
-            today: 20_739,
             last_epoch: 20_738,
             last_submitted: Some(20_738),
             ..caught_up(20_739)
@@ -440,21 +484,37 @@ mod tests {
     }
 
     /// **The refusal #49 asks for**, and the state D-88 cost an earlier deployment.
+    ///
+    /// **This test passed for the wrong reason, and that is H-02 of the 1 November audit
+    /// (H-101, issue #310).** `at(20_739)` is an hour into day 20,740, so the state here is
+    /// `last_epoch == day_index(now)` — precisely the state the audit found was being accepted. It
+    /// refused anyway, because the fixture it used carried `today: 20_739`, understating the real day
+    /// by one and making the old `last_epoch > today` barrier fire on a comparison the real clock
+    /// would not have produced.
+    ///
+    /// With the day derived from `now` the numbers are unchanged and the verdict is not: under the
+    /// old barrier this is `20_740 > 20_740`, false, and the worker would have returned `Wait`. Under
+    /// the frontier it is `20_740 > 20_739`, true. So the same assertion that used to pass vacuously
+    /// now distinguishes the two barriers, which is what it was always supposed to do.
     #[test]
     fn a_log_ahead_of_the_calendar_is_refused_not_published() {
         let o = Observed {
             now: at(20_739),
-            today: 20_739,
             start_epoch: 20_723,
             last_epoch: 20_740,
             awaiting_attach: None,
             last_submitted: Some(20_740),
         };
         assert_eq!(
+            o.today(),
+            Some(20_740),
+            "the publication instant is in the next day"
+        );
+        assert_eq!(
             next_step(S, &o),
             Step::Refuse(Refusal::LogAheadOfCalendar {
                 last_epoch: 20_740,
-                today: 20_739
+                newest_publishable: 20_739
             })
         );
     }
@@ -463,7 +523,6 @@ mod tests {
     fn a_published_root_is_stamped_before_the_next_day_is_published() {
         let o = Observed {
             now: at(20_746),
-            today: 20_746,
             start_epoch: 20_723,
             last_epoch: 20_739,
             awaiting_attach: None,
@@ -501,7 +560,6 @@ mod tests {
         let now = at(start);
         let o = Observed {
             now,
-            today: day(now),
             start_epoch: start,
             last_epoch: start - 1,
             awaiting_attach: None,
@@ -532,7 +590,6 @@ mod tests {
     fn the_loop_pays_a_gap_in_order_and_then_waits() {
         let mut o = Observed {
             now: at(20_742),
-            today: 20_742,
             start_epoch: 20_723,
             last_epoch: 20_739,
             awaiting_attach: None,
@@ -655,7 +712,6 @@ mod tests {
         let now = at(start);
         let observed = Observed {
             now,
-            today: day(now),
             start_epoch: start,
             last_epoch: start - 1,
             awaiting_attach: None,
@@ -671,7 +727,6 @@ mod tests {
         let now = at(start);
         let observed = Observed {
             now,
-            today: day(now),
             start_epoch: start,
             last_epoch: start - 2,
             awaiting_attach: None,
@@ -690,15 +745,14 @@ mod tests {
         let wake = at(last + 1);
         let observed = Observed {
             now: wake,
-            today: day(wake),
             start_epoch: 20_700,
             last_epoch: last,
             awaiting_attach: None,
             last_submitted: Some(last),
         };
         assert_eq!(
-            observed.today,
-            last + 2,
+            observed.today(),
+            Some(last + 2),
             "the publication instant falls in the day after the epoch ends, which is the trap"
         );
         assert_eq!(next_step(S, &observed), Step::Publish { epoch: last + 1 });
@@ -711,7 +765,6 @@ mod tests {
         let wake = at(20_745);
         let observed = Observed {
             now: wake,
-            today: day(wake),
             start_epoch: 20_700,
             last_epoch: last,
             awaiting_attach: None,
@@ -745,6 +798,97 @@ mod tests {
         assert!(
             p.longest_quiet_cycle() > p.poll_interval.saturating_add(p.rpc_timeout),
             "the bound this replaced was the smaller one, which is the defect H-98 names"
+        );
+    }
+
+    /// **The frontier at both ends of a day, which is the boundary H-02 lives on.**
+    ///
+    /// An epoch publishes an hour after it ends, so during day `d` the newest epoch that can have
+    /// been published is `d - 1`. A log reporting `last_epoch == d` is ahead of its own schedule at
+    /// every instant of day `d`, from one second past midnight to one second before the next, and the
+    /// old barrier accepted it at all of them. Both ends are checked because an off-by-one in the day
+    /// arithmetic would show at one end only.
+    #[test]
+    fn a_log_reporting_the_current_day_is_refused_at_every_hour_of_it() {
+        let day: u64 = 20_750;
+        let midnight = match i64::try_from(day) {
+            Ok(d) => d.saturating_mul(86_400),
+            Err(_) => panic!("day {day} is beyond i64, so the test states nothing"),
+        };
+        for (label, now) in [
+            ("one second after midnight", midnight.saturating_add(1)),
+            ("midday", midnight.saturating_add(43_200)),
+            (
+                "one second before midnight",
+                midnight.saturating_add(86_399),
+            ),
+        ] {
+            let o = Observed {
+                now,
+                start_epoch: 20_723,
+                last_epoch: day,
+                awaiting_attach: None,
+                last_submitted: Some(day),
+            };
+            assert_eq!(o.today(), Some(day), "{label} is still day {day}");
+            assert_eq!(
+                next_step(S, &o),
+                Step::Refuse(Refusal::LogAheadOfCalendar {
+                    last_epoch: day,
+                    newest_publishable: day.saturating_sub(1),
+                }),
+                "at {label}, a log that has already published day {day} is ahead of the schedule"
+            );
+        }
+    }
+
+    /// And the frontier itself is not refused, at the same three instants.
+    ///
+    /// The pair matters: a barrier that refused `last_epoch == today - 1` would stop the worker
+    /// publishing anything at all, so the test above is only meaningful beside this one.
+    #[test]
+    fn a_log_at_the_frontier_is_not_refused_at_any_hour_of_the_day() {
+        let day: u64 = 20_750;
+        let midnight = match i64::try_from(day) {
+            Ok(d) => d.saturating_mul(86_400),
+            Err(_) => panic!("day {day} is beyond i64, so the test states nothing"),
+        };
+        for now in [
+            midnight.saturating_add(1),
+            midnight.saturating_add(43_200),
+            midnight.saturating_add(86_399),
+        ] {
+            let o = Observed {
+                now,
+                start_epoch: 20_723,
+                last_epoch: day.saturating_sub(1),
+                awaiting_attach: None,
+                last_submitted: Some(day.saturating_sub(1)),
+            };
+            assert!(
+                !matches!(
+                    next_step(S, &o),
+                    Step::Refuse(Refusal::LogAheadOfCalendar { .. })
+                ),
+                "the newest publishable epoch is not ahead of anything"
+            );
+        }
+    }
+
+    /// A clock with no day index refuses, rather than every calendar barrier reading as satisfied.
+    #[test]
+    fn a_clock_with_no_day_index_is_refused_rather_than_waved_through() {
+        let o = Observed {
+            now: -1,
+            start_epoch: 20_723,
+            last_epoch: 20_740,
+            awaiting_attach: None,
+            last_submitted: Some(20_740),
+        };
+        assert_eq!(o.today(), None);
+        assert_eq!(
+            next_step(S, &o),
+            Step::Refuse(Refusal::UndatableClock { now: -1 })
         );
     }
 }

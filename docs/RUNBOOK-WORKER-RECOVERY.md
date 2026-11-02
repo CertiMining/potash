@@ -180,12 +180,13 @@ and no amount of restarting changes that. The refusal names which.
 | refusal | what it says | first command |
 |---|---|---|
 | `LastBeforeStart` | the config reports a `last_epoch` more than one below `start_epoch` | `reconcile <start_epoch>` |
-| `LogAheadOfCalendar` | the log has published past today | `reconcile <last_epoch>` |
+| `LogAheadOfCalendar` | the log has published past the newest epoch that could have been published by now, which is yesterday and not today | `reconcile <last_epoch>` |
 | `EpochSlipExceeded` | the backlog is wider than the policy allows | see `SequenceLag` above |
 | `AwaitingAttachOutsideLog` | the receipt directory names an epoch the log has not published | `reconcile <awaiting_attach>` |
 | `SubmissionAheadOfLog` | the receipt directory is ahead of the chain | `reconcile <last_submitted>` |
 | `AttachmentAheadOfSubmission` | an attach is pending for an epoch never submitted | inspect the receipt directory |
 | `Unschedulable` | an epoch's publication time cannot be represented | escalate; this is not an operational fault |
+| `UndatableClock` | the host clock has no UTC day index, so no calendar barrier can be evaluated | fix the host clock; nothing about the log is known to be wrong |
 
 **Safe retry** None. Every refusal above is the worker declining to act on a state it cannot reconcile,
 and restarting re-reads the same state. Three of them — `AwaitingAttachOutsideLog`,

@@ -67,7 +67,6 @@ impl World {
     fn observe(&self, now: i64) -> Observed {
         Observed {
             now,
-            today: day(now),
             start_epoch: self.start_epoch,
             last_epoch: self.last_epoch,
             awaiting_attach: self.awaiting_attach,
