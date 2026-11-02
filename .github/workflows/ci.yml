@@ -1,6 +1,8 @@
-# CI for CertiMining (S8). Every job calls scripts/ci.sh, so `scripts/ci.sh all` on a laptop is this
-# pipeline verbatim. KAT-01 runs first, off-chain then on-chain, and every other job waits on both
-# (D-09). Actions are pinned to full commit SHAs, and tools are installed with rustup and cargo (D-12).
+# CI for CertiMining (S8). Every job calls scripts/ci.sh, so `scripts/ci.sh all` on a laptop runs this
+# pipeline's groups in its order — not this workflow verbatim: miri is two jobs here and one group
+# there, and each job here provisions its own toolchain where a laptop is taken as it is found.
+# KAT-01 runs first, off-chain then on-chain, and every other job waits on both (D-09). Actions are
+# pinned to full commit SHAs, and tools are installed with rustup and cargo (D-12).
 name: ci
 
 # `pull_request` is here because nothing tested a merge *result* (H-55, #214). A pull request's green

@@ -235,7 +235,7 @@ outside a committed class on different runs, which is itself the point: when it 
 the fallback, and its Ed25519-to-SHA-256 relation is lower than any the fleet has shown — about 7.13
 where the fleet's lowest is 9.08 — which puts `inclusion_proof_verify` below the floor. The run then
 reports that nothing can be concluded. That is the correct verdict for this machine; what changed is only which
-sentence delivers it. `bench-band` sat in `all` because `all` mirrors the push pipeline verbatim, and
+sentence delivers it. `bench-band` sat in `all` because `all` runs the push pipeline's groups in its order, and
 the run that was supposed to matter was CI's — **which is exactly what D-144 withdrew, because CI's run
 never matched a class and so never made the comparison this document describes.** The group is out of
 `all` and out of `ci.yml`, and nothing gates the reference machine either: `scripts/ci.sh thresholds`

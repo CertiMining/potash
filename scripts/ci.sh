@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # The CI pipeline as one script (S8). Each CI job runs one group. `scripts/ci.sh all` runs every group
 # in CI's order, stops at a KAT-01 failure as CI does, and prints each group's test counts and exit
-# code, so a local run is CI verbatim.
+# code, so a local run is CI's groups in CI's order. Not the workflow verbatim; the two differences
+# that remain are named at `all` below (H-84, #283).
 #
 #   scripts/ci.sh <group>           kat01-offchain | kat01-onchain | kat02 | vectors | checks | miri |
 #                                   deny | ts | all
@@ -538,8 +539,8 @@ bench() {
 }
 
 # §4.5's fuzz targets, at the iteration counts §4.6 gates on (D-131). This group is **not** in `all`:
-# it runs in its own nightly workflow, .github/workflows/fuzz.yml, because `all` is the push pipeline
-# verbatim and these runs take tens of minutes rather than seconds.
+# it runs in its own nightly workflow, .github/workflows/fuzz.yml, because `all` carries the push
+# pipeline's groups and these runs take tens of minutes rather than seconds.
 #
 # `-rss_limit_mb` and `-timeout` are set rather than left to libFuzzer's defaults, because §4.5 asks F-01
 # for zero OOM and zero timeouts and neither can be reported unless a limit exists to cross. The limit is

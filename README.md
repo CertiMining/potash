@@ -226,7 +226,7 @@ taken by default.
 scripts/ci.sh all
 ```
 
-That is the push pipeline verbatim. The fuzz targets are not in it: they take tens of minutes and run
+That is the push pipeline's groups, in its order — not the workflow verbatim, which `scripts/ci.sh` explains at `all`. The fuzz targets are not in it: they take tens of minutes and run
 nightly instead, as `scripts/ci.sh fuzz` and `.github/workflows/fuzz.yml`. What each target establishes,
 and what three of them failed to establish on the first attempt, is in
 [`docs/fuzzing.md`](docs/fuzzing.md).
