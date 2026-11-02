@@ -2074,6 +2074,18 @@ which point it stops being operational and becomes a `CMv1` tag by amendment, wi
 
 **Revisit if.** Any of the three moves to a fixed version, in which case the matching lines come out. Any new advisory against the same crates, which fails CI and takes its own decision. 31 December 2026 regardless, at which point every line is re-argued or removed.
 
+**Amended 2 November 2026 (M-06, combined audit of `main` at `fe760c5`).** The paragraph above says “Each is corrected where it stands” of four wrong evidence statements. That was inaccurate: two were corrected and two were left standing, and this entry went on asserting otherwise for two days. The statements, each superseded and none of them rewritten above:
+
+- **“and does not expose its inner non-blocking client, which is the only place a generic `send` exists”**, in *That call is not optional*. Superseded by the same sentence: `send<T>` is public on the blocking client at `rpc_client.rs:1008`, so the non-blocking client is not the only place one exists. The clause is a remnant of the text the 1 November correction replaced, left inside the corrected sentence.
+- **“Every fix is a semver-major bump … and `cargo update` reports ‘Locking 0 packages’ for all three”**, in *What happened*. Superseded by *One exception is retired* four paragraphs above it, which states that this is false for `zstd-sys`, whose advisory patched at a compatible version. The sentence holds for the three crates it names and the word “Every” does not.
+- **“Each is corrected where it stands”** itself, for the reason this note exists.
+
+Two further statements were in `deny.toml` rather than here and are corrected there: the 0391 reason said a decoder is built “per response” where this entry says per account, and the 0405 reason said “nothing here constructs an InBuffer” where this entry records `InBuffer::around` constructing one with `pos = 0`. The file's header also counted five dated exceptions against fourteen and repeated the semver-major claim.
+
+**Nothing about the verdicts changed.** The fourteen are still NOT REACHED; the audit rechecked each against the locked graph and the advisory records and found them sound. What was wrong was the evidence text, which is the part a later reviewer has to trust.
+
+**And it is gated now.** `cargo xtask check-advisories` counts the dated exceptions against a marker in the header, requires each to carry a readable expiry that has not passed, a retirement condition, and a decision it cites that this file carries as a heading. `cargo-deny` has no expiry for an ignore entry — `EXPIRES` is prose inside the `reason` string — so until that gate existed these dates were enforced by nobody and an exception would have outlived its own expiry in silence.
+
 ## D-143 · Devnet anchoring is a split-host cycle with a distinct worker payer
 
 **Date:** 24 Oct 2026 · **Unit:** release-readiness item 5 · **Class:** security necessity · **Status:** implemented, pending owner review

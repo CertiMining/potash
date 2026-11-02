@@ -11,10 +11,18 @@ yanked = "deny"
 unmaintained = "all"
 unsound = "all"
 # **Two kinds of exception now, and the second is dated (D-142, owner's ruling of 31 October 2026).**
-# The first five are unmaintained advisories the test runtime alone reaches (D-18). The five below
+# The first five are unmaintained advisories the test runtime alone reaches (D-18). The ones below
 # them are vulnerability and unsound advisories in the Solana dependency stack, which this repository
-# cannot move: each fix is a semver-major bump that only upstream can take, so `cargo update` reports
-# "Locking 0 packages" for all three crates. Yanked advisories still take no exceptions.
+# cannot move: the fix is a semver-major bump only upstream can take for `crypto-bigint`, `zstd` and
+# `zstd-safe`, and `cargo update` reports "Locking 0 packages" for those three. That was not so for
+# `zstd-sys`, whose advisory record patched at a compatible version; it was taken and its exception
+# retired, which is why this no longer says every fix is a major bump. Yanked advisories still take no
+# exceptions.
+#
+# The count is stated once below, in a form `cargo xtask check-advisories` reads and compares against
+# the entries. The sentence above said "the five below them" against fourteen of them, and went on
+# saying it until an audit read the file (M-06, 1 November 2026). Prose may describe; it may not count.
+# DATED-EXCEPTIONS: 14
 #
 # **Every dated entry carries four things**, which is what makes it a decision rather than a silence:
 # the dependency path, whether the vulnerable code is reached in our use and the evidence for that
@@ -61,7 +69,7 @@ ignore = [
   #   crates' defaults; compiled is not called.
   #
   #   Each line below says why that surface does not meet the advisory's precondition.
-  { id = "RUSTSEC-2026-0391", reason = "zstd 0.13.3, data from an abandoned stream leaking on a REUSED CONTEXT. NOT REACHED: a fresh read::Decoder is built per response and read to end; no context is reused across streams. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd >= 0.14.3 (D-142)" },
+  { id = "RUSTSEC-2026-0391", reason = "zstd 0.13.3, data from an abandoned stream leaking on a REUSED CONTEXT. NOT REACHED: a fresh read::Decoder is built per account and read to end; no context is reused across streams. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd >= 0.14.3 (D-142)" },
   { id = "RUSTSEC-2026-0395", reason = "zstd-safe 7.3.0, use-after-free with CParameter::StableInBuffer. NOT REACHED: a compression parameter on a decompression path, and zstd 0.13.3 sets only CParameter::CompressionLevel. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
   { id = "RUSTSEC-2026-0396", reason = "zstd-safe 7.3.0, Seekable reads a NULL or out-of-bounds seek table. NOT REACHED: `Seekable` appears nowhere in zstd 0.13.3's source. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
   { id = "RUSTSEC-2026-0397", reason = "zstd-safe 7.3.0, OutBuffer::around_pos exposes uninitialised memory. NOT REACHED: `around_pos` appears nowhere in zstd 0.13.3's source. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
@@ -76,7 +84,7 @@ ignore = [
   # affected — only `stream::write::Decoder` is, and nothing here uses it.
   { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.3.0, uninitialised memory when streaming decompression of a LEGACY frame fails. NOT REACHED: the advisory excludes stream::read::Decoder, which is the only decoder on this path; the fault is in stream::write::Decoder. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
   { id = "RUSTSEC-2026-0404", reason = "zstd-safe 7.3.0, double free in DCtx::try_clone. NOT REACHED: neither try_clone nor InBuffer::new appears in zstd 0.13.3's read module; a decoder is created and dropped, never cloned. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
-  { id = "RUSTSEC-2026-0405", reason = "zstd-safe 7.3.0, out-of-bounds read with an out-of-range InBuffer::pos. NOT REACHED: nothing here constructs an InBuffer; read::Decoder owns its buffers and sets pos itself. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
+  { id = "RUSTSEC-2026-0405", reason = "zstd-safe 7.3.0, out-of-bounds read with an out-of-range InBuffer::pos. NOT REACHED: an InBuffer is constructed, by InBuffer::around at zstd-0.13.3/src/stream/zio/reader.rs:136, and that constructor sets pos = 0 while this advisory needs an out-of-range one, which only SeekableCStream::compress_stream produces. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
   { id = "RUSTSEC-2026-0406", reason = "zstd-safe 7.3.0, use-after-free when changing a MULTITHREADED context with an unfinished frame. NOT REACHED: a multithreaded compression context on a single-shot decompression path. EXPIRES 2026-12-31. RETIRE when the Solana stack takes zstd-safe >= 8.2.0 (D-142)" },
   # wasm32 only, and this repository builds the host, thumbv7em-none-eabihf and SBF. No wasm target
   # appears in scripts/ci.sh at all.

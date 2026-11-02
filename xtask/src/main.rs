@@ -21,6 +21,7 @@
 //! Being a tool rather than shipped code, this crate may panic: a generator that cannot produce a
 //! vector must stop loudly, and INV-ERR-01's gates stay on the library and program crates (D-21).
 
+mod advisories;
 mod citations;
 mod decisions;
 mod demo;
@@ -148,6 +149,15 @@ fn main() {
                 rendered.lines().count(),
                 at.display()
             );
+        }
+        // **The advisory exception list, against the record that justifies it (M-06, audit of
+        // 1 November 2026).** `deny.toml`'s header counted five exceptions where there were
+        // fourteen and called every fix a semver-major bump after one had been taken as a compatible
+        // update, and two reasons contradicted the decision they cite. Nothing compared the two
+        // documents. `cargo-deny` also has no expiry for an ignore entry — `EXPIRES` is prose inside
+        // the reason string — so until this existed the dates were enforced by nobody.
+        Some("check-advisories") => {
+            advisories::check_advisories(&repo_root());
         }
         Some("check-record") => {
             record::check_record(&repo_root());
