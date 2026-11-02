@@ -23,9 +23,9 @@
 //! `check-suppressions` was already written to catch in its own domain.
 //!
 //! **What it does not do, said rather than discovered.** It cannot tell whether a *new* sentence is
-//! true. It says that nine known-false constructions do not come back, which is the whole of its
-//! claim. It also skips its own source, because the list has to be written somewhere and a needle
-//! quoted in the list is indistinguishable from a needle used in prose.
+//! true. It says that the known-false constructions listed below do not come back, which is the
+//! whole of its claim. It also skips its own source, because the list has to be written somewhere
+//! and a needle quoted in the list is indistinguishable from a needle used in prose.
 //!
 //! An exemption covers *every* occurrence of its needle in its file, so a second sentence added to an
 //! exempted file is covered without being read. Both exempted files are the decision record and the
@@ -43,7 +43,7 @@ struct Stale {
     why: &'static str,
 }
 
-const STALE: [Stale; 9] = [
+const STALE: [Stale; 15] = [
     Stale {
         needle: "no worker exists",
         why: "anchor-b-worker was committed on 20 Oct 2026 (D-117's amendment, H-13)",
@@ -79,6 +79,37 @@ const STALE: [Stale; 9] = [
     Stale {
         needle: "regression gate exists",
         why: "D-144 took bench-band out of all and out of ci.yml on 1 Nov 2026, so CI gates no wall-clock measure; §4.4a records it",
+    },
+    // **The six affirmative forms M-07 (#317) retired.** The correction keeps the word "verbatim"
+    // in every one of those files, in the negative — "not this workflow verbatim" — so a needle of
+    // "verbatim" alone would fail on the corrected text. Each needle below is the affirmative
+    // construction and is absent from the tree M-07 produced, which is what makes it a lockout
+    // rather than a second opinion.
+    Stale {
+        needle: "pipeline verbatim",
+        why: "a local run is the push pipeline's groups in CI's order and not the workflow verbatim: CI splits miri into two jobs that run at once and provisions each job's toolchain (H-84 #283, corrected by M-07 #317 on 2 Nov 2026)",
+    },
+    Stale {
+        needle: "is this job verbatim",
+        why: "a local run is the push pipeline's groups in CI's order and not the workflow verbatim: CI splits miri into two jobs that run at once and provisions each job's toolchain (H-84 #283, corrected by M-07 #317 on 2 Nov 2026)",
+    },
+    Stale {
+        needle: "is that job verbatim",
+        why: "a local run is the push pipeline's groups in CI's order and not the workflow verbatim: CI splits miri into two jobs that run at once and provisions each job's toolchain (H-84 #283, corrected by M-07 #317 on 2 Nov 2026)",
+    },
+    Stale {
+        needle: "ci runs, verbatim",
+        why: "a local run is the push pipeline's groups in CI's order and not the workflow verbatim: CI splits miri into two jobs that run at once and provisions each job's toolchain (H-84 #283, corrected by M-07 #317 on 2 Nov 2026)",
+    },
+    Stale {
+        needle: "is ci verbatim",
+        why: "a local run is the push pipeline's groups in CI's order and not the workflow verbatim: CI splits miri into two jobs that run at once and provisions each job's toolchain (H-84 #283, corrected by M-07 #317 on 2 Nov 2026)",
+    },
+    // The one form that wrapped: the claim's own line carried only its tail, so the needle is that
+    // tail. `scripts/ci.sh` now reads "groups and these runs" where it read "verbatim and these runs".
+    Stale {
+        needle: "verbatim and these runs",
+        why: "a local run is the push pipeline's groups in CI's order and not the workflow verbatim: CI splits miri into two jobs that run at once and provisions each job's toolchain (H-84 #283, corrected by M-07 #317 on 2 Nov 2026)",
     },
 ];
 
@@ -454,8 +485,9 @@ pub fn check_status(root: &Path) {
         STALE.len()
     );
     println!(
-        "status: this says nine known-false sentences have not come back, not that any current \
-         sentence is true — that is a judgement no grep reaches"
+        "status: this says {} known-false sentences have not come back, not that any current \
+         sentence is true — that is a judgement no grep reaches",
+        STALE.len()
     );
 }
 
@@ -752,7 +784,7 @@ mod tests {
     /// And a code span still is a reason, because it has no second reading.
     #[test]
     fn a_backticked_needle_is_still_a_phrase_and_not_a_claim() {
-        let line = "The phrase `no worker exists` names nine sentences this gate bans.";
+        let line = "The phrase `no worker exists` names a sentence this gate bans.";
         let at = line.find("no worker exists").expect("present");
         assert!(
             is_named_not_used(line, at, "no worker exists".len()),
