@@ -891,4 +891,45 @@ mod tests {
             Step::Refuse(Refusal::UndatableClock { now: -1 })
         );
     }
+    /// **The arm nothing reached (H-104, issue #322).** `Unschedulable` is constructed twice in this
+    /// function and was named by no test, so the one refusal that reports a schedule rather than a
+    /// state was asserted by nothing.
+    ///
+    /// Reached the same way as its counterpart in `handoff.rs`: `publication_time` multiplies the
+    /// epoch by a day and adds another, so it leaves `i64` at day index 106_751_991_167_300. A log
+    /// caught up to the frontier there makes `candidate` that day, and the schedule cannot place it.
+    /// The clock is absurd and the boundary is not — it is what the `checked_mul` in
+    /// `publication_time` exists for, and a worker that read `None` as nothing owed would sit still
+    /// instead of refusing.
+    #[test]
+    fn an_epoch_the_schedule_cannot_place_is_refused_rather_than_published() {
+        let today = match day_index(i64::MAX) {
+            Some(d) => d,
+            None => panic!("i64::MAX falls in some UTC day"),
+        };
+        let last_epoch = match today.checked_sub(1) {
+            Some(e) => e,
+            None => panic!("day {today} has a predecessor"),
+        };
+        // Derived, not assumed: if the frontier ever moves, this fails here rather than quietly
+        // asserting a different arm.
+        assert_eq!(
+            publication_time(S, today),
+            None,
+            "day {today} must be the unschedulable one or the test states nothing"
+        );
+        let o = Observed {
+            now: i64::MAX,
+            start_epoch: last_epoch,
+            last_epoch,
+            awaiting_attach: None,
+            last_submitted: Some(last_epoch),
+        };
+        assert_eq!(o.newest_publishable(), Some(last_epoch), "the log is caught up to the frontier");
+        assert_eq!(
+            next_step(S, &o),
+            Step::Refuse(Refusal::Unschedulable { epoch: today }),
+            "an epoch the schedule cannot place is refused, not waited on forever"
+        );
+    }
 }

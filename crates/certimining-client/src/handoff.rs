@@ -622,4 +622,32 @@ mod writing {
             })
         );
     }
+    /// **The arm nothing reached (H-104, issue #322).** `Unschedulable` was constructed in one place
+    /// and named by no test, so its fields and its distinction from `UndatableClock` were asserted by
+    /// nothing. An arm that has never executed is not known to report what it claims to.
+    ///
+    /// The one way in is the schedule's own arithmetic. `publication_time` multiplies the epoch by a
+    /// day and adds another, so it leaves `i64` at day index 106_751_991_167_300; `day_index` accepts
+    /// any non-negative `i64`, so a clock can report that day, and an epoch equal to the day clears
+    /// the barrier above it. The clock is absurd and the boundary is not — it is what the `checked_mul`
+    /// in `publication_time` exists for, and this is the only state that reaches past it.
+    #[test]
+    fn an_epoch_the_schedule_cannot_place_is_refused_as_its_own_fault() {
+        let today = match day_index(i64::MAX) {
+            Some(d) => d,
+            None => panic!("i64::MAX falls in some UTC day"),
+        };
+        // Derived, not assumed: if the frontier ever moves, this fails here rather than quietly
+        // asserting a different arm.
+        assert_eq!(
+            build_start(S, today),
+            None,
+            "day {today} must be the unschedulable one or the test states nothing"
+        );
+        assert_eq!(
+            refuse_to_write(S, P, today, i64::MAX, None, &bytes(1)),
+            Err(HandoffWriteRefused::Unschedulable { epoch: today }),
+            "an epoch the schedule cannot place is a fault in the epoch asked for, not in the clock"
+        );
+    }
 }
