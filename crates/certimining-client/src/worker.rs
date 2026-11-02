@@ -260,10 +260,11 @@ pub fn next_step_with_policy(
         last_submitted,
     } = *observed;
 
-    // The calendar, derived from `now` once and used for both barriers below. A clock with no day
-    // index refuses rather than being waved through.
-    let (Some(today), Some(newest_publishable)) = (observed.today(), observed.newest_publishable())
-    else {
+    // The frontier, derived from `now`. A clock with no day index refuses rather than being waved
+    // through, and so does day zero: `newest_publishable` is `today - 1`, so it is `None` in both
+    // cases and asking for it alone refuses exactly the same states. The day itself was bound here
+    // too until H-107 (issue #328), for the one barrier below that compared against it.
+    let Some(newest_publishable) = observed.newest_publishable() else {
         return Step::Refuse(Refusal::UndatableClock { now });
     };
 
@@ -364,15 +365,18 @@ pub fn next_step_with_policy(
         });
     };
 
-    // Nothing is owed today: the log has published through the current day index. Wait for the next
-    // epoch's publication time rather than spinning.
-    if candidate > today {
-        return match publication_time(schedule, candidate) {
-            Some(at) => Step::Wait { until: at },
-            None => Step::Refuse(Refusal::Unschedulable { epoch: candidate }),
-        };
-    }
-
+    // **One match, where there were two (H-107, issue #328; owner's ruling of 2 November 2026).** An
+    // `if candidate > today` block stood here and answered the caught-up case itself. H-101 (#310)
+    // tightened the barrier above from the day to the frontier, which leaves `candidate <= today` for
+    // every state that reaches here and made the block unreachable — and left its comment, "the log
+    // has published through the current day index", describing the state that barrier now refuses.
+    //
+    // It was redundant as well as unreachable, which is why deleting it is not a behaviour change.
+    // With the pre-#314 barrier restored so it could be entered, 30,208 of 60,264 swept states reached
+    // it and none answered differently from the match below: `now` falls in a day the candidate is
+    // past, so `now < at` holds and this match returns the same `Wait`. The invariant that makes the
+    // deletion safe is asserted by `the_calendar_barrier_admits_no_state_whose_candidate_is_past_today`.
+    //
     // **§1.5's constant rate, which is a privacy property and not a nicety.** An epoch is published at
     // a time fixed by the epoch, so a tree that finished early waits (D-83). A caught-up worker reaches
     // here each day and waits; a worker behind the calendar finds the time long past and publishes at
@@ -873,6 +877,164 @@ mod tests {
                 "the newest publishable epoch is not ahead of anything"
             );
         }
+    }
+
+    /// **Every state the calendar barrier admits has `candidate <= today` (H-101 #310, H-107 #328).**
+    ///
+    /// The invariant that let the `if candidate > today` block go. #314 tightened the frontier barrier
+    /// from `last_epoch > today` to `last_epoch > newest_publishable`, and `newest_publishable` is
+    /// `today - 1` wherever it is `Some`, so a `last_epoch` the barrier admits cannot make
+    /// `last_epoch + 1` exceed the day. If that barrier is ever loosened again, this fails.
+    ///
+    /// **It reads the barrier rather than restating it.** A test computing
+    /// `last_epoch <= newest_publishable` for itself would still pass after such a loosening, because
+    /// the test would have moved with the code — the trap of writing a demand and its fixtures from
+    /// one model, which is how a wrong gate goes green. So this drives `next_step_with_policy` and
+    /// skips only what the three refusals at or before the barrier reject. Every other outcome,
+    /// refusal or step, means execution passed it.
+    #[test]
+    fn the_calendar_barrier_admits_no_state_whose_candidate_is_past_today() {
+        let max_day = match day_index(i64::MAX) {
+            Some(d) => d,
+            None => panic!("i64::MAX falls in some UTC day"),
+        };
+        let mut checked = 0u32;
+        let mut admitted = 0u32;
+
+        // The ordinary calendar, every hour of the day that matters: the first second, the second
+        // second, midday and the last second.
+        let ordinary: Vec<u64> = (1u64..60).collect();
+        // And the edges, where any overflow escape would live.
+        let extreme = [
+            max_day.saturating_sub(2),
+            max_day.saturating_sub(1),
+            max_day,
+        ];
+        let extreme_lasts = [
+            0u64,
+            1,
+            2,
+            max_day.saturating_sub(2),
+            max_day.saturating_sub(1),
+            max_day,
+            max_day.saturating_add(1),
+            u64::MAX.saturating_sub(1),
+            u64::MAX,
+        ];
+
+        let visit = |o: Observed, checked: &mut u32, admitted: &mut u32| {
+            *checked = checked.saturating_add(1);
+            let step = next_step_with_policy(S, &o, WorkerPolicy::PRODUCTION);
+            // The three refusals at or before the frontier barrier. A state they reject never
+            // reaches the code the invariant is about.
+            if matches!(
+                step,
+                Step::Refuse(
+                    Refusal::UndatableClock { .. }
+                        | Refusal::LastBeforeStart { .. }
+                        | Refusal::LogAheadOfCalendar { .. }
+                )
+            ) {
+                return;
+            }
+            *admitted = admitted.saturating_add(1);
+            let today = match o.today() {
+                Some(d) => d,
+                None => panic!("UndatableClock would have refused {o:?}"),
+            };
+            let candidate = match o.last_epoch.checked_add(1) {
+                Some(c) => c,
+                None => panic!("LogAheadOfCalendar would have refused {o:?}"),
+            };
+            assert!(
+                candidate <= today,
+                "the barrier admitted {o:?}, whose candidate {candidate} is past today {today}"
+            );
+        };
+
+        for today in ordinary {
+            let base = match i64::try_from(today)
+                .ok()
+                .and_then(|d| d.checked_mul(EPOCH_SECONDS))
+            {
+                Some(n) => n,
+                None => continue,
+            };
+            for last_epoch in 0u64..60 {
+                for start_epoch in 0u64..3 {
+                    for last_submitted in [None, Some(last_epoch)] {
+                        for awaiting_attach in [None, Some(last_epoch)] {
+                            for offset in [0i64, 1, 43_200, 86_399] {
+                                let now = match base.checked_add(offset) {
+                                    Some(n) => n,
+                                    None => continue,
+                                };
+                                visit(
+                                    Observed {
+                                        now,
+                                        start_epoch,
+                                        last_epoch,
+                                        awaiting_attach,
+                                        last_submitted,
+                                    },
+                                    &mut checked,
+                                    &mut admitted,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for today in [1u64, 2].into_iter().chain(extreme) {
+            let base = match i64::try_from(today)
+                .ok()
+                .and_then(|d| d.checked_mul(EPOCH_SECONDS))
+            {
+                Some(n) => n,
+                None => continue,
+            };
+            for last_epoch in extreme_lasts {
+                for offset in [0i64, 86_399] {
+                    let now = match base.checked_add(offset) {
+                        Some(n) => n,
+                        None => continue,
+                    };
+                    // An offset that spills into the next day would describe a different calendar
+                    // than the one this iteration names.
+                    if day_index(now) != Some(today) {
+                        continue;
+                    }
+                    for last_submitted in [None, Some(last_epoch)] {
+                        for start_epoch in [0u64, last_epoch] {
+                            visit(
+                                Observed {
+                                    now,
+                                    start_epoch,
+                                    last_epoch,
+                                    awaiting_attach: None,
+                                    last_submitted,
+                                },
+                                &mut checked,
+                                &mut admitted,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // The count is pinned so the figure cited in issue #328 cannot drift from the sweep that
+        // produced it, and so a loop quietly stopping early is a failure rather than a smaller pass.
+        assert_eq!(
+            checked, 170_244,
+            "the sweep is cited at 170,244 states in issue #328"
+        );
+        assert!(
+            admitted > 0,
+            "a sweep that admits nothing asserts nothing about the barrier"
+        );
     }
 
     /// A clock with no day index refuses, rather than every calendar barrier reading as satisfied.
