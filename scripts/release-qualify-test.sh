@@ -128,5 +128,35 @@ else
   fail "independent steps continue after failure"
 fi
 
+# **Every binary the build emits is in the artifact record (M-05, audit of 1 November 2026).**
+# The build step is `--bins`, so it produces every binary in the package, and the record named three
+# of five. The two omitted were `anchoring-preflight` and `reconcile-anchor-cycle` -- the first
+# commands the recovery runbook gives an operator -- so a qualification bundle could not vouch for
+# the bytes of the tools an incident is handled with.
+#
+# The list is read from disk rather than written here, so a binary added later is covered by this
+# demand the moment it exists rather than when someone remembers. Comments are stripped before
+# matching, because a line of prose naming a binary must not satisfy a demand about what the script
+# runs -- which is H-96's lesson (#301), made once already in this repository.
+record_body="$(grep -vE '^[[:space:]]*#' scripts/release-qualify.sh)"
+bin_count=0
+for bin_src in crates/certimining-client/src/bin/*.rs; do
+  [ -f "$bin_src" ] || continue
+  bin_count=$((bin_count + 1))
+  bin_name="$(basename "$bin_src" .rs)"
+  if grep -Fq "record_artifact release-binary target/release/$bin_name" <<<"$record_body"; then
+    pass "release record covers $bin_name"
+  else
+    fail "release record omits $bin_name, which the build emits through --bins"
+  fi
+done
+# Fail closed on an empty enumeration. A gate that reads a failed listing as an absence reports
+# whatever its own failure produces, which is the defect class this file belongs to.
+if [ "$bin_count" -gt 0 ]; then
+  pass "the binary list was enumerated ($bin_count found)"
+else
+  fail "no binaries were found under crates/certimining-client/src/bin, so this gate checked nothing"
+fi
+
 if [ "$failed" -ne 0 ]; then exit 1; fi
 echo "release-qualify-test: every structural control passed"

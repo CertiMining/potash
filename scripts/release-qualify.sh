@@ -265,9 +265,21 @@ record_artifact() {
 
 record_artifact sbf-program target/deploy/certimining_checkpoint.so
 record_artifact sbf-test-harness target/deploy/core_harness.so
+# **Every binary the build step emits, which is all five (M-05, audit of 1 November 2026).** The
+# build above is `--bins`, so it produces every binary in the package; this list named three of them.
+# The two it omitted are `anchoring-preflight` and `reconcile-anchor-cycle`, and they are not
+# incidental tools: `docs/RUNBOOK-WORKER-RECOVERY.md` gives `preflight worker` and `reconcile <epoch>`
+# as the first commands of every recovery path, and names them in four of its seven refusal rows. A
+# bundle that cannot vouch for their bytes cannot be the distribution evidence for a release an
+# operator will recover with.
+#
+# `scripts/release-qualify-test.sh` reads this list against the binaries that exist on disk, so a new
+# binary fails that gate until a line here covers it.
 record_artifact release-binary target/release/anchor-b-worker
+record_artifact release-binary target/release/anchoring-preflight
 record_artifact release-binary target/release/batcher-handoff
 record_artifact release-binary target/release/confirm-anchor-b
+record_artifact release-binary target/release/reconcile-anchor-cycle
 
 if ! END_COMMIT="$(git rev-parse --verify HEAD)"; then
   echo "release-qualify: Git could not resolve HEAD after verification" >&2
