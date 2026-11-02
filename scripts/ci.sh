@@ -351,6 +351,18 @@ checks() {
   # A promise judged against a Bitcoin-confirmed receipt over its own encoding (H-02, #30). Offline
   # for the same reason: committed headers, and a receipt this repository already published.
   check "promise receipt" cargo test -p certimining-client --features ots --test promise_receipt
+  # **The committed systemd units against the committed constants (H-98, #305).** #303 put two unit
+  # files in the repository carrying numbers the code also carries, and nothing compared them. Each
+  # relation fails quietly in the direction that suppresses an alert: a `WatchdogSec` below the
+  # longest the worker can go unfed kills a healthy worker, a `StartLimitBurst` that disagrees with
+  # `Thresholds::DEPLOYED.consecutive_refusals` enforces a threshold the code does not claim, and a
+  # `RestartSec` past the limit interval means the start limit is never reached, `Result` never
+  # becomes `start-limit-hit`, and `RepeatedRefusal` is raised by neither emitter.
+  #
+  # Offline, and it establishes internal consistency only — systemd's own behaviour needs a host and
+  # stays with #251. The units are embedded with `include_str!`, so moving one is a compile error
+  # rather than a test that checks nothing.
+  check "supervision units" cargo test -p certimining-client --test supervision_units
   # **The release gate's own structural tests (H-96, #301).** `scripts/release-qualify-test.sh` was
   # committed with 132 lines holding `release-qualify.sh`'s fail-closed boundary in place — that the
   # plan contains `ci.sh all`, the ignored privacy tests and the SBF build, that it excludes every

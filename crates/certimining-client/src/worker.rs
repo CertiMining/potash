@@ -75,6 +75,38 @@ impl WorkerPolicy {
         }
         Some(delay)
     }
+
+    /// The longest a healthy worker can go without feeding its watchdog (H-98, issue #305).
+    ///
+    /// **Why this is longer than one cycle.** The worker feeds the watchdog after a *successful*
+    /// observation and deliberately does not feed it on the retry path, because a worker that cannot
+    /// see the chain should stop reporting itself alive. So the quiet span covers the loop's sleep,
+    /// every observation the partition budget allows, and the backoff between them — all of which a
+    /// worker recovering exactly as designed will spend.
+    ///
+    /// One expression with two consumers: `anchor-b-worker` prints this against `WATCHDOG_USEC` at
+    /// start, and `tests/supervision_units.rs` asserts the committed `WatchdogSec` exceeds it. The
+    /// binary used `poll_interval + rpc_timeout` before this, which is 330s against a real 511s, so
+    /// it would have passed a watchdog that killed a recovering worker.
+    ///
+    /// **A necessary bound and not a sufficient one.** One observation makes a status call per epoch
+    /// carrying a receipt, so its cost grows with the backlog and no constant covers an arbitrary
+    /// one. `partition_retry_limit + 1` observations is the no-backlog case: the budget's failures
+    /// plus the attempt that succeeds.
+    #[must_use]
+    pub fn longest_quiet_cycle(self) -> Duration {
+        let attempts = self.partition_retry_limit.saturating_add(1);
+        let observing = self.rpc_timeout.saturating_mul(attempts);
+        let mut backoff = Duration::ZERO;
+        for failure in 1..=self.partition_retry_limit {
+            if let Some(delay) = self.partition_retry_delay(failure) {
+                backoff = backoff.saturating_add(delay);
+            }
+        }
+        self.poll_interval
+            .saturating_add(observing)
+            .saturating_add(backoff)
+    }
 }
 
 /// Everything the worker is allowed to decide from.
@@ -689,5 +721,30 @@ mod tests {
             next_step(S, &observed),
             Step::Refuse(Refusal::EpochSlipExceeded { .. })
         ));
+    }
+
+    /// **The number the unit file is read against, stated once so a policy change surfaces here.**
+    ///
+    /// 300s of sleep, six observations at a 30s timeout (five failures from the partition budget and
+    /// the attempt that succeeds), and 1 + 2 + 4 + 8 + 16 = 31s of backoff. The 30s `retry_max` is
+    /// never reached inside a budget of five, which is why the backoff is 31s and not 150s.
+    ///
+    /// `tests/supervision_units.rs` compares the committed `WatchdogSec` against this. If the policy
+    /// changes, this test is where the new span is read off, and that unit file is what has to move.
+    #[test]
+    fn the_longest_quiet_span_under_the_production_policy_is_511_seconds() {
+        let p = WorkerPolicy::PRODUCTION;
+        let mut backoff = Duration::ZERO;
+        for failure in 1..=p.partition_retry_limit {
+            if let Some(delay) = p.partition_retry_delay(failure) {
+                backoff = backoff.saturating_add(delay);
+            }
+        }
+        assert_eq!(backoff, Duration::from_secs(31), "1 + 2 + 4 + 8 + 16");
+        assert_eq!(p.longest_quiet_cycle(), Duration::from_secs(511));
+        assert!(
+            p.longest_quiet_cycle() > p.poll_interval.saturating_add(p.rpc_timeout),
+            "the bound this replaced was the smaller one, which is the defect H-98 names"
+        );
     }
 }
