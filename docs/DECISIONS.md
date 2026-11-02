@@ -2134,3 +2134,21 @@ be decided rather than inferred from this helper.
 **What stays enforcing.** §1.8's compute-unit limits, deterministic and asserted absolutely in `kat01-onchain`. The TypeScript bound in `ts`, asserted on the runner rather than against a machine description. The band's structural controls wherever the comparison is run: an absent baseline entry, a non-finite band or baseline, a fixture that is not the size its label names, a timed no-op, a verifier accepting a corrupted leaf. And `scripts/ci.sh thresholds`, which measures §4.4a's figures and reports them with the machine named, run before submission.
 
 **Revisit if** a CI runner is pinned and a class committed for it, or when H-77 lands a comparison against recent history on `main`, which is the option this decision declined to build now rather than rejected. Either returns a wall-clock gate to CI, and either is a change to this entry.
+
+## D-145 · A quotation mark is not a reason, and `check-status` stops treating it as one
+
+**Date:** 2 Nov 2026 · **Unit:** H-102 (issue #311) · **Class:** gate semantics · **Status:** settled at S0 (owner, 2 Nov 2026)
+
+**Decision (the owner's).** `is_named_not_used` keeps its backtick arm and loses its quotation-mark arm. A banned phrase wrapped in quotation marks is reported like any other occurrence. A quotation that is correct where it stands is recorded as an exemption naming its sentence and its reason.
+
+**This reverses H-79 (issue #278), and the reversal is the point of recording it.** H-79 added both arms for a real case: `docs/DECISIONS.md` carries D-117's amendment quoting the sentence it superseded, and condemning that sentence would have been wrong, because it says the claim *was* true and is not. The arm made the gate stop condemning it.
+
+**What H-79 could not see.** A delimiter has no reading. The same two characters wrap a sentence *about* a phrase and a sentence *asserting* it, and the gate was deciding between them on punctuation it cannot interpret. The combined audit of `main` at `fe760c5` found this as M-01 on 1 November 2026: a present-tense claim in quotation marks passed the gate, with the ban on that exact phrasing green.
+
+**Why the remedy is an exemption and not a cleverer test.** An exemption now names the normalized sentence it covers rather than a file and a count (H-102, #311), so recording a quotation costs one entry carrying the sentence and why it is correct. That is a reviewed occurrence. The alternative considered was reading the surrounding words for an attribution — "the sentence read", "said", "quotes" — which is a second heuristic in place of the first, and a heuristic that cannot be wrong about a case nobody has thought of is not available.
+
+**The backtick stays, and the asymmetry is deliberate.** A code span is about the characters by construction; there is no second reading to confuse it with. The distinction is now one this module keeps in its own prose: where it names a banned phrase it writes it as a code span, because it is talking about the characters. Quoting one would be making the claim, which is what the gate now says it is.
+
+**What it cost, counted rather than claimed.** One occurrence moved from skipped to recorded — the D-117 amendment H-79 was added for, now `EXEMPT[0]` with its sentence. Three occurrences in `xtask/src/status.rs`'s own documentation were rewritten from quotations to code spans. Nothing else in the repository relied on the arm.
+
+**What is not claimed.** That a quotation can be told from a claim by any mechanism here. It cannot, which is why one is recorded by hand and the other fails.

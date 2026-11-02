@@ -2,7 +2,7 @@
 //! Status statements about the worker and the regression band, against what the code does (#254).
 //!
 //! **What happened.** Nine sentences across eight files said the OpenTimestamps worker did not exist,
-//! or that `bench-band` reported drift "without failing on it". Each was true when written and false
+//! or that `bench-band` reported drift `without failing on it`. Each was true when written and false
 //! 23 October 2026: `anchor-b-worker` was committed on 20 October, `batcher-handoff` on 22 October,
 //! and H-47 restored the band's failure on the same day. They were found by reading files one at a
 //! time, which is why five survived the first pass — `README.md` denied the worker on a head where
@@ -107,7 +107,13 @@ struct Exempt {
     why: &'static str,
 }
 
-const EXEMPT: [Exempt; 3] = [
+const EXEMPT: [Exempt; 4] = [
+    Exempt {
+        path: "docs/DECISIONS.md",
+        needle: "no worker exists",
+        sentence: "The sentence here read \"no worker exists\" and was true until that head",
+        why: "D-117's amendment quotes the sentence it superseded. **This is the occurrence H-79 (#278) added the quotation-mark arm for**, and it is recorded here instead as of D-145: a quotation reviewed once and named, rather than any quotation skipped from its punctuation",
+    },
     Exempt {
         path: "docs/DECISIONS.md",
         needle: "no worker exists",
@@ -174,24 +180,34 @@ fn inside_a_list(path: &str, text: &str, number: usize) -> bool {
     false
 }
 
-/// Whether the match at `at` is delimited by a quote or a backtick on both sides.
+/// Whether the match at `at` is delimited by a backtick on both sides.
 ///
-/// **A needle named is not a needle used (H-79, #278).** `The sentence "no worker exists" became
-/// false on 20 October 2026` is true, and the gate used to condemn it. Prose that means the claim
-/// writes it bare, which is what every real occurrence in this repository does.
+/// **A needle named is not a needle used (H-79, #278).** A code span says "these characters" rather
+/// than making a claim, so `` `no worker exists` `` in prose about the phrase is not an assertion
+/// about the worker.
 ///
-/// **It tests the two characters around the match, not a count of quotes on the line (H-87).** The
-/// first version counted quotes before the match and called the needle named when the count was
-/// odd. A Rust raw string opens with `r#"`, so that quote made the count even and a genuinely
-/// quoted needle read as a bare claim — which is how a test added in #286 turned `main` red. A
-/// phrase in quotes is delimited by them, and asking that directly has no parity to get wrong.
+/// **It tests the two characters around the match, not a count on the line (H-87).** The first
+/// version counted quotes before the match and called the needle named when the count was odd. A
+/// Rust raw string opens with `r#"`, so that quote made the count even and a genuinely quoted needle
+/// read as a bare claim — which is how a test added in #286 turned `main` red. A phrase delimited by
+/// a character is delimited by it, and asking that directly has no parity to get wrong.
+///
+/// **The quotation-mark arm is gone (D-145, owner's ruling of 2 November 2026).** H-79 added it for
+/// a real case: a sentence saying that `no worker exists` *became false* is true and should not be
+/// condemned. But a delimiter cannot tell that sentence from one asserting `no worker exists` as the
+/// current state, which is the same two characters doing the opposite job.
+///
+/// **Both phrases above are code spans, and that is this rule applied to the prose introducing it.**
+/// When this module names a banned phrase it is talking about the characters, so it marks them as
+/// characters. Quoting them instead would be making the claim, which is now exactly what the gate
+/// says it is. The 1 November audit found that as M-01. A
+/// quotation is now recorded as an exemption naming its sentence and its reason, which is a record
+/// of a reviewed occurrence rather than a guess from punctuation. A backtick stays, because a code
+/// span is about the characters by construction and has no second reading.
 fn is_named_not_used(line: &str, at: usize, needle_len: usize) -> bool {
     let opened = line[..at].chars().next_back();
     let closed = line[at + needle_len..].chars().next();
-    matches!(
-        (opened, closed),
-        (Some('"'), Some('"')) | (Some('`'), Some('`'))
-    )
+    matches!((opened, closed), (Some('`'), Some('`')))
 }
 
 /// Every file a reader could meet: tracked, plus untracked and not ignored.
@@ -482,16 +498,24 @@ mod tests {
         }
     }
 
-    /// Two exemptions for one (path, needle) would let the second rot unnoticed, because the first
-    /// marks the pair used.
+    /// Two exemptions recording the same sentence would let the second rot unnoticed, because the
+    /// first marks it used.
+    ///
+    /// **The pair is no longer the identity (H-102, #311).** `(path, needle)` was, so one file could
+    /// carry only one exempt occurrence of a phrase — and `docs/DECISIONS.md` legitimately carries
+    /// two of `no worker exists`, one quoted and one in prose, which is why D-145 needed a second
+    /// entry rather than a looser first one.
     #[test]
-    fn no_two_exemptions_cover_the_same_pair() {
+    fn no_two_exemptions_record_the_same_sentence() {
         for (at, e) in EXEMPT.iter().enumerate() {
             for other in &EXEMPT[at + 1..] {
                 assert!(
-                    !(e.path == other.path && e.needle == other.needle),
-                    "{} is exempted twice for {:?}",
+                    !(e.path == other.path
+                        && e.needle == other.needle
+                        && e.sentence == other.sentence),
+                    "{} records {:?} twice for {:?}",
                     e.path,
+                    e.sentence,
                     e.needle
                 );
             }
@@ -517,14 +541,21 @@ mod tests {
     /// H-79 (#278). A sentence that names a needle in order to say it became false is true, and
     /// the gate used to condemn it.
     #[test]
-    fn a_needle_named_in_quotes_or_backticks_is_not_a_claim() {
-        let line = r#"The sentence "no worker exists" became false on 20 October 2026."#;
-        let at = line.find("no worker exists").expect("present");
-        assert!(is_named_not_used(line, at, "no worker exists".len()));
-
+    fn a_needle_named_in_a_code_span_is_not_a_claim() {
         let span = "The needle `no worker exists` is in the list.";
         let at = span.find("no worker exists").expect("present");
         assert!(is_named_not_used(span, at, "no worker exists".len()));
+
+        // **And quotation marks are no longer a reason (D-145).** This assertion was the opposite
+        // until 2 November 2026: H-79 (#278) read the quotes as naming rather than using, and the
+        // 1 November audit found that a present-tense claim in quotes passed on the same reading.
+        let quoted = r#"The sentence "no worker exists" became false on 20 October 2026."#;
+        let at = quoted.find("no worker exists").expect("present");
+        assert!(
+            !is_named_not_used(quoted, at, "no worker exists".len()),
+            "true though this sentence is, the gate cannot tell it from the claim; it is recorded \
+             as an exemption naming it instead"
+        );
     }
 
     /// The same needle written bare is the claim itself, and still fails.
@@ -541,11 +572,16 @@ mod tests {
         assert!(!is_named_not_used(line, at, "no worker exists".len()));
     }
 
-    /// H-87. A Rust raw string opens with `r#"`, which made the old quote count even and a quoted
-    /// needle read as a bare claim. That is how a test added in #286 turned `main` red.
+    /// H-87. The first version counted delimiters before the match and called the needle named when
+    /// the count was odd, so a Rust raw string's `r#"` flipped the parity and a named needle read as
+    /// a claim. That is how a test added in #286 turned `main` red.
+    ///
+    /// The parity is gone and the two adjacent characters are asked directly, which has nothing to
+    /// get wrong. Carried on the backtick, since D-145 removed the quotation-mark arm; the property
+    /// under test is that surrounding source syntax cannot change the verdict.
     #[test]
-    fn a_needle_quoted_inside_a_raw_string_is_still_named() {
-        let line = r##"        let line = r#"The sentence "no worker exists" became false."#;"##;
+    fn source_syntax_around_a_code_span_does_not_change_the_verdict() {
+        let line = r##"        let line = r#"The needle `no worker exists` is in the list."#;"##;
         let at = line.find("no worker exists").expect("present");
         assert!(is_named_not_used(line, at, "no worker exists".len()));
     }
@@ -697,21 +733,45 @@ mod tests {
         }
     }
 
-    /// **The weakness this change does not close, named rather than left to be discovered.**
+    /// **A quoted banned claim is a claim (D-145, owner's ruling of 2 November 2026).**
     ///
-    /// `is_named_not_used` skips a needle wrapped in quotation marks, so `Current status: "no worker
-    /// exists".` passes. That heuristic is H-79's remedy and it is right about its own case — `The
-    /// sentence "no worker exists" became false` is true and should not be condemned — so removing
-    /// the quote arm reverses an adopted decision and is the owner's to make. The test records what
-    /// the gate does today so the next reader does not take the silence for soundness.
+    /// The quotation-mark arm used to skip this, so a present-tense assertion passed on its
+    /// punctuation. The 1 November audit found it as M-01. A legitimate quotation is recorded as an
+    /// exemption naming its sentence instead — `EXEMPT[0]` is the occurrence H-79 (#278) added the
+    /// arm for, now carried that way.
     #[test]
-    fn an_exactly_quoted_needle_is_still_skipped_which_is_an_open_decision() {
+    fn a_quoted_banned_claim_is_no_longer_excused_by_its_quotation_marks() {
         let line = "Current status: \"no worker exists\".";
         let at = line.find("no worker exists").expect("present");
         assert!(
-            is_named_not_used(line, at, "no worker exists".len()),
-            "today this is skipped from the delimiters alone, independent of what the sentence does"
+            !is_named_not_used(line, at, "no worker exists".len()),
+            "a quotation mark is not a reason: this sentence asserts the claim"
         );
+    }
+
+    /// And a code span still is a reason, because it has no second reading.
+    #[test]
+    fn a_backticked_needle_is_still_a_phrase_and_not_a_claim() {
+        let line = "The phrase `no worker exists` names nine sentences this gate bans.";
+        let at = line.find("no worker exists").expect("present");
+        assert!(
+            is_named_not_used(line, at, "no worker exists".len()),
+            "a code span says `these characters`, which is not an assertion about the worker"
+        );
+    }
+
+    /// The reversal is not partial: no other delimiter was ever a reason, and none becomes one.
+    #[test]
+    fn no_delimiter_other_than_a_backtick_excuses_a_claim() {
+        let needle = "no worker exists";
+        for (open, close) in [('"', '"'), ('\'', '\''), ('(', ')'), ('*', '*'), ('_', '_')] {
+            let line = format!("Status: {open}{needle}{close}.");
+            let at = line.find(needle).expect("present");
+            assert!(
+                !is_named_not_used(&line, at, needle.len()),
+                "{open}{close} must not excuse it"
+            );
+        }
     }
 
     /// **The test-module exclusion is narrow, which is the whole of H-78's lesson (#277).**
