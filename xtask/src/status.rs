@@ -24,9 +24,8 @@
 //!
 //! **What it does not do, said rather than discovered.** It cannot tell whether a *new* sentence is
 //! true. It says that the known-false constructions listed below do not come back, which is the
-//! whole of its
-//! claim. It also skips its own source, because the list has to be written somewhere and a needle
-//! quoted in the list is indistinguishable from a needle used in prose.
+//! whole of its claim. It also skips its own source, because the list has to be written somewhere
+//! and a needle quoted in the list is indistinguishable from a needle used in prose.
 //!
 //! An exemption covers *every* occurrence of its needle in its file, so a second sentence added to an
 //! exempted file is covered without being read. Both exempted files are the decision record and the
