@@ -161,6 +161,14 @@ vectors() {
   # rather than beside claim-check, because this reads the same documents check-record does and asks
   # a question of the same shape: does the repository still agree with itself.
   cargo xtask check-citations || return 1
+  # **The advisory exceptions, against D-142 and against themselves (M-06, audit of 1 Nov 2026).**
+  # The header said "the five below" against fourteen entries and called every fix a semver-major
+  # bump after `zstd-sys` had been taken as a compatible update. Two reasons contradicted the decision
+  # they cite. Nothing compared the two documents, and `cargo-deny` has no expiry for an ignore entry
+  # — `EXPIRES` lives in the reason string — so the dates were enforced by nobody and an exception
+  # would have outlived its own expiry in silence. This counts them, dates them, requires a retirement
+  # condition, and requires each identifier to appear in the decision record, which is D-18's rule.
+  cargo xtask check-advisories || return 1
   # **Decision identifiers, which have to name one decision each (#256, L-01).** docs/DECISIONS.md
   # carries four identifiers twice with identical bodies and reserves a fifth before settling it, so a
   # reference naming one of them names two headings. On 31 October three open pull requests each added
