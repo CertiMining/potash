@@ -10,8 +10,16 @@
 #
 #   scripts/merge-ready.sh [base]      base defaults to origin/main
 #
-# Exits non-zero on anything a reviewer would object to. It checks the tree, not the tests: run
-# `scripts/ci.sh all` for those.
+# Exits non-zero on anything a reviewer would object to. It checks the tree and that every target
+# compiles. It does not run the tests: `scripts/ci.sh all` for those.
+#
+# **Compiling was added after the same mistake happened one layer over (H-99, issue #308).** A pass
+# report was given for a branch whose binary did not build: a function moved into the library and the
+# binary called it without importing it, while the test added in the same change passed throughout,
+# because it exercised the library and the deployed path is the binary. CI would have caught it —
+# `checks` runs `cargo clippy --all-targets` — so nothing was missing from CI. What was missing is
+# that the one script whose job is to gate the claim "ready" could not refuse a branch where a target
+# does not build, which is the cheapest thing that makes the claim false.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -90,12 +98,35 @@ else
   note "not on this branch"
 fi
 
+echo "----- every target compiles"
+# `cargo check`, not a test run: seconds rather than the tens of minutes `scripts/ci.sh all` takes,
+# and it is the whole of what this script is for -- refusing a branch that cannot build before
+# anyone is told it is ready.
+#
+# `--all-targets` so binaries, test targets, benches and examples are all built. The binary is the
+# case this exists for: a library test can pass while the deployed path does not compile.
+# `--all-features` because a feature-gated module compiles only when its feature is on, and the
+# default set leaves `cluster` and `ots` out.
+compile_log="$(mktemp)"
+if cargo check --workspace --all-targets --all-features > "$compile_log" 2>&1; then
+  note "cargo check --workspace --all-targets --all-features"
+else
+  fail "a target does not compile"
+  # Name what did not build. The case this is for is a binary nobody ran, so "it failed" is not
+  # enough to act on.
+  # One pass: `^error(\[|:)` already matches "error: could not compile", so a second grep for it
+  # printed every line twice.
+  grep -E "^error(\[|:)" "$compile_log" | head -20 | sed 's/^/        /' >&2
+fi
+rm -f "$compile_log"
+
 if [ "$failed" -ne 0 ]; then
   echo "merge-ready: NOT READY" >&2
   exit 1
 fi
 if [ "${GATE_RAN:-0}" -eq 1 ]; then
-  echo "merge-ready: the tree is in order. Tests are scripts/ci.sh all, and review is a person."
+  echo "merge-ready: the tree is in order and every target compiles. Tests are scripts/ci.sh all,"
+  echo "             and review is a person."
 else
   # An unqualified "in order" over a branch where §4.6's gate does not exist says more than the
   # script checked: every claim-bearing artefact on it — a README, a demo's copy, a decision record —
