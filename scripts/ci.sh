@@ -191,7 +191,7 @@ vectors() {
   # it being ignored.
   #
   # **Libraries were outside what it inspected, and that is where most unit tests live.** H-63 added
-  # them, and per feature set rather than once: `certimining-client`'s library compiles 33 tests by
+  # them, and per feature set rather than once: `certimining-client`'s library compiled 33 tests by
   # default and 73 with `--features ots`, so one line covering the larger set left the default build
   # unrun. The gate prints the sets it requires whether it passes or fails.
   cargo xtask check-test-targets || return 1

@@ -326,7 +326,7 @@ fn idents(stream: TokenStream, into: &mut BTreeSet<String>) {
 /// ident `test` and marks no test at all — it is the gate on the module every unit test lives in. So
 /// a depth read counted one phantom test per `#[cfg(test)] mod tests`, which is once per source file
 /// in a library. It reported 38 live tests in `certimining-client`'s default build where `cargo test
-/// --lib` runs 33, and one apiece in `certimining-core` and `certimining-log`, which have none.
+/// --lib` then ran 33, and one apiece in `certimining-core` and `certimining-log`, which have none.
 ///
 /// It never made this gate pass when it should have failed — an inflated count only moves a target
 /// away from the "wholly #[ignore]d" condition — but a figure printed beside a demand is a figure a
@@ -592,7 +592,7 @@ fn walk_items(
 /// for `mod` immediately after the attribute run, so `#[cfg(feature = "ots")] pub mod bitcoin;` fell
 /// through the module branch entirely: the module was then walked with the *enclosing* feature set
 /// and its thirty-six tests were counted as compiling by default. The gate reported 79 live tests
-/// under `default features` where the build has 33, which is a gate reading more coverage into a
+/// under `default features` where the build then had 33, which is a gate reading more coverage into a
 /// run than the run performs.
 fn consume_item(
     trees: &[TokenTree],
@@ -1021,7 +1021,7 @@ mod tests {
 
     /// **`#[cfg(test)]` is not a test**, and reading idents at depth said it was. That attribute
     /// gates the module every unit test lives in, so a depth read scored one phantom test per source
-    /// file — 38 where the build runs 33, and one apiece in two libraries that have none.
+    /// file — 38 where the build then ran 33, and one apiece in two libraries that have none.
     #[test]
     fn cfg_test_is_not_a_test() {
         assert_eq!(
