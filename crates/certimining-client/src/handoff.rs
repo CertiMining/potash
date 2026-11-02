@@ -20,7 +20,7 @@
 use certimining_core::{Digest, HandoffPreimage, Preimage, PreimageBuf, Verifier};
 
 use crate::schedule::{build_start, Schedule};
-use crate::worker::day_index;
+use crate::worker::{day_index, WorkerPolicy};
 
 /// The transferable artifact: D-139's three fields, the key that signed them, and the signature.
 ///
@@ -197,6 +197,23 @@ pub enum HandoffWriteRefused {
     ///
     /// Refused rather than passed: a barrier that cannot be evaluated must not read as satisfied.
     UndatableClock { now: i64 },
+    /// The epoch is older than the worker would ever publish it (H-100, issue #309).
+    ///
+    /// **The upper bound, derived rather than chosen (owner's ruling).** The lower barrier stops an
+    /// epoch being frozen before it has finished; this stops one being built so late that the worker
+    /// would refuse to publish it anyway. `WorkerPolicy::max_epoch_slip` is how far behind the log may
+    /// fall before an unattended worker stops and asks for a ruling, so an epoch may be built on the
+    /// day after it ends and for `max_epoch_slip` days after that, and no longer.
+    ///
+    /// The number comes from the worker's own committed policy and is not set separately here. A bound
+    /// written independently would be a second statement of the same quantity with nothing comparing
+    /// them, which is the defect class this issue belongs to — and it would let the batcher produce a
+    /// handoff the worker is guaranteed to refuse.
+    PastTheSlipAllowance {
+        epoch: u64,
+        today: u64,
+        latest_day: u64,
+    },
     /// The epoch has no build start under this schedule, so the barrier cannot be applied to it.
     ///
     /// Distinct from `UndatableClock` deliberately. One is a fault in the clock and the other in the
@@ -212,16 +229,26 @@ pub enum HandoffWriteRefused {
 /// both a clock and a day index computed from it, and nothing checked that the two agreed — the same
 /// conflation M-04 of the 1 November audit names in `Observed`. Derived here, they cannot disagree.
 ///
-/// Three barriers, in order, each refusing for its own reason: an epoch ahead of the calendar, an
-/// epoch whose scheduled build has not started, and a disagreement with what is already on disk.
-/// Byte-identical content is a re-run and stays permitted at any time.
+/// Four barriers, in order, each refusing for its own reason: an epoch ahead of the calendar, an
+/// epoch whose scheduled build has not started, an epoch older than the worker's slip allowance, and
+/// a disagreement with what is already on disk. Byte-identical content is a re-run and stays
+/// permitted at any time — a replay of what is already there writes nothing and is not bounded.
 pub fn refuse_to_write(
     schedule: Schedule,
+    policy: WorkerPolicy,
     epoch: u64,
     now: i64,
     existing: Option<&[u8]>,
     bytes: &[u8; HANDOFF_LEN],
 ) -> Result<(), HandoffWriteRefused> {
+    // **An exact re-run is permitted before any calendar barrier is consulted.** Writing the bytes
+    // that are already there changes nothing on disk, and the epoch was accepted when the file was
+    // first written. Putting this after the barriers would make whether a retry succeeds depend on
+    // how long the operator took to retry, which is not a property of the thing being retried.
+    if existing == Some(bytes.as_slice()) {
+        return Ok(());
+    }
+
     let Some(today) = day_index(now) else {
         return Err(HandoffWriteRefused::UndatableClock { now });
     };
@@ -234,11 +261,27 @@ pub fn refuse_to_write(
     if now < start {
         return Err(HandoffWriteRefused::BeforeBuildStart { epoch, now, start });
     }
+
+    // **The upper bound, from the worker's own policy.** An epoch is built the day after it ends, and
+    // may still be built for `max_epoch_slip` days after that — the same allowance the worker uses
+    // before it stops and asks for a ruling. Past that the worker would refuse to publish the result,
+    // so producing it is writing an immutable file nothing can use.
+    let latest_day = epoch
+        .saturating_add(1)
+        .saturating_add(policy.max_epoch_slip);
+    if today > latest_day {
+        return Err(HandoffWriteRefused::PastTheSlipAllowance {
+            epoch,
+            today,
+            latest_day,
+        });
+    }
+
+    // Anything still on disk at this point differs from what is being written, since the identical
+    // case returned above.
     match existing {
-        Some(already) if already != bytes.as_slice() => {
-            Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch })
-        }
-        _ => Ok(()),
+        Some(_) => Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch }),
+        None => Ok(()),
     }
 }
 
@@ -394,6 +437,7 @@ mod writing {
     }
 
     const S: Schedule = Schedule::DEPLOYED;
+    const P: WorkerPolicy = WorkerPolicy::PRODUCTION;
 
     /// Midday on a UTC day, so the barriers are read against a clock and not a day number.
     fn noon(day: u64) -> i64 {
@@ -413,7 +457,7 @@ mod writing {
     #[test]
     fn an_epoch_ahead_of_today_is_refused_before_a_key_is_touched() {
         assert_eq!(
-            refuse_to_write(S, 20_739, noon(20_738), None, &bytes(1)),
+            refuse_to_write(S, P, 20_739, noon(20_738), None, &bytes(1)),
             Err(HandoffWriteRefused::EpochAheadOfToday {
                 epoch: 20_739,
                 today: 20_738
@@ -434,7 +478,7 @@ mod writing {
     fn the_current_day_is_refused_because_it_has_not_finished() {
         let now = noon(20_738);
         assert_eq!(
-            refuse_to_write(S, 20_738, now, None, &bytes(1)),
+            refuse_to_write(S, P, 20_738, now, None, &bytes(1)),
             Err(HandoffWriteRefused::BeforeBuildStart {
                 epoch: 20_738,
                 now,
@@ -444,20 +488,23 @@ mod writing {
         );
     }
 
-    /// **Catching up still works, and that is deliberate rather than overlooked.**
+    /// **Catching up works inside the slip allowance and not beyond it (owner's ruling on #309).**
     ///
-    /// The 1 November audit also recommended requiring `day_index(now) == epoch + 1`, which would
-    /// bound a late build from above as well. That is not done here: it would make an epoch missed
-    /// during an outage permanently unbuildable, so a batcher down for three days would leave the log
-    /// stuck with no path forward rather than one needing a ruling. The upper bound is a policy
-    /// question with a recovery cost and is recorded on #309 for the owner; this barrier is only the
-    /// lower one, which is the whole of the premature-freeze defect.
+    /// This test asserted that any earlier epoch was allowed, which was true before the upper bound
+    /// and is not now. The allowance is `WorkerPolicy::max_epoch_slip`, the same number the worker
+    /// uses before it stops and asks for a ruling, so the two components permit exactly the same
+    /// window: the batcher cannot produce a handoff the worker is guaranteed to refuse.
+    ///
+    /// An epoch missed by more than the allowance needs an operator either way. What it no longer
+    /// gets is an unattended build whose root nothing will publish.
     #[test]
-    fn an_epoch_the_batcher_is_catching_up_on_is_allowed() {
+    fn an_epoch_the_batcher_is_catching_up_on_is_allowed_inside_the_allowance() {
+        let epoch: u64 = 20_700;
+        let one_day_late = epoch.saturating_add(2);
         assert_eq!(
-            refuse_to_write(S, 20_700, noon(20_738), None, &bytes(1)),
+            refuse_to_write(S, P, epoch, noon(one_day_late), None, &bytes(1)),
             Ok(()),
-            "a day the batcher is catching up on is long past its build start"
+            "a day the batcher is catching up on is past its build start and inside the allowance"
         );
     }
 
@@ -466,7 +513,7 @@ mod writing {
     fn the_second_before_the_build_start_is_refused_and_the_build_start_is_not() {
         let start = built(20_737);
         assert_eq!(
-            refuse_to_write(S, 20_737, start.saturating_sub(1), None, &bytes(1)),
+            refuse_to_write(S, P, 20_737, start.saturating_sub(1), None, &bytes(1)),
             Err(HandoffWriteRefused::BeforeBuildStart {
                 epoch: 20_737,
                 now: start.saturating_sub(1),
@@ -474,7 +521,7 @@ mod writing {
             })
         );
         assert_eq!(
-            refuse_to_write(S, 20_737, start, None, &bytes(1)),
+            refuse_to_write(S, P, 20_737, start, None, &bytes(1)),
             Ok(()),
             "the schedule names this instant as the build start, so it is not too early"
         );
@@ -484,7 +531,7 @@ mod writing {
     #[test]
     fn a_clock_with_no_day_index_is_refused_rather_than_waved_through() {
         assert_eq!(
-            refuse_to_write(S, 20_737, -1, None, &bytes(1)),
+            refuse_to_write(S, P, 20_737, -1, None, &bytes(1)),
             Err(HandoffWriteRefused::UndatableClock { now: -1 })
         );
     }
@@ -495,12 +542,12 @@ mod writing {
     fn the_same_handoff_may_be_rewritten_and_a_different_one_may_not() {
         let same = bytes(7);
         assert_eq!(
-            refuse_to_write(S, 20_737, noon(20_738), Some(same.as_slice()), &same),
+            refuse_to_write(S, P, 20_737, noon(20_738), Some(same.as_slice()), &same),
             Ok(()),
             "identical bytes are a re-run, which has no effect and no risk"
         );
         assert_eq!(
-            refuse_to_write(S, 20_737, noon(20_738), Some(bytes(8).as_slice()), &same),
+            refuse_to_write(S, P, 20_737, noon(20_738), Some(bytes(8).as_slice()), &same),
             Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch: 20_737 }),
             "two different roots for one epoch is a question a process must not answer"
         );
@@ -510,8 +557,69 @@ mod writing {
     #[test]
     fn a_truncated_file_on_disk_counts_as_a_disagreement() {
         assert_eq!(
-            refuse_to_write(S, 20_737, noon(20_738), Some(&[7u8; 10]), &bytes(7)),
+            refuse_to_write(S, P, 20_737, noon(20_738), Some(&[7u8; 10]), &bytes(7)),
             Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch: 20_737 })
+        );
+    }
+
+    /// **Both edges of the upper bound, which is the owner's ruling on #309.**
+    ///
+    /// `max_epoch_slip` is 1 under `WorkerPolicy::PRODUCTION`, so an epoch may be built on the day
+    /// after it ends and on one further day. The day after that, the worker would refuse to publish
+    /// the result, so building it writes an immutable file nothing can use.
+    ///
+    /// The bound is read off the policy rather than written here, so if `max_epoch_slip` changes this
+    /// test moves with it instead of contradicting it.
+    #[test]
+    fn the_last_day_of_the_slip_allowance_is_allowed_and_the_next_is_not() {
+        let epoch: u64 = 20_737;
+        let latest = epoch.saturating_add(1).saturating_add(P.max_epoch_slip);
+
+        assert_eq!(
+            refuse_to_write(S, P, epoch, noon(latest), None, &bytes(1)),
+            Ok(()),
+            "day {latest} is the last on which the worker would still publish epoch {epoch}"
+        );
+        let too_late = latest.saturating_add(1);
+        assert_eq!(
+            refuse_to_write(S, P, epoch, noon(too_late), None, &bytes(1)),
+            Err(HandoffWriteRefused::PastTheSlipAllowance {
+                epoch,
+                today: too_late,
+                latest_day: latest,
+            }),
+            "past the allowance the worker refuses to publish, so the batcher must not build"
+        );
+    }
+
+    /// An exact re-run is not bounded by the clock, which the barriers above are.
+    ///
+    /// A retry that would write the bytes already on disk changes nothing. Refusing it past the
+    /// allowance would make whether a retry succeeds depend on how long the operator took to retry.
+    #[test]
+    fn an_identical_rerun_is_allowed_even_past_every_calendar_barrier() {
+        let same = bytes(7);
+        assert_eq!(
+            refuse_to_write(S, P, 20_737, noon(30_000), Some(same.as_slice()), &same),
+            Ok(()),
+            "writing what is already there is a no-op at any time"
+        );
+        // The differing case is checked inside the window, so that it is answered as a
+        // disagreement rather than by whichever calendar barrier happens to come first.
+        assert_eq!(
+            refuse_to_write(S, P, 20_737, noon(20_738), Some(bytes(8).as_slice()), &same),
+            Err(HandoffWriteRefused::AlreadyWrittenDifferently { epoch: 20_737 }),
+            "a differing root is refused as a disagreement, not as a late build"
+        );
+        // And past the window a differing write is refused by the bound, which is the earlier
+        // barrier. Stated rather than left implicit: the order of the refusals is observable.
+        assert_eq!(
+            refuse_to_write(S, P, 20_737, noon(30_000), Some(bytes(8).as_slice()), &same),
+            Err(HandoffWriteRefused::PastTheSlipAllowance {
+                epoch: 20_737,
+                today: 30_000,
+                latest_day: 20_739,
+            })
         );
     }
 }

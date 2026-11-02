@@ -45,7 +45,7 @@
 )]
 
 use certimining_client::{
-    day_index, refuse_a_readable_key, refuse_to_write, Handoff, Schedule, HANDOFF_LEN,
+    day_index, refuse_a_readable_key, refuse_to_write, Handoff, Schedule, WorkerPolicy, HANDOFF_LEN,
 };
 use certimining_core::{
     Digest, HandoffPreimage, NativeKeccak, Preimage, PreimageBuf, SubmissionId,
@@ -249,6 +249,7 @@ fn run() -> Result<String, String> {
     let existing = std::fs::read(&destination).ok();
     refuse_to_write(
         Schedule::DEPLOYED,
+        WorkerPolicy::PRODUCTION,
         epoch,
         seconds,
         existing.as_deref(),
