@@ -66,6 +66,86 @@
 //! **What it does not do.** It reads `scripts/ci.sh` and not the workflows, because every job there
 //! calls this script and `scripts/ci.sh all` is the pipeline verbatim (D-09). A target run only by a
 //! workflow step that bypassed the script would be invisible here, and nothing does that today.
+//!
+//! **A test written in shell is not a cargo target, which is H-96 (issue #301).** Enumeration from
+//! `cargo metadata` is what makes the sweep above complete, and it is also the reason this gate
+//! could not see `scripts/release-qualify-test.sh` — 132 lines holding `release-qualify.sh`'s
+//! fail-closed boundary in place, run by nothing from the day it was committed. That is the third
+//! kind of test this gate has been blind to: `--bin` targets were outside it until H-62, `lib`
+//! targets until H-63, and a shell script is outside `cargo metadata` altogether rather than by
+//! oversight.
+//!
+//! So there is a second enumeration, from the filesystem, and it demands by **convention**: a script
+//! under `scripts/` whose name ends `-test.sh` is a test, and some line of `scripts/ci.sh` has to
+//! name it. The convention is what separates a test from the operational scripts beside it —
+//! `deploy-devnet.sh`, `upgrade-devnet.sh`, `devnet-anchoring-cycle.sh`, `mainnet-bootstrap.sh`,
+//! `cluster-fault-injection.sh`, `anchor-repo.sh`, `merge-ready.sh` and `release-qualify.sh` itself
+//! write to clusters or produce releases, and requiring CI to run them would be wrong. A rule
+//! separates them; an allowlist of their names would have to be maintained and would go stale.
+//!
+//! **The limit, stated rather than left to be discovered.** A test in shell that does not follow the
+//! convention escapes the demand, exactly as a cargo target outside `cargo metadata` would. The gate
+//! therefore also prints every `scripts/*.sh` that no `ci.sh` line names, as information and not as a
+//! verdict, so a misnamed test is visible to a reader even where it is not failed on.
+//!
+
+/// Every shell script under `scripts/`, by basename, sorted.
+///
+/// From the filesystem because there is no manifest to ask: `cargo metadata` knows nothing about
+/// these. A read error is a panic rather than an empty list, for the reason H-78 records — a gate
+/// that treats a failed observation as an absence reports the value its own failure produces.
+fn shell_scripts(root: &Path) -> Vec<String> {
+    let dir = root.join("scripts");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) => panic!("{}: {e}", dir.display()),
+    };
+    let mut out = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => panic!("{}: {e}", dir.display()),
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".sh") {
+            out.push(name);
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Whether some line of `scripts/ci.sh` names this script **in a position that runs it**.
+///
+/// **Comments are stripped first, and that is the whole substance of this function.** The first
+/// version searched the file's text, and the comment block introducing the new `checks` line — which
+/// explains the fix by naming `release-qualify.sh` in prose — was enough to make the gate call that
+/// script named. So a comment mentioning `release-qualify-test.sh` would have satisfied the demand
+/// below while nothing ran it: this gate would have been the thing it was written to catch, an
+/// instrument whose failed observation maps onto the value its predicate rewards.
+///
+/// A line whose first non-whitespace character is `#` is a comment and contributes nothing. On every
+/// other line, text from the first ` #` onward is dropped as a trailing comment. That heuristic can
+/// over-strip — a `#` inside a quoted string ends the line early — and over-stripping can only
+/// withhold a match, which fails the demand. Under-stripping is what lets prose satisfy a gate, so
+/// the error is taken in the direction that complains.
+///
+/// Substring rather than word match, which the basenames in use make unambiguous: no script's name
+/// is a substring of another's, since `release-qualify-test.sh` does not contain the string
+/// `release-qualify.sh` — the character after `qualify` is a hyphen, not a dot.
+fn named_in_ci(script_text: &str, basename: &str) -> bool {
+    script_text.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            return false;
+        }
+        let code = match trimmed.find(" #") {
+            Some(at) => trimmed.get(..at).unwrap_or(""),
+            None => trimmed,
+        };
+        code.contains(basename)
+    })
+}
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use std::collections::{BTreeMap, BTreeSet};
@@ -736,6 +816,44 @@ pub fn check_test_targets(root: &Path) {
         );
     }
 
+    // **The second enumeration: tests written in shell (H-96, issue #301).** `cargo metadata` cannot
+    // see these, which is why `release-qualify-test.sh` was run by nothing from the day it was
+    // committed. The demand is by convention — a name ending `-test.sh` is a test — so that the
+    // operational scripts beside it are separated by a rule rather than by a list that would go
+    // stale.
+    let scripts = shell_scripts(root);
+    let mut shell_run = 0usize;
+    let mut shell_unnamed = Vec::new();
+    for name in &scripts {
+        let named = named_in_ci(&script, name);
+        if name.ends_with("-test.sh") {
+            if named {
+                shell_run = shell_run.saturating_add(1);
+            } else {
+                problems.push(format!(
+                    "  shell test scripts/{name} — its name ends -test.sh, so it is a test, and no \
+                     line of scripts/ci.sh names it"
+                ));
+            }
+        } else if !named {
+            shell_unnamed.push(name.clone());
+        }
+    }
+
+    // **Information, not a verdict.** These are the scripts no CI line names and the convention does
+    // not claim are tests: they deploy, upgrade, operate a cluster or cut a release, and CI running
+    // them would be wrong. Printed so that a test misnamed out of the demand above is still visible
+    // to a reader, which is the one way this rule can be wrong.
+    if !shell_unnamed.is_empty() {
+        println!(
+            "test-targets: {} shell script(s) under scripts/ are named by no ci.sh line and are not \
+             tests by the -test.sh convention — {}. If one of these is a test, it is outside the \
+             demand above and should be renamed.",
+            shell_unnamed.len(),
+            shell_unnamed.join(", ")
+        );
+    }
+
     if !problems.is_empty() {
         eprintln!(
             "test-targets: {} target(s) are run by nothing:",
@@ -757,7 +875,8 @@ pub fn check_test_targets(root: &Path) {
     println!(
         "test-targets: {} test, bin and lib target(s) across {} package(s), all run — {} named in \
          scripts/ci.sh, {} by their package being run wholesale, {} wholly #[ignore]d, and {} \
-         library feature set(s)",
+         library feature set(s). Plus {} shell test(s) under scripts/, each named by a ci.sh line \
+         (H-96).",
         all.len(),
         all.iter()
             .map(|t| &t.package)
@@ -766,7 +885,8 @@ pub fn check_test_targets(root: &Path) {
         by_name,
         by_package,
         by_ignore,
-        lib_sets
+        lib_sets,
+        shell_run
     );
 
     println!(
@@ -1129,5 +1249,88 @@ mod tests {
             "the ots line still covers its own set: {}",
             gap.problems[0]
         );
+    }
+
+    /// **The defect this gate shipped with for one run, and the reason `named_in_ci` strips
+    /// comments.** The first version searched `ci.sh`'s text. The comment block introducing the new
+    /// `checks` line names `release-qualify.sh` in prose while explaining the fix, and that alone was
+    /// enough to make the gate report the script as named. A comment naming a `-test.sh` script would
+    /// therefore have satisfied the demand with nothing running it — this gate would have become the
+    /// thing it exists to catch.
+    #[test]
+    fn a_comment_naming_a_script_does_not_make_it_run() {
+        let script = "# check \"release qualification\" bash scripts/release-qualify-test.sh\n";
+        assert!(
+            !named_in_ci(script, "release-qualify-test.sh"),
+            "a commented-out line runs nothing"
+        );
+    }
+
+    /// The same in its trailing form, which is the one that reads like working code.
+    #[test]
+    fn a_trailing_comment_naming_a_script_does_not_make_it_run() {
+        let script = "  check \"formatting\" cargo fmt --check # unlike scripts/foo-test.sh\n";
+        assert!(
+            !named_in_ci(script, "foo-test.sh"),
+            "the name appears only after the comment marker"
+        );
+    }
+
+    /// And the positive case, so the two above are not passing because nothing ever matches.
+    #[test]
+    fn a_check_line_naming_a_script_makes_it_run() {
+        let script = "  check \"release qualification controls\" bash scripts/foo-test.sh\n";
+        assert!(named_in_ci(script, "foo-test.sh"));
+    }
+
+    /// **Against the committed files rather than a fixture**, for the reason the H-63 test beside it
+    /// gives: the claim is about this repository's `ci.sh`, and a fixture would only restate the
+    /// function. Deleting the `checks` line fails here as well as in the gate.
+    #[test]
+    fn the_committed_ci_script_runs_every_committed_shell_test() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the workspace root is xtask's parent")
+            .to_path_buf();
+        let script = std::fs::read_to_string(root.join("scripts/ci.sh")).expect("scripts/ci.sh");
+        let scripts = shell_scripts(&root);
+        assert!(
+            scripts.iter().any(|n| n == "release-qualify-test.sh"),
+            "the enumeration must see the one shell test there is: {scripts:?}"
+        );
+        for name in scripts.iter().filter(|n| n.ends_with("-test.sh")) {
+            assert!(
+                named_in_ci(&script, name),
+                "scripts/{name} is a test by the -test.sh convention and no ci.sh line runs it"
+            );
+        }
+    }
+
+    /// The operational scripts must stay outside the demand. This pins the separation as a rule, so
+    /// that a future `deploy-devnet.sh` rename into `-test.sh` is a deliberate act and not a drift.
+    #[test]
+    fn the_operational_scripts_are_not_demanded_to_run_in_ci() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the workspace root is xtask's parent")
+            .to_path_buf();
+        let scripts = shell_scripts(&root);
+        for name in [
+            "deploy-devnet.sh",
+            "upgrade-devnet.sh",
+            "devnet-anchoring-cycle.sh",
+            "mainnet-bootstrap.sh",
+            "cluster-fault-injection.sh",
+            "release-qualify.sh",
+        ] {
+            assert!(
+                scripts.iter().any(|n| n == name),
+                "scripts/{name} is expected to exist"
+            );
+            assert!(
+                !name.ends_with("-test.sh"),
+                "scripts/{name} writes to a cluster or cuts a release and must not be demanded of CI"
+            );
+        }
     }
 }

@@ -346,6 +346,21 @@ checks() {
   # A promise judged against a Bitcoin-confirmed receipt over its own encoding (H-02, #30). Offline
   # for the same reason: committed headers, and a receipt this repository already published.
   check "promise receipt" cargo test -p certimining-client --features ots --test promise_receipt
+  # **The release gate's own structural tests (H-96, #301).** `scripts/release-qualify-test.sh` was
+  # committed with 132 lines holding `release-qualify.sh`'s fail-closed boundary in place — that the
+  # plan contains `ci.sh all`, the ignored privacy tests and the SBF build, that it excludes every
+  # deploying and network-touching command, that a dirty tree is refused with exit 2 leaving no
+  # evidence resembling a run, and that a failed step still produces `status=FAILED_OR_UNRESOLVED`
+  # with the exit code recorded — and nothing ran it. D-144 changed which groups exist and whether
+  # that left this plan intact was established by nobody until it was run by hand.
+  #
+  # `xtask check-test-targets` exists to catch exactly this and could not: it enumerates
+  # `cargo metadata`, and a test written in shell is not a cargo target. It now demands this line by
+  # name, so deleting it fails the `vectors` group rather than going unnoticed.
+  #
+  # Hermetic and offline: every fixture is a `mktemp -d`, `cargo`, `ci.sh` and `build-sbf.sh` are all
+  # stubbed inside it, and `--print-plan` against this tree runs no checks by its own assertion.
+  check "release qualification controls" bash scripts/release-qualify-test.sh
   # H-18: `fuzz/` is its own Cargo workspace (D-131), so `--workspace` above never reaches §4.5's
   # five targets. Sixteen seconds, and they are lint-clean, so there is no reason to leave them out.
   check "clippy fuzz" cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
