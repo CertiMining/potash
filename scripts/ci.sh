@@ -330,11 +330,16 @@ checks() {
   # `--features ots` because `bitcoin` sits behind that feature and is not compiled without it.
   check "client lib, ots" cargo test -p certimining-client --features ots --lib
   # **And the same library again at its default features (H-63, #240).** A library is not one body of
-  # code: `#[cfg(feature = "ots")] pub mod bitcoin;` compiles forty more tests, so the line above and
-  # this one build different crates and run different sets — 73 tests there, 33 here. Running only
-  # the larger set would leave the build a plain `cargo test` produces unexercised, which is the
-  # configuration every other package in this workspace is tested at and the one a contributor gets
-  # by default. `xtask check-test-targets` now demands both and says so by name.
+  # code: `#[cfg(feature = "ots")] pub mod bitcoin;` compiles a further set of tests, so the line
+  # above and this one build different crates and run different sets. Running only the larger set
+  # would leave the build a plain `cargo test` produces unexercised, which is the configuration every
+  # other package in this workspace is tested at and the one a contributor gets by default.
+  # `xtask check-test-targets` demands both, names them, and prints the live count for each.
+  #
+  # **No count is written here.** This comment read "73 tests there, 33 here" against a real 100 and
+  # 60 — correct when H-63 was written and stale from the next test onwards, with nothing to notice.
+  # The `anchor b confirmed` comment below records the same defect in this same list. The gate prints
+  # the numbers because it counts them; prose that restates them only decays.
   check "client lib, default features" cargo test -p certimining-client --lib
   # **All seventeen committed receipts** against real mainnet headers (H-12): the three repository
   # anchors and the fourteen epochs with an attached receipt, each swept by its own test. Offline:

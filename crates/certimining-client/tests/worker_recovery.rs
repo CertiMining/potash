@@ -12,10 +12,16 @@
 //! unreadable key, an unavailable RPC and an unavailable OpenTimestamps calendar. Those are I/O in
 //! `anchor-b-worker` and `batcher-handoff`, not states of this machine, and nothing here exercises
 //! them: `refuse_a_readable_key` and `refuse_to_write` carry the key-permission half in
-//! `tests/ots.rs`. The soak over seven scheduled epochs and the cold-run of the runbook are
-//! operational and cannot be met by a test at all.
+//! `tests/ots.rs`. Of the five conditions the fifth criterion asks for, the three the worker raises
+//! are injected below and `ProcessSilent` and `RepeatedRefusal` are not: both are facts about the
+//! process rather than the log, both are the service manager's, and both need a host running one
+//! (#251). The soak over seven scheduled epochs and the cold-run of the runbook are operational and
+//! cannot be met by a test at all.
 
-use certimining_client::{next_step, publication_time, Observed, Refusal, Schedule, Step};
+use certimining_client::{
+    alerts, next_step, publication_time, receipt_pending_since, Alert, Observed, Refusal, Schedule,
+    Step, Supervision, Thresholds,
+};
 use std::collections::BTreeSet;
 
 const S: Schedule = Schedule::DEPLOYED;
@@ -278,5 +284,100 @@ fn state_the_worker_must_not_act_on_is_refused() {
     assert!(
         matches!(step, Step::Refuse(Refusal::LogAheadOfCalendar { .. })),
         "a log ahead of the calendar is refused, got {step:?}"
+    );
+}
+
+/// The one alert a case is expected to raise, rendered the way the journal carries it.
+fn only(raised: &[Alert]) -> String {
+    match raised {
+        [single] => single.to_string(),
+        other => panic!("exactly one alert was expected, got {other:?}"),
+    }
+}
+
+/// Criterion 5, the half a test can meet: inject each condition and observe the alert.
+///
+/// **Three of the five, and the other two said rather than quietly dropped.**
+/// `PublicationMissed`, `SequenceLag` and `ReceiptUnconfirmed` are facts about the log, so the
+/// worker derives them from state it already observes, and each is injected into a `World` here and
+/// read back out. `ProcessSilent` and `RepeatedRefusal` are facts about the process: a live worker
+/// reports neither about itself, which `Supervision::from_worker` makes true by construction rather
+/// than by convention. Those two are the service manager's, and injecting them needs a host running
+/// one — #251, which carries `systemd-analyze verify` on both units and the deliberate
+/// three-refusal run.
+///
+/// Read through `Display` rather than off the value, because the journal line is what an operator is
+/// woken by and it is the part a wrong `match` arm would get wrong silently.
+#[test]
+fn each_condition_the_worker_raises_is_injected_and_observed() {
+    const T: Thresholds = Thresholds::DEPLOYED;
+
+    // **PublicationMissed.** One epoch owed, a minute past its grace, and nothing else wrong — the
+    // lag limit is one, so being a single epoch behind is not itself a lag.
+    let mut w = World::fresh();
+    w.last_epoch = START;
+    let now = at(START + 1)
+        .saturating_add(T.publication_grace)
+        .saturating_add(60);
+    let line = only(&alerts(
+        S,
+        &w.observe(now),
+        &Supervision::from_worker(now, None),
+        T,
+    ));
+    assert!(
+        line.starts_with("PublicationMissed:"),
+        "a publication past its grace must be reported: {line}"
+    );
+
+    // **SequenceLag.** Three epochs behind. This one cannot be injected alone and that is a
+    // property of the thresholds rather than a gap in the test: falling more than one epoch behind
+    // means the oldest owed epoch is at least a day overdue, which is past a two-hour grace, so
+    // `PublicationMissed` is necessarily raised with it.
+    let mut w = World::fresh();
+    w.last_epoch = START;
+    let now = at(START + 3).saturating_add(60);
+    let raised = alerts(S, &w.observe(now), &Supervision::from_worker(now, None), T);
+    let lines: Vec<String> = raised.iter().map(ToString::to_string).collect();
+    assert!(
+        lines.iter().any(|l| l.starts_with("SequenceLag:")),
+        "a log three epochs behind must be reported as lagging: {lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("PublicationMissed:")),
+        "and the oldest owed epoch is overdue with it: {lines:?}"
+    );
+
+    // **ReceiptUnconfirmed, through the dating the worker actually uses.** The receipt's file is
+    // absent, which is the state H-97 (issue #304) found silenced: `receipt_pending_since` dates it
+    // by the lower bound its epoch's publication gives instead of reporting no receipt at all.
+    let pending = START;
+    let mut w = World::fresh();
+    let now = at(pending)
+        .saturating_add(T.receipt_budget)
+        .saturating_add(60);
+    w.awaiting_attach = Some(pending);
+    w.last_submitted = Some(pending);
+    w.last_epoch = day(now).saturating_sub(1);
+    let absent = std::env::temp_dir().join(format!(
+        "certimining-252-absent-{}/{pending}.ots",
+        std::process::id()
+    ));
+    assert!(!absent.exists(), "the case needs a path that is not there");
+    let dated = receipt_pending_since(S, pending, &absent);
+    assert_eq!(
+        dated,
+        at(pending),
+        "an undatable receipt is dated by its epoch's publication time"
+    );
+    let line = only(&alerts(
+        S,
+        &w.observe(now),
+        &Supervision::from_worker(now, Some(dated)),
+        T,
+    ));
+    assert!(
+        line.starts_with("ReceiptUnconfirmed:"),
+        "a receipt past its budget must be reported even with its file gone: {line}"
     );
 }

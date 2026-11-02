@@ -127,13 +127,30 @@ in order, and the worker then waits rather than refuses.
 
 ## `ReceiptUnconfirmed`
 
-**Raised by** the worker, each cycle, as `anchor-b-worker: ALERT ReceiptUnconfirmed: …`. It needs the pending receipt's modification time; an unreadable receipt makes the age unknown and this alert unraisable rather than raisable against a time of zero.
+**Raised by** the worker, each cycle, as `anchor-b-worker: ALERT ReceiptUnconfirmed: …`. It dates the pending receipt by its file's modification time, and when that file cannot be read it falls back to the epoch's publication time — a receipt reaches the calendars after its checkpoint is published, so that is a lower bound on its age rather than a guess.
+
+**A receipt whose file has gone therefore raises this alert rather than silencing it.** It did silence it until H-97 (issue #304): an unreadable receipt reported the same value as no pending receipt, so a deleted receipt or an unreadable receipt directory read as healthy. **So check first whether the file is there at all** — that is a different fault from a slow confirmation and the rest of this section does not address it.
 
 **It means** a submitted receipt has gone past its budget without Bitcoin confirming it. INV-ANCH-04
 budgets this wait; the alert fires when the wait itself is the news. **An unconfirmed receipt is not
 a failure** and must not be deleted or resubmitted.
 
 **Diagnose**
+
+First, that the receipt exists. The worker prints the directory it is using at start, as
+`anchor-b-worker: receipts <path>`; it is `CERTIMINING_RECEIPTS`, defaulting to
+`$HOME/.local/state/potash/receipts`, and the file is `<epoch>.root.ots`.
+
+```sh
+ls -l "${CERTIMINING_RECEIPTS:-$HOME/.local/state/potash/receipts}"
+```
+
+A missing file for the epoch the alert names is **not** a slow confirmation. The submission is gone
+and the attach can never complete; that is the escalation at the end of this section, reached
+immediately rather than after waiting out the budget. A file that is present but unreadable is a
+permission or mount fault on that directory, and the worker cannot write the next receipt either.
+
+Then, with the file present, the confirmation itself.
 
 ```sh
 cargo run -p certimining-client --features ots --bin confirm-anchor-b
