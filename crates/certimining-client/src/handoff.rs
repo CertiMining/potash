@@ -262,13 +262,17 @@ pub fn refuse_to_write(
         return Err(HandoffWriteRefused::BeforeBuildStart { epoch, now, start });
     }
 
-    // **The upper bound, from the worker's own policy.** An epoch is built the day after it ends, and
-    // may still be built for `max_epoch_slip` days after that — the same allowance the worker uses
-    // before it stops and asks for a ruling. Past that the worker would refuse to publish the result,
-    // so producing it is writing an immutable file nothing can use.
-    let latest_day = epoch
-        .saturating_add(1)
-        .saturating_add(policy.max_epoch_slip);
+    // **The upper bound is the worker's own last publishable day (M-08, issue #333).** This read
+    // `epoch + 1 + max_epoch_slip`, which is one day looser: the worker counts its allowance from
+    // the publishable frontier, and the frontier is already a day behind the calendar, so the `+ 1`
+    // was applied twice. An audit asked the two components about the same epoch on the same days and
+    // found day `epoch + 2` writable here and refused there — an immutable signed handoff nothing
+    // could publish.
+    //
+    // The quantity now exists once, in `WorkerPolicy::last_publishable_day`, which the worker's slip
+    // barrier reads as well. Two statements of one number with nothing comparing them is what
+    // produced this, and the cross-component test below is what compares them now.
+    let latest_day = policy.last_publishable_day(epoch);
     if today > latest_day {
         return Err(HandoffWriteRefused::PastTheSlipAllowance {
             epoch,
@@ -499,12 +503,31 @@ mod writing {
     /// gets is an unattended build whose root nothing will publish.
     #[test]
     fn an_epoch_the_batcher_is_catching_up_on_is_allowed_inside_the_allowance() {
+        // **Under PRODUCTION there is no catch-up day, which this test used to claim (M-08, #333).**
+        // `max_epoch_slip` of one is spent on the ordinary lag: epoch `e` publishes in day `e + 1`,
+        // so on day `e + 2` the worker's slip is already two and it refuses. The day this asserted,
+        // `e + 2`, is exactly the one the audit found writable and unusable. Catching up needs a
+        // policy that allows it, so the test states the policy rather than a day.
+        let roomy = WorkerPolicy {
+            max_epoch_slip: 2,
+            ..WorkerPolicy::PRODUCTION
+        };
         let epoch: u64 = 20_700;
         let one_day_late = epoch.saturating_add(2);
+        assert_eq!(one_day_late, roomy.last_publishable_day(epoch));
+        assert_eq!(
+            refuse_to_write(S, roomy, epoch, noon(one_day_late), None, &bytes(1)),
+            Ok(()),
+            "with an allowance of two, a day late is past the build start and inside it"
+        );
         assert_eq!(
             refuse_to_write(S, P, epoch, noon(one_day_late), None, &bytes(1)),
-            Ok(()),
-            "a day the batcher is catching up on is past its build start and inside the allowance"
+            Err(HandoffWriteRefused::PastTheSlipAllowance {
+                epoch,
+                today: one_day_late,
+                latest_day: P.last_publishable_day(epoch),
+            }),
+            "and with PRODUCTION's allowance of one it is past it, because the worker refuses it"
         );
     }
 
@@ -573,12 +596,13 @@ mod writing {
     #[test]
     fn the_last_day_of_the_slip_allowance_is_allowed_and_the_next_is_not() {
         let epoch: u64 = 20_737;
-        let latest = epoch.saturating_add(1).saturating_add(P.max_epoch_slip);
+        let latest = P.last_publishable_day(epoch);
 
         assert_eq!(
             refuse_to_write(S, P, epoch, noon(latest), None, &bytes(1)),
             Ok(()),
-            "day {latest} is the last on which the worker would still publish epoch {epoch}"
+            "day {latest} is the last day this bound permits for epoch {epoch}. That it is also the \
+             last day the worker can publish it is what the cross-component test below compares"
         );
         let too_late = latest.saturating_add(1);
         assert_eq!(
@@ -589,6 +613,54 @@ mod writing {
                 latest_day: latest,
             }),
             "past the allowance the worker refuses to publish, so the batcher must not build"
+        );
+    }
+
+    /// **Every day the batcher will write is a day the worker can still publish (M-08, issue #333;
+    /// owner's ruling of 2 November 2026).**
+    ///
+    /// The test above pins this bound against itself, which is what let it be a day out: its own
+    /// message claimed the day was "the last on which the worker would still publish" while asking
+    /// only the batcher. This asks both components about the same epoch on the same days, so the
+    /// sentence is checked rather than asserted.
+    #[test]
+    fn every_writable_day_is_a_day_the_worker_can_still_publish() {
+        use crate::worker::{next_step_with_policy, Observed, Step};
+        let epoch: u64 = 20_737;
+        let mut writable = 0usize;
+        // Several allowances, so the agreement is a property of the shared function and not of
+        // PRODUCTION's particular number.
+        for slip in 0u64..=3 {
+            let policy = WorkerPolicy {
+                max_epoch_slip: slip,
+                ..WorkerPolicy::PRODUCTION
+            };
+            for day in epoch..=epoch.saturating_add(6) {
+                let now = noon(day);
+                if refuse_to_write(S, policy, epoch, now, None, &bytes(1)).is_err() {
+                    continue;
+                }
+                writable = writable.saturating_add(1);
+                // A log that has published everything before `epoch`, so `epoch` is its candidate.
+                let last_epoch = epoch.saturating_sub(1);
+                let observed = Observed {
+                    now,
+                    start_epoch: last_epoch,
+                    last_epoch,
+                    awaiting_attach: None,
+                    last_submitted: Some(last_epoch),
+                };
+                assert_eq!(
+                    next_step_with_policy(S, &observed, policy),
+                    Step::Publish { epoch },
+                    "day {day} is writable under an allowance of {slip}, so the worker must still \
+                     select epoch {epoch}"
+                );
+            }
+        }
+        assert!(
+            writable > 0,
+            "no day in the window was writable, so this compares nothing"
         );
     }
 
@@ -618,7 +690,7 @@ mod writing {
             Err(HandoffWriteRefused::PastTheSlipAllowance {
                 epoch: 20_737,
                 today: 30_000,
-                latest_day: 20_739,
+                latest_day: P.last_publishable_day(20_737),
             })
         );
     }
