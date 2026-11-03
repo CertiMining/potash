@@ -22,6 +22,12 @@ unsound = "all"
 # The count is stated once below, in a form `cargo xtask check-advisories` reads and compares against
 # the entries. The sentence above said "the five below them" against fourteen of them, and went on
 # saying it until an audit read the file (M-06, 1 November 2026). Prose may describe; it may not count.
+#
+# Two counts, because checking only the dated subset let an undated entry be added with no evidence
+# change anywhere: an audit added a sixth undated exception and the gate stayed green, reporting
+# twenty exceptions of which fourteen were dated (M-10, 2 November 2026). An entry that is not dated
+# must be one of D-18's five, which the gate holds as a closed list.
+# EXCEPTIONS: 19
 # DATED-EXCEPTIONS: 14
 #
 # **Every dated entry carries four things**, which is what makes it a decision rather than a silence:
