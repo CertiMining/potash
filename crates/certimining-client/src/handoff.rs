@@ -649,6 +649,7 @@ mod writing {
                     last_epoch,
                     awaiting_attach: None,
                     last_submitted: Some(last_epoch),
+                    oldest_single: None,
                 };
                 assert_eq!(
                     next_step_with_policy(S, &observed, policy),

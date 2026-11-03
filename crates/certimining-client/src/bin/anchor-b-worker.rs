@@ -33,9 +33,9 @@
 use certimining_client::{
     alerts,
     cluster::{AttachRefused, Cluster},
-    day_index, next_step_with_policy, notify, receipt_pending_since, refuse_a_readable_key,
-    sequence_lag, AnchorB, AnchorStatus, Handoff, Observed, PendingReceipt, PublishFailed,
-    ReferenceClient, Refusal, Schedule, Step, Supervision, Thresholds, WorkerPolicy,
+    day_index, next_step_with_policy, notify, observe, refuse_a_readable_key, AnchorB, Handoff,
+    ObserveFailed, PendingReceipt, PublishFailed, ReferenceClient, Refusal, Schedule, Step,
+    Supervision, Thresholds, WorkerPolicy,
 };
 use certimining_core::{DalekVerifier, Digest};
 use solana_keypair::Keypair;
@@ -139,73 +139,6 @@ fn root_for(config: &Config, epoch: u64) -> Result<Digest, String> {
     handoff
         .verify::<DalekVerifier>(&config.batcher_key, epoch)
         .map_err(|e| format!("{}: {e:?}", path.display()))
-}
-
-/// What the worker can see: the log's own configuration, and which epochs it has stamped.
-fn observe(
-    cluster: &Cluster,
-    anchor_b: &ReferenceClient,
-    now: i64,
-    today: u64,
-) -> Result<Observed, String> {
-    let lag = sequence_lag(cluster, &cluster.program_id(), today, today)
-        .map_err(|e| format!("the log's configuration: {e:?}"))?;
-
-    // The highest epoch whose receipt exists on disk, and the lowest the chain still calls single.
-    // An epoch with a receipt that the chain reports as single is one waiting to attach.
-    let mut last_submitted = None;
-    let mut awaiting_attach = None;
-    let mut epoch = lag.start_epoch;
-    while epoch <= lag.last_published {
-        if anchor_b.receipt_path(epoch).exists() {
-            last_submitted = Some(epoch);
-            if awaiting_attach.is_none() {
-                match cluster.status(epoch) {
-                    Ok(AnchorStatus::Single) => awaiting_attach = Some(epoch),
-                    Ok(_) => {}
-                    Err(e) => return Err(format!("epoch {epoch}'s status: {e:?}")),
-                }
-            }
-        }
-        epoch = match epoch.checked_add(1) {
-            Some(next) => next,
-            None => break,
-        };
-    }
-
-    Ok(Observed {
-        now,
-        start_epoch: lag.start_epoch,
-        last_epoch: lag.last_published,
-        awaiting_attach,
-        last_submitted,
-    })
-}
-
-/// When the pending receipt was lodged with the calendars, if one is pending.
-///
-/// `None` now means one thing: the log reports nothing awaiting attachment, so there is nothing for
-/// `ReceiptUnconfirmed` to be about.
-///
-/// **It used to mean two things, and that was H-97 (issue #304).** This returned `None` for an
-/// unreadable receipt as well, on the reasoning that an unknown age must not read as an infinite one.
-/// The concern is sound and it ruled out the wrong candidate: `alerts()` guards the arm on this value
-/// being present, so `None` silenced the condition outright for a receipt the log said was pending
-/// and whose file had gone. The age was never unknown — a receipt reaches the calendars after its
-/// epoch is published, so publication time bounds it from below — and
-/// `alert::receipt_pending_since` uses that bound, which is why the dating now lives in the library
-/// where a test reaches it. What stays here is the one thing only the binary knows: where the receipt
-/// for an epoch lives.
-///
-/// The split of the five conditions between this process and the service manager lives in
-/// `Supervision::from_worker`, with the test that pins it.
-fn receipt_submitted_at(anchor_b: &ReferenceClient, observed: &Observed) -> Option<i64> {
-    let epoch = observed.awaiting_attach?;
-    Some(receipt_pending_since(
-        Schedule::DEPLOYED,
-        epoch,
-        &anchor_b.receipt_path(epoch),
-    ))
 }
 
 /// Why the worker stopped, in the terms the record uses.
@@ -389,17 +322,29 @@ fn run() -> Result<(), String> {
         let now = i64::try_from(seconds).map_err(|e| format!("a clock beyond i64: {e}"))?;
         let today = day_index(now).ok_or("a clock before 1970 has no day index")?;
 
-        let observed = match observe(&cluster, &anchor_b, now, today) {
+        // **The observation is the library's (H-108, issue #332).** This file had its own, whose
+        // `exists()` guard meant a deleted or unreadable receipt stopped the chain being asked at
+        // all. `certimining_client::observe` asks about every epoch in the range, so `Single` with
+        // no readable receipt is awaiting attachment rather than work never submitted.
+        let observed = match observe(&cluster, &anchor_b, &cluster.program_id(), now, today) {
             Ok(observed) => {
                 consecutive_failures = 0;
                 observed
             }
             Err(error) => {
+                let said = match error {
+                    ObserveFailed::Configuration(cause) => {
+                        format!("the log's configuration: {cause:?}")
+                    }
+                    ObserveFailed::Status { epoch, cause } => {
+                        format!("epoch {epoch}'s status: {cause:?}")
+                    }
+                };
                 retry_partition(
                     policy,
                     &mut consecutive_failures,
                     "fresh state observation failed",
-                    &error,
+                    &said,
                 )?;
                 continue;
             }
@@ -409,7 +354,7 @@ fn run() -> Result<(), String> {
         // `alerts()` was called by nothing outside its own test module: it computed five conditions
         // against committed thresholds, passed eleven tests, and no operator could ever have been
         // told any of them. `RUNBOOK-WORKER-RECOVERY.md` was keyed on alerts nothing raised.
-        let supervision = Supervision::from_worker(now, receipt_submitted_at(&anchor_b, &observed));
+        let supervision = Supervision::from_worker(now);
         for alert in alerts(
             Schedule::DEPLOYED,
             &observed,
@@ -501,6 +446,22 @@ fn run() -> Result<(), String> {
                     root,
                     path: anchor_b.receipt_path(epoch),
                 };
+                // **The stop the observation can no longer make for us (H-108, issue #332).** The
+                // chain says this epoch is awaiting attachment; the receipt is what would be
+                // attached. If it cannot be read, `ots upgrade` would fail with whatever it prints,
+                // so the operator is told the condition instead. `Single` with no readable receipt
+                // cannot be told from never having been submitted until issue #337, so the worker
+                // stops here rather than deciding which it was.
+                if std::fs::metadata(&pending.path).is_err() {
+                    return Err(format!(
+                        "epoch {epoch} is single on chain and its receipt at {} cannot be read. \
+                         The root is published and the attachment is still owed. Whether the root \
+                         ever reached the calendars cannot be told from the chain, so this is an \
+                         operator decision: restore the receipt and rerun, or re-stamp the epoch \
+                         knowingly. The worker will not submit it again.",
+                        pending.path.display()
+                    ));
+                }
                 match anchor_b.upgrade(&pending) {
                     // **Not a failure.** INV-ANCH-04 budgets hours for Bitcoin, and the attach field
                     // is write-once (D-112): attaching a calendar's promise would spend the single
