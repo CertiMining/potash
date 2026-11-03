@@ -326,20 +326,72 @@ fn paragraphs(text: &str) -> Vec<(usize, String)> {
 /// Emphasis and link syntax only. A code span keeps its backticks, because `is_named_not_used` below
 /// reads them to tell a needle named from a needle used, and dropping them here would take that
 /// distinction away from it.
+///
+/// **A link contributes its label and nothing else (M-09, issue #330).** This dropped `[` and `]`
+/// and kept what followed, under a comment claiming the destination "cannot create a match that the
+/// prose does not contain, and it cannot break one". The second half was false and the paragraph
+/// ruled out the one case that mattered: a link boundary *inside* a multiword phrase. The audit put
+/// `says [no worker](https://example.invalid) exists` into `README.md` and the gate exited 0, because
+/// the retained URL sat between `no worker` and `exists`. A reader sees the sentence whole.
+///
+/// Reference links break it the same way and the audit did not reach them: `[no worker][ref] exists`
+/// left `no workerref exists`. Both forms are handled here.
+///
+/// An unterminated destination keeps its characters rather than swallowing the rest of the
+/// paragraph. Dropping to the end of the text would be the fail-open direction — it could remove a
+/// claim a reader does see — so a `(` with no `)` after it is treated as the text it is.
 fn normalize(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
+    let mut i = 0usize;
+    while let Some(&c) = chars.get(i) {
         match c {
             // `**bold**` and `*emphasis*` and `_emphasis_`: the markers, not the words.
-            '*' | '_' => {}
-            // `[text](url)` keeps the text. The target is left where it is: it cannot create a
-            // match that the prose does not contain, and it cannot break one, so removing it would
-            // be more parsing for no gain.
-            '[' | ']' => {}
-            _ => out.push(c),
+            '*' | '_' => i = i.saturating_add(1),
+            '[' => i = i.saturating_add(1),
+            ']' => {
+                // `](destination)` and `][reference]` are the two forms whose tail a reader never
+                // sees. `closing` is `None` for an unterminated one, which is then left alone.
+                let next = chars.get(i.saturating_add(1));
+                let shape = match next {
+                    Some('(') => Some((')', '(')),
+                    Some('[') => Some((']', '[')),
+                    _ => None,
+                };
+                match shape
+                    .and_then(|(close, open)| matching(&chars, i.saturating_add(1), open, close))
+                {
+                    Some(end) => i = end.saturating_add(1),
+                    None => i = i.saturating_add(1),
+                }
+            }
+            _ => {
+                out.push(c);
+                i = i.saturating_add(1);
+            }
         }
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The index of the delimiter closing the one at `from`, honouring nesting, or `None` if the text
+/// ends first. Markdown permits balanced parentheses inside a destination, so depth is counted
+/// rather than stopping at the first `)`.
+fn matching(chars: &[char], from: usize, open: char, close: char) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = from;
+    while let Some(&c) = chars.get(i) {
+        if c == open {
+            depth = depth.saturating_add(1);
+        } else if c == close {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+        i = i.saturating_add(1);
+    }
+    None
 }
 
 /// What the gate found: lines no exemption covers, and exemptions that matched nothing.
@@ -789,6 +841,71 @@ mod tests {
         assert!(
             is_named_not_used(line, at, "no worker exists".len()),
             "a code span says `these characters`, which is not an assertion about the worker"
+        );
+    }
+
+    /// **A link boundary inside a needle, at every boundary of every needle (M-09, issue #330).**
+    ///
+    /// The test this replaces covered a link whose whole phrase sat inside the label, which is the
+    /// case that already worked. The audit's case was a boundary *between* two words of the phrase,
+    /// and one example of it. This walks every multiword needle and splits it at each gap, in both
+    /// link forms, so a needle added later is covered without anyone remembering to.
+    #[test]
+    fn a_link_boundary_inside_a_needle_does_not_hide_it() {
+        let mut checked = 0usize;
+        for stale in &STALE {
+            let words: Vec<&str> = stale.needle.split(' ').collect();
+            if words.len() < 2 {
+                continue;
+            }
+            for split in 1..words.len() {
+                let label = words[..split].join(" ");
+                let rest = words[split..].join(" ");
+                for text in [
+                    format!("A status says [{label}](https://example.invalid) {rest} today."),
+                    format!("A status says [{label}][r] {rest} today."),
+                    format!("A status says [{label}](https://example.invalid/a(b)c) {rest} today."),
+                ] {
+                    let got = normalize(&text);
+                    assert!(
+                        got.contains(stale.needle),
+                        "a reader meets {:?} in {text:?}, which normalized to {got:?}",
+                        stale.needle
+                    );
+                    checked = checked.saturating_add(1);
+                }
+            }
+        }
+        assert!(
+            checked > 0,
+            "no multiword needle was exercised, so this asserts nothing about any of them"
+        );
+    }
+
+    /// An unterminated destination keeps its characters, because dropping to the end of the text is
+    /// the fail-open direction: it would remove a claim a reader does see.
+    #[test]
+    fn an_unterminated_destination_does_not_swallow_the_sentence() {
+        let needle = match STALE.iter().find(|s| s.needle.contains(' ')) {
+            Some(s) => s.needle,
+            None => panic!("no multiword needle, so this test states nothing"),
+        };
+        let text = format!("An unterminated [link](https://example.invalid says {needle} here.");
+        let got = normalize(&text);
+        assert!(
+            got.contains(needle),
+            "the sentence after an unterminated destination is still prose: {got:?}"
+        );
+    }
+
+    /// And a destination still contributes nothing when the label holds no needle, so the stripping
+    /// cannot join text the file does not put together.
+    #[test]
+    fn a_destination_cannot_create_a_phrase_the_prose_lacks() {
+        let got = normalize("see [a](https://example.invalid/no-worker) exists");
+        assert!(
+            !got.contains(concat!("no worker", " exists")),
+            "a hyphenated path inside a destination is not prose: {got:?}"
         );
     }
 
