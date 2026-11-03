@@ -155,7 +155,7 @@ fn today_utc() -> Option<(i64, i64, i64)> {
 }
 
 /// The count the header states, from its marker line.
-fn stated_count(text: &str) -> Option<usize> {
+fn stated_count(text: &str) -> Marked {
     marked_count(text, COUNT_MARKER)
 }
 
@@ -169,10 +169,21 @@ fn stated_count(text: &str) -> Option<usize> {
 /// An entry that is not dated must be one of D-18's five. Otherwise a new exception enters the
 /// dependency policy with no expiry, no retirement condition and no decision: the governance failure
 /// the gate exists to prevent, and the one the 2 November audit walked straight through.
+///
+/// **Membership was the whole demand, and that was not enough (H-113, issue #342).** The closed list
+/// stops a sixth identifier arriving undated. It asked the five themselves for nothing, so
+/// `reason = ""` on any of them passed this gate and all fourteen of its unit tests. The dated
+/// entries are held to an expiry, a retirement condition and a cited decision; the undated five were
+/// held to being named. They carry their evidence in the one place that exempts them from an expiry,
+/// so [`undated_evidence`] is what asks them for it.
 fn unclassified(entries: &[Exception]) -> Vec<String> {
     let mut problems = Vec::new();
     for entry in entries {
-        if entry.reason.contains("EXPIRES") || UNDATED_BY_D18.contains(&entry.id.as_str()) {
+        if entry.reason.contains("EXPIRES") {
+            continue;
+        }
+        if UNDATED_BY_D18.contains(&entry.id.as_str()) {
+            problems.extend(undated_evidence(entry));
             continue;
         }
         problems.push(format!(
@@ -196,19 +207,81 @@ fn unclassified(entries: &[Exception]) -> Vec<String> {
     problems
 }
 
-/// The number a named header marker states, or nothing.
+/// What one of D-18's five must say, given that nothing will ever expire it (H-113, issue #342).
 ///
-/// Two markers now, because checking only the dated subset let an undated entry be added with no
+/// Three demands, and each is a thing the five already say. A reason that is empty holds no
+/// evidence; one that does not cite D-18 is a line rather than a decision; one that does not say the
+/// code is never shipped omits the reachability basis the exemption rests on. All five committed
+/// entries satisfy all three as they stand, so the demands hold today and fail the edit that strips
+/// any of them.
+fn undated_evidence(entry: &Exception) -> Vec<String> {
+    let mut problems = Vec::new();
+    let reason = entry.reason.trim();
+    if reason.is_empty() {
+        problems.push(format!(
+            "  deny.toml:{} — {} is permitted to be undated and carries an empty reason, so the \
+             class that exempts it from an expiry records nothing at all",
+            entry.line, entry.id
+        ));
+        // The two demands below would both fire on the same emptiness and say less than this does.
+        return problems;
+    }
+    if cited_decision(reason).as_deref() != Some("D-18") {
+        problems.push(format!(
+            "  deny.toml:{} — {} is undated under D-18 and does not cite it. The citation is what \
+             makes an exception with no expiry a decision rather than a silence",
+            entry.line, entry.id
+        ));
+    }
+    if !reason.contains("never shipped") {
+        problems.push(format!(
+            "  deny.toml:{} — {} is exempt from an expiry because the vulnerable code is reached \
+             only by the test runtime and never shipped. Its reason does not say so, so the basis \
+             the exemption rests on is written down nowhere",
+            entry.line, entry.id
+        ));
+    }
+    problems
+}
+
+/// What a named header marker says, or why it says nothing usable.
+///
+/// Two markers, because checking only the dated subset let an undated entry be added with no
 /// evidence change anywhere (M-10, issue #331). `# DATED-EXCEPTIONS:` is not a prefix of
 /// `# EXCEPTIONS:`, so neither marker reads the other's line.
-fn marked_count(text: &str, marker: &str) -> Option<usize> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Marked {
+    /// One marker line, carrying a number.
+    One(usize),
+    /// No marker line, or one whose value is not a number. Both leave the count unchecked.
+    Absent,
+    /// More than one marker line, which is the bypass (H-114, issue #343).
+    Repeated(usize),
+}
+
+/// What a named header marker says.
+///
+/// **It used to return the first match and stop (H-114, issue #343).** Editing the canonical marker
+/// failed the gate; appending a second, contradictory one after it passed, because the later line
+/// was read by nothing. A count that can be contradicted inside the file it counts is not a count,
+/// so every occurrence is found and exactly one is required.
+fn marked_count(text: &str, marker: &str) -> Marked {
+    let mut found = None;
+    let mut seen = 0usize;
     for line in text.lines() {
         let trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix(marker) {
-            return rest.trim().parse().ok();
+            seen = seen.saturating_add(1);
+            if found.is_none() {
+                found = Some(rest.trim().parse().ok());
+            }
         }
     }
-    None
+    match (seen, found) {
+        (0, _) | (1, None | Some(None)) => Marked::Absent,
+        (1, Some(Some(count))) => Marked::One(count),
+        _ => Marked::Repeated(seen),
+    }
 }
 
 /// The decision an exception cites, as `D-142` from a trailing `(D-142)`.
@@ -258,26 +331,34 @@ pub fn check_advisories(root: &Path) {
     // **The total, not only the dated subset.** The dated count alone meant an undated entry could
     // be added with no corresponding evidence change anywhere.
     match marked_count(&deny, TOTAL_MARKER) {
-        Some(stated) if stated == entries.len() => {}
-        Some(stated) => problems.push(format!(
+        Marked::One(stated) if stated == entries.len() => {}
+        Marked::One(stated) => problems.push(format!(
             "  deny.toml — the header states {stated} exception(s) in total and there are {}",
             entries.len()
         )),
-        None => problems.push(format!(
+        Marked::Absent => problems.push(format!(
             "  deny.toml — no `{TOTAL_MARKER} <n>` line, so the total is checked by nothing"
+        )),
+        Marked::Repeated(seen) => problems.push(format!(
+            "  deny.toml — {seen} `{TOTAL_MARKER} <n>` lines. Only the first was ever read, so a \
+             later one may contradict it and the array both"
         )),
     }
 
     // **The dated count, which is what the 1 November audit found wrong.**
     match stated_count(&deny) {
-        Some(stated) if stated == dated.len() => {}
-        Some(stated) => problems.push(format!(
+        Marked::One(stated) if stated == dated.len() => {}
+        Marked::One(stated) => problems.push(format!(
             "  deny.toml — the header states {stated} dated exception(s) and there are {}",
             dated.len()
         )),
-        None => problems.push(format!(
+        Marked::Absent => problems.push(format!(
             "  deny.toml — no `{COUNT_MARKER} <n>` line, so the count the header gives is checked by \
              nothing"
+        )),
+        Marked::Repeated(seen) => problems.push(format!(
+            "  deny.toml — {seen} `{COUNT_MARKER} <n>` lines. Only the first was ever read, so a \
+             later one may contradict it and the dated subset both"
         )),
     }
 
@@ -472,13 +553,97 @@ ignore = [
     #[test]
     fn the_total_and_dated_markers_are_separate() {
         let text = "# EXCEPTIONS: 19\n# DATED-EXCEPTIONS: 14\n";
-        assert_eq!(marked_count(text, TOTAL_MARKER), Some(19));
-        assert_eq!(stated_count(text), Some(14));
+        assert_eq!(marked_count(text, TOTAL_MARKER), Marked::One(19));
+        assert_eq!(stated_count(text), Marked::One(14));
         assert_eq!(
             marked_count("# DATED-EXCEPTIONS: 14\n", TOTAL_MARKER),
-            None,
+            Marked::Absent,
             "the dated marker is not the total marker"
         );
+    }
+
+    /// **A second marker is a contradiction the gate used to not read (H-114, issue #343).**
+    ///
+    /// Editing the canonical marker failed the gate; appending one after it passed, because the scan
+    /// returned the first match and stopped. The mutation is the test: a later line that disagrees
+    /// with the first must be refused, and it must be refused for *both* markers, since each had its
+    /// own `return` out of the same loop.
+    #[test]
+    fn a_second_marker_line_is_refused_rather_than_skipped() {
+        let doubled = "# EXCEPTIONS: 19\n# DATED-EXCEPTIONS: 14\n# EXCEPTIONS: 0\n";
+        assert_eq!(
+            marked_count(doubled, TOTAL_MARKER),
+            Marked::Repeated(2),
+            "the later total marker contradicts the first and both are reported"
+        );
+        assert_eq!(
+            stated_count(doubled),
+            Marked::One(14),
+            "and the dated marker, appearing once, still reads"
+        );
+
+        let dated_twice = "# DATED-EXCEPTIONS: 14\n# DATED-EXCEPTIONS: 0\n";
+        assert_eq!(stated_count(dated_twice), Marked::Repeated(2));
+
+        assert_eq!(
+            marked_count("# EXCEPTIONS: 19\n# EXCEPTIONS: 19\n", TOTAL_MARKER),
+            Marked::Repeated(2),
+            "two markers that agree are still two, because which one a reader believes is the point"
+        );
+    }
+
+    /// Each of D-18's five is asked for the evidence its exemption rests on (H-113, issue #342).
+    ///
+    /// The mutation the 3 November recheck ran — `reason = ""` on an allowlisted identifier — passed
+    /// the gate and all fourteen tests of it. Membership in the closed list was the whole demand, so
+    /// the five could say anything, including nothing.
+    #[test]
+    fn an_undated_exception_answers_for_its_evidence() {
+        let sound = "paste is unmaintained; reached only through litesvm, the test runtime, never \
+                     shipped (D-18)";
+        // All five, because `unclassified` also reports an allowlisted identifier the file no longer
+        // holds — hand it one entry and the other four are correctly reported as stale. The first
+        // entry is the one under test; the rest are there so that arm stays quiet.
+        let whole = |reason: &str| {
+            let mut entries = vec![Exception {
+                id: UNDATED_BY_D18[0].to_owned(),
+                reason: reason.to_owned(),
+                line: 38,
+            }];
+            entries.extend(UNDATED_BY_D18[1..].iter().map(|id| Exception {
+                id: (*id).to_owned(),
+                reason: sound.to_owned(),
+                line: 39,
+            }));
+            entries
+        };
+        assert!(
+            unclassified(&whole(sound)).is_empty(),
+            "the committed form of all five satisfies every demand"
+        );
+
+        for (reason, wanted) in [
+            ("", "records nothing at all"),
+            ("   ", "records nothing at all"),
+            (
+                "paste is unmaintained; reached only through litesvm, never shipped",
+                "does not cite it",
+            ),
+            (
+                "paste is unmaintained; we looked and it seems fine (D-18)",
+                "written down nowhere",
+            ),
+            (
+                "paste is unmaintained; never shipped (D-142)",
+                "does not cite it",
+            ),
+        ] {
+            let problems = unclassified(&whole(reason));
+            assert!(
+                problems.iter().any(|p| p.contains(wanted)),
+                "{reason:?} should be refused for {wanted:?}, got {problems:?}"
+            );
+        }
     }
 
     /// **The audit's mutation, as a test (M-10, issue #331).** A new undated entry with no expiry,
@@ -491,9 +656,14 @@ ignore = [
                 reason: "new vulnerability exception without an expiry".to_string(),
                 line: 38,
             },
+            // The committed form rather than a paraphrase of it. H-113 (#342) gave the undated class
+            // demands of its own, and this fixture's shortened reason omitted the reachability basis
+            // — so it would now be refused for that, which is not what this test is about.
             Exception {
                 id: UNDATED_BY_D18[0].to_string(),
-                reason: "unmaintained; reached only through litesvm (D-18)".to_string(),
+                reason: "paste is unmaintained; reached only through litesvm, the test runtime, \
+                         never shipped (D-18)"
+                    .to_string(),
                 line: 32,
             },
         ];
@@ -556,15 +726,15 @@ ignore = [
     /// The count marker is the whole point of having one: a number in prose cannot be compared.
     #[test]
     fn the_count_marker_is_read_and_its_absence_is_detectable() {
-        assert_eq!(stated_count("# DATED-EXCEPTIONS: 14\n"), Some(14));
+        assert_eq!(stated_count("# DATED-EXCEPTIONS: 14\n"), Marked::One(14));
         assert_eq!(
             stated_count("    # DATED-EXCEPTIONS: 7\n"),
-            Some(7),
+            Marked::One(7),
             "indented is still the marker"
         );
         assert_eq!(
             stated_count("# fourteen dated exceptions\n"),
-            None,
+            Marked::Absent,
             "prose does not count"
         );
         // **A near miss is not read, deliberately.** The marker is a structured token, and guessing
@@ -573,17 +743,17 @@ ignore = [
         // tolerant reader risks matching a line nobody meant as the count.
         assert_eq!(
             stated_count("#   DATED-EXCEPTIONS:   7\n"),
-            None,
+            Marked::Absent,
             "extra spaces after the hash"
         );
         assert_eq!(
             stated_count("#DATED-EXCEPTIONS: 7\n"),
-            None,
+            Marked::Absent,
             "no space after the hash"
         );
         assert_eq!(
             stated_count("# DATED-EXCEPTIONS: many\n"),
-            None,
+            Marked::Absent,
             "not a number"
         );
     }
