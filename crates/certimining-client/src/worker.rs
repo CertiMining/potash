@@ -151,6 +151,16 @@ pub struct Observed {
     pub awaiting_attach: Option<u64>,
     /// The highest epoch whose root has been submitted to the calendars, if any.
     pub last_submitted: Option<u64>,
+    /// The lowest epoch the chain reports as `Single`, whatever is on disk (H-108, issue #332).
+    ///
+    /// **Separate from `awaiting_attach`, and not a second copy of it.** Both are read from one pass
+    /// of status calls in [`crate::observe`], so they cannot disagree about the chain. They answer
+    /// different questions. `awaiting_attach` is the routing's: an epoch with a receipt that the
+    /// chain still calls single is one the worker can attach, and the receipt is the only evidence
+    /// that the root ever reached the calendars. This one is the alert's: an epoch that has been
+    /// single past the receipt budget is an operator's business whether its receipt was lost or was
+    /// never written, and that needs no file to establish.
+    pub oldest_single: Option<u64>,
 }
 
 impl Observed {
@@ -276,6 +286,8 @@ pub fn next_step_with_policy(
         last_epoch,
         awaiting_attach,
         last_submitted,
+        // Read by `alerts` and by nothing here: H-108 (c) leaves every routing decision as it was.
+        oldest_single: _,
     } = *observed;
 
     // The calendar, derived from `now`. A clock with no day index refuses rather than being waved
@@ -447,6 +459,7 @@ mod tests {
             last_epoch: today,
             awaiting_attach: None,
             last_submitted: Some(today),
+            oldest_single: None,
         }
     }
 
@@ -469,6 +482,7 @@ mod tests {
             last_epoch: 20_738,
             awaiting_attach: None,
             last_submitted: Some(20_738),
+            oldest_single: None,
         };
         assert_eq!(
             next_step(S, &o),
@@ -539,6 +553,7 @@ mod tests {
             last_epoch: 20_740,
             awaiting_attach: None,
             last_submitted: Some(20_740),
+            oldest_single: None,
         };
         assert_eq!(
             o.today(),
@@ -562,6 +577,7 @@ mod tests {
             last_epoch: 20_739,
             awaiting_attach: None,
             last_submitted: Some(20_738),
+            oldest_single: None,
         };
         assert_eq!(
             next_step(S, &o),
@@ -599,6 +615,7 @@ mod tests {
             last_epoch: start - 1,
             awaiting_attach: None,
             last_submitted: None,
+            oldest_single: None,
         };
         assert_eq!(
             next_step(S, &o),
@@ -629,6 +646,7 @@ mod tests {
             last_epoch: 20_739,
             awaiting_attach: None,
             last_submitted: Some(20_739),
+            oldest_single: None,
         };
         let mut steps = Vec::new();
         for _ in 0..8 {
@@ -751,6 +769,7 @@ mod tests {
             last_epoch: start - 1,
             awaiting_attach: None,
             last_submitted: None,
+            oldest_single: None,
         };
         assert_eq!(next_step(S, &observed), Step::Publish { epoch: start });
     }
@@ -766,6 +785,7 @@ mod tests {
             last_epoch: start - 2,
             awaiting_attach: None,
             last_submitted: None,
+            oldest_single: None,
         };
         assert!(matches!(
             next_step(S, &observed),
@@ -784,6 +804,7 @@ mod tests {
             last_epoch: last,
             awaiting_attach: None,
             last_submitted: Some(last),
+            oldest_single: None,
         };
         assert_eq!(
             observed.today(),
@@ -804,6 +825,7 @@ mod tests {
             last_epoch: last,
             awaiting_attach: None,
             last_submitted: Some(last),
+            oldest_single: None,
         };
         assert!(matches!(
             next_step(S, &observed),
@@ -864,6 +886,7 @@ mod tests {
                 last_epoch: day,
                 awaiting_attach: None,
                 last_submitted: Some(day),
+                oldest_single: None,
             };
             assert_eq!(o.today(), Some(day), "{label} is still day {day}");
             assert_eq!(
@@ -899,6 +922,7 @@ mod tests {
                 last_epoch: day.saturating_sub(1),
                 awaiting_attach: None,
                 last_submitted: Some(day.saturating_sub(1)),
+                oldest_single: None,
             };
             assert!(
                 !matches!(
@@ -1007,6 +1031,7 @@ mod tests {
                                         last_epoch,
                                         awaiting_attach,
                                         last_submitted,
+                                        oldest_single: None,
                                     },
                                     &mut checked,
                                     &mut admitted,
@@ -1046,6 +1071,7 @@ mod tests {
                                     last_epoch,
                                     awaiting_attach: None,
                                     last_submitted,
+                                    oldest_single: None,
                                 },
                                 &mut checked,
                                 &mut admitted,
@@ -1077,6 +1103,7 @@ mod tests {
             last_epoch: 20_740,
             awaiting_attach: None,
             last_submitted: Some(20_740),
+            oldest_single: None,
         };
         assert_eq!(o.today(), None);
         assert_eq!(
@@ -1117,6 +1144,7 @@ mod tests {
             last_epoch,
             awaiting_attach: None,
             last_submitted: Some(last_epoch),
+            oldest_single: None,
         };
         assert_eq!(
             o.newest_publishable(),

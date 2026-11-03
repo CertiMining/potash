@@ -404,6 +404,18 @@ impl ReferenceClient {
     }
 }
 
+/// **The seam the observation needs for the receipt's location (H-108, issue #332).** `receipt_path`
+/// was an inherent method only, so `observe` could ask where a receipt lives solely through this
+/// concrete client. The method is unchanged and stays inherent for the binary's other callers; this
+/// says it is one of the two questions observing asks, so a fake can answer it without implementing
+/// submitting and upgrading as well.
+#[cfg(feature = "ots")]
+impl crate::ReceiptLocation for ReferenceClient {
+    fn receipt_path(&self, epoch: u64) -> std::path::PathBuf {
+        ReferenceClient::receipt_path(self, epoch)
+    }
+}
+
 #[cfg(feature = "ots")]
 impl AnchorB for ReferenceClient {
     fn submit(&self, epoch: u64, root: &Digest) -> Result<PendingReceipt, String> {

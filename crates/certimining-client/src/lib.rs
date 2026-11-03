@@ -3,9 +3,16 @@
 //! without an indexer (§1.5, §2.3).
 //!
 //! This is the only crate here that speaks to a cluster, which is why it is a crate of its own: the
-//! engine builds for bare metal and an RPC client ends that (D-84). The cluster itself sits behind a
-//! trait, so every test below runs without a network and the one implementation that does reach a
-//! cluster is the service's.
+//! engine builds for bare metal and an RPC client ends that (D-84).
+//!
+//! **What sits behind a trait, stated exactly (H-108).** This paragraph used to say "the cluster
+//! itself sits behind a trait, so every test below runs without a network", and `cluster::Cluster`
+//! was not behind one: `RootSource` and `AnchorB` were the traits, and the epoch status the worker's
+//! observation needs was an inherent method on the concrete cluster. So the observation could only
+//! be made with a network, the only tested observer was a harness that observed nothing, and the
+//! sentence read as though a seam existed where none did. `EpochStatus` is that seam, and with it
+//! every decision and every observation in this crate is reachable without a cluster. The one
+//! implementation that does reach a cluster is the service's.
 //!
 //! Two properties live here rather than in the program, and both are things a reader should be able
 //! to check rather than take:
@@ -40,6 +47,7 @@ mod handoff;
 // have to be renamed at one of the two call sites to no one's benefit. Callers write
 // `notify::Refused`.
 pub mod notify;
+mod observe;
 mod ots;
 #[cfg(feature = "ots")]
 mod promise_receipt;
@@ -48,7 +56,7 @@ mod schedule;
 mod separation;
 mod worker;
 
-pub use alert::{alerts, receipt_pending_since, Alert, Supervision, Thresholds};
+pub use alert::{alerts, Alert, Supervision, Thresholds};
 pub use anchor::{
     lineage_of, provenance_in, status_of, AnchorRef, AnchorStatus, Lineage, Touched, WhereItLanded,
 };
@@ -60,6 +68,7 @@ pub use fetch::{
     RootSource, Unreachable, ONE_VIEW_LIMIT,
 };
 pub use handoff::{refuse_to_write, Handoff, HandoffRefused, HandoffWriteRefused, HANDOFF_LEN};
+pub use observe::{observe, EpochStatus, ObserveFailed, ReceiptLocation};
 pub use ots::{receipt_digest, refuse_a_readable_key, AnchorB, PendingReceipt, ReceiptRefused};
 #[cfg(feature = "ots")]
 pub use ots::{verify_receipt, BitcoinClaim, ReferenceClient};

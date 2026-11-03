@@ -416,6 +416,16 @@ impl Cluster {
     }
 }
 
+/// **The seam the worker's observation needs (H-108, issue #332).** `status` was an inherent method
+/// only, so `observe` could be called with a real cluster and nothing else, and the only tested
+/// observer was a harness that observed nothing. The method itself is unchanged; this says it is the
+/// one question the observation asks, so a fake can answer it.
+impl crate::EpochStatus for Cluster {
+    fn status(&self, epoch: u64) -> Result<AnchorStatus, Unreachable> {
+        Cluster::status(self, epoch)
+    }
+}
+
 impl RootSource for Cluster {
     fn account_at(&self, address: &Pubkey) -> Result<crate::Observation, Unreachable> {
         // The two failures are kept apart here rather than merged: an account that is not there is an

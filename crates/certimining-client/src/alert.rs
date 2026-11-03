@@ -53,8 +53,6 @@ impl Thresholds {
 pub struct Supervision {
     /// When the worker process last reported, in Unix seconds.
     pub last_heartbeat: i64,
-    /// When the pending receipt was submitted to the calendars, if one is pending.
-    pub receipt_submitted_at: Option<i64>,
     /// How many times in a row the worker has refused.
     pub consecutive_refusals: u32,
     /// The refusal it last gave, if it refused.
@@ -81,48 +79,12 @@ impl Supervision {
     /// predicate serves both emitters and a supervisor built later needs no second copy of the
     /// thresholds. `only_three_of_five_can_be_raised_by_the_worker_itself` below pins which three.
     #[must_use]
-    pub fn from_worker(now: i64, receipt_submitted_at: Option<i64>) -> Self {
+    pub fn from_worker(now: i64) -> Self {
         Self {
             last_heartbeat: now,
-            receipt_submitted_at,
             consecutive_refusals: 0,
             last_refusal: None,
         }
-    }
-}
-
-/// When the receipt for `epoch` is to be treated as having been submitted, in Unix seconds.
-///
-/// **A read that fails must not become "no receipt is pending" (H-97, issue #304).** The first
-/// version of this lived in `anchor-b-worker.rs` and returned `Option<i64>`, giving `None` both when
-/// nothing was awaiting attachment and when the receipt's own file could not be read. `alerts()`
-/// guards `ReceiptUnconfirmed` on that value being present, so a receipt the log said was pending
-/// whose file had been deleted — or whose directory had become unreadable — read as healthy. That is
-/// the defect H-95 (#300) was filed for, reappearing inside the fix for H-95: a failed observation
-/// mapped onto the value the predicate rewards.
-///
-/// So this returns a time in every case. A receipt reaches the calendars after its checkpoint is
-/// published and never before, which makes [`publication_time`] a true lower bound on its age and the
-/// honest fallback when the file cannot be dated. Under the budget that bound raises nothing, because
-/// no reading of the file could put the receipt over it either; over the budget the alert is warranted
-/// whatever the file would have said.
-///
-/// The bound itself fails to compute only for an epoch some 2^63 seconds out, which
-/// `Refusal::LogAheadOfCalendar` stops the worker reaching. 0 is the fallback there rather than
-/// `now`, because it makes the reported age absurd and the alert loud, where `now` would make it zero
-/// and silence the arm a second time.
-#[must_use]
-pub fn receipt_pending_since(schedule: Schedule, epoch: u64, receipt: &std::path::Path) -> i64 {
-    let dated = std::fs::metadata(receipt)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|d| i64::try_from(d.as_secs()).ok());
-    match dated {
-        Some(at) => at,
-        // `unwrap_or(0)` and not `unwrap_or_default()`: the zero is the decision this function makes
-        // when it can date the receipt by nothing at all, so it is written where it is made.
-        None => publication_time(schedule, epoch).unwrap_or(0),
     }
 }
 
@@ -265,14 +227,26 @@ pub fn alerts(
         });
     }
 
-    if let (Some(epoch), Some(at)) = (observed.awaiting_attach, supervision.receipt_submitted_at) {
-        let waiting = now.saturating_sub(at);
-        if waiting > thresholds.receipt_budget {
-            out.push(Alert::ReceiptUnconfirmed {
-                epoch,
-                waiting,
-                budget: thresholds.receipt_budget,
-            });
+    // **From the chain and the clock, not from the receipt's own file (H-108, issue #332; owner's
+    // ruling of 3 November 2026).** This read `awaiting_attach` and a time the binary took from the
+    // receipt's metadata. Both came from a branch guarded on the receipt existing, so a deleted or
+    // unreadable receipt — the one state H-97 (#304) added this arm to surface — silenced it.
+    //
+    // An epoch the chain still calls single, past the budget, is the operator's business whether its
+    // receipt was lost or was never written. The publication time is the lower bound on how long it
+    // has been single, because an epoch is single from the instant it is published, and that needs no
+    // file to establish. `Supervision::receipt_submitted_at` and `receipt_pending_since` existed only
+    // to date a receipt by its own metadata and are gone with this.
+    if let Some(epoch) = observed.oldest_single {
+        if let Some(published) = publication_time(schedule, epoch) {
+            let waiting = now.saturating_sub(published);
+            if waiting > thresholds.receipt_budget {
+                out.push(Alert::ReceiptUnconfirmed {
+                    epoch,
+                    waiting,
+                    budget: thresholds.receipt_budget,
+                });
+            }
         }
     }
 
@@ -291,7 +265,6 @@ pub fn alerts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::day_index;
 
     const S: Schedule = Schedule::DEPLOYED;
     const T: Thresholds = Thresholds::DEPLOYED;
@@ -300,13 +273,6 @@ mod tests {
         match publication_time(S, epoch) {
             Some(t) => t,
             None => panic!("epoch {epoch} has no publication time, so the test states nothing"),
-        }
-    }
-
-    fn day(now: i64) -> u64 {
-        match day_index(now) {
-            Some(d) => d,
-            None => panic!("{now} is before 1970, so the test states nothing"),
         }
     }
 
@@ -321,10 +287,10 @@ mod tests {
                 last_epoch: last,
                 awaiting_attach: None,
                 last_submitted: Some(last),
+                oldest_single: None,
             },
             Supervision {
                 last_heartbeat: now.saturating_sub(60),
-                receipt_submitted_at: None,
                 consecutive_refusals: 0,
                 last_refusal: None,
             },
@@ -361,10 +327,10 @@ mod tests {
             last_epoch: last,
             awaiting_attach: None,
             last_submitted: Some(last),
+            oldest_single: None,
         };
         let s = Supervision {
             last_heartbeat: now.saturating_sub(60),
-            receipt_submitted_at: None,
             consecutive_refusals: 0,
             last_refusal: None,
         };
@@ -390,10 +356,10 @@ mod tests {
             last_epoch: last,
             awaiting_attach: None,
             last_submitted: Some(last),
+            oldest_single: None,
         };
         let s = Supervision {
             last_heartbeat: now.saturating_sub(60),
-            receipt_submitted_at: None,
             consecutive_refusals: 0,
             last_refusal: None,
         };
@@ -412,10 +378,10 @@ mod tests {
             last_epoch: last,
             awaiting_attach: None,
             last_submitted: Some(last),
+            oldest_single: None,
         };
         let s = Supervision {
             last_heartbeat: now.saturating_sub(60),
-            receipt_submitted_at: None,
             consecutive_refusals: 0,
             last_refusal: None,
         };
@@ -426,12 +392,12 @@ mod tests {
 
     #[test]
     fn a_receipt_past_its_budget_is_reported() {
-        let (mut o, mut s) = healthy();
-        o.awaiting_attach = Some(20_745);
-        s.receipt_submitted_at = Some(o.now.saturating_sub(T.receipt_budget).saturating_sub(1));
+        let (mut o, s) = healthy();
+        // Four days back, against a three-day budget: single for longer than the budget allows.
+        o.oldest_single = Some(20_741);
         assert!(alerts(S, &o, &s, T)
             .iter()
-            .any(|a| matches!(a, Alert::ReceiptUnconfirmed { epoch, .. } if *epoch == 20_745)));
+            .any(|a| matches!(a, Alert::ReceiptUnconfirmed { epoch, .. } if *epoch == 20_741)));
     }
 
     /// One refusal is an observation; the threshold's worth in a row is a stuck worker.
@@ -460,8 +426,7 @@ mod tests {
     fn conditions_are_reported_together_rather_than_one_at_a_time() {
         let (mut o, mut s) = healthy();
         s.last_heartbeat = o.now.saturating_sub(T.heartbeat_grace).saturating_sub(1);
-        o.awaiting_attach = Some(20_745);
-        s.receipt_submitted_at = Some(o.now.saturating_sub(T.receipt_budget).saturating_sub(1));
+        o.oldest_single = Some(20_741);
         let raised = alerts(S, &o, &s, T);
         assert!(raised
             .iter()
@@ -483,9 +448,13 @@ mod tests {
     /// files and runbook no longer describe where alerts come from.
     #[test]
     fn only_three_of_five_can_be_raised_by_the_worker_itself() {
-        // A log in the worst state this type can describe: far behind, an epoch long overdue, and a
-        // receipt well past its budget. If the two process conditions cannot fire here, they cannot
-        // fire from this call site at all.
+        // A log in the worst state this type can describe: far behind, an epoch long overdue, and an
+        // epoch single well past its receipt budget. If the two process conditions cannot fire here,
+        // they cannot fire from this call site at all.
+        //
+        // The receipt condition is `oldest_single` as of H-108 (issue #332), where it was
+        // `awaiting_attach` plus a time the binary read from the receipt's own file. The state is the
+        // same one; what establishes it is now the chain and the clock.
         let last: u64 = 20_700;
         let now = at(20_745)
             .saturating_add(T.receipt_budget)
@@ -496,8 +465,9 @@ mod tests {
             last_epoch: last,
             awaiting_attach: Some(last),
             last_submitted: Some(last),
+            oldest_single: Some(last),
         };
-        let supervision = Supervision::from_worker(now, Some(0));
+        let supervision = Supervision::from_worker(now);
 
         let raised = alerts(S, &observed, &supervision, T);
         assert!(
@@ -537,7 +507,7 @@ mod tests {
     /// be sure of and the reason `ProcessSilent` is somebody else's job.
     #[test]
     fn from_worker_reports_itself_alive_now_and_refusing_nothing() {
-        let s = Supervision::from_worker(1_792_000_000, None);
+        let s = Supervision::from_worker(1_792_000_000);
         assert_eq!(s.last_heartbeat, 1_792_000_000);
         assert_eq!(s.consecutive_refusals, 0);
         assert_eq!(s.last_refusal, None);
@@ -595,101 +565,5 @@ mod tests {
         });
         assert!(repeated.contains("StartLimitBurst"), "{repeated}");
         assert!(repeated.contains("defect"), "{repeated}");
-    }
-
-    /// Real file, real modification time. Without this the fallback below could be returned in
-    /// every case and the arm would fire on a receipt that had just been lodged.
-    #[test]
-    fn a_readable_receipt_is_dated_by_its_own_modification_time() {
-        let dir = std::env::temp_dir().join(format!("certimining-h97-{}", std::process::id()));
-        match std::fs::create_dir_all(&dir) {
-            Ok(()) => {}
-            Err(e) => panic!("{}: {e}", dir.display()),
-        }
-        let receipt = dir.join("20745.ots");
-        match std::fs::write(
-            &receipt,
-            b"not a real receipt, only a file with a timestamp",
-        ) {
-            Ok(()) => {}
-            Err(e) => panic!("{}: {e}", receipt.display()),
-        }
-
-        let dated = receipt_pending_since(S, 20_745, &receipt);
-        let real_now = match std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| i64::try_from(d.as_secs()))
-        {
-            Ok(Ok(secs)) => secs,
-            _ => panic!("the host clock is before 1970, so the test states nothing"),
-        };
-
-        assert!(
-            dated >= real_now.saturating_sub(120),
-            "a file written just now should be dated just now: {dated} against {real_now}"
-        );
-        assert!(
-            dated > at(20_745).saturating_add(86_400),
-            "the file was readable, so its own time must be used and not the lower bound: \
-             {dated} against a bound of {}",
-            at(20_745)
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// **The defect H-97 (issue #304) was filed for, at the point the claim is made.**
-    ///
-    /// The log reports epoch 20745 awaiting attachment and its receipt is three days and a minute
-    /// old, which is past `receipt_budget`. The file is gone. An operator has to hear about that,
-    /// and the first assertion is what used to happen instead: the binary gave `None` for a receipt
-    /// it could not read, `alerts()` guards the arm on that value being present, and the condition
-    /// was silenced outright.
-    #[test]
-    fn a_pending_receipt_whose_file_is_absent_still_raises_receipt_unconfirmed() {
-        let pending: u64 = 20_745;
-        let now = at(pending)
-            .saturating_add(T.receipt_budget)
-            .saturating_add(60);
-        let today = day(now);
-        let observed = Observed {
-            now,
-            start_epoch: 20_700,
-            // Caught up, so nothing but the receipt is wrong and the assertions name one alert.
-            last_epoch: today.saturating_sub(1),
-            awaiting_attach: Some(pending),
-            last_submitted: Some(pending),
-        };
-
-        let silenced = Supervision::from_worker(now, None);
-        assert_eq!(
-            alerts(S, &observed, &silenced, T),
-            Vec::new(),
-            "this is the defect: an undatable receipt reported as no receipt raises nothing"
-        );
-
-        let absent = std::env::temp_dir().join(format!(
-            "certimining-h97-absent-{}/{pending}.ots",
-            std::process::id()
-        ));
-        assert!(!absent.exists(), "the test needs a path that is not there");
-
-        let dated = receipt_pending_since(S, pending, &absent);
-        assert_eq!(
-            dated,
-            at(pending),
-            "an undatable receipt is dated by the lower bound its epoch's publication gives"
-        );
-
-        let raised = alerts(S, &observed, &Supervision::from_worker(now, Some(dated)), T);
-        assert_eq!(
-            raised,
-            vec![Alert::ReceiptUnconfirmed {
-                epoch: pending,
-                waiting: T.receipt_budget.saturating_add(60),
-                budget: T.receipt_budget,
-            }],
-            "a receipt pending past the budget is reported whether or not its file can be read"
-        );
     }
 }
