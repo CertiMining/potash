@@ -192,6 +192,31 @@ impl Observed {
     pub fn newest_publishable(&self) -> Option<u64> {
         self.today()?.checked_sub(1)
     }
+
+    /// The oldest `Single` epoch that has waited past `budget`, if there is one (H-110, issue #339).
+    ///
+    /// Dated from publication time rather than from any file: an epoch is `Single` from the instant
+    /// its root reaches Solana, so that instant is a lower bound on the wait that survives the
+    /// receipt being deleted. An epoch the schedule cannot place yields `None` here and is refused
+    /// by the `Unschedulable` arm on its own account.
+    #[must_use]
+    pub fn overdue_single(&self, schedule: Schedule, budget: i64) -> Option<OverdueSingle> {
+        let epoch = self.oldest_single?;
+        let published = publication_time(schedule, epoch)?;
+        let waiting = self.now.saturating_sub(published);
+        (waiting > budget).then_some(OverdueSingle { epoch, waiting })
+    }
+
+    /// Whether the routing has a receipt for `epoch`.
+    ///
+    /// `awaiting_attach` is the lowest epoch carrying a receipt that the chain still calls `Single`,
+    /// and `oldest_single` is the lowest it calls `Single` at all. They are equal exactly when that
+    /// epoch's receipt is on disk, which is what makes this readable from the two fields rather than
+    /// from a second filesystem pass.
+    #[must_use]
+    fn receipt_seen_for(&self, epoch: u64) -> bool {
+        self.awaiting_attach == Some(epoch)
+    }
 }
 
 /// The one thing the worker does next.
@@ -261,6 +286,40 @@ pub enum Refusal {
     },
     /// An epoch's publication time cannot be represented, so the schedule cannot place it.
     Unschedulable { epoch: u64 },
+    /// An epoch the chain still calls `Single` has outrun the receipt budget with no receipt on
+    /// disk, so whether it ever reached the calendars cannot be told (H-110, issue #339).
+    ///
+    /// **Why this stops the worker rather than routing it.** The two states underneath are
+    /// "submitted, receipt lost" and "never submitted", and nothing in the chain or the filesystem
+    /// separates them. Routing on the receipt's absence picks the second, which resubmits — and the
+    /// attach field is write-once under D-112, so a second receipt spends the one opportunity on a
+    /// root a calendar may already stand behind. Refusing picks neither and asks an operator, which
+    /// is recoverable in a way a spent attach slot is not.
+    ///
+    /// **Why the budget and not the receipt's absence alone.** An epoch is `Single` from the instant
+    /// it is published and before it is ever submitted, so every healthy epoch passes through this
+    /// shape. Only one that has stayed there past the budget is evidence of anything.
+    ///
+    /// Issue #337's durable journal is what tells the two states apart and retires this refusal.
+    SubmissionUnknowable {
+        epoch: u64,
+        waiting: i64,
+        budget: i64,
+    },
+}
+
+/// An epoch the chain still calls `Single` that has waited longer than a budget allows.
+///
+/// **One expression, two consumers (the shape H-98 and M-08 both ended in).** `alerts()` raises
+/// `ReceiptUnconfirmed` from this and [`next_step_with_policy`] refuses on it, so the alert an
+/// operator reads and the barrier that stopped the worker cannot describe different epochs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OverdueSingle {
+    /// The lowest epoch the chain reports as `Single`.
+    pub epoch: u64,
+    /// How long it has been `Single`, measured from its publication time, which is a lower bound
+    /// needing no file to establish.
+    pub waiting: i64,
 }
 
 /// The worker's next step, from state alone.
@@ -269,16 +328,28 @@ pub enum Refusal {
 /// and its receipt is perishable attention, not because it is urgent; submitting comes before
 /// publishing so a published root never sits unstamped while the next day is built.
 pub fn next_step(schedule: Schedule, observed: &Observed) -> Step {
-    next_step_with_policy(schedule, observed, WorkerPolicy::PRODUCTION)
+    next_step_with_policy(
+        schedule,
+        observed,
+        WorkerPolicy::PRODUCTION,
+        crate::Thresholds::DEPLOYED,
+    )
 }
 
 /// The worker's next step under an explicit policy.
 ///
 /// Tests use this entry point to prove each production barrier without reading a clock or waiting.
+///
+/// **Why the thresholds are here and not only in `alerts()` (H-110, issue #339).** The receipt
+/// budget decides a routing question now, not only a supervision one: it is what separates an epoch
+/// that is briefly `Single` on its way to being submitted from one whose submission can no longer
+/// be established. It is passed rather than copied into [`WorkerPolicy`], because a second home for
+/// the number is the defect H-98 (#305) was filed about.
 pub fn next_step_with_policy(
     schedule: Schedule,
     observed: &Observed,
     policy: WorkerPolicy,
+    thresholds: crate::Thresholds,
 ) -> Step {
     let Observed {
         now,
@@ -286,7 +357,10 @@ pub fn next_step_with_policy(
         last_epoch,
         awaiting_attach,
         last_submitted,
-        // Read by `alerts` and by nothing here: H-108 (c) leaves every routing decision as it was.
+        // Not destructured, because it is read through `observed` below rather than by name.
+        // **This comment used to say `alerts` read it and nothing here did.** That was true of
+        // H-108 (c), which left every routing decision as it was, and stopped being true when
+        // H-110 (#339) made the overdue-`Single` barrier a routing decision.
         oldest_single: _,
     } = *observed;
 
@@ -353,6 +427,27 @@ pub fn next_step_with_policy(
             return Step::Refuse(Refusal::SubmissionAheadOfLog {
                 last_submitted: submitted,
                 last_epoch,
+            });
+        }
+    }
+
+    // **A submission that can no longer be established stops the worker (H-110, issue #339).**
+    // Before H-110 this state routed to `Submit` below, because the routing reads a missing receipt
+    // as work never done — and the binary printed "The worker will not submit it again" from an arm
+    // this state never reached, while the runbook called a second submission an escalation. The
+    // worker now does what both texts say.
+    //
+    // **Placed ahead of `Attach`, which the ruling did not specify.** Put after it, the barrier
+    // would be skipped whenever some *other* epoch had an attachable receipt, and the worker would
+    // go on working past an epoch whose submission nobody can account for. The write-once attach
+    // field is the thing being protected, so the stop is the whole cycle rather than one branch of
+    // it.
+    if let Some(overdue) = observed.overdue_single(schedule, thresholds.receipt_budget) {
+        if !observed.receipt_seen_for(overdue.epoch) {
+            return Step::Refuse(Refusal::SubmissionUnknowable {
+                epoch: overdue.epoch,
+                waiting: overdue.waiting,
+                budget: thresholds.receipt_budget,
             });
         }
     }
@@ -657,6 +752,7 @@ mod tests {
                     max_epoch_slip: 3,
                     ..WorkerPolicy::PRODUCTION
                 },
+                crate::Thresholds::DEPLOYED,
             );
             steps.push(step);
             match step {
@@ -979,7 +1075,8 @@ mod tests {
 
         let visit = |o: Observed, checked: &mut u32, admitted: &mut u32| {
             *checked = checked.saturating_add(1);
-            let step = next_step_with_policy(S, &o, WorkerPolicy::PRODUCTION);
+            let step =
+                next_step_with_policy(S, &o, WorkerPolicy::PRODUCTION, crate::Thresholds::DEPLOYED);
             // The three refusals at or before the frontier barrier. A state they reject never
             // reaches the code the invariant is about.
             if matches!(

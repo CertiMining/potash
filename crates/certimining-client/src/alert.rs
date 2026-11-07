@@ -237,17 +237,18 @@ pub fn alerts(
     // has been single, because an epoch is single from the instant it is published, and that needs no
     // file to establish. `Supervision::receipt_submitted_at` and `receipt_pending_since` existed only
     // to date a receipt by its own metadata and are gone with this.
-    if let Some(epoch) = observed.oldest_single {
-        if let Some(published) = publication_time(schedule, epoch) {
-            let waiting = now.saturating_sub(published);
-            if waiting > thresholds.receipt_budget {
-                out.push(Alert::ReceiptUnconfirmed {
-                    epoch,
-                    waiting,
-                    budget: thresholds.receipt_budget,
-                });
-            }
-        }
+    //
+    // **One expression with the barrier (H-110, issue #339).** The same condition now refuses in
+    // `next_step_with_policy`, and two places computing one quantity is H-98's (#305) class, so
+    // `Observed::overdue_single` is what both read. The alert fires on every overdue `Single`
+    // epoch; the refusal fires on the subset with no receipt, which is the part the chain cannot
+    // account for.
+    if let Some(overdue) = observed.overdue_single(schedule, thresholds.receipt_budget) {
+        out.push(Alert::ReceiptUnconfirmed {
+            epoch: overdue.epoch,
+            waiting: overdue.waiting,
+            budget: thresholds.receipt_budget,
+        });
     }
 
     if let Some(refusal) = supervision.last_refusal {
