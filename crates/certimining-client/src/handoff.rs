@@ -652,7 +652,7 @@ mod writing {
                     oldest_single: None,
                 };
                 assert_eq!(
-                    next_step_with_policy(S, &observed, policy),
+                    next_step_with_policy(S, &observed, policy, crate::Thresholds::DEPLOYED),
                     Step::Publish { epoch },
                     "day {day} is writable under an allowance of {slip}, so the worker must still \
                      select epoch {epoch}"

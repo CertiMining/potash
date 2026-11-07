@@ -563,15 +563,35 @@ fn a_deleted_receipt_is_still_reported() {
         "an epoch single past its budget is reported with its receipt gone: {lines:?}"
     );
 
-    // **What is not fixed here, asserted rather than left to be assumed.** The routing still reads a
-    // missing receipt as work never submitted and submits again. That is correct for the ordinary
-    // case — an epoch is single from the moment it is published and before it is ever submitted — and
-    // wrong only for a receipt that was lost. The chain cannot tell the two apart, which is issue
-    // #337's durable journal. The operator is now told either way, which is what this fixes.
+    // **Inside the budget the routing still submits, and that is correct.** An epoch is single from
+    // the moment it is published and before it is ever submitted, so this shape is what every
+    // healthy epoch passes through. Refusing here is the trap the superseded first H-108 ruling
+    // fell into: it halts the worker on every epoch it publishes.
     assert_eq!(
         next_step(S, &gone),
         Step::Submit { epoch: START },
-        "the resubmission is the routing's, and #337 is what resolves it"
+        "a freshly published epoch with no receipt is work to do, not a fault"
+    );
+
+    // **Past the budget it refuses instead (H-110, issue #339).** Same state, later clock. This is
+    // the resubmission the 3 November recheck found: the alert fired and the worker submitted again
+    // in the same cycle, against a write-once attach field and against what both the executable and
+    // the runbook promised.
+    let overdue = seen(&w, late);
+    assert_eq!(
+        next_step(S, &overdue),
+        Step::Refuse(Refusal::SubmissionUnknowable {
+            epoch: START,
+            waiting: T.receipt_budget.saturating_add(60),
+            budget: T.receipt_budget,
+        }),
+        "an epoch single past its budget with no readable receipt stops the worker"
+    );
+
+    // And the alert and the refusal name the same epoch, because one expression answers both.
+    assert!(
+        lines.iter().any(|l| l.contains(&format!("epoch {START}"))),
+        "the operator is told about the epoch the worker stopped on: {lines:?}"
     );
 }
 

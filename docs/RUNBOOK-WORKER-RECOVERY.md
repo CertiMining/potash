@@ -127,9 +127,11 @@ in order, and the worker then waits rather than refuses.
 
 ## `ReceiptUnconfirmed`
 
-**Raised by** the worker, each cycle, as `anchor-b-worker: ALERT ReceiptUnconfirmed: …`. It dates the pending receipt by its file's modification time, and when that file cannot be read it falls back to the epoch's publication time — a receipt reaches the calendars after its checkpoint is published, so that is a lower bound on its age rather than a guess.
+**Raised by** the worker, each cycle, as `anchor-b-worker: ALERT ReceiptUnconfirmed: …`. It dates the wait from the epoch's publication time and reads no file at all: an epoch is single on chain from the instant its root is published, so that instant is a lower bound on how long the receipt has been outstanding, and it is one no deletion can take away.
 
-**A receipt whose file has gone therefore raises this alert rather than silencing it.** It did silence it until H-97 (issue #304): an unreadable receipt reported the same value as no pending receipt, so a deleted receipt or an unreadable receipt directory read as healthy. **So check first whether the file is there at all** — that is a different fault from a slow confirmation and the rest of this section does not address it.
+**It used to date the receipt by its own file's modification time**, falling back to publication time when that file could not be read. The fallback was unreachable in production — the observation discarded a missing receipt before any dating ran — so a deleted receipt silenced the alert instead of raising it (H-108, issue #332). The dating by file is gone rather than repaired.
+
+**A receipt whose file has gone therefore raises this alert rather than silencing it.** **So check first whether the file is there at all** — that is a different fault from a slow confirmation and the rest of this section does not address it.
 
 **It means** a submitted receipt has gone past its budget without Bitcoin confirming it. INV-ANCH-04
 budgets this wait; the alert fires when the wait itself is the news. **An unconfirmed receipt is not

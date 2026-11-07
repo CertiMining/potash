@@ -170,6 +170,19 @@ fn why(refusal: Refusal) -> String {
         Refusal::Unschedulable { epoch } => {
             format!("epoch {epoch} has no publication time the schedule can represent.")
         }
+        Refusal::SubmissionUnknowable {
+            epoch,
+            waiting,
+            budget,
+        } => format!(
+            "epoch {epoch} has been single on chain for {waiting}s against a budget of {budget}s \
+             and no receipt for it can be read. Its root is published and the attachment is still \
+             owed. Whether that root ever reached the calendars cannot be told from the chain, so \
+             this is an operator decision: restore the receipt and rerun, or re-stamp the epoch \
+             knowingly. The worker will not submit it again — the attach field is written once \
+             (D-112), and a second receipt would spend that one opportunity on a root a calendar \
+             may already stand behind."
+        ),
         Refusal::EpochSlipExceeded {
             last_epoch,
             newest_publishable,
@@ -378,7 +391,7 @@ fn run() -> Result<(), String> {
             }
         }
 
-        match next_step_with_policy(Schedule::DEPLOYED, &observed, policy) {
+        match next_step_with_policy(Schedule::DEPLOYED, &observed, policy, Thresholds::DEPLOYED) {
             Step::Refuse(r) => return Err(why(r)),
 
             Step::Wait { until } => {
